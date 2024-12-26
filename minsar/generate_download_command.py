@@ -29,7 +29,7 @@ EXAMPLE = """example:
 """
 
 DESCRIPTION = ("""
-     Creates download command ssara_command.txt containing intersectsWith='Polygon((...))'. 
+     Creates download command download_ssara.txt containing intersectsWith='Polygon((...))'. 
      If the string is not given in *template file, it will be created based on (in that order):
          miaplpy.subset.lalo
          mintpy.subset.lalo
@@ -202,10 +202,10 @@ def generate_download_command(template,inps):
     asf_cmd_burst_burst2safe1 = ['ssara_listing_2_burst2safe_jobfile.py', ' ssara_listing.txt' + ' --extent', extent_str]
     asf_cmd_burst_burst2safe2 = [f'run_workflow.bash {template} --jobfile {inps.work_dir}/SLC/run_01_burst2safe']
 
-    with open('ssara_command.txt', 'w') as f:
+    with open('download_ssara.txt', 'w') as f:
         f.write(' '.join(ssara_cmd_slc_download_bash) + '\n')
 
-    with open('asf_slc_download_command.txt', 'w') as f:
+    with open('download_asf_search.txt', 'w') as f:
         f.write(' '.join(asf_cmd_slc_download) + '\n')
 
     with open('asf_burst_download_commands.txt', 'w') as f:
