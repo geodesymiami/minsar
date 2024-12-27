@@ -27,10 +27,10 @@ Options:
   -h, --help                        Show this help message and exit
 
 Examples:
-  ${0##*/} $SAMPLESDIR/dslc_unitGalapagosSenD128.template
-  ${0##*/} $SAMPLESDIR/dslc_unitGalapagosSenD128.template --data-type SLC --download-tool ssara
-  ${0##*/} $SAMPLESDIR/db_unitGalapagosSenD128.template --data-type burst --download-tool ssara
-  ${0##*/} $SAMPLESDIR/dcslc_unitGalapagosSenD128.template --data-type CSLC 
+  ${0##*/} $SAMPLESDIR/slc_unitGalapagosSenD128.template
+  ${0##*/} $SAMPLESDIR/slc_unitGalapagosSenD128.template --data-type SLC --download-tool ssara
+  ${0##*/} $SAMPLESDIR/burst_unitGalapagosSenD128.template --data-type burst --download-tool ssara
+  ${0##*/} $SAMPLESDIR/cslc_unitGalapagosSenD128.template --data-type CSLC 
 EOF
 }
 
