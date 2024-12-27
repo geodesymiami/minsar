@@ -27,8 +27,10 @@ Options:
   -h, --help                        Show this help message and exit
 
 Examples:
-  ${0##*/} --data-type SLC --download-tool ssara my_template.txt
-  ${0##*/} --data-type CSLC cslc_template.txt
+  ${0##*/} $SAMPLESDIR/dslc_unitGalapagosSenD128.template
+  ${0##*/} $SAMPLESDIR/dslc_unitGalapagosSenD128.template --data-type SLC --download-tool ssara
+  ${0##*/} $SAMPLESDIR/db_unitGalapagosSenD128.template --data-type burst --download-tool ssara
+  ${0##*/} $SAMPLESDIR/dcslc_unitGalapagosSenD128.template --data-type CSLC 
 EOF
 }
 
@@ -79,10 +81,6 @@ while true; do
     esac
 done
 
-# ----------------------------------------------------------------------
-# Handle positional argument (template_file)
-# ----------------------------------------------------------------------
-# After shifting out recognized options, $1 should be the template_file.
 if [ $# -lt 1 ]; then
     echo "Error: Missing positional argument <template_file>"
     show_help
@@ -98,9 +96,6 @@ if [ $# -gt 1 ]; then
     exit 1
 fi
 
-# ----------------------------------------------------------------------
-# Validate data_type
-# ----------------------------------------------------------------------
 case "$data_type" in
     SLC|burst|CSLC)
         ;;
@@ -110,9 +105,6 @@ case "$data_type" in
         ;;
 esac
 
-# ----------------------------------------------------------------------
-# Validate download_tool
-# ----------------------------------------------------------------------
 case "$download_tool" in
     ssara|asf_search)
         ;;
@@ -123,11 +115,13 @@ case "$download_tool" in
 esac
 
 # ----------------------------------------------------------------------
-# Main script logic
-# ----------------------------------------------------------------------
-echo "Data type:       $data_type"
-echo "Download tool:   $download_tool"
-echo "Template file:   $template_file"
+#echo "Data type:       $data_type"
+#echo "Download tool:   $download_tool"
+#echo "Template file:   $template_file"
+
+PROJECT_DIR="$(basename "${template_file%.template}")"
+mkdir -p "$SCRATCHDIR/$PROJECT_DIR"
+cd "$SCRATCHDIR/$PROJECT_DIR"
 
 if [ "$download_tool" = "ssara" ]; then
   echo "Downloading SLCs using $download_tool..."
