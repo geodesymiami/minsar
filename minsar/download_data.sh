@@ -3,15 +3,7 @@
 # download SAR data (SLCs, bursts or CSLCs)
 set -euo pipefail
 
-# ----------------------------------------------------------------------
-# Default values
-# ----------------------------------------------------------------------
-data_type="SLC"          # one of: SLC, burst, CSLC
-download_tool="ssara"    # one of: ssara, asf_search
-
-# ----------------------------------------------------------------------
 # Help message
-# ----------------------------------------------------------------------
 show_help() {
     cat <<EOF
 Usage: ${0##*/} [OPTIONS] <template_file>
@@ -33,6 +25,15 @@ Examples:
   ${0##*/} $SAMPLESDIR/cslc_unitGalapagosSenD128.template --data-type CSLC 
 EOF
 }
+
+# Now log the entire command
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/utils/minsar_functions.bash"
+
+
+# Default values
+data_type="SLC"          # one of: SLC, burst, CSLC
+download_tool="ssara"    # one of: ssara, asf_search
 
 # ----------------------------------------------------------------------
 # Parse command-line arguments
@@ -122,6 +123,8 @@ esac
 PROJECT_DIR="$(basename "${template_file%.template}")"
 mkdir -p "$SCRATCHDIR/$PROJECT_DIR"
 cd "$SCRATCHDIR/$PROJECT_DIR"
+
+log_command_line "log" "$@"
 
 if [ "$download_tool" = "ssara" ]; then
   echo "Downloading SLCs using $download_tool..."
