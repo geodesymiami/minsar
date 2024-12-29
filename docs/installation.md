@@ -1,6 +1,6 @@
 # Installation guide
 
-* Set `$MINSAR_HOME` in your [.bashrc](https://github.com/falkamelung/rsmas_insar/blob/master/docs/bashrc_contents.md) 
+* Set `$MINSAR_HOME` in your [.bashrc](https://github.com/falkamelung/minsar/blob/master/docs/bashrc_contents.md) 
 and [.bash_profile](./bash_profile.md).  You may want to set your variables in an external file as we do in Miami (see [example](https://gist.github.com/falkamelung/f1281c38e301a3296ab0483f946cac4b)).
 
 * Create an ~/accounts directory with your data download credentials (for contents see [here](./accounts_info.md)). If you have access to the RSMAS accounts repo clone it into your /home or `$WORK2` directory 
@@ -21,13 +21,13 @@ cd $WORK2/code
 * Clone the repo and install the code (including miniconda3 python):
 ```
 command -v module &> /dev/null && module purge
-git clone git@github.com:geodesymiami/rsmas_insar.git ;
-cd rsmas_insar
+git clone git@github.com:geodesymiami/minsar.git ;
+cd minsar
 bash -x setup/install_python.bash
 bash -x setup/install_code.bash
 bash -x setup/install_credential_files.bash
 ```
-The `install_python.bash` command is [here](https://github.com/geodesymiami/rsmas_insar/blob/master/setup/install_python.bash) and  `install_code.bash`  is  [here](https://github.com/geodesymiami/rsmas_insar/blob/master/setup/install_code.bash) and  `install_credential_files.bash`  is  [here](https://github.com/geodesymiami/rsmas_insar/blob/master/setup/install_credential_files.bash).
+The `install_python.bash` command is [here](https://github.com/geodesymiami/minsar/blob/master/setup/install_python.bash) and  `install_code.bash`  is  [here](https://github.com/geodesymiami/minsar/blob/master/setup/install_code.bash) and  `install_credential_files.bash`  is  [here](https://github.com/geodesymiami/minsar/blob/master/setup/install_credential_files.bash).
 
 ---
 ### Test your installation
@@ -66,7 +66,7 @@ total 17528848
 drwxrws-w-+ 2 famelung insarlab       4096 Jan 17 16:58 test
 //login4/nethome/dwg11/insarlab/TESTDATA_ISCE[59]
 ```
-* For possible problems, check [here](https://github.com/geodesymiami/rsmas_insar/blob/master/setup/installation_issues.md).
+* For possible problems, check [here](https://github.com/geodesymiami/minsar/blob/master/setup/installation_issues.md).
 
 
 ### *. [Set-up in Miami](./set_up_miami.md) ###
