@@ -30,16 +30,16 @@ export PATH=${PATH}:${CDTOOL}/bin
 
 #df -h /tmp
 echo -e "\ninstall_code_on_tmp.bash: before copy-to-tmp:\n `df -h /tmp`"
-rm -rf /tmp/rsmas_insar
-mkdir -p /tmp/rsmas_insar
-mkdir -p /tmp/rsmas_insar/tools ;
-mkdir -p /tmp/rsmas_insar/sources ;
+rm -rf /tmp/minsar
+mkdir -p /tmp/minsar
+mkdir -p /tmp/minsar/tools ;
+mkdir -p /tmp/minsar/sources ;
 
 code_dir=$(echo $(basename $(dirname $MINSAR_HOME)))
 distribute.bash $SCRATCHDIR/${code_dir}_miniconda3.tar
 distribute.bash $SCRATCHDIR/${code_dir}_minsar.tar
-tar xf /tmp/${code_dir}_miniconda3.tar -C /tmp/rsmas_insar/tools
-tar xf /tmp/${code_dir}_minsar.tar -C /tmp/rsmas_insar
+tar xf /tmp/${code_dir}_miniconda3.tar -C /tmp/minsar/tools
+tar xf /tmp/${code_dir}_minsar.tar -C /tmp/minsar
 rm /tmp/${code_dir}_miniconda3.tar
 rm /tmp/${code_dir}_minsar.tar
 
@@ -47,5 +47,5 @@ rm /tmp/${code_dir}_minsar.tar
 
 
 echo "#### To set environment: ####"
-echo "export PATH=/bin; export MINSAR_HOME=/tmp/rsmas_insar; cd \$MINSAR_HOME; source ~/accounts/platforms_defaults.bash; source setup/environment.bash; export PATH=\$ISCE_STACK/topsStack:\$PATH; cd -;"
+echo "export PATH=/bin; export MINSAR_HOME=/tmp/minsar; cd \$MINSAR_HOME; source ~/accounts/platforms_defaults.bash; source setup/environment.bash; export PATH=\$ISCE_STACK/topsStack:\$PATH; cd -;"
 

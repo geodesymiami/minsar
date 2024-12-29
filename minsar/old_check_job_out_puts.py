@@ -93,7 +93,7 @@ def main(iargs=None):
          shutil.copy(error_files[-1], out_error_file)
 
     if len(matched_error_strings) != 0:
-        print('For known issues see https://github.com/geodesymiami/rsmas_insar/tree/master/docs/known_issues.md')
+        print('For known issues see https://github.com/geodesymiami/minsar/tree/master/docs/known_issues.md')
         raise RuntimeError('Error in run_file: ' + run_file)
 
     # move only if there was no error
@@ -105,7 +105,7 @@ def main(iargs=None):
 
 def skip_error(file, error_string):
     """ skip error for merge_reference step if contains has different number of bursts (7) than the reference (9)  """
-    """ https://github.com/geodesymiami/rsmas_insar/issues/436  """
+    """ https://github.com/geodesymiami/minsar/issues/436  """
     """ prior to https://github.com/isce-framework/isce2/pull/195 it did not raise exception  """
 
     skip = False

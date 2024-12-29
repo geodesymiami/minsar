@@ -9,7 +9,7 @@
 #BSUB -b 16:58
 
 bash
-cd  ~/test/test1/rsmas_insar; source default_isce22.bash
+cd  ~/test/test1/minsar; source default_isce22.bash
 nohup run_operations.py --sheet_id 1zAsa5cykv-WS39ufkCZdvFvaOem3Akol8aqzANnsdhE  &
 
 sleep 120
