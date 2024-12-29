@@ -4,7 +4,7 @@ I tried using --tasks-per-node and --ntasks-per-node but this did not work - I d
 ### 1. Running as one job
 *#Copy the job file into your project directory:
 ```
-cp $RSMASINSAR_HOME/minsar/unused/benchmark/run_launcher.job .
+cp $MINSAR_HOME/minsar/unused/benchmark/run_launcher.job .
 ```
 *#Select number of nodes, walltime and run in project directory
 
@@ -25,7 +25,7 @@ $cmd
 ### 2. Benchmarking one processing step
 *# Copy the job file into your project directory:
 ```
-cp $RSMASINSAR_HOME/minsar/unused/benchmark/run_launcher.job .
+cp $MINSAR_HOME/minsar/unused/benchmark/run_launcher.job .
 ```
 * #Select number of nodes, walltime and copy
 
@@ -47,7 +47,7 @@ $cmd
 ### 3. Benchmarking one step as function of nodes
 *# Copy the job file into your project directory
 ```
-cp $RSMASINSAR_HOME/minsar/unused/benchmark/run_launcher.job .
+cp $MINSAR_HOME/minsar/unused/benchmark/run_launcher.job .
 ```
 * #Select number of nodes, walltime and copy-paste. Job
 

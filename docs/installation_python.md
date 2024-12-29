@@ -14,7 +14,7 @@ bash ./$miniconda_version -b -p ../tools/miniconda3
 
 ### Source the environment and create aux directories.
 source ~/accounts/platforms_defaults.bash;
-export RSMASINSAR_HOME=$(dirname $PWD)
+export MINSAR_HOME=$(dirname $PWD)
 source environment.bash;
 ```
 

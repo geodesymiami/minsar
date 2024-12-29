@@ -26,7 +26,7 @@ def main(iargs=None):
     inps = cmd_line_parser(iargs)
     work_dir = os.path.dirname(os.path.abspath(inps.job_files[0]))
     project_dir = os.path.dirname(work_dir)
-    known_issues_file = os.path.join(os.getenv('RSMASINSAR_HOME'), 'docs/known_issues.md')
+    known_issues_file = os.path.join(os.getenv('MINSAR_HOME'), 'docs/known_issues.md')
 
     error_happened = False
     error_strings  = [

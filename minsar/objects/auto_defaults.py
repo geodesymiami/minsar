@@ -6,14 +6,14 @@ import datetime
 import glob
 
 
-queue_config_file = os.path.join(os.getenv('RSMASINSAR_HOME'), 'minsar/defaults/queues.cfg')
+queue_config_file = os.path.join(os.getenv('MINSAR_HOME'), 'minsar/defaults/queues.cfg')
 supported_platforms = ['frontera', 'stampede3', 'comet', 'pegasus', 'eos_sanghoon', 'eos', 'eos\n','circleci']
 
 class PathFind:
     def __init__(self):
         #self.logdir = os.getenv('OPERATIONS') + '/LOGS'
         self.scratchdir = os.getenv('SCRATCHDIR')
-        self.defaultdir = os.path.expandvars('${RSMASINSAR_HOME}/minsar/defaults')
+        self.defaultdir = os.path.expandvars('${MINSAR_HOME}/minsar/defaults')
         self.orbitdir = os.path.expandvars('$SENTINEL_ORBITS')
         self.auxdir = os.path.expandvars('$SENTINEL_AUX')
         self.georeferencedir = 'merged/geom_reference'
@@ -29,7 +29,7 @@ class PathFind:
         self.referencedir = 'reference'
         self.stackdir = 'stack'
         self.tiffdir = 'image_products'
-        self.daskconfig = os.path.expandvars('${RSMASINSAR_HOME}/minsar/defaults/dask/dask.yaml')
+        self.daskconfig = os.path.expandvars('${MINSAR_HOME}/minsar/defaults/dask/dask.yaml')
         self.auto_template = self.defaultdir + '/minsar_template.cfg'
         return
 

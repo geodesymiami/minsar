@@ -1,7 +1,7 @@
 ## Research and development workflow in Miami
 * If you want to use GBIS clone the repo (Marco Bagnardi plans to place this on GitHub soon) 
 ```
-cd $RSMASINSAR_HOME
+cd $MINSAR_HOME
 git clone https://github.com/geodesymiami/GBIS.git tools/GBIS;
 ```
 
@@ -27,7 +27,7 @@ echo DONE;
 ```
 Also, everybody should keep their matlab, python and other scripts  plus notebooks that are not part of MinSAR in our [tools repository](https://github.com/geodesymiami/rsmas_tools). This is an effort to make your code available to others. (optional)
 ```bash
-cd $RSMASINSAR_HOME/sources;
+cd $MINSAR_HOME/sources;
 git clone https://github.com/geodesymiami/rsmas_tools.git ; 
 ```
 Useful Jupyter Notebooks:
@@ -45,7 +45,7 @@ git clone https://github.com/geodesymiami/precip-notebooks.git
 git clone https://github.com/isce-framework/isce2-docs.git
 git clone https://github.com/parosen/Geo-SInC
 ```
-You may want to keep your `launch.json` from `$RSMASINSAR_HOME/.vscode` on github. I keep it next to TEMPLATES:
+You may want to keep your `launch.json` from `$MINSAR_HOME/.vscode` on github. I keep it next to TEMPLATES:
 ```
 mkdir -p ${TE%/TEMPLATES}/vscode/Linux
 mkdir -p ${TE%/TEMPLATES}/vscode/Darwin

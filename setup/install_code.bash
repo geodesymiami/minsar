@@ -2,7 +2,7 @@
 set -eo pipefail
 
 ### Source the environment  #################
-export RSMASINSAR_HOME=$PWD
+export MINSAR_HOME=$PWD
 source setup/platforms_defaults.bash;
 source setup/environment.bash;
 

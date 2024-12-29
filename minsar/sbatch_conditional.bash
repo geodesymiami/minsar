@@ -156,12 +156,12 @@ echot "Step: $step_name"
 
 # Get io_load for step from job_defaults.cfg file.
 # io_load needs to remain as column 8 in the .cfg file.
-defaults_file="${RSMASINSAR_HOME}/minsar/defaults/job_defaults.cfg"
+defaults_file="${MINSAR_HOME}/minsar/defaults/job_defaults.cfg"
 step_io_load=$(grep ^$step_name $defaults_file | awk '{print $9}')
 
 # Get queue that job_file is being submitted to from job_file definition
 QUEUENAME=$(grep "#SBATCH -p" $job_file | awk -F'[ ]' '{print $3}')
-queues_file="${RSMASINSAR_HOME}/minsar/defaults/queues.cfg"
+queues_file="${MINSAR_HOME}/minsar/defaults/queues.cfg"
 queue_info=$(grep "^[^#;]" $queues_file | grep $PLATFORM_NAME | grep $QUEUENAME)
 
 # Parse custom resource allocation limits from queues.cfg

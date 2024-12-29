@@ -41,7 +41,7 @@ def main(iargs=None):
     if 'miaplpy' in project_dir:
         project_dir = os.path.dirname(os.path.dirname(os.path.abspath(project_dir)))
 
-    known_issues_file = os.path.join(os.getenv('RSMASINSAR_HOME'), 'docs/known_issues.md')
+    known_issues_file = os.path.join(os.getenv('MINSAR_HOME'), 'docs/known_issues.md')
 
     error_happened = False
     data_problems_strings_out_files = [

@@ -17,14 +17,14 @@ umask 002
 
 alias s.bgood='s.bnew'
 
-export RSMASINSAR_HOME=~/test/development/rsmas_insar
+export MINSAR_HOME=~/test/development/rsmas_insar
 
 export JOBSCHEDULER=LSF
 export QUEUENAME=general
 export SCRATCHDIR=/projects/scratch/insarlab/${USER}
 
-alias s.bnew='cd $RSMASINSAR_HOME; source setup/environment.bash;'  
-alias s.bnew='cd $RSMASINSAR_HOME; source ~/accounts/platforms_defaults.bash; source setup/environment.bash; source ~/accounts/alias.bash; source ~/accounts/login_alias.bash; cd -;'
+alias s.bnew='cd $MINSAR_HOME; source setup/environment.bash;'  
+alias s.bnew='cd $MINSAR_HOME; source ~/accounts/platforms_defaults.bash; source setup/environment.bash; source ~/accounts/alias.bash; source ~/accounts/login_alias.bash; cd -;'
 
 ```
 

@@ -69,9 +69,9 @@ def main(iargs=None):
 
     bbox = bbox.split(' ')
     bbox = '{},{},{},{}'.format(bbox[2], bbox[0], bbox[3], bbox[1])
-    user = subprocess.check_output("grep gepuser $RSMASINSAR_HOME/3rdparty/SSARA/password_config.py |\
+    user = subprocess.check_output("grep gepuser $MINSAR_HOME/3rdparty/SSARA/password_config.py |\
      sed 's/\"//g''' | cut -d '=' -f 2", shell=True).decode('UTF-8').split('\n')[0]
-    passwd = subprocess.check_output("grep geppass $RSMASINSAR_HOME/3rdparty/SSARA/password_config.py |\
+    passwd = subprocess.check_output("grep geppass $MINSAR_HOME/3rdparty/SSARA/password_config.py |\
      sed 's/\"//g''' | cut -d '=' -f 2", shell=True).decode('UTF-8').split('\n')[0]
 
     command_get_list = 'curl -s "https://catalog.terradue.com/csk/search?format=atom&count=1000&bbox={bbox}" |\
