@@ -459,10 +459,10 @@ if [[ $download_flag == "1" ]]; then
     cd $download_dir
 
     if [[ $burst_download_flag == "1" ]]; then
-       cmd=$(cat ../asf_burst_download_commands.txt)
+       cmd=$(cat ../asf_burst_download_commands.cmd)
        run_command "$cmd"
     else
-       cmd=$(cat ../ssara_command.txt)
+       cmd=$(cat ../download_ssara.cmd)
        run_command "$cmd"
     fi
 
