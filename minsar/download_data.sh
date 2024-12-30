@@ -6,7 +6,7 @@ set -euo pipefail
 # Help message
 show_help() {
     cat <<EOF
-Usage: ${0##*/} [OPTIONS] <template_file>
+Usage: ${0##*/} [--data-type <SLC|burst|CSLC>] [--download-tool <ssara|asf_search>] <template_file>
 
 Downloads SAR data.
 
@@ -14,31 +14,26 @@ Positional argument:
   template_file                 Path to the template file (required)
 
 Options:
-  --data-type <SLC|burst|CSLC>      Data type to download (default: SLC)
-  --download-tool <ssara|asf_search>  Download tool to use (default: ssara)
-  -h, --help                        Show this help message and exit
+  --data-type <SLC|burst|CSLC>       Data type to download (default: SLC)
+  --download-tool <ssara|asf_search> Download tool to use (default: ssara)
+  -h, --help                         Show this help message and exit
 
 Examples:
-  ${0##*/} $SAMPLESDIR/slc_unitGalapagosSenD128.template
-  ${0##*/} $SAMPLESDIR/slc_unitGalapagosSenD128.template --data-type SLC --download-tool ssara
-  ${0##*/} $SAMPLESDIR/burst_unitGalapagosSenD128.template --data-type burst --download-tool ssara
-  ${0##*/} $SAMPLESDIR/cslc_unitGalapagosSenD128.template --data-type CSLC 
+  ${0##*/} \$SAMPLESDIR/slc_unitGalapagosSenD128.template
+  ${0##*/} \$SAMPLESDIR/slc_unitGalapagosSenD128.template --data-type SLC --download-tool ssara
+  ${0##*/} \$SAMPLESDIR/burst_unitGalapagosSenD128.template --data-type burst --download-tool ssara
+  ${0##*/} \$SAMPLESDIR/cslc_unitGalapagosSenD128.template --data-type CSLC 
 EOF
 }
 
-# Now log the entire command
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/utils/minsar_functions.bash"
-
 
 # Default values
 data_type="SLC"          # one of: SLC, burst, CSLC
 download_tool="ssara"    # one of: ssara, asf_search
 
-# ----------------------------------------------------------------------
 # Parse command-line arguments
-# ----------------------------------------------------------------------
-# Use GNU getopt to parse long options (and -h for help).
 TEMP=$(getopt \
   -o h \
   --long help,download-tool:,data-type: \
