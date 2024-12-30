@@ -126,23 +126,17 @@ Usage: get_queue_parameter [--help] [--platform-name <PLATFORM>] [--queuename <Q
 
 Options:
   --help                    Show usage information and exit
-  --platform-name <PLATFORM>Platform name (default: \$PLATFORM_NAME)
-  --queuename <QUEUE>       Queue name (default: \$QUEUENAME)
+  --platform-name           Platform name (default: \$PLATFORM_NAME)
+  --queuename               Queue name (default: \$QUEUENAME)
 
 Positional Argument:
   <param_name>              e.g. CPUS_PER_NODE, THREADS_PER_CORE, etc.
 
 Description:
-  Looks up <param_name> in \$MINSAR_HOME/minsar/defaults/queues.cfg for the row
-  matching <platform_name> <queue_name>. Prints the parameter’s value to stdout.
+  Looks up <param_name> in minsar/defaults/queues.cfg and prints to stdout
 
 Examples:
-  # 1) Explicit flags
   get_queue_parameter --platform-name stampede3 --queuename skx CPUS_PER_NODE
-
-  # 2) Let it default to the environment:
-  export PLATFORM_NAME=stampede3
-  export QUEUENAME=skx
   get_queue_parameter CPUS_PER_NODE
 
 EOF
@@ -267,7 +261,143 @@ EOF
     # Print the result
     echo "$value"
 }
+function get_job_parameter() {
 
+    # Local function to show usage
+    function _show_help_get_job_parameter() {
+        cat << EOF
+Usage: get_job_parameter [--help] [--jobname <JOBNAME>] <param_name>
+
+Options:
+  --help                Show usage information and exit
+  --jobname <JOBNAME>   Name of the job (required)
+
+Positional Argument:
+  <param_name>          e.g. c_walltime, s_walltime, c_memory, s_memory, etc.
+
+Description:
+  Reads \$MINSAR_HOME/minsar/defaults/job_defaults.cfg, which contains lines of
+  the form:
+    jobname c_walltime s_walltime seconds_factor c_memory s_memory ...
+  Looks for a row whose first column is <JOBNAME>, then extracts the column
+  named <param_name>.
+
+Examples:
+  get_job_parameter --jobname create_runfiles c_walltime
+  get_job_parameter --jobname create_runfiles c_memory
+EOF
+    }
+
+    # We'll store the jobname in a local variable. No default is assumed here;
+    # we require the user to provide --jobname or we error out.
+    local _jobname=""
+
+    local TEMP
+    TEMP="$(getopt \
+        -o '' \
+        --long help,jobname: \
+        -n 'get_job_parameter' -- "$@")"
+
+    if [[ $? -ne 0 ]]; then
+        echo "Error: Invalid options to get_job_parameter." >&2
+        return 1
+    fi
+
+    eval set -- "$TEMP"
+
+    while true; do
+        case "$1" in
+            --help)
+                _show_help_get_job_parameter
+                return 0
+                ;;
+            --jobname)
+                _jobname="$2"
+                shift 2
+                ;;
+            --)
+                shift
+                break
+                ;;
+            *)
+                echo "Error: Unexpected option '$1'." >&2
+                return 1
+                ;;
+        esac
+    done
+
+    # After parsing, we expect exactly 1 leftover: <param_name>
+    if [[ $# -ne 1 ]]; then
+        echo "Error: Must supply exactly 1 <param_name> argument." >&2
+        _show_help_get_job_parameter
+        return 1
+    fi
+    local param_name="$1"
+
+    ###########################################################################
+    # Ensure we have a jobname
+    ###########################################################################
+    if [[ -z "$_jobname" ]]; then
+        echo "Error: No jobname provided. Use --jobname <JOBNAME>." >&2
+        _show_help_get_job_parameter
+        return 1
+    fi
+
+    ###########################################################################
+    # Config file location
+    ###########################################################################
+    local cfg_file="$MINSAR_HOME/minsar/defaults/job_defaults.cfg"
+    if [[ ! -f "$cfg_file" ]]; then
+        echo "Error: job_defaults.cfg not found at $cfg_file" >&2
+        return 1
+    fi
+
+    # 1) Read header line
+    local header
+    header="$(grep -v '^#' "$cfg_file" | grep -v '^-*$' | head -1)"
+
+    # 2) Convert header into an array
+    local -a header_array
+    read -ra header_array <<< "$header"
+
+    # 3) Find the zero-based index of param_name
+    local param_index=-1
+    for i in "${!header_array[@]}"; do
+        if [[ "${header_array[$i]}" == "$param_name" ]]; then
+            param_index=$i
+            break
+        fi
+    done
+
+    if [[ $param_index -lt 0 ]]; then
+        echo "Error: Parameter '$param_name' not found in header of $cfg_file." >&2
+        return 1
+    fi
+
+    # 4) Find the line whose first column == _jobname
+    #    (We skip header line with NR>1)
+    local line
+    line="$(
+      awk -v jname="$_jobname" '
+        NR>1 && $1==jname {print $0}
+      ' "$cfg_file"
+    )"
+
+    if [[ -z "$line" ]]; then
+        echo "Error: No matching line found for jobname '$_jobname' in $cfg_file." >&2
+        return 1
+    fi
+
+    # 5) Extract the value from the found line
+    #    Because AWK uses 1-based indexing, we do param_index+1
+    local value
+    value="$(echo "$line" | awk -v col=$((param_index+1)) '{print $col}')"
+
+    # 6) Print the result
+    echo "$value"
+}
+
+#cfalk
 ###########################################
 function get_date_str() {
 # get string with start and end date
