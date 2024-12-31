@@ -126,7 +126,7 @@ if [ "$download_tool" = "ssara" ]; then
   generate_download_command.py $template_file
   mkdir -p SLC
   cd SLC
-  bash ../download_ssara.txt
+  bash ../download_ssara.cmd
   cd ..
 fi
 

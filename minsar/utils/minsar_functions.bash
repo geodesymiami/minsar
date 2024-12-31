@@ -24,7 +24,7 @@ done
 }
 
 ###########################################
-function run_command() {
+function run_command0() {
     local cmd="$1"
     echo "Running.... $cmd"
     echo "$(date +"%Y%m%d:%H-%M") * $cmd" | tee -a log
@@ -36,46 +36,159 @@ function run_command() {
     fi
 }
 
+###########################################
 function run_command2() {
+#############################################################################
+
     local cmd="$1"
 
-    # 1) Extract the *first token* of the command.
-    #    e.g., "dem_rsmas.py" from "dem_rsmas.py mytemplate.template"
+    #  Extract the *first token* of the command, strip off any leading path and extension, replace any non-standard characters with "_"
     local base_cmd
     base_cmd="$(echo "$cmd" | awk '{print $1}')"
-
-    # 2) Strip off any leading path (only if the command includes slashes).
-    #    e.g., from "/usr/bin/dem_rsmas.py" to "dem_rsmas.py"
     base_cmd="$(basename "$base_cmd")"
-
-    # 3) Remove known extensions: .bash, .sh, .py
     base_cmd="${base_cmd%.bash}"
     base_cmd="${base_cmd%.sh}"
     base_cmd="${base_cmd%.py}"
-
-    # 4) Replace any non-alphanumeric or non-standard characters with "_"
     base_cmd="$(echo "$base_cmd" | sed 's/[^A-Za-z0-9._-]/_/g')"
 
-    # 5) Generate the out_*.o and out_*.e filenames
-    local out_file="out_${base_cmd}.o"
-    local err_file="out_${base_cmd}.e"
-
-    # 6) Log the command to the main log file
     local timestamp
     timestamp="$(date +"%Y%m%d:%H-%M")"
     echo "Running.... $cmd"
     echo "${timestamp} * $cmd" | tee -a log
 
-    # 7) Execute the command, capturing stdout and stderr
+    # Execute the command, capturing stdout and stderr
+    local out_file="out_${base_cmd}.o"
+    local err_file="out_${base_cmd}.e"
+
     eval "$cmd" >"$out_file" 2>"$err_file"
     local exit_status="$?"
-
-    # 8) Exit if the command fails
     if [[ $exit_status -ne 0 ]]; then
         echo "$cmd exited with a non-zero exit code ($exit_status). Exiting."
         exit 1
     fi
 }
+
+
+#############################################################################
+# Function to run a command with logging and optional verbosity
+function run_command() {
+    # Local function to display help for run_command2
+    function show_help() {
+        echo "Usage: run_command [OPTIONS] COMMAND"
+        echo
+        echo "Options:"
+        echo "  -h, --help           Show this help message and exit."
+        echo "      --prefix PREFIX  Specify a prefix for output files (default: 'out')."
+        echo "      --verbose        Enable verbose mode (output is displayed on the terminal)."
+        echo
+        echo "COMMAND:"
+        echo "  The command to execute. All arguments after the options will be treated as the command."
+        echo
+        echo "Examples:"
+        echo "  run_command ls -l"
+        echo "  run_command \"ls -l\""
+        echo "  run_command --verbose --prefix out1 \"ls -l\""
+        echo "  run_command --dir /path/to/dir --data-type csv process_data.sh"
+        echo
+        echo "Description:"
+        echo "  This function executes a specified command, captures output and errors into separate files with an optional prefix."
+        echo "  In verbose mode, command output is displayed on the terminal as well as logged."
+    }
+    # Initialize variables
+    local verbose=0        # Flag to determine if verbose mode is enabled
+    local out_prefix="out0" # Default prefix for output files
+    local cmd=""           # Variable to store the command to execute
+
+    # Parse options using getopt for long options and reorder the command-line arguments
+    TEMP=$(getopt -o h --long help,prefix:,verbose -- "$@")
+    if [ $? -ne 0 ]; then
+        echo "Error: Failed to parse options." >&2
+        return 1
+    fi
+    eval set -- "$TEMP"
+
+    # Process parsed options
+    while true; do
+        case "$1" in
+            --prefix)
+                out_prefix="$2"
+                shift 2
+                ;;
+            --verbose)
+                verbose=1
+                shift
+                ;;
+            --dir)
+                processing_dir="$2"
+                shift 2
+                ;;
+            -h|--help)
+                show_help
+                return 0
+                ;;
+            --)
+                shift
+                break
+                ;;
+            *)
+                # This should never happen
+                echo "Error: Unexpected option '$1'." >&2
+                return 1
+                ;;
+        esac
+    done
+
+    # Check if the command is provided
+    if [ $# -lt 1 ]; then
+        echo "Error: Missing command to execute." >&2
+        echo "Use --help for usage information." >&2
+        return 1
+    fi
+
+    # Combine all remaining arguments into the command string
+    cmd="$*"
+
+    # Extract the first token of the command for naming output files
+    local base_cmd
+    base_cmd="$(echo "$cmd" | awk '{print $1}')"
+    base_cmd="$(basename "$base_cmd")"
+    base_cmd="${base_cmd%.bash}"
+    base_cmd="${base_cmd%.sh}"
+    base_cmd="${base_cmd%.py}"
+    base_cmd="$(echo "$base_cmd" | sed 's/[^A-Za-z0-9._-]/_/g')"
+
+    # Generate a timestamp for logging
+    local timestamp
+    timestamp="$(date +"%Y%m%d:%H-%M")"
+
+    # Log the command being run
+    echo "Running.... $cmd"
+    echo "${timestamp} * $cmd" | tee -a log
+
+    # Define output and error file names with the specified prefix
+    local out_file="${out_prefix}_${base_cmd}.o"
+    local err_file="${out_prefix}_${base_cmd}.e"
+
+    # Execute the command with appropriate redirection based on verbosity
+    if [ "$verbose" -eq 1 ]; then
+        # In verbose mode, pipe stdout to both the out_file and the terminal
+        # stderr is still redirected to the err_file
+        eval "$cmd" 2>"$err_file" | tee "$out_file"
+        # Capture the exit status of the command (not tee)
+        local exit_status="${PIPESTATUS[0]}"
+    else
+        # In non-verbose mode, redirect stdout to out_file and stderr to err_file
+        eval "$cmd" >"$out_file" 2>"$err_file"
+        local exit_status="$?"
+    fi
+
+    # Check the exit status of the command
+    if [[ $exit_status -ne 0 ]]; then
+        echo "Error: Command '$cmd' exited with a non-zero status ($exit_status)." >&2
+        exit 1
+    fi
+}
+
 
 ###############################################################################
 function log_command_line() {
