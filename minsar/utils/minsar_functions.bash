@@ -80,6 +80,7 @@ function run_command() {
         echo "  -h, --help           Show this help message and exit."
         echo "      --prefix PREFIX  Specify a prefix for output files (default: 'out')."
         echo "      --verbose        Enable verbose mode (output is displayed on the terminal)."
+        echo "      --slurm          Generate and execute a SLURM jobfile."
         echo
         echo "COMMAND:"
         echo "  The command to execute. All arguments after the options will be treated as the command."
@@ -88,19 +89,19 @@ function run_command() {
         echo "  run_command ls -l"
         echo "  run_command \"ls -l\""
         echo "  run_command --verbose --prefix out1 \"ls -l\""
-        echo "  run_command --dir /path/to/dir --data-type csv process_data.sh"
         echo
         echo "Description:"
-        echo "  This function executes a specified command, captures output and errors into separate files with an optional prefix."
-        echo "  In verbose mode, command output is displayed on the terminal as well as logged."
+        echo "  This function executes a specified command and captures output and errors."
+        echo "  In verbose mode, command output is also isplayed on the terminal."
     }
     # Initialize variables
     local verbose=0        # Flag to determine if verbose mode is enabled
     local out_prefix="out0" # Default prefix for output files
+    local slurm=0        # Flag to determine if verbose mode is enabled
     local cmd=""           # Variable to store the command to execute
 
     # Parse options using getopt for long options and reorder the command-line arguments
-    TEMP=$(getopt -o h --long help,prefix:,verbose -- "$@")
+    TEMP=$(getopt -o h --long help,prefix:,slurm,verbose -- "$@")
     if [ $? -ne 0 ]; then
         echo "Error: Failed to parse options." >&2
         return 1
@@ -121,6 +122,10 @@ function run_command() {
             --dir)
                 processing_dir="$2"
                 shift 2
+                ;;
+            --slurm)
+                slurm=1
+                shift
                 ;;
             -h|--help)
                 show_help
@@ -169,15 +174,28 @@ function run_command() {
     local out_file="${out_prefix}_${base_cmd}.o"
     local err_file="${out_prefix}_${base_cmd}.e"
 
-    # Execute the command with appropriate redirection based on verbosity
-    if [ "$verbose" -eq 1 ]; then
-        # In verbose mode, pipe stdout to both the out_file and the terminal
-        # stderr is still redirected to the err_file
+    if [ "$slurm" -eq 1 ]; then
+        create_slurm_jobfile.sh "$cmd"
+
+        app_cmd_str="$cmd"
+        read -r -a cmd_array <<< "$app_cmd_str"
+        app_cmd="${cmd_array[0]}"
+        base_cmd="$(basename "$app_cmd")"
+        base_cmd="${base_cmd%.py}"
+        base_cmd="${base_cmd%.sh}"
+        base_cmd="${base_cmd%.bash}"
+        job_file="${base_cmd}.job"
+
+        echo "Running....   sbatch $job_file"
+        sleep 100
+        local exit_status="${PIPESTATUS[0]}"
+    elif [ "$verbose" -eq 1 ]; then
+        # In verbose mode, pipe stdout to both the out_file and the terminal, stderr is still redirected to the err_file
         eval "$cmd" 2>"$err_file" | tee "$out_file"
         # Capture the exit status of the command (not tee)
         local exit_status="${PIPESTATUS[0]}"
     else
-        # In non-verbose mode, redirect stdout to out_file and stderr to err_file
+        # In non-verbose mode, redirect stdout tbasho out_file and stderr to err_file
         eval "$cmd" >"$out_file" 2>"$err_file"
         local exit_status="$?"
     fi
@@ -188,7 +206,6 @@ function run_command() {
         exit 1
     fi
 }
-
 
 ###############################################################################
 function log_command_line() {

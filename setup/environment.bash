@@ -113,10 +113,10 @@ export PATH=${PYTHON3DIR}/bin:${PATH}
 export PATH="${MINSAR_HOME}/tools/sarvey/sarvey:$PATH"
 export PATH="${MINSAR_HOME}/tools/sarplotter-main/app:$PATH"
 
+[ "$(uname)" == "Darwin" ] && export PATH="/opt/homebrew/opt/gnu-getopt/bin:$PATH"
+
 [ -n ${MATLAB_HOME} ] && export PATH=${PATH}:${MATLAB_HOME}/bin
 
-#export LD_LIBRARY_PATH=${LD_LIBRARY_PATH-""}
-#export LD_LIBRARY_PATH=${PYTHON3DIR}/lib
 unset LD_LIBRARY_PATH
 export LD_RUN_PATH=${PYTHON3DIR}/lib
 

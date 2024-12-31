@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-###############################################################################
-# show_help(): prints usage
-###############################################################################
 function show_help() {
   cat << EOF
 Usage: ${0##*/} [OPTIONS] "<python_command> [<cmd_args>...]"
@@ -22,16 +19,14 @@ Environment variables (if not overridden by flags):
   JOBSHEDULER_PROJECTNAME   e.g. TG-EAR200012
   QUEUENAME                 e.g. skx
   PLATFORM_NAME             e.g. stampede3, frontera, etc.
-  
+
 Examples:
   ${0##*/} "smallbaselineApp.py /path/to/template --dir mintpy"
   ${0##*/} --queue skx --wall-time 1:50:00 --job-name smallbaseline_wrapper "create_runfiles.py --arg1 val1"
 EOF
 }
 
-###############################################################################
 # Parse command-line options with GNU getopt
-###############################################################################
 TEMP="$(getopt \
   -o '' \
   --long help,queue:,wall-time:,job-name: \
@@ -78,9 +73,7 @@ while true; do
   esac
 done
 
-###############################################################################
 # Now, the remaining args: first is <python_command> as a single string
-###############################################################################
 if [[ $# -lt 1 ]]; then
   echo "Error: Missing <python_command> positional argument."
   show_help
@@ -89,8 +82,7 @@ fi
 
 app_cmd_str="$1"
 
-# Split app_cmd_str into command and args
-# This uses Bash's array splitting to handle the command and its arguments
+# Split app_cmd_str into command and args using  Bash's array splitting to handle the command and its arguments
 read -r -a cmd_array <<< "$app_cmd_str"
 
 app_cmd="${cmd_array[0]}"
@@ -117,20 +109,10 @@ base_cmd="${base_cmd%.py}"
 base_cmd="${base_cmd%.sh}"
 base_cmd="${base_cmd%.bash}"
 
-###############################################################################
-# If user didn't provide --job-name, default to base_cmd
-###############################################################################
 if [[ -z "$job_name" ]]; then
   job_name="$base_cmd"
 fi
 
-###############################################################################
-# If user didn't provide --wall-time, call get_job_parameter to fetch from job_defaults.cfg
-#   Specifically: get_job_parameter --jobname "$job_name" c_walltime
-###############################################################################
-
-# 1) Source your minsar_functions.bash (which must contain get_job_parameter)
-#    IMPORTANT: Adjust the path to minsar_functions.bash as needed
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/utils/minsar_functions.bash"
 
@@ -142,9 +124,7 @@ if [[ -z "$wall_time" ]]; then
   fi
 fi
 
-###############################################################################
 # Construct the SLURM job file
-###############################################################################
 job_file="${job_name}.job"
 
 cat << EOF > "$job_file"
@@ -160,19 +140,10 @@ cat << EOF > "$job_file"
 #SBATCH -p $queue
 #SBATCH -t $wall_time
 
-# Optional
-free
-
 # The actual command to run:
 $app_cmd ${app_args[@]}
 EOF
 
 chmod +x "$job_file"
 
-###############################################################################
-# Final Message
-###############################################################################
 echo "Created SLURM job file: $job_file"
-echo "-------------------------------------------------------"
-cat "$job_file"
-
