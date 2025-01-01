@@ -1,5 +1,8 @@
 #set -eo pipefail
 ###################################################################################
+# Function: create_template_array: reads the template file into template array 
+# Usage: create_template_array <template_file>
+# Example: create_template_array $SAMPLESDIR/unittestGalapagosSenD128.template ;  echo ${template[minsar.insarmaps_flag]}
 function create_template_array() {
 mapfile -t array < <(grep -e ^ssaraopt -e ^minsar -e ^mintpy -e ^miaplpy -e ^topsStack $1)
 declare -gA template
@@ -24,6 +27,9 @@ done
 }
 
 ###########################################
+# Function: run_command0: executes a command and generates stdout and stderr files
+# Usage: run_command0 <command>
+# Example: run_command0 "smallbaselineApp.py $SAMPLESDIR/unittestGalapagosSenD128.template --dir mintpy"
 function run_command0() {
     local cmd="$1"
     echo "Running.... $cmd"
@@ -36,41 +42,11 @@ function run_command0() {
     fi
 }
 
-###########################################
-function run_command2() {
 #############################################################################
-
-    local cmd="$1"
-
-    #  Extract the *first token* of the command, strip off any leading path and extension, replace any non-standard characters with "_"
-    local base_cmd
-    base_cmd="$(echo "$cmd" | awk '{print $1}')"
-    base_cmd="$(basename "$base_cmd")"
-    base_cmd="${base_cmd%.bash}"
-    base_cmd="${base_cmd%.sh}"
-    base_cmd="${base_cmd%.py}"
-    base_cmd="$(echo "$base_cmd" | sed 's/[^A-Za-z0-9._-]/_/g')"
-
-    local timestamp
-    timestamp="$(date +"%Y%m%d:%H-%M")"
-    echo "Running.... $cmd"
-    echo "${timestamp} * $cmd" | tee -a log
-
-    # Execute the command, capturing stdout and stderr
-    local out_file="out_${base_cmd}.o"
-    local err_file="out_${base_cmd}.e"
-
-    eval "$cmd" >"$out_file" 2>"$err_file"
-    local exit_status="$?"
-    if [[ $exit_status -ne 0 ]]; then
-        echo "$cmd exited with a non-zero exit code ($exit_status). Exiting."
-        exit 1
-    fi
-}
-
-
-#############################################################################
-# Function to run a command with logging and optional verbosity
+# Function: run_command: executes a command and generates stdout and stderr files
+# Usage: run_command <command>
+# Example: run_command "smallbaselineApp.py $SAMPLESDIR/unittestGalapagosSenD128.template --dir mintpy"
+# Example: run_command "smallbaselineApp.py $SAMPLESDIR/unittestGalapagosSenD128.template --dir mintpy --slurm"
 function run_command() {
     # Local function to display help for run_command2
     function show_help() {
@@ -208,6 +184,8 @@ function run_command() {
 }
 
 ###############################################################################
+# Function: log_command_line: logs command in log file
+# Usage: log_command_line <command>
 function log_command_line() {
     local log_file="$1"
     shift  # shift off the log file path, leaving only the command args
@@ -244,12 +222,14 @@ function log_command_line() {
     echo "${timestamp} * ${0##*/} ${transformed_args[*]}" | tee -a "$log_file"
 }
 
-###########################################
+###############################################################################
+# Function: get_queue_parameter: gets parameters from defaults/queue.cfg
+# Usage: get_queue_parameter <command>
+# Example: get_queue_parameter --help
+# Example: get_queue_parameter CPUS_PER_NODE
 function get_queue_parameter() {
 
-    ###########################################################################
     # Local function to show usage
-    ###########################################################################
     function _show_help_get_queue_parameter() {
         cat << EOF
 Usage: get_queue_parameter [--help] [--platform-name <PLATFORM>] [--queuename <QUEUE>] <param_name>
@@ -272,15 +252,10 @@ Examples:
 EOF
     }
 
-    ###########################################################################
     # Default platform_name / queue_name from environment
-    ###########################################################################
     local _platform_name="${PLATFORM_NAME:-}"
     local _queuename="${QUEUENAME:-}"
 
-    ###########################################################################
-    # Parse command-line options using GNU getopt
-    ###########################################################################
     local TEMP
     TEMP="$(getopt \
         -o '' \
@@ -319,9 +294,7 @@ EOF
         esac
     done
 
-    ###########################################################################
     # We expect exactly 1 leftover: <param_name>
-    ###########################################################################
     if [[ $# -ne 1 ]]; then
         echo "Error: Must supply exactly 1 <param_name> argument." >&2
         _show_help_get_queue_parameter
@@ -329,9 +302,7 @@ EOF
     fi
     local param_name="$1"
 
-    ###########################################################################
     # Ensure we have platform_name / queue_name
-    ###########################################################################
     if [[ -z "$_platform_name" ]]; then
         echo "Error: No platform name provided, and \$PLATFORM_NAME is empty." >&2
         return 1
@@ -341,9 +312,7 @@ EOF
         return 1
     fi
 
-    ###########################################################################
     # Read from MINSAR_HOME/minsar/defaults/queues.cfg
-    ###########################################################################
     local cfg_file="$MINSAR_HOME/minsar/defaults/queues.cfg"
     if [[ ! -f "$cfg_file" ]]; then
         echo "Error: queues.cfg not found at $cfg_file" >&2
@@ -391,12 +360,18 @@ EOF
     # Print the result
     echo "$value"
 }
-function get_job_parameter() {
+
+###############################################################################
+# Function: get_slurm_job_parameter: gets parameters from defaults/job_defaults.cfg
+# Usage: get_slurm_job_parameter <command>
+# Example: get_slurm_job_parameter --jobname create_runfiles c_walltime
+# Example: get_slurm_job_parameter --help
+function get_slurm_job_parameter() {
 
     # Local function to show usage
-    function _show_help_get_job_parameter() {
+    function show_help() {
         cat << EOF
-Usage: get_job_parameter [--help] [--jobname <JOBNAME>] <param_name>
+Usage: get_slurm_job_parameter [--help] [--jobname <JOBNAME>] <param_name>
 
 Options:
   --help                Show usage information and exit
@@ -413,8 +388,8 @@ Description:
   named <param_name>.
 
 Examples:
-  get_job_parameter --jobname create_runfiles c_walltime
-  get_job_parameter --jobname create_runfiles c_memory
+  get_slurm_job_parameter --jobname create_runfiles c_walltime
+  get_slurm_job_parameter --jobname create_runfiles c_memory
 EOF
     }
 
@@ -426,10 +401,10 @@ EOF
     TEMP="$(getopt \
         -o '' \
         --long help,jobname: \
-        -n 'get_job_parameter' -- "$@")"
+        -n 'get_slurm_job_parameter' -- "$@")"
 
     if [[ $? -ne 0 ]]; then
-        echo "Error: Invalid options to get_job_parameter." >&2
+        echo "Error: Invalid options to get_slurm_job_parameter." >&2
         return 1
     fi
 
@@ -438,7 +413,7 @@ EOF
     while true; do
         case "$1" in
             --help)
-                _show_help_get_job_parameter
+                show_help
                 return 0
                 ;;
             --jobname)
@@ -459,7 +434,7 @@ EOF
     # After parsing, we expect exactly 1 leftover: <param_name>
     if [[ $# -ne 1 ]]; then
         echo "Error: Must supply exactly 1 <param_name> argument." >&2
-        _show_help_get_job_parameter
+        show_help
         return 1
     fi
     local param_name="$1"
@@ -469,14 +444,14 @@ EOF
     ###########################################################################
     if [[ -z "$_jobname" ]]; then
         echo "Error: No jobname provided. Use --jobname <JOBNAME>." >&2
-        _show_help_get_job_parameter
+        show_help
         return 1
     fi
 
     ###########################################################################
     # Config file location
     ###########################################################################
-    local cfg_file="$MINSAR_HOME/minsar/defaults/job_defaults.cfg"
+    local cfg_file="$MNSAR_HOME/minsar/defaults/job_defaults.cfg"
     if [[ ! -f "$cfg_file" ]]; then
         echo "Error: job_defaults.cfg not found at $cfg_file" >&2
         return 1
@@ -527,8 +502,9 @@ EOF
     echo "$value"
 }
 
-#cfalk
 ###########################################
+# Function: get_date_str generate date string
+# Usage: get_date_str     minsarApp-specific function
 function get_date_str() {
 # get string with start and end date
 if  [ ! -z ${template[miaplpy.load.startDate]} ] && [ ! ${template[miaplpy.load.startDate]} == "auto" ]; then
@@ -545,7 +521,9 @@ date_str="${start_date:0:6}_${end_date:0:6}"
 echo $date_str
 }
 
-###########################################
+#####################################################################
+# Function: get_miaplpy_dir_name:  generate miaplpy dir name bases on *.template and processed data
+# Usage: get_miaplpy_dir_name     minsarApp-specific function
 function get_miaplpy_dir_name() {
 # assign miaplpyDir.Addition  lalo,dirname or 'miaplpy' for 'auto'
 date_str=$(get_date_str)
@@ -576,7 +554,9 @@ fi
 unset IFS
 echo $miaplpy_dir_name
 }
-###########################################
+################################################################################
+# Function: get_network_type:  prints the reference date for a processed dataset
+# Usage: get_network_type $SAMPLESDIR/unittestGalapagosSenD128.template  minsarApp-specific functions
 function get_network_type {
 # get single_reference or delaunay_4 ect. from template file
 network_type=${template[miaplpy.interferograms.networkType]}
@@ -603,13 +583,25 @@ echo $network_type
 }
 
 #####################################################################
+# Function: get_reference_date:  prints the reference date for a processed dataset
+# Usage: get_reference_date
 function get_reference_date(){
    reference_date=( $(xmllint --xpath 'string(/productmanager_name/component[@name="instance"]/component[@name="bursts"]/component[@name="burst1"]/property[@name="burststartutc"]/value)' \
                     reference/IW*.xml | cut -d ' ' -f 1 | sed "s|-||g") )
    echo $reference_date
 }
 
+##################################################################
+# Function: test_sleep_several_seconds:  Pauses execution for a specified number of seconds
+# Usage: sleep_several_seconds [seconds]
+function ten_sleep_several_seconds() {
+    local duration="${1:-10}"
+    sleep "$duration"
+}
+
 #####################################################################
+# Function: countbursts: Counts the number of bursts in a dataset.
+# Usage: countbursts <dataset>
 function countbursts(){
                    #set -xv
                    subswaths=geom_reference/*

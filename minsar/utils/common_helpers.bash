@@ -1,5 +1,84 @@
 #####!/usr/bin/env bash
 ###########################################
+summarize_functions() {
+    local script_path="$MINSAR_HOME/minsar/utils/minsar_functions.bash"
+    if [[ ! -f "$script_path" ]]; then
+        echo "Error: File not found at $script_path"
+        return 1
+    fi
+
+    awk '
+    /^# function:/ {
+        # Extract the function name and description
+        match($0, /^# *function: *([^:]+): *(.*)$/, arr)
+        function_name = arr[1]
+        description = arr[2]
+        # Read the next line for usage
+        getline
+        if ($1 == "#") {
+            usage = substr($0, 9)
+            print function_name ": " description
+            print "  Usage: " usage
+            print ""
+        }
+    }
+    ' "$script_path"
+}
+
+summarize_functions() {
+    local script_path="$MINSAR_HOME/minsar/utils/minsar_functions.bash"
+    if [[ ! -f "$script_path" ]]; then
+        echo "Error: File not found at $script_path"
+        return 1
+    fi
+
+    awk '
+    BEGIN { IGNORECASE = 1 }
+    /^# *[Ff]unction:/ {
+        # Split the line into parts based on ":"
+        n = split($0, parts, ":")
+        if (n >= 3) {
+            function_name = parts[2]
+            description = parts[3]
+            # Trim leading and trailing whitespace from function_name and description
+            gsub(/^ +| +$/, "", function_name)
+            gsub(/^ +| +$/, "", description)
+            # Read the next line for usage
+            getline
+            if ($1 == "#") {
+                usage = substr($0, 9)
+                print function_name ": " description
+                print "     Usage: " usage
+            }
+        }
+    }
+    ' "$script_path"
+}
+
+###########################################
+summarize_functions() {
+    local script_path="$MINSAR_HOME/minsar/utils/minsar_functions.bash"
+    if [[ ! -f "$script_path" ]]; then
+        echo "Error: File not found at $script_path"
+        return 1
+    fi
+
+    # Read through the script and extract function summaries
+    while IFS= read -r line; do
+        if [[ $line =~ ^#\ (Function|function):\ ([a-zA-Z0-9_]+):?\ (.*) ]]; then
+            function_name="${BASH_REMATCH[2]}"
+            description="${BASH_REMATCH[3]}"
+            echo -e "${function_name}: ${description}"
+        elif [[ $line =~ ^#\ Usage:\ (.*) ]]; then
+            usage="${BASH_REMATCH[1]}"
+            echo -e "    Usage: ${usage}"
+        elif [[ $line =~ ^#\ Example:\ (.*) ]]; then
+            example="${BASH_REMATCH[1]}"
+            echo -e "           ${example}"
+        fi
+    done < "$script_path"
+}
+###########################################
 function changequeuenormal() { 
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
    echo "  Usage: changequeuenormal run_10*.job"; return

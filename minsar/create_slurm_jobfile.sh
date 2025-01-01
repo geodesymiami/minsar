@@ -117,8 +117,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/utils/minsar_functions.bash"
 
 if [[ -z "$wall_time" ]]; then
-  # use get_job_parameter to fetch c_walltime for the given job_name
-  if ! wall_time="$(get_job_parameter --jobname "$job_name" c_walltime)"; then
+  # use get_slurm_job_parameter to fetch c_walltime for the given job_name
+  if ! wall_time="$(get_slurm_job_parameter --jobname "$job_name" c_walltime)"; then
     echo "Warning: Could not retrieve c_walltime for job_name='$job_name'. Using default 1:00:00 for wall time."
     wall_time="1:00:00"
   fi
