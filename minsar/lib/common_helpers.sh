@@ -1,83 +1,60 @@
-#####!/usr/bin/env bash
+echo "sourcing ${BASH_SOURCE[0]#$MINSAR_HOME/} ..."
 ###########################################
 summarize_functions() {
-    local script_path="$MINSAR_HOME/minsar/utils/minsar_functions.bash"
-    if [[ ! -f "$script_path" ]]; then
-        echo "Error: File not found at $script_path"
-        return 1
-    fi
+    # Define an array of script paths relative to $MINSAR_HOME
+    local script_paths=(
+        "$MINSAR_HOME/minsar/lib/minsarApp_specifics.sh"
+        "$MINSAR_HOME/minsar/lib/utils.sh"
+        "$MINSAR_HOME/minsar/lib/common_helpers.sh"
+    )
 
-    awk '
-    /^# function:/ {
-        # Extract the function name and description
-        match($0, /^# *function: *([^:]+): *(.*)$/, arr)
-        function_name = arr[1]
-        description = arr[2]
-        # Read the next line for usage
-        getline
-        if ($1 == "#") {
-            usage = substr($0, 9)
-            print function_name ": " description
-            print "  Usage: " usage
-            print ""
-        }
-    }
-    ' "$script_path"
-}
-
-summarize_functions() {
-    local script_path="$MINSAR_HOME/minsar/utils/minsar_functions.bash"
-    if [[ ! -f "$script_path" ]]; then
-        echo "Error: File not found at $script_path"
-        return 1
-    fi
-
-    awk '
-    BEGIN { IGNORECASE = 1 }
-    /^# *[Ff]unction:/ {
-        # Split the line into parts based on ":"
-        n = split($0, parts, ":")
-        if (n >= 3) {
-            function_name = parts[2]
-            description = parts[3]
-            # Trim leading and trailing whitespace from function_name and description
-            gsub(/^ +| +$/, "", function_name)
-            gsub(/^ +| +$/, "", description)
-            # Read the next line for usage
-            getline
-            if ($1 == "#") {
-                usage = substr($0, 9)
-                print function_name ": " description
-                print "     Usage: " usage
-            }
-        }
-    }
-    ' "$script_path"
-}
-
-###########################################
-summarize_functions() {
-    local script_path="$MINSAR_HOME/minsar/utils/minsar_functions.bash"
-    if [[ ! -f "$script_path" ]]; then
-        echo "Error: File not found at $script_path"
-        return 1
-    fi
-
-    # Read through the script and extract function summaries
-    while IFS= read -r line; do
-        if [[ $line =~ ^#\ (Function|function):\ ([a-zA-Z0-9_]+):?\ (.*) ]]; then
-            function_name="${BASH_REMATCH[2]}"
-            description="${BASH_REMATCH[3]}"
-            echo -e "${function_name}: ${description}"
-        elif [[ $line =~ ^#\ Usage:\ (.*) ]]; then
-            usage="${BASH_REMATCH[1]}"
-            echo -e "    Usage: ${usage}"
-        elif [[ $line =~ ^#\ Example:\ (.*) ]]; then
-            example="${BASH_REMATCH[1]}"
-            echo -e "           ${example}"
+    # Iterate over each script path
+    for script_path in "${script_paths[@]}"; do
+        # Check if the script file exists
+        if [[ ! -f "$script_path" ]]; then
+            echo "Error: File not found at $script_path"
+            continue
         fi
-    done < "$script_path"
+
+        # Print the script name as a header
+        echo "----------------------------------------"
+        echo "Processing file: $script_path"
+        echo "----------------------------------------"
+
+        # Use awk to extract function summaries
+awk '
+/^# *(Function|function):/ {
+    match($0, /^# *[Ff]unction: *([^:]+): *(.*)$/, arr)
+    function_name = arr[1]
+    description = arr[2]
+    usage = ""
+    examples = ""
+    while ((getline) > 0) {
+        if ($0 ~ /^# *Usage:/) {
+            usage = substr($0, index($0, ":") + 2)
+        } else if ($0 ~ /^# *Example:/) {
+            if (examples != "") {
+                examples = examples "\n"
+            }
+            examples = examples "    Example: " substr($0, index($0, ":") + 2)
+        } else if ($0 !~ /^#/) {
+            break
+        }
+    }
+    print function_name ": " description
+    if (usage != "") {
+        print "    Usage: " usage
+    }
+    if (examples != "") {
+        print examples
+    }
+    print ""
 }
+' "$script_path"
+
+    done
+}
+
 ###########################################
 function changequeuenormal() { 
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then

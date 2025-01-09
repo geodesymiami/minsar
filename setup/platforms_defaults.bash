@@ -1,6 +1,5 @@
 ###############################################
-SCRIPT_DIR=$(dirname "${BASH_SOURCE[0]}")
-echo "sourcing ${SCRIPT_DIR}/platforms_defaults.bash ..."
+echo "sourcing ${BASH_SOURCE[0]#$MINSAR_HOME/} ..."
 
 [ -z ${USER_PREFERRED} ] && export USER_PREFERRED=$USER
 [ -z $HOSTNAME ] && export HOSTNAME=`hostname`

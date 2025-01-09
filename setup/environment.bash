@@ -1,5 +1,4 @@
-#!/usr/bin/env bash
-echo "sourcing ${MINSAR_HOME}/setup/environment.bash ..."
+echo "sourcing ${BASH_SOURCE[0]#$MINSAR_HOME/} ..."
 #####################################
 # Setting the environment (don't modify)
 # check for required variables
@@ -95,6 +94,7 @@ export PATH=${PATH}:${SSARAHOME}
 export PATH=${PATH}:${MINSAR_HOME}/minsar/cli
 export PATH=${PATH}:${MINSAR_HOME}/minsar
 export PATH=${PATH}:${MINSAR_HOME}/minsar/utils
+export PATH=${PATH}:${MINSAR_HOME}/minsar/bin
 export PATH=${PATH}:${MINTPY_HOME}/src/mintpy/cli
 export PATH=${PATH}:${PLOTDATA_HOME}/src/plotdata/cli
 export PATH=${PATH}:${MIAPLPY_HOME}/src/miaplpy
@@ -121,8 +121,9 @@ unset LD_LIBRARY_PATH
 export LD_RUN_PATH=${PYTHON3DIR}/lib
 
 ########## bash functions #########
-source $MINSAR_HOME/minsar/utils/minsar_functions.bash
-source $MINSAR_HOME/minsar/utils/common_helpers.bash
+source $MINSAR_HOME/minsar/lib/minsarApp_specifics.sh
+source $MINSAR_HOME/minsar/lib/utils.sh
+source $MINSAR_HOME/minsar/lib/common_helpers.sh
 
 if [ -n "${prompt}" ]
 then

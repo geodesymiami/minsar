@@ -1,54 +1,10 @@
-#set -eo pipefail
-###################################################################################
-# Function: create_template_array: reads the template file into template array 
-# Usage: create_template_array <template_file>
-# Example: create_template_array $SAMPLESDIR/unittestGalapagosSenD128.template ;  echo ${template[minsar.insarmaps_flag]}
-function create_template_array() {
-mapfile -t array < <(grep -e ^ssaraopt -e ^minsar -e ^mintpy -e ^miaplpy -e ^topsStack $1)
-declare -gA template
-for item in "${array[@]}"; do
-  #echo "item: <$item>"
-  IFS='=' ; read -a arr1 <<< "$item"
-  item="${arr1[1]}"
-  IFS='#' ; read -a arr2 <<< "$item"
-  key="${arr1[0]}"
-  key=$(echo $key | tr -d ' ')
-  value="${arr2[0]}"
-  shopt -s extglob
-  value="${value##*( )}"          # Trim leading whitespaces
-  value="${value%%*( )}"          # Trim trailing whitespaces
-  shopt -u extglob
-  #echo "key, value: <$key> <$value>"
-  if [ ! -z "$key"  ]; then
-     template[$key]="$value"
-  fi
-unset IFS
-done
-}
-
-###########################################
-# Function: run_command0: executes a command and generates stdout and stderr files
-# Usage: run_command0 <command>
-# Example: run_command0 "smallbaselineApp.py $SAMPLESDIR/unittestGalapagosSenD128.template --dir mintpy"
-function run_command0() {
-    local cmd="$1"
-    echo "Running.... $cmd"
-    echo "$(date +"%Y%m%d:%H-%M") * $cmd" | tee -a log
-    eval "$cmd"
-    local exit_status="$?"
-    if [[ $exit_status -ne 0 ]]; then
-        echo "$cmd exited with a non-zero exit code ($exit_status). Exiting."
-        exit 1;
-    fi
-}
-
+echo "sourcing ${BASH_SOURCE[0]#$MINSAR_HOME/} ..."
 #############################################################################
 # Function: run_command: executes a command and generates stdout and stderr files
 # Usage: run_command <command>
 # Example: run_command "smallbaselineApp.py $SAMPLESDIR/unittestGalapagosSenD128.template --dir mintpy"
 # Example: run_command "smallbaselineApp.py $SAMPLESDIR/unittestGalapagosSenD128.template --dir mintpy --slurm"
 function run_command() {
-    # Local function to display help for run_command2
     function show_help() {
         echo "Usage: run_command [OPTIONS] COMMAND"
         echo
@@ -138,13 +94,14 @@ function run_command() {
     base_cmd="${base_cmd%.py}"
     base_cmd="$(echo "$base_cmd" | sed 's/[^A-Za-z0-9._-]/_/g')"
 
-    # Generate a timestamp for logging
-    local timestamp
-    timestamp="$(date +"%Y%m%d:%H-%M")"
+    log_command_line "$cmd"
+    ## Generate a timestamp for logging
+    #local timestamp
+    #timestamp="$(date +"%Y%m%d:%H-%M")"
 
-    # Log the command being run
-    echo "Running.... $cmd"
-    echo "${timestamp} * $cmd" | tee -a log
+    ## Log the command being run
+    #echo "Running.... $cmd"
+    #echo "${timestamp} * $cmd" | tee -a log
 
     # Define output and error file names with the specified prefix
     local out_file="${out_prefix}_${base_cmd}.o"
@@ -187,11 +144,19 @@ function run_command() {
 # Function: log_command_line: logs command in log file
 # Usage: log_command_line <command>
 function log_command_line() {
+    set -x
     local log_file="$1"
     shift  # shift off the log file path, leaving only the command args
 
     local timestamp
+    #timestamp="$(date '+%Y%m%d:%H-%M')"
+    #timestamp="$(date '+%Y%m%d:%H-%M')"
     timestamp="$(date +"%Y%m%d:%H-%M")"
+    #echo QQ "$(date +"%Y%m%d:%H-%M") 
+    #echo QQQ $timestamp
+    # echo "$(date +"%Y%m%d:%H-%M") * minsarApp.bash $template_print_name ${@:2}" | tee -a "${WORK_DIR}"/log
+
+
 
     local transformed_args=()
     for arg in "$@"; do
@@ -202,24 +167,21 @@ function log_command_line() {
             arg_dir="$(dirname "$arg")"
             arg_basename="$(basename "$arg")"
 
+            # Replace directory with $TE or $SAMPLESDIR
             if [[ "$arg_dir" == "$TEMPLATES" ]]; then
-                # Replace directory with $TE
                 transformed_args+=( "\$TE/$arg_basename" )
             elif [[ "$arg_dir" == "$SAMPLESDIR" ]]; then
-                # Replace directory with $SAMPLESDIR
                 transformed_args+=( "\$SAMPLESDIR/$arg_basename" )
             else
-                # Directory doesn't match TEMPLATES or SAMPLESDIR
                 transformed_args+=( "$arg" )
             fi
         else
-            # Not a .template file, just keep it as-is
             transformed_args+=( "$arg" )
         fi
     done
 
-    # Print out timestamp, script name, and transformed arguments
     echo "${timestamp} * ${0##*/} ${transformed_args[*]}" | tee -a "$log_file"
+    set +x
 }
 
 ###############################################################################
@@ -393,8 +355,6 @@ Examples:
 EOF
     }
 
-    # We'll store the jobname in a local variable. No default is assumed here;
-    # we require the user to provide --jobname or we error out.
     local _jobname=""
 
     local TEMP
@@ -451,7 +411,7 @@ EOF
     ###########################################################################
     # Config file location
     ###########################################################################
-    local cfg_file="$MNSAR_HOME/minsar/defaults/job_defaults.cfg"
+    local cfg_file="$MINSAR_HOME/minsar/defaults/job_defaults.cfg"
     if [[ ! -f "$cfg_file" ]]; then
         echo "Error: job_defaults.cfg not found at $cfg_file" >&2
         return 1
@@ -502,86 +462,6 @@ EOF
     echo "$value"
 }
 
-###########################################
-# Function: get_date_str generate date string
-# Usage: get_date_str     minsarApp-specific function
-function get_date_str() {
-# get string with start and end date
-if  [ ! -z ${template[miaplpy.load.startDate]} ] && [ ! ${template[miaplpy.load.startDate]} == "auto" ]; then
-    start_date=${template[miaplpy.load.startDate]}
-else
-    start_date=$(ls merged/SLC | head -1)
-fi
-if  [ ! -z ${template[miaplpy.load.endDate]} ] && [ ! ${template[miaplpy.load.endDate]} == "auto" ]; then
-    end_date=${template[miaplpy.load.endDate]}
-else
-    end_date=$(ls merged/SLC | tail -1)
-fi
-date_str="${start_date:0:6}_${end_date:0:6}"
-echo $date_str
-}
-
-#####################################################################
-# Function: get_miaplpy_dir_name:  generate miaplpy dir name bases on *.template and processed data
-# Usage: get_miaplpy_dir_name     minsarApp-specific function
-function get_miaplpy_dir_name() {
-# assign miaplpyDir.Addition  lalo,dirname or 'miaplpy' for 'auto'
-date_str=$(get_date_str)
-if [ -z ${template[minsar.miaplpyDir.addition]} ] || [ ${template[minsar.miaplpyDir.addition]} == "auto" ]; then
-   miaplpy_dir_name="miaplpy"
-elif [ ${template[minsar.miaplpyDir.addition]} == "date" ]; then
-   miaplpy_dir_name=miaplpy_${date_str}
-elif [ ${template[minsar.miaplpyDir.addition]} == "lalo" ]; then
-   if  [ ! -z ${template[miaplpy.subset.lalo]} ]; then
-       subset_lalo="${template[miaplpy.subset.lalo]}"
-   elif [ ! -z ${template[mintpy.subset.lalo]} ]; then
-       subset_lalo="${template[mintpy.subset.lalo]}"
-   else
-       echo "ERROR: No subset.lalo given -- Exiting"
-   fi
-   IFS=',' ; read -a lalo_array <<< "$subset_lalo"
-   IFS=':' ; read -a lat_array <<< "${lalo_array[0]}"
-   IFS=':' ; read -a lon_array <<< "${lalo_array[1]}"
-   lat_min=${lat_array[0]}
-   lat_max=${lat_array[1]}
-   lon_min=${lon_array[0]}
-   lon_max=${lon_array[1]}
-   lalo_str=$(printf "%.2f_%.2f_%.2f_%.2f\n" "$lat_min" "$lat_max" "$lon_min" "$lon_max")
-   miaplpy_dir_name="miaplpy_${lalo_str}_$date_str"
-else
-   miaplpy_dir_name=miaplpy_"${template[minsar.miaplpyDir.addition]}"_${date_str}
-fi
-unset IFS
-echo $miaplpy_dir_name
-}
-################################################################################
-# Function: get_network_type:  prints the reference date for a processed dataset
-# Usage: get_network_type $SAMPLESDIR/unittestGalapagosSenD128.template  minsarApp-specific functions
-function get_network_type {
-# get single_reference or delaunay_4 ect. from template file
-network_type=${template[miaplpy.interferograms.networkType]}
-if [[ $network_type == "auto" ]] || [[ -z "$network_type" ]];   then
-      network_type=single_reference                  # default of MiaplPy
-fi
-if [[ $network_type == "sequential" ]];  then
-   if [[ ! -z $(grep "^miaplpy.interferograms.connNum" $template_file) ]];  then
-      connection_number=$(grep -E "^miaplpy.interferograms.connNum" $template_file | awk -F= '{print $2}' |  awk -F# '{print $1}' | xargs  )
-   else
-      connection_number=3                            # default of MiaplPy
-   fi
-   network_type=${network_type}_${connection_number}
-fi
-if [[ $network_type == "delaunay" ]];  then
-   if [ ! -z $(grep "^miaplpy.interferograms.delaunayBaselineRatio" $template_file) ] &&  [ ! ${template[miaplpy.interferograms.delaunayBaselineRatio]} == "auto" ]; then
-      delaunay_baseline_ratio=$(grep -E "^miaplpy.interferograms.delaunayBaselineRatio" $template_file | awk -F= '{print $2}' |  awk -F# '{print $1}' | xargs  )
-   else
-      delaunay_baseline_ratio=4                            # default of MiaplPy
-   fi
-   network_type=${network_type}_${delaunay_baseline_ratio}
-fi
-echo $network_type
-}
-
 #####################################################################
 # Function: get_reference_date:  prints the reference date for a processed dataset
 # Usage: get_reference_date
@@ -589,14 +469,6 @@ function get_reference_date(){
    reference_date=( $(xmllint --xpath 'string(/productmanager_name/component[@name="instance"]/component[@name="bursts"]/component[@name="burst1"]/property[@name="burststartutc"]/value)' \
                     reference/IW*.xml | cut -d ' ' -f 1 | sed "s|-||g") )
    echo $reference_date
-}
-
-##################################################################
-# Function: test_sleep_several_seconds:  Pauses execution for a specified number of seconds
-# Usage: sleep_several_seconds [seconds]
-function ten_sleep_several_seconds() {
-    local duration="${1:-10}"
-    sleep "$duration"
 }
 
 #####################################################################
@@ -626,5 +498,3 @@ function countbursts(){
                        echo "$date #of_bursts: `ls $date/IW*/burst*xml | wc -l`   ${array[@]}"
                    done;
                    }
-###########################################
-

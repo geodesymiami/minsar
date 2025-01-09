@@ -2,7 +2,10 @@
 set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/utils/minsar_functions.bash"
+echo "sourcing ${SCRIPT_DIR}/../lib/minsarApp_specifics.sh ..."
+echo "sourcing ${SCRIPT_DIR}/../lib/utils.sh ..."
+source ${SCRIPT_DIR}/../lib/minsarApp_specifics.sh
+source ${SCRIPT_DIR}/../lib/utils.sh
 
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
 helptext="                                                                       \n\
