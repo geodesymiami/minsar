@@ -1,13 +1,12 @@
 # Installation guide
 
-* Set `$MINSAR_HOME` in your [.bashrc](https://github.com/falkamelung/minsar/blob/master/docs/bashrc_contents.md) 
-and [.bash_profile](./bash_profile.md).  You may want to set your variables in an external file as we do in Miami (see [example](https://gist.github.com/falkamelung/f1281c38e301a3296ab0483f946cac4b)).
+* Set `$MINSAR_HOME` in your [.bashrc](https://github.com/falkamelung/rsmas_insar/blob/master/docs/bashrc_contents.md). You also need a [.bash_profile](./bash_profile.md) to ensure your .bashrc is read.
 
-* Create an ~/accounts directory with your data download credentials (for contents see [here](./accounts_info.md)). If you have access to the RSMAS accounts repo clone it into your /home or `$WORK2` directory 
+* Create an ~/accounts directory with your data download credentials (for contents see [here](./accounts_info.md)). If you have access to the RSMAS accounts repo clone it into your /home or `$WORK2` directory
 
 
-## How to install RSMAS InSAR code 
-Create an ~/accounts directory with your data download credentials (for contents see [here](./accounts_info.md)).  If you have access to the RSMAS accounts repo clone it into your /home or `$WORK2` directory  using **SSH** protocol (you need to copy the public key from your machine to github). 
+## How to install Miami InSAR code
+Create an ~/accounts directory with your data download credentials (for contents see [here](./accounts_info.md)).  If you have access to the U of Miami accounts repo clone it into your /home or `$WORK2` directory  using **SSH** protocol (you need to copy the public key from your machine to github).
 
 ```
 git clone git@github.com:geodesymiami/accounts.git ~/accounts ;
@@ -18,25 +17,32 @@ git clone git@github.com:geodesymiami/accounts.git ~/accounts ;
 ```
 cd $WORK2/code
 ```
-* Clone the repo and install the code (including miniconda3 python):
+* Create a bash virgin environmen, clone the repo and install the code (including miniforge3 python). Work as user circleci. On stampede3 on the development queue (`idevdev`):
 ```
-command -v module &> /dev/null && module purge
-git clone git@github.com:geodesymiami/minsar.git ;
-cd minsar
+env -i HOME=$HOME PATH=/usr/bin:/bin:/sbin SHELL=/bin/bash USER=circleci bash --noprofile --norc
+set -euo pipefail
+export USER=circleci
+git clone git@github.com:geodesymiami/rsmas_insar.git ;
+cd rsmas_insar
 bash -x setup/install_python.bash
 bash -x setup/install_code.bash
+bash -x setup/install_sarvey.bash
+bash -x setup/install_vsm.bash
 bash -x setup/install_credential_files.bash
 ```
-The `install_python.bash` command is [here](https://github.com/geodesymiami/minsar/blob/master/setup/install_python.bash) and  `install_code.bash`  is  [here](https://github.com/geodesymiami/minsar/blob/master/setup/install_code.bash) and  `install_credential_files.bash`  is  [here](https://github.com/geodesymiami/minsar/blob/master/setup/install_credential_files.bash).
+The `install_python.bash` command is [here](https://github.com/geodesymiami/rsmas_insar/blob/master/setup/install_python.bash) and `install_code.bash`  is  [here](https://github.com/geodesymiami/rsmas_insar/blob/master/setup/install_code.bash) and `install_sarvey_VSM.bash`  is
+[here](https://github.com/geodesymiami/rsmas_insar/blob/master/setup/install_sarvey_VSM.bash) and  `install_credential_files.bash`  is  [here](https://github.com/geodesymiami/rsmas_insar/blob/master/setup/install_credential_files.bash).
 
 ---
 ### Test your installation
 ```
-cd $SCRRATCHDIR
+cd $SCRATCHDIR
 wget http://149.165.154.65/data/circleci/ci_small_unittestGalapagosSenDT128.tar
 tar xvf ci_small_unittestGalapagosSenDT128.tar
 minsarApp.bash $SAMPLESDIR/circleci/ci_unittestGalapagosSenDT128.template --start dem
 ```
+### How not to loose your working installation
+You can't be sure the new installation works until you have tested it. It is recommended to keep a copy of the working installation, for example, instead of removing `rsmas_insar`  do `mv rsmas_insar good_rsmas_insar`. I have  old versions in `code_old`, `code_veryold` directories  which  can be used in the case of unexpected problems.
 
 ### #Orbits and aux files
 This has created directories for the orbits for Sentinel-1 (`$SENTINEL_ORBITS`), which The can be downloaded using `dloadOrbits.py`. The IPF calibration files (`SENTINEL_AUX`) are downloaded from: https://qc.sentinel1.eo.esa.int/aux_cal/ .
@@ -66,7 +72,7 @@ total 17528848
 drwxrws-w-+ 2 famelung insarlab       4096 Jan 17 16:58 test
 //login4/nethome/dwg11/insarlab/TESTDATA_ISCE[59]
 ```
-* For possible problems, check [here](https://github.com/geodesymiami/minsar/blob/master/setup/installation_issues.md).
+* For possible problems, check [here](https://github.com/geodesymiami/rsmas_insar/blob/master/setup/installation_issues.md).
 
 
 ### *. [Set-up in Miami](./set_up_miami.md) ###
