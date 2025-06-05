@@ -1,4 +1,5 @@
-echo "sourcing ${BASH_SOURCE[0]#$MINSAR_HOME/} ..."
+#!/usr/bin/env bash
+echo "sourcing ${MINSAR_HOME}/setup/environment.bash ..."
 #####################################
 # Setting the environment (don't modify)
 # check for required variables
@@ -31,14 +32,13 @@ export ISCE_STACK=${MINSAR_HOME}/tools/miniforge3/share/isce2
 export MINTPY_HOME=${MINSAR_HOME}/tools/MintPy
 export MIAPLPY_HOME=${MINSAR_HOME}/tools/MiaplPy
 export MIMTPY_HOME=${MINSAR_HOME}/tools/MimtPy
-export PLOTDATA_HOME=${MINSAR_HOME}/tools/plotdata
+export PLOTDATA_HOME=${MINSAR_HOME}/tools/PlotData
 export PRECIP_HOME=${MINSAR_HOME}/tools/Precip
 export PRECIP_CRON_HOME=${MINSAR_HOME}/tools/Precip_cron
 export SARVEY_HOME=${MINSAR_HOME}/tools/sarvey
-export SARDEM_HOME=${MINSAR_HOME}/tools/sardem
+export VSM_HOME=${MINSAR_HOME}/tools/VSM
 export GBIS_HOME=${MINSAR_HOME}/tools/GBIS
 export JOBDIR=${WORKDIR}/JOBS
-
 ############ FOR MODELLING  ###########
 export MODELDATA=${WORKDIR}/MODELDATA
 export GEODMOD_INFILES=${WORKDIR}/infiles/${USER_PREFERRED}/GEODMOD_INFILES
@@ -81,9 +81,9 @@ export PYTHONPATH=${PYTHONPATH}:${PLOTDATA_HOME}/src
 export PYTHONPATH=${PYTHONPATH}:${PRECIP_HOME}/src
 export PYTHONPATH=${PYTHONPATH}:${SARVEY_HOME}
 export PYTHONPATH=${PYTHONPATH}:${SARVEY_HOME}/sarvey
-export PYTHONPATH=${PYTHONPATH}:${SARDEM_HOME}
+export PYTHONPATH=${PYTHONPATH}:${VSM_HOME}/VSM
+export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools/sarplotter-main
 #export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools      # needed for mimt. Need to talk to Sara on how to do this smarter
-
 ######### Ignore warnings ############
 export PYTHONWARNINGS="ignore"
 
@@ -93,11 +93,11 @@ export PYTHONWARNINGS="ignore"
 export PATH=${PATH}:${SSARAHOME}
 export PATH=${PATH}:${MINSAR_HOME}/minsar/cli
 export PATH=${PATH}:${MINSAR_HOME}/minsar
+export PATH=${PATH}:${MINSAR_HOME}/minsar/insarmaps_utils
 export PATH=${PATH}:${MINSAR_HOME}/minsar/utils
-export PATH=${PATH}:${MINSAR_HOME}/minsar/bin
-export PATH=${PATH}:${MINTPY_HOME}/src/mintpy/cli
-export PATH=${PATH}:${PLOTDATA_HOME}/src/plotdata/cli
+export PATH=${PATH}:${MINTPY_HOME}/src/mintpy/legacy         # for add_attribute.py
 export PATH=${PATH}:${MIAPLPY_HOME}/src/miaplpy
+export PATH=${PATH}:${PLOTDATA_HOME}/src/plotdata/cli
 export PATH=${PATH}:${PRECIP_HOME}/src/precip/cli
 export PATH=${PATH}:${PRECIP_CRON_HOME}
 export PATH=${PATH}:${MIMTPY_HOME}/mimtpy
@@ -106,24 +106,22 @@ export PATH=${PATH}:${MINSAR_HOME}/tools/snaphu-v2.0.5/bin
 export PATH=${PATH}:${MINSAR_HOME}/tools/insarmaps_scripts
 export PATH=${PATH}:${MINSAR_HOME}/tools/autoencoder
 export PATH=${PATH}:${PROJ_LIB}
-export PATH=${PATH}:${DASK_CONFIG}
 export PATH=${PATH}:${MINSAR_HOME}/tools/S4I/viewer4falk
 export PATH=${ISCE_HOME}/applications:${ISCE_HOME}/bin:${ISCE_STACK}:${PATH}
 export PATH=${PYTHON3DIR}/bin:${PATH}
 export PATH="${MINSAR_HOME}/tools/sarvey/sarvey:$PATH"
 export PATH="${MINSAR_HOME}/tools/sarplotter-main/app:$PATH"
 
-[ "$(uname)" == "Darwin" ] && export PATH="/opt/homebrew/opt/gnu-getopt/bin:$PATH"
-
 [ -n ${MATLAB_HOME} ] && export PATH=${PATH}:${MATLAB_HOME}/bin
 
+#export LD_LIBRARY_PATH=${LD_LIBRARY_PATH-""}
+#export LD_LIBRARY_PATH=${PYTHON3DIR}/lib
 unset LD_LIBRARY_PATH
 export LD_RUN_PATH=${PYTHON3DIR}/lib
 
 ########## bash functions #########
-source $MINSAR_HOME/minsar/lib/minsarApp_specifics.sh
-source $MINSAR_HOME/minsar/lib/utils.sh
-source $MINSAR_HOME/minsar/lib/common_helpers.sh
+source $MINSAR_HOME/minsar/utils/minsar_functions.bash
+source $MINSAR_HOME/minsar/utils/common_helpers.bash
 
 if [ -n "${prompt}" ]
 then
