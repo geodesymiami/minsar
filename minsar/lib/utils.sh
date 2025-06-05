@@ -4,7 +4,7 @@ echo "sourcing ${BASH_SOURCE[0]#$MINSAR_HOME/} ..."
 # Usage: run_command <command>
 # Example: run_command "smallbaselineApp.py $SAMPLESDIR/unittestGalapagosSenD128.template --dir mintpy"
 # Example: run_command "smallbaselineApp.py $SAMPLESDIR/unittestGalapagosSenD128.template --dir mintpy --slurm"
-function run_command() {
+function qrun_command() {
     function show_help() {
         echo "Usage: run_command [OPTIONS] COMMAND"
         echo
@@ -144,7 +144,7 @@ function run_command() {
 # Function: log_command_line: logs command in log file
 # Usage: log_command_line <command>
 function log_command_line() {
-    set -x
+    #set -x
     local log_file="$1"
     shift  # shift off the log file path, leaving only the command args
 
@@ -152,7 +152,7 @@ function log_command_line() {
     #timestamp="$(date '+%Y%m%d:%H-%M')"
     #timestamp="$(date '+%Y%m%d:%H-%M')"
     timestamp="$(date +"%Y%m%d:%H-%M")"
-    #echo QQ "$(date +"%Y%m%d:%H-%M") 
+    #echo QQ "$(date +"%Y%m%d:%H-%M")
     #echo QQQ $timestamp
     # echo "$(date +"%Y%m%d:%H-%M") * minsarApp.bash $template_print_name ${@:2}" | tee -a "${WORK_DIR}"/log
 
@@ -181,7 +181,6 @@ function log_command_line() {
     done
 
     echo "${timestamp} * ${0##*/} ${transformed_args[*]}" | tee -a "$log_file"
-    set +x
 }
 
 ###############################################################################
