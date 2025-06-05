@@ -120,8 +120,8 @@ unset LD_LIBRARY_PATH
 export LD_RUN_PATH=${PYTHON3DIR}/lib
 
 ########## bash functions #########
-source $MINSAR_HOME/minsar/utils/minsar_functions.bash
-source $MINSAR_HOME/minsar/utils/common_helpers.bash
+source $MINSAR_HOME/minsar/lib/minsarApp_specifics.sh
+source $MINSAR_HOME/minsar/lib/common_helpers.sh
 
 if [ -n "${prompt}" ]
 then
