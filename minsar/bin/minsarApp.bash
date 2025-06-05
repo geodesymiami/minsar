@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo "sourcing ${SCRIPT_DIR}/../lib/minsarApp_specifics.sh ..."
 echo "sourcing ${SCRIPT_DIR}/../lib/utils.sh ..."
 source ${SCRIPT_DIR}/../lib/minsarApp_specifics.sh
@@ -559,7 +560,9 @@ if [[ $jobfiles_flag == "1" ]]; then
 
     # clean directory for processing and create jobfiles
     pwd=`pwd`; echo "DIR: $pwd"
+    echo "QQQ1"
     run_command "clean_dir.bash $PWD --runfiles --ifgram --mintpy --miaplpy"
+    echo "QQQ2"
 
     if [[ $template_file == *"Tsx"*  ]] || [[ $template_file == *"Csk"*  ]]; then
        BUFFOPT="PYTHONUNBUFFERED=1"
