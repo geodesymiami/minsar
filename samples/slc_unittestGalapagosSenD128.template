@@ -22,7 +22,7 @@ topsStack.rangeLooks            = 15   # comment
 topsStack.filtStrength          = 0.2  # comment
 topsStack.unwMethod             = snaphu  # comment
 topsStack.coregistration        = geometry  # [NESD geometry], auto for NESD
-topsStack.slcDir                = $TESTDATA_ISCE/unittestGalapagosSenDT128/SLC
+#topsStack.slcDir                = $TESTDATA_ISCE/unittestGalapagosSenDT128/SLC
 
 ######################################################
 
