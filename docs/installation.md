@@ -22,8 +22,8 @@ cd $WORK2/code
 env -i HOME=$HOME PATH=/usr/bin:/bin:/sbin SHELL=/bin/bash USER=circleci bash --noprofile --norc
 set -euo pipefail
 export USER=circleci
-git clone git@github.com:geodesymiami/rsmas_insar.git ;
-cd rsmas_insar
+git clone git@github.com:geodesymiami/minsar.git ;
+cd minsar
 bash -x setup/install_python.bash
 bash -x setup/install_code.bash
 bash -x setup/install_sarvey.bash
