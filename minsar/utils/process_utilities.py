@@ -79,10 +79,6 @@ def add_common_parser(parser):
 def add_create_runfiles(parser):
     run_parser = parser.add_argument_group('create run files and jobs options:')
     run_parser.add_argument("--queue", dest="queue", metavar="QUEUE", help="Name of queue to submit job to")
-    run_parser.add_argument('--tmp', dest='copy_to_tmp', action='store_true', default=True,
-                            help='writes job files to run on /tmp rather than /scratch [default].')
-    run_parser.add_argument('--no-tmp', dest='copy_to_tmp', action='store_false',
-                            help="writes job files to run on /scratch rather than /tmp.")
     run_parser.add_argument('--jobfiles', dest='write_jobs', action='store_true',
                              help='writes the jobs corresponding to run files')
     run_parser.add_argument('--remora', dest='remora', action='store_true',
@@ -474,7 +470,7 @@ def get_config_defaults(config_file='job_defaults.cfg'):
 
     if os.path.basename(config_file) in ['job_defaults.cfg']:
 
-        fields = ['c_walltime', 's_walltime', 'seconds_factor', 'c_memory', 's_memory', 'num_threads','copy_to_tmp','io_load']
+        fields = ['c_walltime', 's_walltime', 'seconds_factor', 'c_memory', 's_memory', 'num_threads','io_load']
         with open(config_file, 'r') as f:
             lines = f.readlines()
 

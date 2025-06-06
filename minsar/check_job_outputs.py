@@ -17,7 +17,7 @@ def cmd_line_parser(iargs=None):
 
     parser = argparse.ArgumentParser(description='Check job outputs')
     parser.add_argument('job_files', nargs='+', type=str, help='batch job name:\n')
-    parser.add_argument('--tmp', dest='copy_to_tmp', action='store_true', default=True,
+    parser.add_argument('--tmp', dest='copy_to_tmp', action='store_true', default=False,
                             help='modifies jobfiles in run_files_tmp')
     parser.add_argument('--no-tmp', dest='copy_to_tmp', action='store_false',
                             help="modifies jobfiles in run_files")
@@ -33,6 +33,8 @@ def main(iargs=None):
     work_dir = os.path.dirname(os.path.abspath(inps.job_files[0]))
 
     project_dir = os.path.dirname(work_dir)
+    print('QQQQQQQQQQQQ:', inps.copy_to_tmp)
+    import time;  time.sleep(10)
     if inps.copy_to_tmp:
         run_files_dir=project_dir + '/run_files_tmp'
     else:

@@ -108,16 +108,6 @@ append=false
 dir_miaplpy="miaplpy"
 wait_time=30
 
-tmp=true
-tmp_flag_str="--tmp"
-run_files_name="run_files_tmp"
-#always use --no-tmp on stampede3   FA 4/2023: need to change to use copy_to_tmp as in minsarApp.bash
-if [[ $HOSTNAME == *"stampede3"* ]] && [[ $tmp_flag_str == "--tmp" ]]; then
-   tmp_flag_str="--no-tmp"
-   run_files_name="run_files"
-   echo "Running on stampede3: switched from --tmp to --no-tmp "
-fi
-
 startstep=1
 stopstep=11
 
@@ -185,18 +175,6 @@ do
             dir_flag=true
             dir_miaplpy="$2"
             shift
-            shift
-            ;;
-        --tmp)
-            tmp=true
-            tmp_flag_str="--tmp"
-            run_files_name="run_files_tmp"
-            shift
-            ;;
-        --no-tmp)
-            tmp=false
-            tmp_flag_str="--no-tmp"
-            run_files_name="run_files"
             shift
             ;;
         *)
@@ -541,7 +519,7 @@ for g in "${globlist[@]}"; do
     done
 
     # Run check_job_output.py on all files
-    cmd="check_job_outputs.py  ${files[@]} $tmp_flag_str"
+    cmd="check_job_outputs.py  ${files[@]}"
     echo "$cmd"
     $cmd
     exit_status="$?"

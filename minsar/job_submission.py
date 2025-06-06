@@ -608,9 +608,11 @@ class JOB_SUBMIT:
             self.default_num_threads = config['default']['num_threads']
 
         if step_name in config:
-            self.copy_to_tmp_flag = config[step_name]['copy_to_tmp']
+            #self.copy_to_tmp_flag = config[step_name]['copy_to_tmp']
+            self.copy_to_tmp_flag = None
         else:
-            self.copy_to_tmp_flag = config['default']['copy_to_tmp']
+            #self.copy_to_tmp_flag = config['default']['copy_to_tmp']
+            self.copy_to_tmp_flag = None
 
         return
 

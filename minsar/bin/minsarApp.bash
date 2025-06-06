@@ -373,7 +373,7 @@ echo "Flags for processing steps:"
 echo "download dem jobfiles ifgram mintpy miaplpy upload insarmaps finishup"
 echo "    $download_flag     $dem_flag      $jobfiles_flag       $ifgram_flag       $mintpy_flag      $miaplpy_flag      $upload_flag       $insarmaps_flag        $finishup_flag"
 
-sleep 2
+sleep 1
 
 #############################################################
 
