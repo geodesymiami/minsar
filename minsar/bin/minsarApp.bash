@@ -44,8 +44,6 @@ helptext="                                                                      
    --select_reference     select reference date [default].                       \n\
    --no_select_reference  don't select reference date.                           \n\
    --chunks         process in form of multiple chunks.                          \n\
-   --tmp            copy code and data to local /tmp [default].                  \n\
-   --no-tmp         no copying to local /tmp.                                    \n\
    --debug
                                                                                  \n\
    Coding To Do:                                                                 \n\
@@ -97,7 +95,6 @@ debug_flag=0
 download_ECMWF_flag=1
 download_ECMWgF_before_mintpy_flag=0
 
-copy_to_tmp="--tmp"
 runfiles_dir="run_files_tmp"
 configs_dir="configs_tmp"
 
@@ -172,18 +169,6 @@ do
             shift
             shift
             ;;
-        --tmp)
-            copy_to_tmp="--tmp"
-            runfiles_dir="run_files_tmp"
-            configs_dir="configs_tmp"
-            shift
-            ;;
-        --no-tmp)
-            copy_to_tmp="--no-tmp"
-            runfiles_dir="run_files"
-            configs_dir="configs"
-            shift
-            ;;
         --select_reference)
             select_reference_flag=1
             shift
@@ -226,10 +211,8 @@ create_template_array $template_file
 # adjust switches according to template options if insarmaps_flag is not set
 # first test if insarmaps_flag is set
 if [[ ! -v insarmaps_flag ]]; then
-   #echo "QQ1 insarmaps_flag not set because --insarmaps option was not given
    ## test if minsar.insarmaps_flag is set
    if [[ -n ${template[minsar.insarmaps_flag]+_} ]]; then
-       #echo "QQ2 template[minsar.insarmaps_flag] is set"
        if [[ ${template[minsar.insarmaps_flag]} == "True" ]]; then
            insarmaps_flag=1
        else
@@ -266,15 +249,6 @@ if [[ ! -v burst_download_flag ]]; then
    fi
 fi
 
-### always use --no-tmp on stampede3
-if [[ $HOSTNAME == *"stampede3"* ]] && [[ $copy_to_tmp == "--tmp" ]]; then
-   copy_to_tmp="--no-tmp"
-   runfiles_dir="run_files"
-   configs_dir="configs"
-   echo "Running on stampede3: switched from --tmp to --no-tmp because of too slow copying to /tmp"
-fi
-miaplpy_tmp_flag=$copy_to_tmp
-
 if [ ! -z ${sleep_time+x} ]; then
   echo "sleeping $sleep_time secs before starting ..."
   sleep $sleep_time
@@ -286,19 +260,6 @@ if [[ -n ${template[minsar.insarmaps_dataset]} ]]; then
 else
    insarmaps_dataset=geo
 fi
-
-#if [[ -v mintpy_flag ]]; then lock_mintpy_flag=1; fi
-#mintpy_flag=1
-#if [[ -v miaplpy_flag ]]; then
-#    miaplpy_flag=1;
-#   if [[ -v lock_mintpy_flag ]]; then
-#      mintpy_flag=1;
-#   else
-#      mintpy_flag=0;
-#   fi
-#else
-#    miaplpy_flag=0;
-#fi
 
 if [[ $startstep == "download" ]]; then
     download_flag=1
@@ -402,12 +363,6 @@ elif [[ $stopstep != "" ]]; then
     exit 1
 fi
 
-if [[ $copy_to_tmp == "--tmp" ]]; then
-    echo "copy_to_tmp  is ON"
-else
-    echo "copy_to_tmp is OFF"
-fi
-
 # switch mintpy off for slc workflow
 if [[ ${template[topsStack.workflow]} == "slc" ]]; then
    mintpy_flag=0
@@ -425,7 +380,6 @@ sleep 2
 platform_str=$( (grep platform "$template_file" || echo "") | cut -d'=' -f2 )
 if [[ -z $platform_str ]]; then
    # assume TERRASAR-X if no platform is given (ssara_federated_query.py does not seem to work with --platform-TERRASAR-X)
-   #echo "platform_str empty"
    collectionName_str=$(grep collectionName $template_file || True | cut -d'=' -f2)
    echo "$collectionName_str"
    platform_str="TERRASAR-X"
@@ -438,14 +392,6 @@ elif [[ $platform_str == *"TERRASAR-X"* ]]; then
 else
     download_dir="$WORK_DIR/SLC"
 fi
-#if [[ $platform_str == *"COSMO-SKYMED"* ]]; then
-#   download_dir=$WORK_DIR/RAW_data
-#elif [[ $platform_str == *"TERRASAR-X"* ]]; then
-#   download_dir=$WORK_DIR/SLC_ORIG
-#else
-#   download_dir=$WORK_DIR/SLC
-#fi
-sleep 10
 
 ####################################
 srun_cmd="srun -n1 -N1 -A $JOBSHEDULER_PROJECTNAME -p $QUEUENAME  -t 00:07:00 "
@@ -560,20 +506,18 @@ if [[ $jobfiles_flag == "1" ]]; then
 
     # clean directory for processing and create jobfiles
     pwd=`pwd`; echo "DIR: $pwd"
-    echo "QQQ1"
     run_command "clean_dir.bash $PWD --runfiles --ifgram --mintpy --miaplpy"
-    echo "QQQ2"
 
     if [[ $template_file == *"Tsx"*  ]] || [[ $template_file == *"Csk"*  ]]; then
        BUFFOPT="PYTHONUNBUFFERED=1"
     fi
-    ( run_command "$BUFFOPT create_runfiles.py $template_file --jobfiles --queue $QUEUENAME $copy_to_tmp" ) 2>out_create_jobfiles.e | tee out_create_jobfiles.o
+    ( run_command "$BUFFOPT create_runfiles.py $template_file --jobfiles --queue $QUEUENAME" ) 2>out_create_jobfiles.e | tee out_create_jobfiles.o
 fi
 
 if [[ $ifgram_flag == "1" ]]; then
 
     if [[ $template_file != *"Sen"* || $select_reference_flag == "0" ]]; then
-       run_command "run_workflow.bash $template_file --dostep ifgram $copy_to_tmp"
+       run_command "run_workflow.bash $template_file --dostep ifgram"
     else
 
        echo "topsStack.workflow: <${template[topsStack.workflow]}>"
@@ -581,11 +525,10 @@ if [[ $ifgram_flag == "1" ]]; then
        if [[ ${template[topsStack.workflow]} == "slc" ]] || [[ $mintpy_flag == 0 ]]; then
           ifgram_stopstep=7
        fi
-       #sleep 30
 
        # run with checking and selecting of reference date
        echo "### Running step 1 to 5 to check whether reference date has enough bursts"
-       run_command "run_workflow.bash $template_file --start 1 --stop 5 $copy_to_tmp"
+       run_command "run_workflow.bash $template_file --start 1 --stop 5"
 
        reference_date=$(get_reference_date)
        echo "Reference date: $reference_date" | tee reference_date_isce.txt
@@ -627,25 +570,20 @@ if [[ $ifgram_flag == "1" ]]; then
 
           # clean directory for processing and create jobfiles
           run_command "clean_dir.bash $PWD --runfiles --ifgram"
-          run_command "create_runfiles.py $template_file --jobfiles --queue $QUEUENAME $copy_to_tmp 2>create_jobfiles.e 1>out_create_jobfiles.o"
+          run_command "create_runfiles.py $template_file --jobfiles --queue $QUEUENAME 2>create_jobfiles.e 1>out_create_jobfiles.o"
 
           # rerun steps 1 to 5  with new reference
 	      echo "### Re-running step 1 to 5 with reference $new_reference_date"
-          run_command "run_workflow.bash $template_file --start 1 --stop 5 $copy_to_tmp --append"
+          run_command "run_workflow.bash $template_file --start 1 --stop 5 --append"
        else
           echo "No new reference date selected. Continue with original date: $reference_date" | tee -a log | tee -a `ls wor* | tail -1`
           echo "#########################################" | tee -a log | tee -a `ls wor* | tail -1`
        fi
 
        # continue running starting step 6
-       run_command "run_workflow.bash $template_file --start 6 --stop $ifgram_stopstep $copy_to_tmp --append"
+       run_command "run_workflow.bash $template_file --start 6 --stop $ifgram_stopstep --append"
 
     fi
-    # correct *xml and *vrt files
-    #sed -i "s|/tmp|$PWD|g" */*.xml */*/*.xml  */*/*/*.xml
-    #sed -i "s|/tmp|$PWD|g" */*.vrt */*/*.vrt  */*/*/*.vrt
-    #sed -i "s|/tmp|$PWD|g" merged/geom_reference/*.vrt merged/SLC/*/*.vrt   merged/interferograms/*/*vrt
-    #sed -i "s|/tmp|$PWD|g" merged/geom_reference/*.xml merged/SLC/*/*.xml   merged/interferograms/*/*xml
 fi
 
 ########################
@@ -654,7 +592,7 @@ fi
 if [[ $mintpy_flag == "1" ]]; then
 
     # run MintPy
-    run_command "run_workflow.bash $template_file --append --dostep mintpy $copy_to_tmp"
+    run_command "run_workflow.bash $template_file --append --dostep mintpy"
 
     # upload mintpy directory
     if [[ $upload_flag == "1" ]]; then
@@ -674,14 +612,6 @@ fi
 #       MiaplPy        #
 ########################
 if [[ $miaplpy_flag == "1" ]]; then
-    # correct *xml and *vrt files (if skipped in ifgram step because of unwrap problems) (skipping merged/interferograms because it takes long)
-    sed -i "s|/tmp|$PWD|g" merged/geom_reference/*.vrt merged/SLC/*/*.vrt
-    sed -i "s|/tmp|$PWD|g" merged/geom_reference/*.xml merged/SLC/*/*.xml
-
-    # unset $miaplpy_tmp_flag for --no-tmp as miaplpyApp.py does not understand --no-tmp option
-    if [[ $miaplpy_tmp_flag == "--no-tmp" ]]; then
-       unset miaplpy_tmp_flag
-    fi
 
     # remove directory with reference data which should not be here ( https://github.com/geodesymiami/rsmas_insar/issues/568)
     if [[ $template_file == *"Tsx"*  ]] || [[ $template_file == *"Csk"*  ]]; then
@@ -694,7 +624,7 @@ if [[ $miaplpy_flag == "1" ]]; then
     network_dir=${miaplpy_dir_name}/network_${network_type}
 
     # create miaplpy jobfiles
-    run_command "$srun_cmd miaplpyApp.py $template_file --dir $miaplpy_dir_name --jobfiles $miaplpy_tmp_flag"
+    run_command "$srun_cmd miaplpyApp.py $template_file --dir $miaplpy_dir_name --jobfiles"
 
     # run miaplpy jobfiles ( after create_save_hdf5_jobfile.py to include run_10_save_hdfeos5_radar_0.job )
     run_command "run_workflow.bash $template_file --append --dostep miaplpy --dir $miaplpy_dir_name"
@@ -728,14 +658,7 @@ if [[ $finishup_flag == "1" ]]; then
     else
         miaplpy_opt=""
     fi
-    run_command "summarize_job_run_times.py $template_file $copy_to_tmp $miaplpy_opt"
-
-    # IFS=","
-    # last_file=($(tail -1 $download_dir/ssara_listing.txt))
-    # last_date=${last_file[3]}
-    # echo "Last file: $last_file"
-    # echo "Last processed image date: $last_date"
-    # unset IFS
+    run_command "summarize_job_run_times.py $template_file $miaplpy_opt"
 fi
 
 echo
