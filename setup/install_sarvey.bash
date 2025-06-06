@@ -2,7 +2,7 @@
 set -eo pipefail
 
 ### Source the environment  #################
-export MINSAR_HOME=$PWD
+export RSMASINSAR_HOME=$PWD
 source setup/platforms_defaults.bash;
 source setup/environment.bash;
 
@@ -16,6 +16,9 @@ conda activate sarvey
 conda install -c conda-forge pysolid gdal --yes
 pip install -e tools/sarvey[dev]
 
+pip install PySide6
+
+git clone git@github.com:falkamelung/sarplotter-main.git tools/sarplotter-main
 ###  Reduce miniforge3 directory size #################
 rm -rf tools/miniforge3/pkgs
 
