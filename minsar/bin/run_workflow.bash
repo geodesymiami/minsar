@@ -108,6 +108,8 @@ append=false
 dir_miaplpy="miaplpy"
 wait_time=30
 
+run_files_name="run_files"
+
 startstep=1
 stopstep=11
 
@@ -369,7 +371,7 @@ fi
 
 echo "Full list of jobfiles to submit: ${globlist[@]}"
 
-defaults_file="${MINSAR_HOME}/minsar/defaults/job_defaults.cfg"
+defaults_file="${RSMASINSAR_HOME}/minsar/defaults/job_defaults.cfg"
 
 echo "Started at: $(date +"%Y-%m-%d %H:%M:%S")"
 
