@@ -19,16 +19,20 @@ pathObj = PathFind()
 
 DESCRIPTION = ("""Creates jobfile to run save_hdfeos5.py for data in radar coordinates""")
 EXAMPLE = """example:
-    create_save_hdf5_jobfile.py miaplpy_SN_201606_201608/network_delaunay_4
+    create_save_hdf5_jobfile.py $SAMPLESDIR/unittestGalapagosSenDT128.template miaplpy_SN_201606_201608/network_single_reference
+    create_save_hdf5_jobfile.py $SAMPLESDIR/unittestGalapagosSenDT128.template miaplpy_SN_201606_201608/network_single_reference --queue skx-dev
 """
 
 ###########################################################################################
 def create_parser():
+    
+    default_queuename = os.environ.get("QUEUENAME")
+    
     parser = argparse.ArgumentParser(description=DESCRIPTION, epilog=EXAMPLE, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('custom_template_file', help='template file with option settings.\n')
     parser.add_argument('processing_dir', default=None, help='miaplpy network_* directory with data for hdf5 file\n')
-    parser.add_argument("--queue", dest="queue", metavar="QUEUE", help="Name of queue to submit job to")
-    parser.add_argument('--walltime', dest='wall_time', metavar="WALLTIME (HH:MM)", help='walltime for submitting the script as a job')
+    parser.add_argument("--queue", dest="queue", metavar="QUEUE", default=default_queuename, help="Name of queue to submit job to")
+    parser.add_argument('--walltime', dest='wall_time', metavar="WALLTIME (HH:MM:SS)", help='walltime for submitting the script as a job')
     parser.add_argument('--filter', dest='filter_par', type=float, default=0.7, help='Set the filtering parameter (default: 0.7)')
     parser.add_argument('--no-filter', dest='filter_par', action='store_const', const=None, help='Disable filtering')
     parser.add_argument('--outdir', dest='outdir', type=str, default=os.getcwd(), help='Output directory (Default: current directory.)')
@@ -71,14 +75,14 @@ def get_network_prefix(network_dir):
 
 
 def main(iargs=None):
-
-    inps = create_parser()
-    inps.work_dir = os.getcwd()
-
+    
     if not iargs is None:
         input_arguments = iargs
     else:
         input_arguments = sys.argv[1::]
+    
+    inps = create_parser()
+    inps.work_dir = os.getcwd()
 
     message_rsmas.log(inps.work_dir, os.path.basename(__file__) + ' ' + ' '.join(input_arguments))
 
@@ -88,11 +92,7 @@ def main(iargs=None):
     except:
        min_temp_coh = 0.7
 
-    #num_worker = dataset_template.options['mintpy.compute.numWorker']
-    inps.num_data = 1
     inps.prefix = 'tops'   # in create_runfiles.py it was just there
-
-    job_obj = JOB_SUBMIT(inps)
 
     path_obj = Path(inps.processing_dir)
     network_dir = path_obj.name
@@ -137,8 +137,10 @@ def main(iargs=None):
     
     # Join the list into a string with linefeeds
     final_command =[ '\n'.join(command) ]
-    #final_command = [final_command_str]
 
+    # create job file
+    inps.num_data = 1
+    job_obj = JOB_SUBMIT(inps)
     job_obj.submit_script(job_name, job_file_name, final_command, writeOnly='True')
     print('jobfile created: ',job_file_name + '.job')
 
