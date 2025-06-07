@@ -144,3 +144,67 @@ function countbursts(){
                    }
 ###########################################
 
+###########################################
+###########################################
+###########################################
+generate_mintpy_script() {
+    # Call: generate_mintpy_script <template_file>
+    local template_file="$1"
+    local output_script="run_mintpy.bash"
+
+    # need to create create_mintpy_jobfile.py
+    #echo "create_mintpy_jobfile.py $template_file  >> "$output_script"
+
+    echo "#!/usr/bin/env bash" > "$output_script"
+    echo "run_workflow.bash $template_file --jobfile smallbaseline_wrapper.job" >> "$output_script"
+
+    chmod +x "$output_script"
+}
+
+generate_miaplpy_script() {
+    # Call: generate_miaplpy_script <template_file>
+    local template_file="$1"
+    local output_script="run_miaplpy.bash"
+
+    # need to create create_miaplpy_jobfile.py
+    #echo "create_miaplpy_jobfile.py  $template_file --dir $miaplpy_dir_name 
+
+    echo "#!/usr/bin/env bash" > "$output_script"
+    echo "run_workflow.bash $template_file --jobfile miaplpy.job" >> "$output_script"
+    echo "run_workflow.bash $template_file --append --dostep miaplpy --dir $miaplpy_dir_name" >> "$output_script"
+    
+    echo "# create and run save_hdf5 jobfile" >> "$output_script"
+    echo "create_save_hdf5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME --walltime 0:30" >> "$output_script"
+    echo "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 10" >> "$output_script"
+    
+    echo "# create index.html with all images" >> "$output_script"
+    echo "create_html.py ${network_dir}/pic" >> "$output_script"
+
+    chmod +x "$output_script"
+}
+
+generate_insarmaps_script() {
+    # Call: generate_insarmaps_script <template_file> <data_dir> <dataset>
+    local template_file="$1"
+    local dir="$2"
+    local dataset="$3"
+    local output_script="run_insarmaps.bash"
+
+    echo "#!/usr/bin/env bash" > "$output_script"
+    echo "create_insarmaps_jobfile.py $template_file $dir --dataset $dataset" >> "$output_script"
+    echo "run_workflow.bash $template_file --jobfile insarmaps.job" >> "$output_script"
+
+    chmod +x "$output_script"
+}
+
+generate_upload_script() {
+    # Call: generate_upload_script <data_dir> [<option>]
+    local dir="$1"
+    local option="${2:-}"
+    local output_script="run_upload.bash"
+    
+    echo "#!/usr/bin/env bash" > "$output_script"
+    echo "upload_data_products.py $dir $option" >> "$output_script"
+
+    chmod +x "$output_script"
+}

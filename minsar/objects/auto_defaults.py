@@ -7,7 +7,7 @@ import glob
 
 
 queue_config_file = os.path.join(os.getenv('MINSAR_HOME'), 'minsar/defaults/queues.cfg')
-supported_platforms = ['frontera', 'stampede3', 'comet', 'pegasus', 'eos_sanghoon', 'eos', 'eos\n','circleci']
+supported_platforms = ['frontera', 'stampede3', 'comet', 'pegasus', 'eos_sanghoon', 'eos', 'eos\n','circleci','mac']
 
 class PathFind:
     def __init__(self):
