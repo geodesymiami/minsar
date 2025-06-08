@@ -88,9 +88,9 @@ mkdir -p $WORK_DIR
 cd $WORK_DIR
 
 # create name including $TE for concise log file
-template_file=$(shorten_path "$template_file")
-echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $template_print_name ${@:2}" | tee -a "${WORK_DIR}"/log
-cli_command=$(echo "$SCRIPT_NAME $template_print_name ${@:2}")
+short_template_file=$(shorten_path "$template_file")
+echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $short_template_print_name ${@:2}" | tee -a "${WORK_DIR}"/log
+cli_command=$(echo "$SCRIPT_NAME $short_template_print_name ${@:2}")
 
 #Switches
 chunks_flag=0
@@ -512,13 +512,13 @@ if [[ $jobfiles_flag == "1" ]]; then
     fi
 
     # clean directory for processing and create jobfiles
-    pwd=`pwd`; echo "DIR: $pwd"
     run_command "run_clean_dir.bash $PWD --runfiles --ifgram --mintpy --miaplpy"
 
-    if [[ $template_file == *"Tsx"*  ]] || [[ $template_file == *"Csk"*  ]]; then
-       BUFFOPT="PYTHONUNBUFFERED=1"
-    fi
-    ( run_command "$BUFFOPT create_runfiles.py $template_file --jobfiles --queue $QUEUENAME" ) 2>out_create_jobfiles.e | tee out_create_jobfiles.o
+    generate_create_isce_jobfiles_script $template_file
+    # if [[ $template_file == *"Tsx"*  ]] || [[ $template_file == *"Csk"*  ]]; then
+    #    BUFFOPT="PYTHONUNBUFFERED=1"
+    # fi
+    # ( run_command "$BUFFOPT create_runfiles.py $template_file --jobfiles --queue $QUEUENAME" ) 2>out_create_jobfiles.e | tee out_create_jobfiles.o
 fi
 
 if [[ $ifgram_flag == "1" ]]; then

@@ -164,6 +164,27 @@ shorten_path() {
 ###########################################
 ###########################################
 ###########################################
+
+generate_create_isce_jobfiles_script() {
+    # Call: generate_prepare_isce_script <template_file>
+    local template_file="$1"
+    local output_script="run_create_isce_jobfiles.bash"
+
+    template_file=$(shorten_path "$template_file")
+
+    printf "#!/usr/bin/env bash\n" > "$output_script"
+
+    printf "\n# ORIGINAL COMMAND:  BUFOPT in last line ommitted\n" >> "$output_script"
+    printf "# if [[ \$template_file == *\"Tsx\"* ]] || [[ \$template_file == *\"Csk\"* ]]; then\n" >> "$output_script"
+    printf "#     BUFFOPT=\"PYTHONUNBUFFERED=1\"\n" >> "$output_script"
+    printf "# fi\n" >> "$output_script"
+    printf "# ( run_command \"\$BUFFOPT create_runfiles.py \$template_file --jobfiles --queue \$QUEUENAME\" ) 2>out_create_jobfiles.e | tee out_create_jobfiles.o\n" >> "$output_script"
+
+    echo "create_runfiles.py $template_file --jobfiles --queue \$QUEUENAME 2>out_create_jobfiles.e >out_create_jobfiles.o" >> "$output_script"
+
+    chmod +x "$output_script"
+}
+
 generate_mintpy_script() {
     # Call: generate_mintpy_script <template_file> <processing_dir>
     local template_file="$1"
