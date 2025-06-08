@@ -602,17 +602,18 @@ class JOB_SUBMIT:
         self.default_wall_time = putils.scale_walltime(number_of_memory_units, self.wall_time_factor,
                                                        c_walltime, s_walltime, extra_seconds, self.scheduler)
 
+        if "dev" in self.queue_name:
+            self.default_wall_time = "2:00:00"
+            
         if step_name in config:
             self.default_num_threads = config[step_name]['num_threads']
         else:
             self.default_num_threads = config['default']['num_threads']
 
-        if step_name in config:
-            #self.copy_to_tmp_flag = config[step_name]['copy_to_tmp']
-            self.copy_to_tmp_flag = None
-        else:
-            #self.copy_to_tmp_flag = config['default']['copy_to_tmp']
-            self.copy_to_tmp_flag = None
+        #if step_name in config:
+        #    self.copy_to_tmp_flag = config[step_name]['copy_to_tmp']
+        #else:
+        #    self.copy_to_tmp_flag = config['default']['copy_to_tmp']
 
         return
 
