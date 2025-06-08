@@ -142,8 +142,25 @@ function countbursts(){
                        echo "$date #of_bursts: `ls $date/IW*/burst*xml | wc -l`   ${array[@]}"
                    done;
                    }
-###########################################
+# Function: shorten_path
+# Usage: shorten_path <template_file>
+# Description:
+#   Replaces the full directory path of a given template file with
+#   a variable reference ($TE or $SAMPLESDIR) if the file resides
+#   in one of those directories. Otherwise, returns the full path.
+shorten_path() {
+    local template_file="$1"
+    local template_file_dir
+    template_file_dir=$(dirname "$template_file")
 
+    if [[ "$template_file_dir" == "$TEMPLATES" ]]; then
+        echo "\$TE/$(basename "$template_file")"
+    elif [[ "$template_file_dir" == "$SAMPLESDIR" ]]; then
+        echo "\$SAMPLESDIR/$(basename "$template_file")"
+    else
+        echo "$template_file"
+    fi
+}
 ###########################################
 ###########################################
 ###########################################
@@ -153,9 +170,12 @@ generate_mintpy_script() {
     local processing_dir="$2"
     local output_script="run_mintpy.bash"
     
-    echo "#!/usr/bin/env bash" > "$output_script"
-    echo "create_mintpy_jobfile.py $template_file $processing_dir" >> "$output_script"
-    echo "run_workflow.bash $template_file --jobfile ${PWD}/smallbaseline_wrapper.job" >> "$output_script"
+    template_file=$(shorten_path "$template_file")
+
+    printf "#!/usr/bin/env bash\n" > "$output_script"
+    printf "\n# create and run smallbasline_wrapper.job\n" >> "$output_script"
+    printf "create_mintpy_jobfile.py $template_file $processing_dir\n" >> "$output_script"
+    printf "run_workflow.bash $template_file --jobfile ${PWD}/smallbaseline_wrapper.job\n\n" >> "$output_script"
 
     chmod +x "$output_script"
 }
@@ -165,30 +185,26 @@ generate_miaplpy_script() {
     local template_file="$1"
     local output_script="run_miaplpy.bash"
 
-    # need to create create_miaplpy_jobfile.py
-    #echo "create_miaplpy_jobfile.py  $template_file --dir $miaplpy_dir_name
+    template_file=$(shorten_path "$template_file")
 
-    echo "#!/usr/bin/env bash" > "$output_script"
-    echo "# create and run miaplpyApp.job" >> "$output_script"
-    echo "create_miaplpyApp_jobfile.py $template_file $miaplpy_dir_name" >> "$output_script"
-    echo "run_workflow.bash $template_file --jobfile ${PWD}/miaplpyApp.job" >> "$output_script"
-    echo "" >> "$output_script"
+    printf "#!/usr/bin/env bash\n" > "$output_script"
     
-    echo "# run miaplpy jobfiles" >> "$output_script"
-    echo "run_workflow.bash $template_file --append --dostep miaplpy --dir $miaplpy_dir_name" >> "$output_script"
-    echo "" >> "$output_script"
+    printf "\n# create and run miaplpyApp.job\n" >> "$output_script"
+    printf "create_miaplpyApp_jobfile.py $template_file $miaplpy_dir_name --queue $QUEUENAME\n" >> "$output_script"
+    printf "run_workflow.bash $template_file --jobfile ${PWD}/miaplpyApp.job\n" >> "$output_script"
     
-    echo "# create and run run_10_savehdf5_radar.job" >> "$output_script"
-    echo "create_save_hdf5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME --walltime 0:30" >> "$output_script"
-    echo "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 10" >> "$output_script"
-    echo "" >> "$output_script"
+    printf "\n# run miaplpy jobfiles\n" >> "$output_script"
+    printf "run_workflow.bash $template_file --append --dostep miaplpy --dir $miaplpy_dir_name\n" >> "$output_script"
     
-    echo "# create index.html with images" >> "$output_script"
-    echo "create_html.py ${network_dir}/pic" >> "$output_script"
+    printf "\n# create and run run_10_save_hdfeos5_radar.job\n" >> "$output_script"
+    printf "create_save_hdfeos5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME --walltime 0:30\n" >> "$output_script"
+    printf "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 10\n" >> "$output_script"
+    
+    printf "\n# create index.html containing images\n" >> "$output_script"
+    printf "create_html.py ${network_dir}/pic\n\n" >> "$output_script"
 
     chmod +x "$output_script"
 }
-
 
 generate_insarmaps_script() {
     # Call: generate_insarmaps_script <template_file> <data_dir> <dataset>
@@ -197,9 +213,12 @@ generate_insarmaps_script() {
     local dataset="$3"
     local output_script="run_insarmaps.bash"
 
-    echo "#!/usr/bin/env bash" > "$output_script"
-    echo "create_insarmaps_jobfile.py $data_dir --dataset $dataset" >> "$output_script"
-    echo "run_workflow.bash $template_file --jobfile ${PWD}/insarmaps.job" >> "$output_script"
+    template_file=$(shorten_path "$template_file")
+
+    printf "#!/usr/bin/env bash\n" > "$output_script"
+    printf "\n# create and run insarmaps.job\n" >> "$output_script"
+    printf "create_insarmaps_jobfile.py $data_dir --dataset $dataset\n" >> "$output_script"
+    printf "run_workflow.bash $template_file --jobfile ${PWD}/insarmaps.job\n\n" >> "$output_script"
 
     chmod +x "$output_script"
 }
@@ -210,8 +229,9 @@ generate_upload_script() {
     local option="${2:-}"
     local output_script="run_upload.bash"
     
-    echo "#!/usr/bin/env bash" > "$output_script"
-    echo "upload_data_products.py $dir $option" >> "$output_script"
+    printf "#!/usr/bin/env bash" > "$output_script"
+    printf "\n# run upload_data_products.py\n" >> "$output_script"
+    printf "upload_data_products.py $dir $option\n\n" >> "$output_script"
 
     chmod +x "$output_script"
 }

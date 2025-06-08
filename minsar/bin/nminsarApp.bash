@@ -626,11 +626,11 @@ if [[ $miaplpy_flag == "1" ]]; then
 
     # run_command "$srun_cmd miaplpyApp.py $template_file --dir $miaplpy_dir_name --jobfiles"
 
-    # run miaplpy jobfiles ( after create_savehdf5_jobfile.py to include run_10_save_hdfeos5_radar_0.job )
+    # run miaplpy jobfiles ( after create_save_hdfeos5_jobfile.py to include run_10_save_hdfeos5_radar_0.job )
     # run_command "run_workflow.bash $template_file --append --dostep miaplpy --dir $miaplpy_dir_name"
 
     # create savehdf5 jobfile
-    # run_command "create_savehdf5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME --walltime 0:30"
+    # run_command "create_save_hdfeos5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME --walltime 0:30"
 
     # run savehdf5_radar jobfile
     # run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 10"

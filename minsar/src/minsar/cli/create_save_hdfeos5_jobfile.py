@@ -19,8 +19,8 @@ pathObj = PathFind()
 
 DESCRIPTION = ("""Creates jobfile to run save_hdfeos5.py for data in radar coordinates""")
 EXAMPLE = """example:
-    create_save_hdf5_jobfile.py $SAMPLESDIR/unittestGalapagosSenDT128.template miaplpy_SN_201606_201608/network_single_reference
-    create_save_hdf5_jobfile.py $SAMPLESDIR/unittestGalapagosSenDT128.template miaplpy_SN_201606_201608/network_single_reference --queue skx-dev
+    create_save_hdfeos5_jobfile.py $SAMPLESDIR/unittestGalapagosSenDT128.template miaplpy_SN_201606_201608/network_single_reference
+    create_save_hdfeos5_jobfile.py $SAMPLESDIR/unittestGalapagosSenDT128.template miaplpy_SN_201606_201608/network_single_reference --queue skx-dev
 """
 
 ###########################################################################################
