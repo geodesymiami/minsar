@@ -2,10 +2,24 @@
 set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
+
 echo "sourcing ${SCRIPT_DIR}/../lib/minsarApp_specifics.sh ..."
 echo "sourcing ${SCRIPT_DIR}/../lib/utils.sh ..."
 source ${SCRIPT_DIR}/../lib/minsarApp_specifics.sh
 source ${SCRIPT_DIR}/../lib/utils.sh
+
+# source environment if not given (for vscode)
+if [[ -z "$MINSAR_HOME" || ! -d "$MINSAR_HOME" ]]; then
+    export MINSAR_HOME="$(dirname "$(dirname "$SCRIPT_DIR")")"
+    cd $MINSAR_HOME 
+    unset PYTHONPATH 
+    source setup/platforms_defaults.bash 
+    source setup/environment.bash 
+    export PATH=$ISCE_STACK/topsStack:$PATH
+    cd - 
+fi
+
 
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
 helptext="                                                                       \n\
@@ -82,8 +96,8 @@ elif [[ $template_file_dir == $SAMPLESDIR ]]; then
 else
     template_print_name="$template_file"
 fi
-echo "$(date +"%Y%m%d:%H-%M") * minsarApp.bash $template_print_name ${@:2}" | tee -a "${WORK_DIR}"/log
-minsarApp_command=$(echo minsarApp.bash $template_print_name ${@:2})
+echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $template_print_name ${@:2}" | tee -a "${WORK_DIR}"/log
+cli_command=$(echo "$SCRIPT_NAME $template_print_name ${@:2}")
 
 #Switches
 chunks_flag=0
@@ -623,21 +637,6 @@ if [[ $miaplpy_flag == "1" ]]; then
 
     # create miaplpy jobfiles
     generate_miaplpy_script $template_file $miaplpy_dir_name
-
-    # run_command "$srun_cmd miaplpyApp.py $template_file --dir $miaplpy_dir_name --jobfiles"
-
-    # run miaplpy jobfiles ( after create_save_hdfeos5_jobfile.py to include run_10_save_hdfeos5_radar_0.job )
-    # run_command "run_workflow.bash $template_file --append --dostep miaplpy --dir $miaplpy_dir_name"
-
-    # create savehdf5 jobfile
-    # run_command "create_save_hdfeos5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME --walltime 0:30"
-
-    # run savehdf5_radar jobfile
-    # run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 10"
-
-    # create index.html with all images
-    run_command "create_html.py ${network_dir}/pic"
-# 
     ## insarmaps
     if [[ $insarmaps_flag == "1" ]]; then
         generate_insarmaps_script $template_file $network_dir $insarmaps_dataset
@@ -649,46 +648,46 @@ if [[ $miaplpy_flag == "1" ]]; then
     fi
 fi
 
-if [[ $finishup_flag == "1" ]]; then
-    if [[ $miaplpy_flag == "1" ]]; then
-        miaplpy_opt="--miaplpyDir $miaplpy_dir_name"
-    else
-        miaplpy_opt=""
-    fi
-    run_command "summarize_job_run_times.py $template_file $miaplpy_opt"
-fi
+# if [[ $finishup_flag == "1" ]]; then
+#     if [[ $miaplpy_flag == "1" ]]; then
+#         miaplpy_opt="--miaplpyDir $miaplpy_dir_name"
+#     else
+#         miaplpy_opt=""
+#     fi
+#     run_command "summarize_job_run_times.py $template_file $miaplpy_opt"
+# fi
 
-echo
-if ls mintpy/*he5 1> /dev/null 2>&1; then
-   echo "hdfeos5 files produced:"
-   ls -sh mintpy/*he5
-fi
-if ls $network_dir/*he5 1> /dev/null 2>&1; then
-   echo " hdf5files in network_dir: <$network_dir>"
-   ls -sh $network_dir/*he5
-fi
+# echo
+# if ls mintpy/*he5 1> /dev/null 2>&1; then
+#    echo "hdfeos5 files produced:"
+#    ls -sh mintpy/*he5
+# fi
+# if ls $network_dir/*he5 1> /dev/null 2>&1; then
+#    echo " hdf5files in network_dir: <$network_dir>"
+#    ls -sh $network_dir/*he5
+# fi
 
 # Summarize results
 echo
-echo "Done:  $minsarApp_command"
+echo "Done:  $cli_command"
 echo
 
 echo
 echo "Yup! That's all from minsarApp.bash."
 echo
 
-echo "Data products uploaded to:"
-if [ -f "upload.log" ]; then
-    tail -n -1 upload.log
-fi
+# echo "Data products uploaded to:"
+# if [ -f "upload.log" ]; then
+#     tail -n -1 upload.log
+# fi
 
-lines=1
-if [[ "$insarmaps_dataset" == "PSDS" ]]; then
-    lines=2
-fi
-if [[ "$insarmaps_dataset" == "all" ]]; then
-   lines=4
-fi
+# lines=1
+# if [[ "$insarmaps_dataset" == "PSDS" ]]; then
+#     lines=2
+# fi
+# if [[ "$insarmaps_dataset" == "all" ]]; then
+#    lines=4
+# fi
 
 lines=$((lines * 2))  # multiply as long as we ingestinto two servers
 if [ -f "insarmaps.log" ]; then

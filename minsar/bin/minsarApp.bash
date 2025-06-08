@@ -2,6 +2,8 @@
 set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
+
 echo "sourcing ${SCRIPT_DIR}/../lib/minsarApp_specifics.sh ..."
 echo "sourcing ${SCRIPT_DIR}/../lib/utils.sh ..."
 source ${SCRIPT_DIR}/../lib/minsarApp_specifics.sh
@@ -82,8 +84,8 @@ elif [[ $template_file_dir == $SAMPLESDIR ]]; then
 else
     template_print_name="$template_file"
 fi
-echo "$(date +"%Y%m%d:%H-%M") * minsarApp.bash $template_print_name ${@:2}" | tee -a "${WORK_DIR}"/log
-minsarApp_command=$(echo minsarApp.bash $template_print_name ${@:2})
+echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $template_print_name ${@:2}" | tee -a "${WORK_DIR}"/log
+cli_command=$(echo "$SCRIPT_NAME $template_print_name ${@:2}")
 
 #Switches
 chunks_flag=0
@@ -673,7 +675,7 @@ fi
 
 # Summarize results
 echo
-echo "Done:  $minsarApp_command"
+echo "Done:  $cli_command"
 echo
 
 echo

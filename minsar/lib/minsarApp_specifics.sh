@@ -189,6 +189,7 @@ generate_miaplpy_script() {
 
     printf "#!/usr/bin/env bash\n" > "$output_script"
     
+    
     printf "\n# create and run miaplpyApp.job\n" >> "$output_script"
     printf "create_miaplpyApp_jobfile.py $template_file $miaplpy_dir_name --queue $QUEUENAME\n" >> "$output_script"
     printf "run_workflow.bash $template_file --jobfile ${PWD}/miaplpyApp.job\n" >> "$output_script"
