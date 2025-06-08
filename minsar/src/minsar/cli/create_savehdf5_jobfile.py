@@ -29,7 +29,7 @@ def create_parser():
     default_queuename = os.environ.get("QUEUENAME")
     
     parser = argparse.ArgumentParser(description=DESCRIPTION, epilog=EXAMPLE, formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('custom_template_file', help='template file with option settings.\n')
+    parser.add_argument('custom_template_file', help='template file\n')
     parser.add_argument('processing_dir', default=None, help='miaplpy network_* directory with data for hdf5 file\n')
     parser.add_argument("--queue", dest="queue", metavar="QUEUE", default=default_queuename, help="Name of queue to submit job to")
     parser.add_argument('--walltime', dest='wall_time', metavar="WALLTIME (HH:MM:SS)", help='walltime for submitting the script as a job')
@@ -39,11 +39,6 @@ def create_parser():
     parser.add_argument('--outfile', dest='outfile', type=str, default='save_hdfeos5_radar', help='job file name (Default: save_hdfeos5_radar')
 
     inps = parser.parse_args()
-
-    inps = putils.create_or_update_template(inps)
-
-    print(inps)
-    
     return inps
 
 def get_network_prefix(network_dir):
@@ -140,11 +135,12 @@ def main(iargs=None):
 
     # create job file
     inps.num_data = 1
-    job_obj = JOB_SUBMIT(inps)
+    job_obj= JOB_SUBMIT(inps)
+    job_obj.get_memory_walltime(job_name="save_hdfeos5_radar", job_type='script')
     job_obj.submit_script(job_name, job_file_name, final_command, writeOnly='True')
     print('jobfile created: ',job_file_name + '.job')
 
-    return None
+    return 
 
 ###########################################################################################
 
