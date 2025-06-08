@@ -513,7 +513,7 @@ if [[ $jobfiles_flag == "1" ]]; then
 
     # clean directory for processing and create jobfiles
     pwd=`pwd`; echo "DIR: $pwd"
-    run_command "clean_dir.bash $PWD --runfiles --ifgram --mintpy --miaplpy"
+    run_command "run_clean_dir.bash $PWD --runfiles --ifgram --mintpy --miaplpy"
 
     if [[ $template_file == *"Tsx"*  ]] || [[ $template_file == *"Csk"*  ]]; then
        BUFFOPT="PYTHONUNBUFFERED=1"
@@ -576,7 +576,7 @@ if [[ $ifgram_flag == "1" ]]; then
           rm -rf run_files configs
 
           # clean directory for processing and create jobfiles
-          run_command "clean_dir.bash $PWD --runfiles --ifgram"
+          run_command "run_clean_dir.bash $PWD --runfiles --ifgram"
           run_command "create_runfiles.py $template_file --jobfiles --queue $QUEUENAME 2>create_jobfiles.e 1>out_create_jobfiles.o"
 
           # rerun steps 1 to 5  with new reference
