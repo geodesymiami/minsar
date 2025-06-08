@@ -9,7 +9,6 @@ import importlib
 import logging
 import warnings
 
-
 warnings.filterwarnings("ignore")
 
 mpl_logger = logging.getLogger('matplotlib')

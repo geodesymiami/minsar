@@ -346,12 +346,12 @@ elif [[ $stopstep == "ifgram" ]]; then
     finishup_flag=0
 elif [[ $stopstep == "mintpy" ]]; then
     miaplpy_flag=0
-    upload_flag=0
-    insarmaps_flag=0
+    #upload_flag=0
+    #insarmaps_flag=0
     finishup_flag=0
 elif [[ $stopstep == "miaplpy" ]]; then
-    upload_flag=0
-    insarmaps_flag=0
+    #upload_flag=0
+    #insarmaps_flag=0
     finishup_flag=0
 elif [[ $stopstep == "upload" ]]; then
     insarmaps_flag=0
@@ -591,8 +591,8 @@ fi
 ########################
 if [[ $mintpy_flag == "1" ]]; then
 
-    # run MintPy
-    generate_mintpy_script $template_file
+    # MintPy
+    generate_mintpy_script $template_file mintpy
     #run_command "run_workflow.bash $template_file --append --dostep mintpy"
 
     ## insarmaps
@@ -622,20 +622,22 @@ if [[ $miaplpy_flag == "1" ]]; then
     network_dir=${miaplpy_dir_name}/network_${network_type}
 
     # create miaplpy jobfiles
-    run_command "$srun_cmd miaplpyApp.py $template_file --dir $miaplpy_dir_name --jobfiles"
+    generate_miaplpy_script $template_file $miaplpy_dir_name
+
+    # run_command "$srun_cmd miaplpyApp.py $template_file --dir $miaplpy_dir_name --jobfiles"
 
     # run miaplpy jobfiles ( after create_savehdf5_jobfile.py to include run_10_save_hdfeos5_radar_0.job )
-    run_command "run_workflow.bash $template_file --append --dostep miaplpy --dir $miaplpy_dir_name"
+    # run_command "run_workflow.bash $template_file --append --dostep miaplpy --dir $miaplpy_dir_name"
 
     # create savehdf5 jobfile
-    run_command "create_savehdf5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME --walltime 0:30"
+    # run_command "create_savehdf5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME --walltime 0:30"
 
     # run savehdf5_radar jobfile
-    run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 10"
+    # run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 10"
 
     # create index.html with all images
     run_command "create_html.py ${network_dir}/pic"
-
+# 
     ## insarmaps
     if [[ $insarmaps_flag == "1" ]]; then
         generate_insarmaps_script $template_file $network_dir $insarmaps_dataset

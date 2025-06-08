@@ -113,6 +113,13 @@ for ((j=0; j < "${#files[@]}"; j++)); do
         num_step_tasks=$(echo $resource_limits | awk '{print $2}')
         num_total_tasks=$(echo $resource_limits | awk '{print $3}')
 
+        #echo "num_tasks_job: $num_tasks_job"
+        #echo "resource_limits: $resource_limits"
+        #echo "num_jobs: $num_jobs"
+        #echo "num_step_tasks: $num_step_tasks"
+        #echo "num_total_tasks: $num_total_tasks"
+        #sleep 20
+       
         # (?<=\()(\d{1,}\/\d{1,})(?=\) -->) regex matches all sets of two number seaparated by a '/'
         # contained with parenetheses '()' prior to '-->'.
         #
