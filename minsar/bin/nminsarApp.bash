@@ -88,14 +88,7 @@ mkdir -p $WORK_DIR
 cd $WORK_DIR
 
 # create name including $TE for concise log file
-template_file_dir=$(dirname "$template_file")          # create name including $TE for concise log file
-if   [[ $template_file_dir == $TEMPLATES ]]; then
-    template_print_name="\$TE/$(basename $template_file)"
-elif [[ $template_file_dir == $SAMPLESDIR ]]; then
-    template_print_name="\$SAMPLESDIR/$(basename $template_file)"
-else
-    template_print_name="$template_file"
-fi
+template_file=$(shorten_path "$template_file")
 echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $template_print_name ${@:2}" | tee -a "${WORK_DIR}"/log
 cli_command=$(echo "$SCRIPT_NAME $template_print_name ${@:2}")
 
@@ -515,7 +508,7 @@ if [[ $jobfiles_flag == "1" ]]; then
 #############################################################
     if [[ $orbit_download_flag == "1" && $template_file == *"Sen"*  ]]; then
        # download new Sentinel-1 orbits from the ASF
-       run_command "download_orbits_asf.bash"
+       run_command "run_download_orbits_asf.bash"
     fi
 
     # clean directory for processing and create jobfiles

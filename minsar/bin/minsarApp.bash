@@ -503,7 +503,7 @@ if [[ $jobfiles_flag == "1" ]]; then
 #############################################################
     if [[ $orbit_download_flag == "1" && $template_file == *"Sen"*  ]]; then
        # download new Sentinel-1 orbits from the ASF
-       run_command "download_orbits_asf.bash"
+       run_command "run_download_orbits_asf.bash"
     fi
 
     # clean directory for processing and create jobfiles
