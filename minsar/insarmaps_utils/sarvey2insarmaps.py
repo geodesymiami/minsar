@@ -22,13 +22,15 @@ def create_parser():
         epilog="""\
     Examples:
 
+               Masjed dam:
+        sarvey2insarmaps.py outputs/p2_coh80_ts.h5
+        sarvey2insarmaps.py outputs/p2_coh80_ts.h5 --sarvey-geocorr
+
         sarvey2insarmaps.py outputs/shp/p2_coh70_ts.shp
         sarvey2insarmaps.py outputs/shp/p2_coh70_ts.shp --geocorr
         sarvey2insarmaps.py outputs/shp/p2_coh70_ts.shp --make-jobfile
         sarvey2insarmaps.py outputs/shp/p2_coh70_ts.shp --skip-upload
 
-        sarvey2insarmaps.py outputs/p2_coh80_ts.h5
-        sarvey2insarmaps.py outputs/p2_coh80_ts.h5 --sarvey-geocorr
     """,
         formatter_class=argparse.RawTextHelpFormatter
     )
@@ -166,7 +168,7 @@ def extract_metadata_from_inputs(inputs_path):
     #load slcStack.h5 attributes
     if slc_path.exists():
         slc_attr = readfile.read_attribute(str(slc_path))
-        
+
         keys_to_extract = [
             "mission", "PLATFORM", "beam_mode", "flight_direction", "relative_orbit",
             "processing_method", "REF_LAT", "REF_LON", "areaName", "DATE",
@@ -246,7 +248,7 @@ def extract_metadata_from_inputs(inputs_path):
     print(f"[INFO] slcStack.h5: mission={mission}, platform={platform}, beam_mode={beam}, orbit={orbit}")
     print(f"[INFO] bounding box: {bbox}")
     print(f"[INFO] dataset name: {dataset_name}")
-    
+
     return attributes, dataset_name
 
 def update_and_save_final_metadata(json_dir, outdir, dataset_name, metadata):
@@ -381,7 +383,7 @@ def main():
             raise FileNotFoundError(f"Required file not found: {fpath}")
 
     metadata, dataset_name = extract_metadata_from_inputs(inputs_path)
-    
+
     if not metadata:
         print("[WARN] No metadata found in slcStack.h5 or geometryRadar.h5.")
 
@@ -419,7 +421,7 @@ def main():
             print("[INFO] Creating jobfile only, skipping execution.")
             create_jobfile(inps, input_path, (cmd0, cmd1, cmd2, cmd3, cmd4), json_dir, base_dir, mbtiles_path, dataset_name, metadata)
             return
-    
+
     #only run if not --make-jobfile
     if input_path.suffix == ".h5":
         run_command(cmd0, cwd=h5_path.parent.parent)
