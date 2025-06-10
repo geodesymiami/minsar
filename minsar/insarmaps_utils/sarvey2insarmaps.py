@@ -22,7 +22,7 @@ def create_parser():
         epilog="""\
     Examples:
 
-               Masjed dam:
+               Masjed dam (sarvey example)
         sarvey2insarmaps.py outputs/p2_coh80_ts.h5
         sarvey2insarmaps.py outputs/p2_coh80_ts.h5 --sarvey-geocorr
 
