@@ -41,7 +41,7 @@ then
   export SCRATCHDIR=/data/HDF5EOS
 fi
 ###############################################
-if [[ ${HOSTNAME} == *stampede* ]] || [[ ${TACC_SYSTEM} == *stampede* ]]
+if [[ ${HOSTNAME} == *stampede* ]] || [[ ${TACC_SYSTEM:-} == *stampede* ]]
 then
   export PLATFORM_NAME=stampede3
   # export PLATFORM_NAME=circleci         # for testing
