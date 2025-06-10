@@ -99,8 +99,8 @@ fi
 if [ "$(uname)" == "Darwin" ]
 then
   export PLATFORM_NAME=mac
-  export JOBSCHEDULER=NONE
-  export QUEUENAME=NONE
+  export JOBSCHEDULER=SLURM
+  export QUEUENAME=skx
   export WORKDIR=~/oneDrive/insarlab
   export SCRATCHDIR=~/onedrive/scratch
   export GEOS_DIR=/opt/homebrew/Cellar/geos/3.12.0
