@@ -18,6 +18,9 @@ pip install -e tools/sarvey[dev]
 
 pip install PySide6
 
+mamba install --file tools/insarmaps_scripts/conda_requirements.txt --yes -c conda-forge
+pip install -r tools/insarmaps_scripts/pip_requirements.txt
+
 git clone git@github.com:falkamelung/sarplotter-main.git tools/sarplotter-main
 ###  Reduce miniforge3 directory size #################
 rm -rf tools/miniforge3/pkgs
