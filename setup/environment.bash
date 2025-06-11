@@ -127,7 +127,6 @@ source $MINSAR_HOME/minsar/lib/minsarApp_specifics.sh
 source $MINSAR_HOME/minsar/lib/common_helpers.sh
 
 if [ -n "${prompt:-}" ]; then
-then
     echo "MINSAR_HOME:" ${MINSAR_HOME}
     echo "PYTHON3DIR:     " ${PYTHON3DIR}
     echo "SSARAHOME:      " ${SSARAHOME}
