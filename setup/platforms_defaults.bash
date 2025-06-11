@@ -54,7 +54,7 @@ then
   export QUEUENAME=$QUEUE_NORMAL
 fi
 ###############################################
-if [[ ${HOSTNAME} == *frontera* ]] || [[ ${TACC_SYSTEM} == *frontera* ]]
+if [[ ${HOSTNAME} == *frontera* ]] || [[ ${TACC_SYSTEM:-} == *frontera* ]]
 then
   export PLATFORM_NAME=frontera
   export JOBSCHEDULER=SLURM
