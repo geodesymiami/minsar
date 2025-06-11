@@ -1,28 +1,30 @@
 #!/usr/bin/env bash
+set -euo pipefail
 echo "sourcing ${MINSAR_HOME}/setup/environment.bash ..."
 #####################################
 # Setting the environment (don't modify)
 # check for required variables
-[ -z $MINSAR_HOME ] && echo ERROR: MINSAR_HOME is required variable && return
-[ -z $SCRATCHDIR ] && echo ERROR: SCRATCHDIR is required variable && return
+: "${MINSAR_HOME:?ERROR: MINSAR_HOME is a required variable}"
+: "${SCRATCHDIR:?ERROR: SCRATCHDIR is a required variable}"
 
 # set required variables to standard values if not given
-[ -z $JOBSCHEDULER ] && export JOBSCHEDULER=SLURM
-[ -z $QUEUENAME ] && export QUEUENAME=normal
-[ -z ${WORKDIR} ] && export WORKDIR=$SCRATCHDIR
+export JOBSCHEDULER="${JOBSCHEDULER:-SLURM}"
+export QUEUENAME="${QUEUENAME:-normal}"
+export WORKDIR="${WORKDIR:-$SCRATCHDIR}"
 
-[ -f ~/accounts/remote_hosts.bash ] && source ~/accounts/remote_hosts.bash
+[[ -f ~/accounts/remote_hosts.bash ]] && source ~/accounts/remote_hosts.bash
 
 #  set customizable variables to defaults if not given
-[ -z ${USER_PREFERRED} ] && export USER_PREFERRED=$USER
-[ -z ${NOTIFICATIONEMAIL} ] && export NOTIFICATIONEMAIL=${USER_PREFERRED}@rsmas.miami.edu
-[ -z ${JOBSHEDULER_PROJECTNAME} ] && export JOBSHEDULER_PROJECTNAME=insarlab
-[ -z ${SENTINEL_ORBITS} ] && export SENTINEL_ORBITS=${WORKDIR}/S1orbits
-[ -z ${SENTINEL_AUX} ] && export SENTINEL_AUX=${WORKDIR}/S1aux
-[ -z ${WEATHER_DIR} ] && export WEATHER_DIR=${WORKDIR}/WEATHER
-[ -z ${PRECIP_DIR} ] && export PRECIP_DIR=${SCRATCHDIR}/gpm_data
-[ -z ${PRECIPPRODUCTS_DIR} ] && export PRECIPPRODUCTS_DIR=${SCRATCHDIR}/precip_products
-[ -z ${TESTDATA_ISCE} ] && export TESTDATA_ISCE=${WORKDIR}/TESTDATA_ISCE
+export USER_PREFERRED="${USER_PREFERRED:-$USER}"
+export NOTIFICATIONEMAIL="${NOTIFICATIONEMAIL:-${USER_PREFERRED}@rsmas.miami.edu}"
+export JOBSCHEDULER_PROJECTNAME="${JOBSCHEDULER_PROJECTNAME:-insarlab}"
+
+export SENTINEL_ORBITS="${SENTINEL_ORBITS:-$WORKDIR/S1orbits}"
+export SENTINEL_AUX="${SENTINEL_AUX:-$WORKDIR/S1aux}"
+export WEATHER_DIR="${WEATHER_DIR:-$WORKDIR/WEATHER}"
+export PRECIP_DIR="${PRECIP_DIR:-$SCRATCHDIR/gpm_data}"
+export PRECIPPRODUCTS_DIR="${PRECIPPRODUCTS_DIR:-$SCRATCHDIR/precip_products}"
+export TESTDATA_ISCE="${TESTDATA_ISCE:-$WORKDIR/TESTDATA_ISCE}"
 
 ############ FOR PROCESSING  #########
 python_version=$(echo "python3.$(${MINSAR_HOME}/tools/miniforge3/bin/python --version | cut -d. -f2)")        # e.g. python3.10
@@ -113,7 +115,7 @@ export PATH=${PYTHON3DIR}/bin:${PATH}
 export PATH="${MINSAR_HOME}/tools/sarvey/sarvey:$PATH"
 export PATH="${MINSAR_HOME}/tools/sarplotter-main/app:$PATH"
 
-[ -n ${MATLAB_HOME} ] && export PATH=${PATH}:${MATLAB_HOME}/bin
+export PATH="${PATH}${MATLAB_HOME:+:${MATLAB_HOME}/bin}"
 
 #export LD_LIBRARY_PATH=${LD_LIBRARY_PATH-""}
 #export LD_LIBRARY_PATH=${PYTHON3DIR}/lib
