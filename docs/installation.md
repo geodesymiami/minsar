@@ -30,7 +30,6 @@ cd minsar
 ./setup/install_vsm.bash
 ./setup/install_credential_files.bash
 [[ "$(uname)" == "Darwin" ]] && ./setup/install_insarmaps_scripts.bash
-[
 ```
 The `install_python.bash` command is [here](https://github.com/geodesymiami/rsmas_insar/blob/master/setup/install_python.bash) and `install_code.bash`  is  [here](https://github.com/geodesymiami/rsmas_insar/blob/master/setup/install_code.bash) and `install_sarvey_VSM.bash`  is
 [here](https://github.com/geodesymiami/rsmas_insar/blob/master/setup/install_sarvey_VSM.bash) and  `install_credential_files.bash`  is  [here](https://github.com/geodesymiami/rsmas_insar/blob/master/setup/install_credential_files.bash).
