@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-set -euo pipefail
+if [[ $- != *i* ]]; then
+  # non-interactive: turn on strict error checking
+  set -euo pipefail
+fi
+
 echo "sourcing ${MINSAR_HOME}/setup/environment.bash ..."
 #####################################
 # Setting the environment (don't modify)
