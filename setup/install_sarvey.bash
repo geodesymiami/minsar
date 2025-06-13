@@ -14,7 +14,7 @@ conda create --name sarvey python=3.10 pip -y
 source tools/miniforge3/etc/profile.d/conda.sh
 conda activate sarvey
 
-mamba install --yes -c conda-forge libpq postgresql pysolid gdal
+mamba install --yes -c conda-forge libpq postgresql pysolid gdal psycopg2
 pip install -e tools/sarvey[dev]
 pip install PySide6
 
@@ -24,8 +24,9 @@ pip install PySide6
 [[ -d tools/insarmaps_scripts ]] || \
   git clone git@github.com:geodesymiami/insarmaps_scripts.git tools/insarmaps_scripts
 
-mamba install tippecanoe mintpy --yes -c conda-forge
-pip install psycopg2 pycurl geocoder
+# removed because of incompatibility with sarvey
+#mamba install tippecanoe mintpy --yes -c conda-forge
+#pip install pycurl geocoder
 
 ###  Reduce miniforge3 directory size #################
 rm -rf tools/miniforge3/pkgs
