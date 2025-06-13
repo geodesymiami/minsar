@@ -6,7 +6,8 @@ export MINSAR_HOME=$PWD
 source setup/platforms_defaults.bash;
 source setup/environment.bash;
 
-git clone git@github.com:luhipi/sarvey tools/sarvey
+[[ -d tools/sarvey ]] || \
+  git clone git@github.com:luhipi/sarvey tools/sarvey
 
 ### Install GDAL into sarvey environment #########################
 conda create --name sarvey python=3.10 pip -y
@@ -17,7 +18,8 @@ conda install -c conda-forge pysolid gdal --yes
 pip install -e tools/sarvey[dev]
 pip install PySide6
 
-git clone git@github.com:falkamelung/sarplotter-main.git tools/sarplotter-main
+[[ -d tools/sarplotter-main ]] || \
+   git clone git@github.com:falkamelung/sarplotter-main.git tools/sarplotter-main
 
 [[ -d tools/insarmaps_scripts ]] || \
   git clone git@github.com:geodesymiami/insarmaps_scripts.git tools/insarmaps_scripts
@@ -31,9 +33,4 @@ rm -rf tools/miniforge3/pkgs
 echo ""
 echo "Installation of sarvey (install_sarvey.bash) DONE"
 echo ""
-
-# FA 5/2025: should install whatever possible with pip, e.g. pip install PySide6
-#conda install -n sarvey -c conda-forge setuptools cython pyproj h5py numpy scipy matplotlib numba mintpy shapely geopandas gstools pydantic=1.10.* json5 overpy PySide6 -y
-#pip install -e tools/MiaplPy
-#pip install -e tools/sarvey
 
