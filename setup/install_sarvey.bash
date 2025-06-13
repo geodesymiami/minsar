@@ -25,7 +25,7 @@ pip install PySide6
   git clone git@github.com:geodesymiami/insarmaps_scripts.git tools/insarmaps_scripts
 
 mamba install tippecanoe mintpy --yes -c conda-forge
-pip install psycopg2 pycurl
+pip install psycopg2 pycurl geocoder
 
 ###  Reduce miniforge3 directory size #################
 rm -rf tools/miniforge3/pkgs
