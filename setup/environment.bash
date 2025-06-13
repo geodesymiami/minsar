@@ -7,12 +7,12 @@ echo "sourcing ${MINSAR_HOME}/setup/environment.bash ..."
 : "${MINSAR_HOME:?ERROR: MINSAR_HOME is a required variable}"
 : "${SCRATCHDIR:?ERROR: SCRATCHDIR is a required variable}"
 
+source ${MINSAR_HOME}/platform_defaults.bash
+
 # set required variables to standard values if not given
 export JOBSCHEDULER="${JOBSCHEDULER:-SLURM}"
 export QUEUENAME="${QUEUENAME:-normal}"
 export WORKDIR="${WORKDIR:-$SCRATCHDIR}"
-
-[[ -f ~/accounts/remote_hosts.bash ]] && source ~/accounts/remote_hosts.bash
 
 #  set customizable variables to defaults if not given
 export USER_PREFERRED="${USER_PREFERRED:-$USER}"
@@ -131,3 +131,8 @@ if [ -n "${prompt:-}" ]; then
     echo "PYTHON3DIR:     " ${PYTHON3DIR}
     echo "SSARAHOME:      " ${SSARAHOME}
 fi
+########## Your personal aliasses/functions #########
+[[ -f ~/accounts/remote_hosts.bash ]] && source ~/accounts/remote_hosts.bash
+[[ -f ~/accounts/alias.bash ]] && source ~/accounts/alias.bash
+[[ -f ~/accounts/login_alias.bash ]] && source ~/accounts/login_alias.bash
+
