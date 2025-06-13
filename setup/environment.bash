@@ -5,9 +5,10 @@ echo "sourcing ${MINSAR_HOME}/setup/environment.bash ..."
 # Setting the environment (don't modify)
 # check for required variables
 : "${MINSAR_HOME:?ERROR: MINSAR_HOME is a required variable}"
-: "${SCRATCHDIR:?ERROR: SCRATCHDIR is a required variable}"
 
-source ${MINSAR_HOME}/setup/platform_defaults.bash
+source ${MINSAR_HOME}/setup/platforms_defaults.bash
+
+: "${SCRATCHDIR:?ERROR: SCRATCHDIR is a required variable}"
 
 # set required variables to standard values if not given
 export JOBSCHEDULER="${JOBSCHEDULER:-SLURM}"
