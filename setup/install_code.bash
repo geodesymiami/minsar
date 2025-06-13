@@ -36,14 +36,6 @@ git clone git@github.com:scottstanie/sardem tools/sardem
 git clone git@github.com:falkamelung/MintPy.git tools/MintPy_falk
 #git clone git@github.com:geodesymiami/SourceInversion.git tools/SourceInversion
 
-[[ -d tools/insarmaps_scripts ]] || \
-  git clone git@github.com:geodesymiami/insarmaps_scripts.git tools/insarmaps_scripts
-# FA 6/2025: Installing using requirements did not work. json_2_hdf raised weried error
-# mamba install --file minsar/conda_requirements.txt --yes -c conda-forge
-# mamba install --file tools/insarmaps_scripts/conda_requirements.txt --yes -c conda-forge
-mamba install tippecanoe mintpy --yes -c conda-forge
-pip install psycopg2 pycurl geocoder
-
 ### Install python code and dependencies  ########
 pip install -r tools/MintPy/requirements.txt
 pip install -e tools/MintPy
@@ -53,6 +45,14 @@ pip install -r tools/PlotData/requirements.txt
 pip install -r tools/Precip/requirements.txt
 pip install -r tools/sardem/requirements.txt
 pip install -e tools/sardem
+
+[[ -d tools/insarmaps_scripts ]] || \
+  git clone git@github.com:geodesymiami/insarmaps_scripts.git tools/insarmaps_scripts
+# FA 6/2025: Installing using requirements did not work. json_2_hdf raised weried error
+# mamba install --file minsar/conda_requirements.txt --yes -c conda-forge
+# mamba install --file tools/insarmaps_scripts/conda_requirements.txt --yes -c conda-forge
+mamba install tippecanoe mintpy --yes -c conda-forge
+pip install psycopg2 pycurl geocoder
 
 ###  Reduce miniforge3 directory size #################
 rm -rf tools/miniforge3/pkgs
