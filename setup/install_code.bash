@@ -42,7 +42,7 @@ git clone git@github.com:falkamelung/MintPy.git tools/MintPy_falk
 # mamba install --file minsar/conda_requirements.txt --yes -c conda-forge
 # mamba install --file tools/insarmaps_scripts/conda_requirements.txt --yes -c conda-forge
 mamba install tippecanoe mintpy --yes -c conda-forge
-pip install psycopg2 pycurl
+pip install psycopg2 pycurl geocoder
 
 ### Install python code and dependencies  ########
 pip install -r tools/MintPy/requirements.txt
