@@ -14,7 +14,7 @@ conda create --name sarvey python=3.10 pip -y
 source tools/miniforge3/etc/profile.d/conda.sh
 conda activate sarvey
 
-conda install -c conda-forge pysolid gdal --yes
+mamba install --yes -c conda-forge libpq postgresql pysolid gdal
 pip install -e tools/sarvey[dev]
 pip install PySide6
 
