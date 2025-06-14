@@ -325,8 +325,11 @@ def run_command(command, shell=False, conda_env=None, cwd=None):
 
     full_cmd = prefix + command
 
-    cmd_str = ' '.join(full_cmd) if isinstance(full_cmd, list) else full_cmd
-    print(f"##########################\nRunning....\n{cmd_str}\n")
+    # replace abosolute by relative paths for display
+    cmd_for_display = convert_to_relative_path(full_cmd, cwd=cwd or os.getcwd())
+    cmd_str_for_display = ' '.join(cmd_for_display) if isinstance(cmd_for_display, list) else cmd_for_display
+    print(f"##########################\nRunning (displaying relative paths)....\n{cmd_str_for_display}\n")
+
     try:
         subprocess.run(full_cmd, check=True, shell=shell, cwd=str(cwd) if cwd else None)
     except subprocess.CalledProcessError as e:
@@ -345,6 +348,21 @@ def run_command(command, shell=False, conda_env=None, cwd=None):
     print("Running:", full_cmd)
     subprocess.run(full_cmd, check=True, shell=shell, cwd=cwd)
 
+
+def convert_to_relative_path(cmd_list, cwd=None):
+    """
+    Return a list where any element that lives under cwd is replaced by its relative path.
+    """
+    # make sure cwd is a string
+    cwd = str(cwd or os.getcwd())
+    rel = []
+    for token in cmd_list:
+        # only rewrite absolute paths under cwd
+        if os.path.isabs(token) and token.startswith(cwd + os.sep):
+            rel.append(os.path.relpath(token, cwd))
+        else:
+            rel.append(token)
+    return rel
 
 
 def create_jobfile(inps, input_path, cmds, json_dir, base_dir, mbtiles_path, dataset_name, metadata):
