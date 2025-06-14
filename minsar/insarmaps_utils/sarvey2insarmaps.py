@@ -58,6 +58,7 @@ def load_config_and_input_path(inps):
     """
     config_json_path = Path(inps.config_json).resolve() if inps.config_json else None
 
+    # FA: There are packages to read json format
     if config_json_path and config_json_path.exists():
         print(f"Using config file: {config_json_path}")
         with open(config_json_path) as f:
@@ -316,7 +317,7 @@ def run_command(command, shell=False, conda_env=None, cwd=None):
     """
     Execute a shell command and print the command string.
     """
-    # FA: is command always a list? If not this may need modification
+    # FA: is command always a list? If not this function may need modification
 
     prefix = []
     if conda_env:
@@ -325,7 +326,7 @@ def run_command(command, shell=False, conda_env=None, cwd=None):
     full_cmd = prefix + command
 
     cmd_str = ' '.join(full_cmd) if isinstance(full_cmd, list) else full_cmd
-    print(f"\nRunning: {cmd_str}")
+    print(f"##########################\nRunning....\n{cmd_str}\n")
     try:
         subprocess.run(full_cmd, check=True, shell=shell, cwd=str(cwd) if cwd else None)
     except subprocess.CalledProcessError as e:
@@ -420,7 +421,7 @@ def main():
         raise EnvironmentError("Environment variable RSMASINSAR_HOME is not set.")
 
     #input/output paths
-    # That this is not in build_commands is confusing. If you can't put it there create your own functions
+    # FA: That this is not in build_commands is confusing. If you can't put it there create your own functions
     input_path = Path(inps.input_file).resolve()
     if input_path.suffix == ".h5":
         h5_path = input_path
@@ -428,8 +429,7 @@ def main():
         print(f"[INFO] Input is HDF5. Inferred shapefile path: {shp_path}")
         #step0: always run sarvey_export if input is HDF5
         # FA: This is a complicated function. You are dealing with environments, so we need "env" in the function name.
-        # You can use CONDA_PREFIX to determine in which environemnt we are.
-        # if
+        # FA: You can use CONDA_PREFIX to determine in which environemnt we are.
         sarvey_export_path = get_sarvey_export_path()
         cmd_sarvey_export = [sarvey_export_path, str(h5_path), "-o", str(shp_path)]
         if inps.sarvey_geocorr:
@@ -486,6 +486,13 @@ def main():
     # FA: may want to create an insarmaps.log to be consistent with MintPy and miaplpy
     host = inps.insarmaps_host.split(",")[0]
     url = generate_insarmaps_url(host, dataset_name, metadata, geocorr=inps.do_geocorr)
+
+    with open('insarmaps.log', 'a') as f:
+        f.write(url + "\n")
+
+    if os.path.isdir("outputs/pic"):
+      open("outputs/pic/insarmaps.log", 'a').write(url + "\n")
+
     print(f"\nView on Insarmaps:\n{url}")
     webbrowser.open(url)
 
