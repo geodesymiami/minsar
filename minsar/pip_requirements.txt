@@ -14,4 +14,5 @@ pdf2image      # for create_html.py
 #netCDF4        # for nc4 files
 asf_search
 burst2safe
+folium
 #pyside6        # for sarvey
