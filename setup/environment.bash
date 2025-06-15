@@ -78,6 +78,7 @@ export PROJ_LIB=${PYTHON3DIR}/share/proj:${PYTHON3DIR}/lib/python3.??/site-packa
 export GDAL_DATA=${PYTHON3DIR}/share/gdal
 
 export PYTHONPATH=${PYTHONPATH-""}
+export PYTHONPATH=${MINTPY_HOME}/mintpy:${PYTHONPATH}       # ensures that pip -e installed MintPy is used
 export PYTHONPATH=${PYTHONPATH}:${MIMTPY_HOME}
 export PYTHONPATH=${PYTHONPATH}:${ISCE_HOME}:${ISCE_HOME}/components
 export PYTHONPATH=${PYTHONPATH}:${ISCE_STACK}
@@ -115,7 +116,7 @@ export PATH=${PATH}:${MINSAR_HOME}/tools/insarmaps_scripts
 export PATH=${PATH}:${MINSAR_HOME}/tools/autoencoder
 export PATH=${PATH}:${PROJ_LIB}
 export PATH=${PATH}:${MINSAR_HOME}/tools/S4I/viewer4falk
-export PATH=${ISCE_HOME}/applications:${ISCE_HOME}/bin:${ISCE_STACK}:${PATH}
+export PATH=${ISCE_HOME}/applications:${ISCE_HOME}/bin:${ISCE_STACK}:${ISCE_STACK}/topsStack:${PATH};
 export PATH=${PYTHON3DIR}/bin:${PATH}
 export PATH="${MINSAR_HOME}/tools/sarvey/sarvey:$PATH"
 export PATH="${MINSAR_HOME}/tools/sarplotter-main/app:$PATH"

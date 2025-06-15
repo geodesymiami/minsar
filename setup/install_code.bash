@@ -65,8 +65,10 @@ cc=tools/miniforge3/bin/cc
 make -C tools/snaphu-v2.0.5/src
 
 ### Adding not-commited MintPy fixes
-cp -p minsar/additions/mintpy/save_hdfeos5.py tools/MintPy/src/mintpy/
-cp -p minsar/additions/mintpy/cli/save_hdfeos5.py tools/MintPy/src/mintpy/cli/
+cp minsar/additions/mintpy/cli/save_hdfeos5.py tools/miniforge3/lib/python3.?/site-packages/mintpy/cli
+cp minsar/additions/mintpy/save_hdfeos5.py tools/miniforge3/lib/python3.?/site-packages/mintpy
+#cp -p minsar/additions/mintpy/save_hdfeos5.py tools/MintPy/src/mintpy/
+#cp -p minsar/additions/mintpy/cli/save_hdfeos5.py tools/MintPy/src/mintpy/cli/
 
 ### Adding not-committed MiaplPy fixes (for the first Sara said she will do it; the second is wrongly out-commented isce imports)
 cp -p minsar/additions/miaplpy/prep_slc_isce.py tools/MiaplPy/src/miaplpy
