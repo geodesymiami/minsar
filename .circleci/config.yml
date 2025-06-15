@@ -1,6 +1,6 @@
 version: 2.1
 jobs:
-  rsmas-insar-testing:
+  minsar-testing:
     machine:
       image: default
 
@@ -13,25 +13,26 @@ jobs:
           name: Set up Enviornment
           command: |
             echo "Working directory: ${PWD}"
-            bash -x setup/install_python.bash
-            bash -x setup/install_code.bash
+            ./setup/install_python.bash
+            ./setup/install_code.bash
+            ./setup/install_sarvey.bash
             minsar/minsarApp.bash --help
-            echo "alias s.bw2='export RSMASINSAR_HOME=${CIRCLE_WORKING_DIRECTORY}; source project/setup/platforms_defaults.bash; source project/setup/environment.bash'" >> ~/.bashrc
+            echo "alias s.bw2m='export MINSAR_HOME=${CIRCLE_WORKING_DIRECTORY}; source project/setup/environment.bash'" >> ~/.bashrc
 
       - run:
           name: Prepare test data (Sentinel-1)
           command: |
-            export RSMASINSAR_HOME=${CIRCLE_WORKING_DIRECTORY}
+            export MINSAR_HOME=${CIRCLE_WORKING_DIRECTORY}
             source setup/platforms_defaults.bash;
             source setup/environment.bash
 
             wget -O- http://149.165.154.65/data/circleci/ci_small_unittestGalapagosSenDT128.tar | tar -xvf - -C ${SCRATCHDIR}
             wget -O- http://149.165.154.65/data/circleci/S1orbits_unittestGalapagosSenDT128.tar | tar -xvf - -C "$(dirname ${SENTINEL_ORBITS})"
             
-            minsarApp.bash ${RSMASINSAR_HOME}/samples/circleci/ci_unittestGalapagosSenDT128.template --no-orbit-download --start dem --stop jobfiles
+            minsarApp.bash ${MINSAR_HOME}/samples/circleci/ci_unittestGalapagosSenDT128.template --no-orbit-download --start dem --stop jobfiles
             
 workflows:
   version: 2
   testing:
     jobs:
-      - rsmas-insar-testing
+      - minsar-testing
