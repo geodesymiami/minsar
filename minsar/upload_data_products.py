@@ -15,7 +15,7 @@ from minsar.objects.rsmas_logging import loglevel
 from minsar.objects import message_rsmas
 import minsar.utils.process_utilities as putils
 import minsar.job_submission as js
-from minsar.create_html import create_html
+from minsar.src.minsar.create_html import create_html
 
 sys.path.insert(0, os.getenv('SSARAHOME'))
 import password_config as password
@@ -25,10 +25,11 @@ EXAMPLE = """example:
     upload_data_products.py mintppy
     upload_data_products.py miaplpy
     upload_data_products.py miaplpy/network_single_reference
+    upload_data_products.py outputs
 """
 
 DESCRIPTION = (
-    "Uploads mintpy and miaplpy data products to jetstream server"
+    "Uploads mintpy and miaplpy data products to jetstream server. Assumes a pic folder. Creates index.html"
 )
 
 def create_parser():
@@ -57,8 +58,7 @@ def cmd_line_parse(iargs=None):
             inps.mintpy_flag = True
         elif 'miaplpy' in inps.data_dirs[0]:
             inps.miaplpy_flag = True
-        else:
-            raise Exception("USER ERROR: requires mintpy or miaplpy directory")
+   
 
     print('inps: ',inps)
     return inps
@@ -132,7 +132,7 @@ def main(iargs=None):
                   '/'+ data_dir +'/geo/geo_*.shx',
                   ])
 
-        if 'miaplpy' in data_dir:
+        elif 'miaplpy' in data_dir:
             if 'network_' in data_dir:
                dir_list = [ data_dir ]
             else:
@@ -211,7 +211,11 @@ def main(iargs=None):
                         scp_list.extend([
                         '/'+ os.path.dirname(data_dir) +'/inputs/slcStack.h5'
                         ])
-
+        else:
+            # sarvey. Maye work for other 
+            if os.path.isdir(data_dir + '/pic'):
+               create_html_if_needed(data_dir + '/pic')
+            scp_list.extend([ '/'+ data_dir +'/pic', ]) 
     print('################')
     print('Data to upload: ')
     for element in scp_list:

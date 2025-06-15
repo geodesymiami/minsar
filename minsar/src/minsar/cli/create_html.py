@@ -11,10 +11,12 @@ from minsar.objects import message_rsmas
 EXAMPLE = """examples:
     create_html.py mintpy/pic
     create_html.py miaplpy_SN_201606_201608/network_single_reference/pic
+    create_html.py outputs/pic
+    create_html.py SSunnyIsles/outputs/pic
 """
 
 DESCRIPTION = (
-    "Creates index.html file to display images in the mintpy/pic folder."
+    "Creates index.html file to display images in the mintpy/pic  or outputs/pic (sarvey) folders."
 )
 
 def create_parser():
