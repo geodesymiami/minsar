@@ -1,8 +1,8 @@
 # Installation guide
 
-* Set `$MINSAR_HOME` in your [.bashrc](https://github.com/falkamelung/rsmas_insar/blob/master/docs/bashrc_contents.md). You also need a [.bash_profile](./bash_profile.md) to ensure your .bashrc is read.
+* Set `$MINSAR_HOME` in your [.bashrc](https://github.com/falkamelung/minsar/blob/master/docs/bashrc_contents.md). You also need a [.bash_profile](./bash_profile.md) to ensure your .bashrc is read.
 
-* Create an ~/accounts directory with your data download credentials (for contents see [here](./accounts_info.md)). If you have access to the RSMAS accounts repo clone it into your /home or `$WORK2` directory
+* Create an ~/accounts directory with your data download credentials (for contents see [here](./accounts_info.md)). If you have access to the RSMAES accounts repo clone it into your /home or `$WORK2` directory
 
 
 ## How to install Miami InSAR code
@@ -43,7 +43,7 @@ tar xvf ci_small_unittestGalapagosSenDT128.tar
 minsarApp.bash $SAMPLESDIR/circleci/ci_unittestGalapagosSenDT128.template --start dem
 ```
 ### How not to loose your working installation
-You can't be sure the new installation works until you have tested it. It is recommended to keep a copy of the working installation, for example, instead of removing `rsmas_insar`  do `mv rsmas_insar good_rsmas_insar`. I have  old versions in `code_old`, `code_veryold` directories  which  can be used in the case of unexpected problems.
+You can't be sure the new installation works until you have tested it. It is recommended to keep a copy of the working installation, for example, instead of removing `minsar`  do `mv minsar good_minsar`. I have  old versions in `code_old`, `code_veryold` directories  which  can be used in the case of unexpected problems.
 
 ### #Orbits and aux files
 This has created directories for the orbits for Sentinel-1 (`$SENTINEL_ORBITS`), which The can be downloaded using `dloadOrbits.py`. The IPF calibration files (`SENTINEL_AUX`) are downloaded from: https://qc.sentinel1.eo.esa.int/aux_cal/ .
@@ -52,7 +52,7 @@ This has created directories for the orbits for Sentinel-1 (`$SENTINEL_ORBITS`),
 The `$SENTINEL_ORBITS` and `miniconda3.tar` are located on `$SCRATCHDIR` which  gets purged every couple of weeks. `minsarApp.bash uses `$MINSAR_HOME/tools/miniconda3.tar` and  `$WORKDIR/S1orbits.tar`  if files have been purged`.
 
 ### Next steps and possible problems
-* To check your installation, run the testdata as explained [here](https://github.com/geodesymiami/rsmas_insar/wiki/Testing-the-code). You need to have the testdata in your `$TESTDATA_ISCE` directory.
+* To check your installation, run the testdata as explained [here](https://github.com/geodesymiami/minsar/wiki/Testing-the-code). You need to have the testdata in your `$TESTDATA_ISCE` directory.
 
 ```
 ls  $TESTDATA_ISCE
@@ -73,7 +73,7 @@ total 17528848
 drwxrws-w-+ 2 famelung insarlab       4096 Jan 17 16:58 test
 //login4/nethome/dwg11/insarlab/TESTDATA_ISCE[59]
 ```
-* For possible problems, check [here](https://github.com/geodesymiami/rsmas_insar/blob/master/setup/installation_issues.md).
+* For possible problems, check [here](https://github.com/geodesymiami/minsar/blob/master/setup/installation_issues.md).
 
 
 ### *. [Set-up in Miami](./set_up_miami.md) ###
