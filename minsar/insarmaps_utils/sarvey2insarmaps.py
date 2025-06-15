@@ -512,7 +512,8 @@ def main():
       open("outputs/pic/insarmaps.log", 'a').write(url + "\n")
 
     print(f"\nView on Insarmaps:\n{url}")
-    webbrowser.open(url)
+    if platform.system() == "Darwin":
+       webbrowser.open(url)
 
     print("\nAll done!")
 

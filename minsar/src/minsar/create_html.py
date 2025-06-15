@@ -3,8 +3,7 @@
 # This script creates an index.html file o display mintpy results.
 ############################################################
 import os  
-import sys
-import argparse
+import glob
 import re
 import fnmatch
 from pdf2image import convert_from_path
@@ -117,12 +116,98 @@ def build_html(directory_path):
     print(f"HTML file created: \n{html_file_path}")
     return None
 
-def create_html(inps):
+def build_sarvey_html(directory_path):
+    print('DIRECTORY_PATH:', directory_path )    
+    png_file_paths = [file for file in os.listdir(directory_path) if file.lower().endswith(('.png'))]
+    json_file = [file for file in os.listdir(os.path.dirname(directory_path)) if file.lower().endswith(('.json'))]
+
+    # keep copy of directory name for later display
+    orig_dir = os.path.relpath(directory_path, os.getcwd())
+
+    os.chdir(directory_path)
+
+    # Check if there are any PNG files in the directory
+    if not png_file_paths:
+        print("No PNG files found in the specified directory.")
+        exit()
+
+    # # Define the preferred order of images (temporalCoherence_lowpass_gaussian can be handy for miaplpy DS to eliminate indiviudal high temporal coherence pixels)
+    # preferred_order = ['geo_velocity.png',  
+    #                    'geo_temporalCoherence.png', 'geo_temporalCoherence_lowpass_gaussian.png', 
+    #                    'geo_maskTempCoh.png','geo_maskTempCoh_lowpass_gaussian.png','geo_maskPS.png',
+    #                    'temporalCoherence.png','temporalCoherence_lowpass_gaussian.png',
+    #                    'maskTempCoh.png','maskTempCoh_lowpass_gaussian.png', 'maskPS.png',
+    #                    'geo_avgSpatialCoh.png','avgSpatialCoh.png',
+    #                    'maskConnComp.png',
+    #                    'network.png','coherenceHistory.png','coherenceMatrix.png','rms_timeseries*.png',
+    #                    'numTriNonzeroIntAmbiguity.png','numInvIfgram.png',
+    #                    'velocity.png','geometryRadar.png',
+    #                    'coherence_?.png', 'coherence_??.png',
+    #                    'unwrapPhase_wrap_?.png','unwrapPhase_wrap_??.png',
+    #                    'unwrapPhase_?.png', 'unwrapPhase_??.png',
+    #                    'connectComponent_?.png', 'connectComponent_??.png',
+    #                    'timeseries_*_wrap10_?.png', 'geo_timeseries_*_wrap10_?.png']
+
+    # def sort_key(filename):
+    #     for i, pattern in enumerate(preferred_order):
+    #         if fnmatch.fnmatch(filename, pattern):
+    #             # Extract the number from the filename
+    #             match = re.search(r'\d+', filename)
+    #             number = int(match.group()) if match else 0
+    #             # Return a tuple with the index of the pattern and the number
+    #             return (i, number)
+    #     return (len(preferred_order), 0)
+
+    # png_files.sort(key=sort_key)
+
+    project_name = os.path.basename(os.getcwd())
+
+    # Create the HTML file with headers and image tags
+    html_content = "<html><body>"
+    html_content += f'  <h1>{project_name}</h1>\n'
+
+    html_content += f'  <h2>{orig_dir}</h2>\n'
+    #if 'miaplpy' in directory_path:
+    #   html_content += f'  <h2>network: {network_type}</h2>\n'
+
+    def sort_key(name):
+        m = re.match(r'step_(\d+)(?:_|$)', name)
+        if m:
+            step = int(m.group(1))
+        else:
+            step = float('inf')  # ensure non-step files go at the end
+        return (step, name)
+
+    png_file_paths = sorted(png_file_paths, key=sort_key)
     
+    for png_file_path in png_file_paths:
+        header_tag = f'  <h2>{png_file_path}</h2>\n'
+        img_tag = f'<a href="{png_file_path}"><img src="{png_file_path}" alt="{png_file_path}" width="500"></a><br>'
+        html_content += header_tag + img_tag
+
+    # Close the HTML tags
+    html_content += "</body></html>" + "\n"
+
+    # Write the HTML content to a file without spaces
+    html_file_path = os.path.join(directory_path, 'index.html')
+    with open(html_file_path, 'w') as html_file:
+        html_file.write(html_content)
+
+    html_file_path = message_rsmas.insert_environment_variables_into_path( html_file_path )
+    print(f"HTML file created: \n{html_file_path}")
+    return None
+
+def create_html(inps):
+
     if not os.path.isabs(inps.dir):
          inps.dir = os.getcwd() + '/' + inps.dir
 
-    build_html(inps.dir)
+    # check wehether mintpy/miaplpy or sarvey directory
+    pattern = os.path.join(inps.dir, 'step_[01]_*.png')
+    if not glob.glob(pattern):
+        build_html(inps.dir)
+    else:
+        build_sarvey_html(inps.dir)
 
     return None
 

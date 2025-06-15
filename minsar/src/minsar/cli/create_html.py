@@ -38,7 +38,7 @@ def main(iargs=None):
 
     # import  (remove the directory of script from sys.path)
     sys.path.pop(0)
-    from minsar.create_html import create_html
+    from minsar.src.minsar.create_html import create_html
    
     # run
     create_html(inps)
