@@ -8,23 +8,24 @@ if [ -f /etc/bashrc ]; then
     . /etc/bashrc
 fi
 
-# User specific aliases and functions
-shopt -s expand_aliases
+if [ -n "$SHELL_STARTUP_DEBUG" ]; then
+  DBG_ECHO "${DBG_INDENT}}"
+fi
 
 modules_shell="bash"
 [ -n module ] && module purge
 umask 002
 
-alias s.bgood='s.bnew'
+export USER_PREFERRED=""
+export NOTIFICATIONEMAIL=""
 
-export MINSAR_HOME=~/test/development/rsmas_insar
+export CPL_ZIP_ENCODING=UTF-8
+export WORK2=${WORK2%/*}/stampede2
 
-export JOBSCHEDULER=LSF
-export QUEUENAME=general
-export SCRATCHDIR=/projects/scratch/insarlab/${USER}
+# User specific aliases and functions
+shopt -s expand_aliases
 
-alias s.bnew='cd $MINSAR_HOME; source setup/environment.bash;'  
-alias s.bnew='cd $MINSAR_HOME; source ~/accounts/platforms_defaults.bash; source setup/environment.bash; source ~/accounts/alias.bash; source ~/accounts/login_alias.bash; cd -;'
+alias s.bw2='export MINSAR_HOME=${WORK2%/*}/stampede2/code/minsar; source $MINSAR_HOME/setup/environment.bash'
 
 ```
 
