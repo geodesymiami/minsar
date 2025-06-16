@@ -34,7 +34,6 @@ OUTDIR=""
 
 latest_mintpy_version_flag=1
 
-set -x
 # Parse bbox shorthand
 if [[ "$1" =~ ^[0-9.+-]+:[0-9.+-]+,[-0-9.]+:[-0-9.]+$ ]]; then
     BBOX="$1"

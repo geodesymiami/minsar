@@ -4,7 +4,7 @@ set -euo pipefail
 if [[ $# -ne 1 || "$1" == "--help" || "$1" == "-h" ]]; then
     echo "Usage: $0 <directory>"
     echo "Create tar.gz archive of selected SARvey files."
-    echo "Includes: inputs/, inverted/, config.json, subset.log"
+    echo "Includes: inputs/, inverted/, config.json, subset_sarvey.log"
     echo "Example:  $0 milleniumtower"
     exit 1
 fi
@@ -14,7 +14,7 @@ parent_dir="$(dirname "$base_dir")"
 subpath="$(basename "$base_dir")"
 
 # List of target files/directories
-targets=("inputs" "inverted" "config.json" "subset.log")
+targets=("inputs" "inverted" "config.json" "subset_sarrvey.log" "maskfiles")
 
 # Build the list of existing paths
 include_args=()
@@ -34,6 +34,7 @@ if [ "${#include_args[@]}" -eq 0 ]; then
 fi
 
 # Create the archive
+echo "tar -czf $archive -C $parent_dir ${include_args[@]}"
 tar -czf "$archive" -C "$parent_dir" "${include_args[@]}"
 
 echo "Created archive: ${base_dir}.tar.gz"
