@@ -17,6 +17,7 @@ conda activate sarvey
 mamba install --yes -c conda-forge libpq postgresql pysolid gdal psycopg2
 pip install -e tools/sarvey[dev]
 pip install PySide6
+pip install folium natsort      # required for display_bbox.py and upload_data_products
 
 [[ -d tools/sarplotter-main ]] || \
    git clone git@github.com:falkamelung/sarplotter-main.git tools/sarplotter-main
