@@ -138,7 +138,12 @@ if [ -n "${prompt:-}" ]; then
     echo "SSARAHOME:      " ${SSARAHOME}
 fi
 ########## Your personal aliasses/functions #########
-[[ -f ~/accounts/remote_hosts.bash ]] && source ~/accounts/remote_hosts.bash
-[[ -f ~/accounts/alias.bash ]] && source ~/accounts/alias.bash
-[[ -f ~/accounts/login_alias.bash ]] && source ~/accounts/login_alias.bash
-
+if [[ -f ~/accounts/remote_hosts.bash ]]; then
+    source ~/accounts/remote_hosts.bash
+fi
+if [[ -f ~/accounts/alias.bash ]]; then
+   source ~/accounts/alias.bash
+fi
+if [[ -f ~/accounts/login_alias.bash ]]; then
+   source ~/accounts/login_alias.bash
+fi
