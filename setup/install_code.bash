@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -eo pipefail
+set -eox pipefail
 
 ### Source the environment  #################
 export MINSAR_HOME=$PWD
