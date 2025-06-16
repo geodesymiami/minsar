@@ -14,7 +14,7 @@ parent_dir="$(dirname "$base_dir")"
 subpath="$(basename "$base_dir")"
 
 # List of target files/directories
-targets=("inputs" "inverted" "config.json" "subset_sarrvey.log" "maskfiles")
+targets=("inputs" "inverted" "config.json" "subset_sarvey.log" "maskfiles")
 
 # Build the list of existing paths
 include_args=()
