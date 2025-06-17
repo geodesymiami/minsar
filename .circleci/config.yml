@@ -18,7 +18,7 @@ jobs:
             ./setup/install_sarvey.bash
             ./setup/install_vsm.bash
             minsar/bin/minsarApp.bash --help
-            #echo "alias s.bw2m='export MINSAR_HOME=${CIRCLE_WORKING_DIRECTORY}; source project/setup/environment.bash'" >> ~/.bashrc
+            echo "alias s.bw2m='export MINSAR_HOME=${CIRCLE_WORKING_DIRECTORY}; source project/setup/environment.bash'" >> ~/.bashrc
 
       - run:
           name: Prepare test data (Sentinel-1)
