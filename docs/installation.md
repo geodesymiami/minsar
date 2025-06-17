@@ -2,7 +2,7 @@
 
 * Set `$MINSAR_HOME` in your [.bashrc](https://github.com/geodesymiami/minsar/blob/master/docs/bashrc_contents.md). You also need a [.bash_profile](./bash_profile.md) to ensure your .bashrc is read.
 
-* Create an ~/accounts directory with your data download credentials (for contents see [here](./accounts_info.md)). If you have access to the RSMAES accounts repo clone it into your $HOME directory
+* Create an ~/accounts directory with your data download credentials (for contents see [here](./accounts_info.md)). If you have access to the RSMAES accounts repo, clone it into your $HOME directory
 
 
 ## How to install Miami InSAR code
