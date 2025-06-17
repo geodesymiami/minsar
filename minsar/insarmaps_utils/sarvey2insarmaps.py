@@ -91,6 +91,11 @@ def set_output_paths(shp_path, dataset_name, do_geocorr):
     outputs_dir = base_dir / "outputs"
     outputs_dir.mkdir(parents=True, exist_ok=True)
 
+    dir_suffix = base_dir.name.split("_")[-1] if "_" in base_dir.name else ""
+    if dir_suffix:
+       dataset_name = dataset_name + f"_{dir_suffix}"
+
+    #FA: Why to create a new directory? My preference would be to have everything in outputs
     outdir = outputs_dir / "output_csv"
     outdir.mkdir(parents=True, exist_ok=True)
     csv_path = outdir / f"{dataset_name}.csv"
@@ -440,6 +445,7 @@ def main():
 
     #input/output paths
     # FA: That this is not in build_commands is confusing. If you can't put it there create your own functions
+    # FA: input_path is not a good name as it maye contain the string output. Use data_path or similar
     input_path = Path(inps.input_file).resolve()
     if input_path.suffix == ".h5":
         h5_path = input_path
@@ -493,6 +499,7 @@ def main():
     if inps.do_geocorr:
         run_command(cmd_correctgeo, conda_env = None)
 
+
     # Step 4: run hdfeos5_2_mbtiles.pt to convert csv-file into mbptile.
     run_command(cmd_hdfeos5, conda_env=insarmaps_script_env)
     metadata = update_and_save_final_metadata(json_dir, outdir, dataset_name, metadata)
@@ -508,8 +515,8 @@ def main():
     with open('insarmaps.log', 'a') as f:
         f.write(url + "\n")
 
-    if os.path.isdir("outputs/pic"):
-      open("outputs/pic/insarmaps.log", 'a').write(url + "\n")
+    if os.path.isdir(f"outdir/pic"):
+       open(f"{outdir}/pic/insarmaps.log", 'a').write(url + "\n")
 
     print(f"\nView on Insarmaps:\n{url}")
     if platform.system() == "Darwin":
