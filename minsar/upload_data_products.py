@@ -11,6 +11,7 @@ import glob
 import time
 import shutil
 import argparse
+from pathlib import Path
 from minsar.objects.rsmas_logging import loglevel
 from minsar.objects import message_rsmas
 import minsar.utils.process_utilities as putils
@@ -58,7 +59,7 @@ def cmd_line_parse(iargs=None):
             inps.mintpy_flag = True
         elif 'miaplpy' in inps.data_dirs[0]:
             inps.miaplpy_flag = True
-   
+
 
     print('inps: ',inps)
     return inps
@@ -73,7 +74,7 @@ def create_html_if_needed(dir):
         # Create an instance of Inps with the directory
         inps = Inps(dir)
         create_html(inps)
-   
+
 ##############################################################################
 
 def main(iargs=None):
@@ -82,8 +83,15 @@ def main(iargs=None):
 
     inps.work_dir = os.getcwd()
     inps.project_name = os.path.basename(inps.work_dir)
+    inps.project_name = os.path.relpath(os.path.realpath(os.getcwd()),os.path.realpath(os.environ.get('SCRATCHDIR')))
 
     project_name = inps.project_name
+    scratch_dir = Path(os.environ.get('SCRATCHDIR')).resolve()
+    cwd = Path(os.getcwd()).resolve()
+    if cwd.is_relative_to(scratch_dir):
+        project_name = str(cwd.relative_to(scratch_dir))
+    else:
+        project_name = cwd.name  # fallback to just the last dir
 
     os.chdir(inps.work_dir)
 
@@ -166,7 +174,7 @@ def main(iargs=None):
                        '/'+ network_dir +'/geo/geo_*.shp',
                        '/'+ network_dir +'/geo/geo_*.shx'
                        ])
-                
+
                     timeseries_path = 'timeseries_demErr.h5'
                     if  os.path.exists(network_dir + '/' + 'timeseries_ERA5_demErr.h5'):
                         timeseries_path = 'timeseries_ERA5_demErr.h5'
@@ -194,7 +202,7 @@ def main(iargs=None):
                         '/'+ network_dir +'/inputs/*template',
                         '/'+ network_dir +'/*.cfg',
                         '/'+ network_dir +'/*.txt',
-                        '/'+ network_dir +'/geo', 
+                        '/'+ network_dir +'/geo',
                         ])
 
                     # After completion of network_* loops
@@ -202,20 +210,20 @@ def main(iargs=None):
                     '/'+ os.path.dirname(data_dir) +'/maskPS.h5',
                     '/'+ os.path.dirname(data_dir) +'/miaplpyApp.cfg',
                     '/'+ os.path.dirname(data_dir) +'/inputs/geometryRadar.h5',
-                    '/'+ os.path.dirname(data_dir) +'/inputs/baselines', 
-                    '/'+ os.path.dirname(data_dir) +'/inputs/*.template', 
-                    '/'+ os.path.dirname(data_dir) +'/inverted/tempCoh_average*', 
-                    '/'+ os.path.dirname(data_dir) +'/inverted/tempCoh_full*' 
+                    '/'+ os.path.dirname(data_dir) +'/inputs/baselines',
+                    '/'+ os.path.dirname(data_dir) +'/inputs/*.template',
+                    '/'+ os.path.dirname(data_dir) +'/inverted/tempCoh_average*',
+                    '/'+ os.path.dirname(data_dir) +'/inverted/tempCoh_full*'
                     ])
                     if inps.slcStack_flag:
                         scp_list.extend([
                         '/'+ os.path.dirname(data_dir) +'/inputs/slcStack.h5'
                         ])
         else:
-            # sarvey. Maye work for other 
+            # sarvey. Maye work for other
             if os.path.isdir(data_dir + '/pic'):
                create_html_if_needed(data_dir + '/pic')
-            scp_list.extend([ '/'+ data_dir +'/pic', ]) 
+            scp_list.extend([ '/'+ data_dir +'/pic', ])
     print('################')
     print('Data to upload: ')
     for element in scp_list:
@@ -237,7 +245,7 @@ def main(iargs=None):
                 raise Exception('ERROR finding directory in pattern in upload_data_products.py')
 
             dir_name = full_dir_name.removeprefix(inps.work_dir +'/')
-               
+
             # create remote directory
             print ('\nCreating remote directory:',dir_name)
             command = 'ssh ' + REMOTE_CONNECTION + ' mkdir -p ' + REMOTE_DIR + project_name + '/' + dir_name

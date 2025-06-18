@@ -131,8 +131,21 @@ def build_sarvey_html(directory_path):
 
     png_file_paths = [file for file in os.listdir(directory_path) if file.lower().endswith(('.png'))]
     json_file_path = [file for file in os.listdir(directory_path) if file.lower().endswith(('.json'))]
-    logfile_path = max(glob.iglob(os.path.join(logfiles_dir, "*.log")), key=os.path.getmtime )
+
+    logfile_path = max( (f for f in glob.iglob(os.path.join(logfiles_dir, "*.log")) 
+                        if "export" not in os.path.basename(f)), key=os.path.getmtime, default=None )  
+    
     insarmaps_log_path = [file for file in os.listdir(directory_path) if file.lower().endswith(('insarmaps.log'))]
+    subset_log_path = [file for file in os.listdir(os.path.dirname(os.path.dirname(directory_path))) 
+                       if file.lower().endswith(('subset_sarvey.log'))]
+    
+    parent_dir = os.path.dirname(os.path.dirname(directory_path))
+
+    subset_log_path = [
+        os.path.join(parent_dir, file)
+        for file in os.listdir(parent_dir)
+        if file.lower().endswith("subset_sarvey.log")
+    ]
 
     # keep copy of directory name for later display
     orig_dir = os.path.relpath(directory_path, os.getcwd())
@@ -156,8 +169,6 @@ def build_sarvey_html(directory_path):
 
     png_file_paths = sorted(png_file_paths, key=sort_key)
 
-
-
     # Create the HTML file with headers and image tags
     html_content = "<html><body>"
     html_content += f'  <h1>{project_name}</h1>\n'
@@ -173,18 +184,19 @@ def build_sarvey_html(directory_path):
     with open(json_file_path[0], 'r') as file:
         html_content += header_tag + '<pre>\n' + file.read() + '</pre>\n'
   
-  # add insarmaps URL
+    # add subset log file
+    if len(subset_log_path) != 0:
+        header_tag = f'  <h2>{os.path.relpath(subset_log_path[0], os.getcwd())}</h2>\n'
+        with open(subset_log_path[0], 'r') as file:
+            html_content += header_tag + '<pre>\n' + file.read() + '</pre>\n'
+
+    # add insarmaps URL
     if len(insarmaps_log_path) != 0:
         with open(insarmaps_log_path[0]) as f:
             lines = f.read().splitlines()
             insarmaps_str = lines[-1] if lines else ""  
             # html_content += f'  <h2>{insarmaps_str}</h2>\n'
             html_content += (
-                # '  <h2 style="font-weight: normal; font-size: 1em;">insarmaps: '
-                # f'<a href="{insarmaps_str}" target="_blank" rel="noopener" '
-                # 'style="font-size: 0.75em; font-weight: normal;">'
-                # f'{insarmaps_str}</a>'
-                # '</h2>\n'
                 '  <div style="margin: 0.5em 0;">\n'
                 '    <h2 style="margin: 0; font-weight: bold; font-size: 1.25em;">'
                 'insarmaps:</h2>\n'

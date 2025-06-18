@@ -19,12 +19,13 @@ import password_config as password
 
 def create_parser():
     parser = argparse.ArgumentParser(
-        description="End-to-end pipeline for: SARvey shapefiles -> CSV -> JSON -> MBTiles -> Insarmaps",
+        description="End-to-end pipeline for: SARvey shapefiles -> CSV -> JSON -> MBTiles -> Insarmaps -> jetstream",
         epilog="""\
     Examples:
 
                Masjed dam (sarvey example)
         sarvey2insarmaps.py outputs/p2_coh80_ts.h5
+        sarvey2insarmaps.py outputs/p2_coh80_ts.h5 --no-upload
         sarvey2insarmaps.py outputs/p2_coh80_ts.h5 --sarvey-geocorr
 
         sarvey2insarmaps.py outputs/shp/p2_coh70_ts.shp
@@ -41,12 +42,16 @@ def create_parser():
         default=os.environ.get("INSARMAPS_HOST", os.getenv("INSARMAPSHOST")),
         help="Insarmaps server host (default: environment variable INSARMAPS_HOST)"
     )
+    # parser.add_argument("--upload", dest='upload_flag', action="store_true", help="Upload to jetstream (Default: no)")
+    parser.add_argument("--no-upload",dest='upload_flag',action="store_false", help="Do not upload to jetstream (Default: upload)")
+
     parser.add_argument("--skip-upload", action="store_true", help="Skip upload to Insarmaps")
     parser.add_argument("--make-jobfile", action="store_true", help="Generate jobfile")
     parser.add_argument(
         "--geocorr", dest="do_geocorr", action="store_true",
         help="Enable geolocation correction step (default: off)"
     )
+
     parser.set_defaults(do_geocorr=False)
     parser.add_argument("--sarvey-geocorr", action="store_true", help="Apply geolocation correction for sarvey_export (--correct_geo)")
 
@@ -85,7 +90,8 @@ def load_config_and_input_path(inps):
 def set_output_paths(shp_path, dataset_name, do_geocorr):
     """
     Create output directories and return key paths.
-    Returns: csv_path, geocorr_csv, json_dir, mbtiles_path, outdir, base_dir
+    Returns: csv_path, geocorr_csv, json_dir, mbtiles_path, outdir, base_dir, dataset_name
+    (base_dir extension if exist will be appended to dataset_name )
     """
     base_dir = shp_path.parent.parent.resolve()
     outputs_dir = base_dir / "outputs"
@@ -106,7 +112,7 @@ def set_output_paths(shp_path, dataset_name, do_geocorr):
     mbtiles_name = f"{dataset_name}_geocorr.mbtiles" if do_geocorr else f"{dataset_name}.mbtiles"
     mbtiles_path = json_dir / mbtiles_name
 
-    return csv_path, geocorr_csv, json_dir, mbtiles_path, outdir, base_dir
+    return csv_path, geocorr_csv, json_dir, mbtiles_path, outdir, base_dir, dataset_name
 
 def build_commands(shp_path, csv_path, geocorr_csv, json_dir, mbtiles_path, input_csv, inps):
     """
@@ -333,7 +339,7 @@ def run_command(command, shell=False, conda_env=None, cwd=None):
     # replace abosolute by relative paths for display
     cmd_for_display = convert_to_relative_path(full_cmd, cwd=cwd or os.getcwd())
     cmd_str_for_display = ' '.join(cmd_for_display) if isinstance(cmd_for_display, list) else cmd_for_display
-    print(f"##########################\nRunning (displaying relative paths)....\n{cmd_str_for_display}\n")
+    print(f"##########################\nRunning (displaying relative paths)....\n{cmd_str_for_display}\n##########################\n")
 
     try:
         subprocess.run(full_cmd, check=True, shell=shell, cwd=str(cwd) if cwd else None)
@@ -423,6 +429,7 @@ def main():
     inps = parser.parse_args()
     print(f"Geolocation correction enabled: {inps.do_geocorr}")
 
+    # FA inputs_path is a confusing name. You expect that it is the path to an input file. Maybe sarvey_inputs_dir_path. And beloe you have input_path
     inputs_path = load_config_and_input_path(inps)
 
     #ensure required files exist
@@ -466,7 +473,7 @@ def main():
 
     # FA this section is important while the above is just dealing with filenames/options. This should be optically emphasized with comment signs and text
     # FA: unclear what geocorr_csv is. A file path? then sat it as you do for the others. Same for input_csv below. So it would be csv_file_path, shp_file_path ?
-    csv_path, geocorr_csv, json_dir, mbtiles_path, outdir, base_dir = set_output_paths(shp_path, dataset_name, inps.do_geocorr)
+    csv_path, geocorr_csv, json_dir, mbtiles_path, outdir, base_dir, dataset_name = set_output_paths(shp_path, dataset_name, inps.do_geocorr)
 
     input_csv = geocorr_csv if inps.do_geocorr else csv_path
     cmd_ogr2ogr, cmd_correctgeo, cmd_hdfeos5, cmd_jsonmbtiles = build_commands(
@@ -504,23 +511,33 @@ def main():
     run_command(cmd_hdfeos5, conda_env=insarmaps_script_env)
     metadata = update_and_save_final_metadata(json_dir, outdir, dataset_name, metadata)
 
-    # Step 5: run json_mbtiles2insarmaps to ingest data into website
+    # Step 5: run json_mbtiles2insarmaps to ingest data into insarmaps
     if not inps.skip_upload:
         run_command(cmd_jsonmbtiles, conda_env="insarmaps_scripts" if platform.system() == "Darwin" else None)
 
-    # FA: may want to create an insarmaps.log to be consistent with MintPy and miaplpy
+    # Step 6: create insarmaps.log with URL
     host = inps.insarmaps_host.split(",")[0]
     url = generate_insarmaps_url(host, dataset_name, metadata, geocorr=inps.do_geocorr)
 
     with open('insarmaps.log', 'a') as f:
         f.write(url + "\n")
+    if os.path.isdir(f"{base_dir}/pic"):
+       open(f"{base_dir}/pic/insarmaps.log", 'a').write(url + "\n")
 
-    if os.path.isdir(f"outdir/pic"):
-       open(f"{outdir}/pic/insarmaps.log", 'a').write(url + "\n")
+    # Step 7: create pic/index.html
+    run_command(["create_html.py",f"{base_dir}/pic"])
 
+
+    # Step 8: upload to jetstream
+    if inps.upload_flag:
+        print("\nUploading to Jetstream...")
+        run_command(["upload_data_products.py",f"{os.path.dirname(inps.input_file)}"])
+
+    # Print the Insarmaps URL and open it in a web browser
     print(f"\nView on Insarmaps:\n{url}")
     if platform.system() == "Darwin":
-       webbrowser.open(url)
+       webbrowser.open(f"{base_dir}/pic/index.html")
+    #    webbrowser.open(url)
 
     print("\nAll done!")
 
