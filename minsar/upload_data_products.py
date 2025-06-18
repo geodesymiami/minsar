@@ -3,7 +3,6 @@
 # Author:  Falk Amelung
 #######################
 
-
 import os
 import subprocess
 import sys
@@ -220,10 +219,13 @@ def main(iargs=None):
                         '/'+ os.path.dirname(data_dir) +'/inputs/slcStack.h5'
                         ])
         else:
-            # sarvey. Maye work for other
+            # sarvey. May work for other directories containing images
             if os.path.isdir(data_dir + '/pic'):
                create_html_if_needed(data_dir + '/pic')
             scp_list.extend([ '/'+ data_dir +'/pic', ])
+            scp_list.extend([ '/'+ data_dir +'/../maskfiles/*', ])
+            scp_list.extend([ '/'+ data_dir +'/shp', ])
+            scp_list.extend([ '/'+ data_dir +'/outputs/output_csv/*.csv', ])
     print('################')
     print('Data to upload: ')
     for element in scp_list:
