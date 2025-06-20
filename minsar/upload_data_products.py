@@ -29,7 +29,7 @@ EXAMPLE = """example:
 """
 
 DESCRIPTION = (
-    "Uploads mintpy and miaplpy data products to jetstream server. Assumes a pic folder. Creates index.html"
+    "Uploads mintpy and miaplpy data products to jetstream server. Assumes a pic folder. Creates the index.html"
 )
 
 def create_parser():
