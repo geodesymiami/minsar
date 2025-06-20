@@ -76,6 +76,10 @@ fi
     exit 1
 }
 
+# write command into log file
+SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
+echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME ${args[@]}" | tee -a "${PWD}"/log
+
 # Remove trailing slash if present
 INPUT_DIR="${INPUT_DIR%/}"
 
@@ -109,7 +113,7 @@ else
     export PATH="${MINTPY_HOME}/src/mintpy/cli:$PATH"
     export PYTHONPATH="${MINTPY_HOME}/src:${PYTHONPATH}"
     export DASK_CONFIG=$(echo "$DASK_CONFIG" | sed 's|MintPy|MintPy_falk|g')
-   
+
     echo "Current working dir: $PWD"
 
     echo "Running....... subset.py slcStack.h5 --lat $LAT_MIN $LAT_MAX --lon $LON_MIN $LON_MAX"
@@ -117,7 +121,7 @@ else
     echo ""
     subset.py slcStack.h5 --lat $LAT_MIN $LAT_MAX --lon $LON_MIN $LON_MAX
     mv "sub_slcStack.h5" "../../${OUTDIR}/inputs/slcStack.h5"
-    
+
     echo "Running... subset.py geometryRadar.h5 --lat $LAT_MIN $LAT_MAX --lon $LON_MIN $LON_MAX"
     echo "followed by... mv sub_geometryRadar.h5 ../../${OUTDIR}/inputs/geometryRadar.h5"
     echo ""
@@ -133,5 +137,5 @@ else
     #    echo "inverted/phase_series.h5 does not exist, can’t subset"
     #fi
 fi
-cd - 
+cd -
 echo "sarvey_subset.bash completed. Output files in $OUTDIR/inputs"
