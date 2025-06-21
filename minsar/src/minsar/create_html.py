@@ -12,7 +12,7 @@ from minsar.objects import message_rsmas
 ########################################################
 def build_html(directory_path):
     from pdf2image import convert_from_path
-    print('DIRECTORY_PATH:', directory_path )    
+    print('DIRECTORY_PATH:', directory_path )
     file_list = [file for file in os.listdir(directory_path) if file.lower().endswith(('.png', '.pdf','.kmz','.template'))]
     pdf_files = [file for file in file_list if file.lower().endswith('.pdf')]
     kmz_files = [file for file in file_list if file.lower().endswith('.kmz')]
@@ -42,8 +42,8 @@ def build_html(directory_path):
         exit()
 
     # Define the preferred order of images (temporalCoherence_lowpass_gaussian can be handy for miaplpy DS to eliminate indiviudal high temporal coherence pixels)
-    preferred_order = ['geo_velocity.png',  
-                       'geo_temporalCoherence.png', 'geo_temporalCoherence_lowpass_gaussian.png', 
+    preferred_order = ['geo_velocity.png',
+                       'geo_temporalCoherence.png', 'geo_temporalCoherence_lowpass_gaussian.png',
                        'geo_maskTempCoh.png','geo_maskTempCoh_lowpass_gaussian.png','geo_maskPS.png',
                        'temporalCoherence.png','temporalCoherence_lowpass_gaussian.png',
                        'maskTempCoh.png','maskTempCoh_lowpass_gaussian.png', 'maskPS.png',
@@ -119,7 +119,7 @@ def build_html(directory_path):
 
 ########################################################
 def build_sarvey_html(directory_path):
-    print('DIRECTORY_PATH:', directory_path ) 
+    print('DIRECTORY_PATH:', directory_path )
     directory_path_rel = os.path.relpath(directory_path, os.environ.get('SCRATCHDIR'))
 
     config_src = os.path.join(os.path.dirname(directory_path), "config.json")
@@ -127,18 +127,19 @@ def build_sarvey_html(directory_path):
     if os.path.exists(config_src):
         print(f"Copying {config_src} to {config_dst}")
         shutil.copy2(config_src, config_dst)
-    logfiles_dir = os.path.normpath(os.path.join(os.path.dirname(directory_path), "..", "logfiles"))
+    #logfiles_dir = os.path.normpath(os.path.join(os.path.dirname(directory_path), "..", "logfiles"))
+    logfiles_dir = os.path.normpath(os.path.join(os.path.dirname(directory_path)))
 
     png_file_paths = [file for file in os.listdir(directory_path) if file.lower().endswith(('.png'))]
     json_file_path = [file for file in os.listdir(directory_path) if file.lower().endswith(('.json'))]
 
-    logfile_path = max( (f for f in glob.iglob(os.path.join(logfiles_dir, "*.log")) 
-                        if "export" not in os.path.basename(f)), key=os.path.getmtime, default=None )  
-    
+    logfile_path = max( (f for f in glob.iglob(os.path.join(logfiles_dir, "*.log"))
+                        if "export" not in os.path.basename(f)), key=os.path.getmtime, default=None )
+
     insarmaps_log_path = [file for file in os.listdir(directory_path) if file.lower().endswith(('insarmaps.log'))]
-    subset_log_path = [file for file in os.listdir(os.path.dirname(os.path.dirname(directory_path))) 
+    subset_log_path = [file for file in os.listdir(os.path.dirname(os.path.dirname(directory_path)))
                        if file.lower().endswith(('subset_sarvey.log'))]
-    
+
     parent_dir = os.path.dirname(os.path.dirname(directory_path))
 
     subset_log_path = [
@@ -150,7 +151,7 @@ def build_sarvey_html(directory_path):
     # keep copy of directory name for later display
     orig_dir = os.path.relpath(directory_path, os.getcwd())
     logfiles_path_rel = os.path.relpath(logfile_path, os.getcwd())
-    
+
     project_name = os.path.basename(os.getcwd())
     os.chdir(directory_path)
 
@@ -183,7 +184,7 @@ def build_sarvey_html(directory_path):
     header_tag = f'  <h2>{json_file_path[0]}</h2>\n'
     with open(json_file_path[0], 'r') as file:
         html_content += header_tag + '<pre>\n' + file.read() + '</pre>\n'
-  
+
     # add subset log file
     if len(subset_log_path) != 0:
         header_tag = f'  <h2>{os.path.relpath(subset_log_path[0], os.getcwd())}</h2>\n'
@@ -194,7 +195,7 @@ def build_sarvey_html(directory_path):
     if len(insarmaps_log_path) != 0:
         with open(insarmaps_log_path[0]) as f:
             lines = f.read().splitlines()
-            insarmaps_str = lines[-1] if lines else ""  
+            insarmaps_str = lines[-1] if lines else ""
             # html_content += f'  <h2>{insarmaps_str}</h2>\n'
             html_content += (
                 '  <div style="margin: 0.5em 0;">\n'
