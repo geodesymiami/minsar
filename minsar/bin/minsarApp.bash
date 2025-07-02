@@ -640,9 +640,6 @@ if [[ $miaplpy_flag == "1" ]]; then
     # create index.html with all images
     run_command "create_html.py ${network_dir}/pic"
 
-    # upload data products
-    run_command "upload_data_products.py $network_dir ${template[minsar.upload_option]}"
-
     ## insarmaps
     if [[ $insarmaps_flag == "1" ]]; then
         run_command "create_insarmaps_jobfile.py $network_dir --dataset $insarmaps_dataset"
@@ -652,6 +649,10 @@ if [[ $miaplpy_flag == "1" ]]; then
         run_command "run_workflow.bash $template_file --jobfile $PWD/$insarmaps_jobfile"
 
     fi
+
+    # upload data products
+    run_command "upload_data_products.py $network_dir ${template[minsar.upload_option]}"
+
 fi
 
 if [[ $finishup_flag == "1" ]]; then
