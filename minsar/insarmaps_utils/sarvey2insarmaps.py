@@ -10,8 +10,11 @@ import h5py
 from pathlib import Path
 from datetime import date
 from mintpy.utils import readfile
+import pandas as pd
 import webbrowser
 import sys
+import shlex
+import shutil
 
 sys.path.insert(0, os.getenv("SSARAHOME"))
 import password_config as password
@@ -62,6 +65,7 @@ def load_config_and_input_path(inps):
     Load input path from config.json or infer it from the input file location.
     """
     config_json_path = Path(inps.config_json).resolve() if inps.config_json else None
+    sarvey_inputs_dir_path, output_path = None, None
 
     # FA: There are packages to read json format
     if config_json_path and config_json_path.exists():
@@ -73,48 +77,88 @@ def load_config_and_input_path(inps):
             config_data = json.loads(config_text)
 
         try:
-            inputs_path = Path(config_data["general"]["input_path"]).resolve()
-            print(f"Inputs path set from config.json: {inputs_path}")
+            sarvey_inputs_dir_path = Path(config_data["general"]["input_path"]).resolve()
+            print(f"Inputs path set from config.json: {sarvey_inputs_dir_path}")
         except (KeyError, TypeError):
-            inputs_path = Path("inputs").resolve()
+            sarvey_inputs_dir_path = Path("inputs").resolve()
             print("'input_path' not found in config.json. Defaulting to ./inputs/")
+
+        try:
+            output_path = Path(config_data["general"]["output_path"]).resolve()
+            print(f"Output path set from config.json: {output_path}")
+        except (KeyError, TypeError):
+            raise ValueError("`output_path` must be specified in config.json under general.")
+        
     elif inps.input_file:
-        inputs_path = Path(inps.input_file).resolve().parents[1] / "inputs"
-        print(f"Using inferred inputs path: {inputs_path}")
+        input_file_path = Path(inps.input_file).resolve()
+        sarvey_inputs_dir_path = input_file_path.parents[1] / "inputs"
+        output_path = input_file_path.parent.resolve()
+        print(f"Inferred paths — inputs: {sarvey_inputs_dir_path}, output: {output_path}")
     else:
         raise ValueError("Must provide either --input_file or a valid config.json.")
 
-    return inputs_path
+    return sarvey_inputs_dir_path, output_path
 
 
-def set_output_paths(shp_path, dataset_name, do_geocorr):
+def set_output_paths(output_path, base_filename, do_geocorr):
     """
     Create output directories and return key paths.
-    Returns: csv_path, geocorr_csv, json_dir, mbtiles_path, outdir, base_dir, dataset_name
+    Returns: csv_file_path, geocorr_csv_path, json_dir, mbtiles_path, outdir, base_dir, dataset_name
     (base_dir extension if exist will be appended to dataset_name )
     """
-    base_dir = shp_path.parent.parent.resolve()
-    outputs_dir = base_dir / "outputs"
-    outputs_dir.mkdir(parents=True, exist_ok=True)
+    output_path = Path(output_path).resolve()
 
-    dir_suffix = base_dir.name.split("_")[-1] if "_" in base_dir.name else ""
-    if dir_suffix:
-       dataset_name = dataset_name + f"_{dir_suffix}"
+    csv_file_path = output_path / f"{base_filename}.csv"
+    geocorr_csv_path = output_path / f"{base_filename}_geocorr.csv"
 
-    #FA: Why to create a new directory? My preference would be to have everything in outputs
-    outdir = outputs_dir / "output_csv"
-    outdir.mkdir(parents=True, exist_ok=True)
-    csv_path = outdir / f"{dataset_name}.csv"
-    geocorr_csv = outdir / f"{dataset_name}_geocorr.csv"
-
-    json_dir = outputs_dir / "JSON"
+    json_dir = output_path / "JSON"
     json_dir.mkdir(parents=True, exist_ok=True)
-    mbtiles_name = f"{dataset_name}_geocorr.mbtiles" if do_geocorr else f"{dataset_name}.mbtiles"
-    mbtiles_path = json_dir / mbtiles_name
 
-    return csv_path, geocorr_csv, json_dir, mbtiles_path, outdir, base_dir, dataset_name
+    mbtiles_path = json_dir / f"{base_filename}.mbtiles"
 
-def build_commands(shp_path, csv_path, geocorr_csv, json_dir, mbtiles_path, input_csv, inps):
+    return csv_file_path, geocorr_csv_path, json_dir, mbtiles_path, output_path
+
+def generate_dataset_name_from_csv(csv_file_path, sarvey_inputs_dir_path=None):
+    """
+    Generate dataset name from CSV (bbox/date) and optional metadata from sarvey_inputs_dir_path.
+    """
+    df = pd.read_csv(csv_file_path)
+
+    #extract date columns
+    time_cols = [col for col in df.columns if re.fullmatch(r"D\d{8}", col)]
+    if not time_cols:
+        raise ValueError("No valid date columns found in CSV (expected format: DYYYYMMDD).")
+
+    #sort and strip starting 'D'
+    time_cols = sorted(col[1:] for col in time_cols)
+    start_date = time_cols[0]
+    end_date = time_cols[-1]
+
+    #get bounding box
+    min_lat, max_lat = df["Y"].min(), df["Y"].max()
+    min_lon, max_lon = df["X"].min(), df["X"].max()
+    lat1 = f"N{int(min_lat * 10000):05d}"
+    lat2 = f"N{int(max_lat * 10000):05d}"
+    lon1 = f"W{abs(int(max_lon * 10000)):06d}"
+    lon2 = f"W{abs(int(min_lon * 10000)):06d}"
+
+    #get platform and orbit info from inputs_path if available
+    mission, rel_orbit = "S1", "000"
+    if sarvey_inputs_dir_path:
+        attributes, _ = extract_metadata_from_inputs(sarvey_inputs_dir_path)
+        platform_raw = (attributes.get("PLATFORM") or attributes.get("mission") or "").upper()
+        platform_aliases = {
+            "TSX": "TSX", "TERRASAR-X": "TSX", "SENTINEL-1": "S1", "S1": "S1",
+            "ERS": "ERS", "ENVISAT": "ENVISAT", "ALOS": "ALOS"
+        }
+        mission = platform_aliases.get(platform_raw, "S1")
+
+        rel_orbit_raw = attributes.get("relative_orbit", "")
+        rel_orbit = f"{int(rel_orbit_raw):03d}" if str(rel_orbit_raw).isdigit() else "000"
+
+    return f"{mission}_{rel_orbit}_{start_date}_{end_date}_{lat1}_{lat2}_{lon1}_{lon2}"
+
+def build_commands(shp_file_path, csv_file_path, geocorr_csv_path, json_dir, mbtiles_path, input_csv, inps):
     """
     Build the list of shell command sequences for the SARvey-to-Insarmaps pipeline.
 
@@ -124,8 +168,8 @@ def build_commands(shp_path, csv_path, geocorr_csv, json_dir, mbtiles_path, inpu
         cmd3 - Convert CSV or HDF5 to JSON and MBTiles format using hdfeos5_or_csv_2json_mbtiles.py.
         cmd4 - Upload MBTiles and JSON data to the Insarmaps server using json_mbtiles2insarmaps.py.
     """
-    cmd_ogr2ogr = ["ogr2ogr", "-f", "CSV", "-lco", "GEOMETRY=AS_XY", "-t_srs", "EPSG:4326", str(csv_path), str(shp_path)]
-    cmd_correctgeo = ["correct_geolocation.py", str(csv_path), "--outfile", str(geocorr_csv)]
+    cmd_ogr2ogr = ["ogr2ogr", "-f", "CSV", "-lco", "GEOMETRY=AS_XY", "-t_srs", "EPSG:4326", str(csv_file_path), str(shp_file_path)]
+    cmd_correctgeo = ["correct_geolocation.py", str(csv_file_path), "--outfile", str(geocorr_csv_path)]
     cmd_hdfeos5 = ["hdfeos5_or_csv_2json_mbtiles.py", str(input_csv), str(json_dir)]
 
     host = inps.insarmaps_host.split(",")[0]
@@ -168,7 +212,7 @@ def get_sarvey_export_path():
         raise RuntimeError(f"Could not find 'sarvey_export' using conda run: {e}")
 
 
-def extract_metadata_from_inputs(inputs_path):
+def extract_metadata_from_inputs(sarvey_inputs_dir_path):
     """
     Extract essential metadata from slcStack.h5 and geometryRadar.h5 to generate a dataset name.
     Returns a dict of metadata and a created dataset name string based on platform, dates, and bbox.
@@ -176,8 +220,8 @@ def extract_metadata_from_inputs(inputs_path):
     attributes = {}
     dataset_name = None
 
-    slc_path = inputs_path / "slcStack.h5"
-    geom_path = inputs_path / "geometryRadar.h5"
+    slc_path = sarvey_inputs_dir_path / "slcStack.h5"
+    geom_path = sarvey_inputs_dir_path / "geometryRadar.h5"
 
     #load slcStack.h5 attributes
     if slc_path.exists():
@@ -261,11 +305,11 @@ def extract_metadata_from_inputs(inputs_path):
 
     print(f"[INFO] slcStack.h5: mission={mission}, platform={platform}, beam_mode={beam}, orbit={orbit}")
     print(f"[INFO] bounding box: {bbox}")
-    print(f"[INFO] dataset name: {dataset_name}")
+    print("[INFO] slcStack.h5 metadata loaded. Final dataset name will be computed from the CSV.")
 
     return attributes, dataset_name
 
-def update_and_save_final_metadata(json_dir, outdir, dataset_name, metadata):
+def update_and_save_final_metadata(json_dir, outdir, dataset_name, metadata, output_suffix):
     """
     Update metadata dictionary using metadata.pickle if available,
     and save the final metadata as a JSON file.
@@ -287,7 +331,7 @@ def update_and_save_final_metadata(json_dir, outdir, dataset_name, metadata):
         except Exception as e:
             print(f"[WARN] Failed to read final metadata from pickle: {e}")
 
-    final_meta_path = outdir / f"{dataset_name}_final_metadata.json"
+    final_meta_path = outdir / f"{dataset_name}_{output_suffix}_final_metadata.json"
     with open(final_meta_path, "w") as f:
         json.dump(metadata, f, indent=2)
     print(f"[INFO] Final metadata written to: {final_meta_path}")
@@ -326,49 +370,54 @@ def generate_insarmaps_url(host, dataset_name, metadata, geocorr=False):
 
 def run_command(command, shell=False, conda_env=None, cwd=None):
     """
-    Execute a shell command and print the command string.
+    Execute a shell command and print it once.
+    - `command`: list of args or a single string
+    - `shell`: whether to run in shell mode (requires string command)
+    - `conda_env`: name of conda env to prefix with `conda run -n …`
+    - `cwd`: working directory
     """
-    # FA: is command always a list? If not this function may need modification
+    #build prefix for conda
+    prefix = ["conda", "run", "-n", conda_env, "--no-capture-output"] if conda_env else []
 
-    prefix = []
-    if conda_env:
-        prefix = ["conda", "run", "-n", conda_env, "--no-capture-output"]
-
-    full_cmd = prefix + command
-
-    # replace abosolute by relative paths for display
-    cmd_for_display = convert_to_relative_path(full_cmd, cwd=cwd or os.getcwd())
-    cmd_str_for_display = ' '.join(cmd_for_display) if isinstance(cmd_for_display, list) else cmd_for_display
-    print(f"##########################\nRunning (displaying relative paths)....\n{cmd_str_for_display}\n##########################\n")
-
-    try:
-        subprocess.run(full_cmd, check=True, shell=shell, cwd=str(cwd) if cwd else None)
-    except subprocess.CalledProcessError as e:
-        print(f"[ERROR] Command failed with return code {e.returncode}: {cmd_str}")
-        raise
-
-    # assemble the full command
+    #normalize command into list
     if shell:
-        # with shell=True we pass a single string
-        full_cmd = prefix + [command]
+        if not isinstance(command, str):
+            raise ValueError("shell=True requires command to be a string")
+        full_cmd_list = prefix + [command]
+        display_cmd = full_cmd_list
     else:
-        # if it's a string, split it, otherwise assume it's already a list
-        parts = shlex.split(command) if isinstance(command, str) else list(command)
-        full_cmd = prefix + parts
+        #if string, split; if list, copy
+        cmd_parts = shlex.split(command) if isinstance(command, str) else list(command)
+        full_cmd_list = prefix + cmd_parts
+        display_cmd = full_cmd_list
 
-    print("Running:", full_cmd)
-    subprocess.run(full_cmd, check=True, shell=shell, cwd=cwd)
+    #convert to relative paths for display
+    cmd_for_display = convert_to_relative_path(display_cmd, cwd=cwd or os.getcwd())
+    print(
+        "##########################\n"
+        "Running (displaying relative paths)....\n"
+        f"{' '.join(cmd_for_display)}\n"
+        "##########################\n"
+    )
+
+    #execute once
+    subprocess.run(
+        full_cmd_list,
+        check=True,
+        shell=shell,
+        cwd=str(cwd) if cwd else None
+    )
 
 
 def convert_to_relative_path(cmd_list, cwd=None):
     """
     Return a list where any element that lives under cwd is replaced by its relative path.
     """
-    # make sure cwd is a string
+    #make sure cwd is a string
     cwd = str(cwd or os.getcwd())
     rel = []
     for token in cmd_list:
-        # only rewrite absolute paths under cwd
+        #only rewrite absolute paths under cwd
         if os.path.isabs(token) and token.startswith(cwd + os.sep):
             rel.append(os.path.relpath(token, cwd))
         else:
@@ -376,30 +425,35 @@ def convert_to_relative_path(cmd_list, cwd=None):
     return rel
 
 
-def create_jobfile(inps, input_path, cmds, json_dir, base_dir, mbtiles_path, dataset_name, metadata):
+def create_jobfile(inps, data_path, cmds, json_dir, output_path, mbtiles_path, dataset_name, metadata):
     """
     Generate a SLURM-compatible jobfile with all processing steps and Insarmaps URL.
     """
-    # FA these command names are not useful. Use cmd_sarvey_export and similar
-    cmd0, cmd1, cmd2, cmd3, cmd4 = cmds
-    # FA: confusing that a jobfile_path ends with *.log ???
-    jobfile_path = base_dir / "sarvey2insarmaps.log"
+
+    cmd_sarvey_export, cmd_ogr2ogr, cmd_geocorr, cmd_hdfeos5, cmd_json_mbtiles = cmds
+
+    jobfile_path = Path(output_path) / "sarvey2insarmaps.job"
     slurm_commands = []
 
-    if input_path.suffix == ".h5":
-        slurm_commands.append(" ".join(cmd0))
+    # Step 1: HDF5 to shp if input is HDF5
+    if data_path.suffix == ".h5":
+        slurm_commands.append(" ".join(cmd_sarvey_export))
 
-    slurm_commands.append(" ".join(cmd1))
+    # Step 2: shp to csv
+    slurm_commands.append(" ".join(cmd_ogr2ogr))
 
+    # Step 3: geolocation correction if enabled
     if inps.do_geocorr:
-        slurm_commands.append(" ".join(cmd2))
+        slurm_commands.append(" ".join(cmd_geocorr))
 
     host = inps.insarmaps_host.split(",")[0]
     slurm_commands.extend([
         f"rm -rf {json_dir}",
-        " ".join(cmd3),
-        " ".join(cmd4).replace(inps.insarmaps_host, "insarmaps.miami.edu") + " &",
-        " ".join(cmd4).replace(inps.insarmaps_host, host) + " &"
+        # Step 4: hdfeos5_or_csv_2json_mbtiles.py
+        " ".join(cmd_hdfeos5),
+         # Step 5: json_mbtiles2insarmaps.py
+        " ".join(cmd_json_mbtiles).replace(inps.insarmaps_host, "insarmaps.miami.edu") + " &",
+        " ".join(cmd_json_mbtiles).replace(inps.insarmaps_host, host) + " &"
     ])
 
     with open(jobfile_path, 'w') as f:
@@ -419,6 +473,7 @@ def create_jobfile(inps, input_path, cmds, json_dir, base_dir, mbtiles_path, dat
         url_1 = generate_insarmaps_url("insarmaps.miami.edu", dataset_name, metadata, geocorr=inps.do_geocorr)
         url_2 = generate_insarmaps_url(inps.insarmaps_host.split(",")[0], dataset_name, metadata, geocorr=inps.do_geocorr)
 
+        f.write("\n# Insarmaps URLs:\n")
         f.write(f"cat >> insarmaps.log<<EOF\n{url_1}\nEOF\n\n")
         f.write(f"cat >> insarmaps.log<<EOF\n{url_2}\nEOF\n\n")
 
@@ -430,114 +485,164 @@ def main():
     print(f"Geolocation correction enabled: {inps.do_geocorr}")
 
     # FA inputs_path is a confusing name. You expect that it is the path to an input file. Maybe sarvey_inputs_dir_path. And beloe you have input_path
-    inputs_path = load_config_and_input_path(inps)
+    sarvey_inputs_dir_path, output_path = load_config_and_input_path(inps)
 
     #ensure required files exist
     required_files = ["slcStack.h5", "geometryRadar.h5"]
     for fname in required_files:
-        fpath = inputs_path / fname
+        fpath = sarvey_inputs_dir_path / fname
         if not fpath.exists():
             raise FileNotFoundError(f"Required file not found: {fpath}")
 
-    metadata, dataset_name = extract_metadata_from_inputs(inputs_path)
-
-    if not metadata:
-        print("[WARN] No metadata found in slcStack.h5 or geometryRadar.h5.")
+    #metadata, _ = extract_metadata_from_inputs(sarvey_inputs_dir_path)
+    #if not metadata:
+    #    print("[WARN] No metadata found in slcStack.h5 or geometryRadar.h5.")
 
     #use $RSMASINSAR_HOME as the root for now (temporarily)
     # FA if you really need an environment variable use variable name RSMASINSAR_HOME
-    rsmasinsar_env = os.environ.get("RSMASINSAR_HOME")
-    if not rsmasinsar_env:
+    rsmasinsar_home = os.environ.get("RSMASINSAR_HOME")
+    if not rsmasinsar_home:
         raise EnvironmentError("Environment variable RSMASINSAR_HOME is not set.")
 
     #input/output paths
     # FA: That this is not in build_commands is confusing. If you can't put it there create your own functions
     # FA: input_path is not a good name as it maye contain the string output. Use data_path or similar
-    input_path = Path(inps.input_file).resolve()
-    if input_path.suffix == ".h5":
-        h5_path = input_path
-        shp_path = h5_path.parent / "shp" / f"{h5_path.stem}.shp"
-        print(f"[INFO] Input is HDF5. Inferred shapefile path: {shp_path}")
-        #step0: always run sarvey_export if input is HDF5
+    data_path = Path(inps.input_file).resolve()
+    if data_path.suffix == ".h5":
+        h5_path = data_path
+        shp_file_path = h5_path.parent / "shp" / f"{h5_path.stem}.shp"
+        print(f"[INFO] Input is HDF5. Inferred shapefile path: {shp_file_path}")
+        # Step 0: always run sarvey_export if input is HDF5
         # FA: This is a complicated function. You are dealing with environments, so we need "env" in the function name.
         # FA: You can use CONDA_PREFIX to determine in which environemnt we are.
         sarvey_export_path = get_sarvey_export_path()
-        cmd_sarvey_export = [sarvey_export_path, str(h5_path), "-o", str(shp_path)]
+        cmd_sarvey_export = [sarvey_export_path, str(h5_path), "-o", str(shp_file_path)]
         if inps.sarvey_geocorr:
             print("[INFO] Applying SARvey geolocation correction")
             cmd_sarvey_export.append("--correct_geo")
     else:
-        shp_path = input_path
-        h5_path = shp_path.with_suffix(".h5")
+        shp_file_path = data_path
+        h5_path = shp_file_path.with_suffix(".h5")
         print(f"[INFO] Input is SHP. Inferred HDF5 path: {h5_path}")
 
     # FA this section is important while the above is just dealing with filenames/options. This should be optically emphasized with comment signs and text
     # FA: unclear what geocorr_csv is. A file path? then sat it as you do for the others. Same for input_csv below. So it would be csv_file_path, shp_file_path ?
-    csv_path, geocorr_csv, json_dir, mbtiles_path, outdir, base_dir, dataset_name = set_output_paths(shp_path, dataset_name, inps.do_geocorr)
+    #csv_path, geocorr_csv_path, json_dir, mbtiles_path, base_dir, dataset_name = set_output_paths(output_path, dataset_name, inps.do_geocorr)
+    data_path = Path(inps.input_file).resolve()
+    base_filename = data_path.stem
+    csv_file_path, geocorr_csv_path, json_dir, mbtiles_path, output_path = set_output_paths(output_path, base_filename, inps.do_geocorr)
+    input_csv = geocorr_csv_path if inps.do_geocorr else csv_file_path
 
-    input_csv = geocorr_csv if inps.do_geocorr else csv_path
     cmd_ogr2ogr, cmd_correctgeo, cmd_hdfeos5, cmd_jsonmbtiles = build_commands(
-        shp_path, csv_path, geocorr_csv, json_dir, mbtiles_path, input_csv, inps
+        shp_file_path, csv_file_path, geocorr_csv_path, json_dir, mbtiles_path, input_csv, inps
     )
 
-    # assign python environment for insarmaps_scripts
+    #assign python environment for insarmaps_scripts
     if platform.system() == "Darwin":
        insarmaps_script_env = "insarmaps_scripts"
     else:
        insarmaps_script_env = None
 
-    # FA an if ...: else ....: is better than return
+
     if inps.make_jobfile:
             print("[INFO] Creating jobfile only, skipping execution.")
-            create_jobfile(inps, input_path, (cmd0, cmd_ogr2ogr, cmd_correctgeo, cmd_hdfeos5, cmd_jsonmbtiles), json_dir, base_dir, mbtiles_path, dataset_name, metadata)
-            return
+            create_jobfile(inps, data_path, (cmd_sarvey_export, cmd_ogr2ogr, cmd_correctgeo, cmd_hdfeos5, cmd_jsonmbtiles), json_dir, output_path, mbtiles_path, dataset_name, metadata)
+    
+    else:
+        # Step 1: run sarvey_export to  create *.shp file
+        if data_path.suffix == ".h5":
+            run_command(cmd_sarvey_export, cwd=h5_path.parent.parent, conda_env="sarvey")
 
-    #FA the h5_path.parent.parent looks weired. Do you need parent twice? Maybe it is correct. I don't know.
-    # FA: why checking for *.h5? What are otehr options? If not *.h5 does next step still work?
+        # Step 2: run ogr2ogr to create csv file (FA: is this correct?)
+        run_command(cmd_ogr2ogr, conda_env=None)
 
-    # Step 1: run sarvey_export to  create *.shp file
-    if input_path.suffix == ".h5":
-        run_command(cmd_sarvey_export, cwd=h5_path.parent.parent, conda_env="sarvey")
+        # Step 3: geolocation correction
+        if inps.do_geocorr:
+            run_command(cmd_correctgeo, conda_env = None)
 
-    # Step 2: run ogr2ogr to create csv file (FA: is this correct?)
-    run_command(cmd_ogr2ogr, conda_env=None)
+        #update dataset_name from csv bbox and dates
+        dataset_name = generate_dataset_name_from_csv(input_csv, sarvey_inputs_dir_path)
 
-    # Step 3: geolocation correction
-    if inps.do_geocorr:
-        run_command(cmd_correctgeo, conda_env = None)
+        output_suffix = Path(output_path).name.partition("outputs_")[2]
+
+        #replace mbtiles path to reflect final name
+        mbtiles_path = json_dir / f"{dataset_name}_{output_suffix}.mbtiles"
+
+        #rename csv to match desired output format
+        final_csv_name = f"{dataset_name}_{output_suffix}"
+        final_csv_name += "_geocorr.csv" if inps.do_geocorr else ".csv"
+        final_csv_path = output_path / final_csv_name
+
+        #to final format
+        shutil.move(input_csv, final_csv_path)
+        input_csv = final_csv_path
+
+        #update paths used by downstream steps
+        if inps.do_geocorr:
+            geocorr_csv_path = input_csv
+        else:
+            csv_file_path = input_csv
+
+        #rebuild cmd_hdfeos5 and cmd_jsonmbtiles using updated csv name
+        _, _, cmd_hdfeos5, cmd_jsonmbtiles = build_commands(
+            shp_file_path, csv_file_path, geocorr_csv_path, json_dir, mbtiles_path, input_csv, inps
+        )
+    
+        # Step 4: run hdfeos5_2_mbtiles.pt to convert csv-file into mbptile.
+        run_command(cmd_hdfeos5, conda_env=insarmaps_script_env)
+        metadata, _ = extract_metadata_from_inputs(sarvey_inputs_dir_path)
+        metadata = update_and_save_final_metadata(json_dir, output_path, dataset_name, metadata, output_suffix)
+
+        # Step 5: run json_mbtiles2insarmaps to ingest data into insarmaps
+        if not inps.skip_upload:
+            run_command(cmd_jsonmbtiles, conda_env="insarmaps_scripts" if platform.system() == "Darwin" else None)
+
+        #rename MBTiles to match dataset name
+        final_mbtiles_name = f"{dataset_name}_{output_suffix}.mbtiles"
+        final_mbtiles_path = json_dir / final_mbtiles_name
+
+        #update mbtiles_path only if the file exists
+        if final_mbtiles_path.exists():
+            mbtiles_path = final_mbtiles_path
+        else:
+            #in case tippecanoe output is still p1_ts.mbtiles — fallback check
+            default_mbtiles_path = json_dir / "p1_ts.mbtiles"
+            if default_mbtiles_path.exists():
+                print(f"[INFO] Renaming fallback p1_ts.mbtiles → {final_mbtiles_path.name}")
+                shutil.move(default_mbtiles_path, final_mbtiles_path)
+                mbtiles_path = final_mbtiles_path
+            else:
+                raise FileNotFoundError(f"[ERROR] Neither final nor fallback mbtiles found:\n  {final_mbtiles_path}\n  {default_mbtiles_path}")
+
+        #rebuild cmd_jsonmbtiles with updated mbtiles filename
+        _, _, _, cmd_jsonmbtiles = build_commands(
+            shp_file_path, csv_file_path, geocorr_csv_path, json_dir, mbtiles_path, input_csv, inps
+        )
+
+        # Step 6: create insarmaps.log with URL
+        host = inps.insarmaps_host.split(",")[0]
+        dataset_name_with_suffix = f"{dataset_name}_{output_suffix}"
+        url = generate_insarmaps_url(host, dataset_name_with_suffix, metadata, geocorr=inps.do_geocorr)
+
+        with open('insarmaps.log', 'a') as f:
+            f.write(url + "\n")
+        if os.path.isdir(f"{output_path}/pic"):
+           open(f"{output_path}/pic/insarmaps.log", 'a').write(url + "\n")
+
+        # Step 7: create pic/index.html
+        run_command(["create_html.py",f"{output_path}/pic"])
 
 
-    # Step 4: run hdfeos5_2_mbtiles.pt to convert csv-file into mbptile.
-    run_command(cmd_hdfeos5, conda_env=insarmaps_script_env)
-    metadata = update_and_save_final_metadata(json_dir, outdir, dataset_name, metadata)
+        # Step 8: upload to jetstream
+        if inps.upload_flag:
+            print("\nUploading to Jetstream...")
+            run_command(["upload_data_products.py",f"{os.path.dirname(inps.input_file)}"])
 
-    # Step 5: run json_mbtiles2insarmaps to ingest data into insarmaps
-    if not inps.skip_upload:
-        run_command(cmd_jsonmbtiles, conda_env="insarmaps_scripts" if platform.system() == "Darwin" else None)
-
-    # Step 6: create insarmaps.log with URL
-    host = inps.insarmaps_host.split(",")[0]
-    url = generate_insarmaps_url(host, dataset_name, metadata, geocorr=inps.do_geocorr)
-
-    with open('insarmaps.log', 'a') as f:
-        f.write(url + "\n")
-    if os.path.isdir(f"{base_dir}/pic"):
-       open(f"{base_dir}/pic/insarmaps.log", 'a').write(url + "\n")
-
-    # Step 7: create pic/index.html
-    run_command(["create_html.py",f"{base_dir}/pic"])
-
-
-    # Step 8: upload to jetstream
-    if inps.upload_flag:
-        print("\nUploading to Jetstream...")
-        run_command(["upload_data_products.py",f"{os.path.dirname(inps.input_file)}"])
-
-    # Print the Insarmaps URL and open it in a web browser
-    print(f"\nView on Insarmaps:\n{url}")
-    if platform.system() == "Darwin":
-       webbrowser.open(f"{base_dir}/pic/index.html")
-    #    webbrowser.open(url)
+        #print the Insarmaps URL and open it in a web browser
+        print(f"\nView on Insarmaps:\n{url}")
+        if platform.system() == "Darwin":
+           webbrowser.open(f"{output_path}/pic/index.html")
+        #  webbrowser.open(url)
 
     print("\nAll done!")
 
