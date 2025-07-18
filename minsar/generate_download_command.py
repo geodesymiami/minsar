@@ -92,9 +92,11 @@ def convert_subset_lalo_to_intersects_string(subset_lalo, delta_lat=0):
    min_lon = round(min_lon, 2)
    max_lon = round(max_lon, 2)
 
-   intersects_string = '--intersectsWith=\'Polygon(({:.2f} {:.2f}, {:.2f} {:.2f}, {:.2f} {:.2f}, {:.2f} {:.2f}, ' \
-         '{:.2f} {:.2f}))\''.format(min_lon, min_lat, min_lon, max_lat, max_lon, max_lat, max_lon, min_lat, min_lon, min_lat)
-   intersects_string = '--intersectsWith=\'Polygon(({0} {1}, {0} {3}, {2} {3}, {2} {1}, {0} {1}))\''\
+#    intersects_string = '--intersectsWith=\'Polygon(({:.2f} {:.2f}, {:.2f} {:.2f}, {:.2f} {:.2f}, {:.2f} {:.2f}, ' \
+#          '{:.2f} {:.2f}))\''.format(min_lon, min_lat, min_lon, max_lat, max_lon, max_lat, max_lon, min_lat, min_lon, min_lat)
+#    intersects_string = '--intersectsWith=\'Polygon(({0} {1}, {0} {3}, {2} {3}, {2} {1}, {0} {1}))\''\
+#                                         .format(min_lon, min_lat, max_lon, max_lat)
+   intersects_string = '--intersectsWith=\'Polygon(({0} {1}, {2} {1}, {2} {3}, {0} {3}, {0} {1}))\''\
                                         .format(min_lon, min_lat, max_lon, max_lat)
 
    return intersects_string

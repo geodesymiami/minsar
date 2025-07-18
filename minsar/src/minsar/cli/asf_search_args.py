@@ -8,8 +8,8 @@ import os
 workDir = 'SCRATCHDIR'
 
 # Define the description and epilog of the script
-EXAMPLE = """Command line client for searching with the ASF Federated API, 
-downloading data, and more.  See the options and 
+EXAMPLE = """Command line client for searching with the ASF Federated API,
+downloading data, and more.  See the options and
 descriptions below for details and usage examples.
 """
 
@@ -24,8 +24,8 @@ Usage Examples:
     To use parallel downloads:
         asf_search_args.py --product=SLC --start=2014-10-04 --end=2015-10-05 --relativeOrbit=170 --download --dir=path/to/folder --parallel=4
 
-    To search for a specific polarization:
-        asf_search_args.py --product=SLC --pols HH
+    #To search for a specific polarization:
+    #    asf_search_args.py --product=SLC --pols HH
 
     To search for a specific intersectsWith area:
         asf_search_args.py --product=SLC --intersectsWith='POLYGON((-77.9853 0.7881,-77.9185 0.7881,-77.9185 0.8507,-77.9853 0.8507,-77.9853 0.7881))'
@@ -45,14 +45,14 @@ parser.add_argument('--start-date', metavar='YYYY-MM-DD or YYYYMMDD', help='Star
 parser.add_argument('--end-date', metavar='YYYY-MM-DD or YYYYMMDD', help='End date of the search')
 parser.add_argument('--node', choices=['ASC', 'DESC', 'ASCENDING', 'DESCENDING'], help='Flight direction of the satellite (ASCENDING or DESCENDING)')
 parser.add_argument('--relativeOrbit', type=int, metavar='ORBIT', help='Relative Orbit Path')
-parser.add_argument('--pols', choices=['HH', 'VV', 'VV+VH', 'HH+HV', 'HH+VV'], default='VV', help='Polarization, default is %(default)s')
+#parser.add_argument('--pols', choices=['HH', 'VV', 'VV+VH', 'HH+HV', 'HH+VV'], default='VV', help='Polarization, default is %(default)s')
 parser.add_argument('--product', dest='product', choices=['SLC', 'CSLC', 'BURST'], help='Choose the product type to download')
 parser.add_argument('--platform', nargs='?',metavar='SENTINEL1, SENTINEL-1A, SENTINEL-1B', help='Choose the platform to search')
 parser.add_argument('--burst-id', nargs='*', type=str, metavar='BURST', help='Burst ID')
 parser.add_argument('--download', action='store_true', help='Download the data')
 parser.add_argument('--parallel', type=int, default=1, help='Download the data in parallel, specify the number of processes to use')
-parser.add_argument('--print', action='store_true', help='Print the search results')
-parser.add_argument('--print-json', dest='pjson',action='store_true', help='Print the whole search results in JSON format')
+parser.add_argument('--print-burst', dest='print_burst',action='store_true', help='Print the search results')
+parser.add_argument('--print', dest='print',action='store_true', help='Print the whole search results ')
 parser.add_argument('--dir', metavar='FOLDER', help='Specify path to download the data, if not specified, the data will be downloaded in SCRATCHDIR directory')
 
 inps = parser.parse_args()
@@ -73,7 +73,7 @@ if 'BURST' in inps.product:
     if inps.burst_id:
         burst_id = inps.burst_id
 
-if 'CSLC' in inps.product or inps.product is None: 
+if 'CSLC' in inps.product or inps.product is None:
     product.append(asf.PRODUCT_TYPE.CSLC)
 
 if inps.start or inps.start_date:
@@ -111,7 +111,7 @@ if inps.node:
         node = asf.FLIGHT_DIRECTION.DESCENDING
 
 if inps.download is not None:
-    
+
     if inps.dir:
         path = inps.dir
 
@@ -121,7 +121,7 @@ if inps.download is not None:
 else:
     path = None
 
-pols = inps.pols
+#pols = inps.pols
 
 
 print("Searching for Sentinel-1 data...")
@@ -134,14 +134,17 @@ results = asf.search(
     flightDirection=node,
     relativeOrbit=inps.relativeOrbit,
     relativeBurstID=burst_id,
-    polarization=pols
 )
 
 
 print(f"Found {len(results)} results.")
+if inps.print:
+        # print(', '.join(results[0].properties.keys()))
+        print(', '.join(k for k in results[0].properties.keys() if k not in ['centerLat', 'centerLon']))
+
 burst_ids =[]
 for r in results:
-    if inps.print:
+    if inps.print_burst:
         if 'BURST' in product:
             if r.properties['burst']['relativeBurstID'] not in burst_ids:
                 burst_ids.append(r.properties['burst']['relativeBurstID'])
@@ -149,11 +152,13 @@ for r in results:
         else:
             print('-' * 100)
             print(f"Start date: {r.properties['startTime']}, End date: {(r.properties['stopTime'])}, {r.geometry['type']}: {r.geometry['coordinates']}, Path of satellite: {r.properties['pathNumber']}, Granule:  {r.properties['granuleType']}")
-            
 
-    elif inps.pjson:
-        print('')
-        print(r)
+
+    elif inps.print:
+        # print('')
+        # print(r)
+        # print(', '.join(str(v) for v in r.properties.values()))
+        print(', '.join(str(v) for k, v in r.properties.items() if k not in ['centerLat', 'centerLon']))
 
 if inps.download == True:
     print(f"Downloading {len(results)} results")
