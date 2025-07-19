@@ -212,7 +212,7 @@ def generate_download_command(template,inps):
     with open('download_asf_search_burst.cmd', 'w') as f:
         # f.write(' '.join(ssara_cmd_slc_listing_python) + '\n')
         f.write(' '.join(asf_cmd_burst_download) + '\n')
-        f.write(' '.join(['bursts_to_burst2safe_jobfile.py','SLC']) + '\n')
+        f.write(' '.join(['bursts_to_burst2safe_jobfile.py','.']) + '\n')
         f.write(' '.join(asf_cmd_burst_burst2safe2 ) + '\n')
 
     with open('download_ssara_python.cmd', 'w') as f:
