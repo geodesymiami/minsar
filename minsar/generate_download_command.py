@@ -195,30 +195,28 @@ def generate_download_command(template,inps):
     print('New extent string using delta_lat=0.1: ', extent_str)
 
     ssara_cmd_slc_download_bash = ['ssara_federated_query.bash'] + ssaraopt 
-    ssara_cmd_kml_download_python = ['ssara_federated_query.py'] + ssaraopt + ['--maxResults=20000','--asfResponseTimeout=300', '--kml','--print','>','ssara_listing.cmd','2> ssara.e']
     ssara_cmd_slc_download_python = ['ssara_federated_query.py'] + ssaraopt + ['--maxResults=20000','--asfResponseTimeout=300', '--kml', '--print','--download']
+    ssara_cmd_slc_listing_python = ['ssara_federated_query.py'] + ssaraopt + ['--maxResults=20000','--asfResponseTimeout=300', '--kml','--print','>','ssara_listing.txt','2> ssara.e']
 
     asf_cmd_slc_download = ['asf_search_args.py', '--product=SLC'] + ssaraopt + ['--print', '--download']
 
-    asf_cmd_burst_download = ['asf_search_args.py', '--product=BURST'] + ssaraopt + ['--print', '--download','--pol','VV','2>asf_download.e']
-    asf_cmd_burst_burst2safe1 = ['ssara_listing_2_burst2safe_jobfile.py', ' ssara_listing.cmd' + ' --extent', extent_str]
-    asf_cmd_burst_burst2safe2 = [f'run_workflow.bash {template} --jobfile {inps.work_dir}/SLC/run_01_burst2safe']
+    asf_cmd_burst_download = ['asf_search_args.py', '--product=BURST'] + ssaraopt + ['--print', '--download','2>asf_download.e']
+    asf_cmd_burst_burst2safe2 = [f'run_workflow.bash {template} --jobfile {inps.work_dir}/SLC/run_01_burst2safe_0.job']
 
-    with open('download_ssara.cmd', 'w') as f:
+    with open('download_ssara_bash.cmd', 'w') as f:
         f.write(' '.join(ssara_cmd_slc_download_bash) + '\n')
 
     with open('download_asf_search.cmd', 'w') as f:
         f.write(' '.join(asf_cmd_slc_download) + '\n')
 
-    with open('asf_burst_download_commands.cmd', 'w') as f:
-        f.write(' '.join(ssara_cmd_kml_download_python) + '\n')
+    with open('download_asf_search_burst.cmd', 'w') as f:
+        # f.write(' '.join(ssara_cmd_slc_listing_python) + '\n')
         f.write(' '.join(asf_cmd_burst_download) + '\n')
-        f.write(' '.join(asf_cmd_burst_burst2safe1 ) + '\n')
+        f.write(' '.join(['bursts_to_burst2safe_jobfile.py','SLC']) + '\n')
         f.write(' '.join(asf_cmd_burst_burst2safe2 ) + '\n')
 
-    ssara_cmd_python = ['ssara_federated_query.py'] + ssaraopt + ['--maxResults=20000','--asfResponseTimeout=300', '--kml', '--print']
-    with open('ssara_python_command.cmd', 'w') as f:
-       f.write(' '.join(ssara_cmd_python) + '\n')
+    with open('download_ssara_python.cmd', 'w') as f:
+       f.write(' '.join(ssara_cmd_slc_download_python) + '\n')
 
     return 
    
