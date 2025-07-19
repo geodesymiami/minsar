@@ -39,6 +39,7 @@ helptext="                                                                      
    --mintpy --miaplpy    use smallbaselineApp.py and miaplpyApp.py               \n\
    --no-mintpy --miaplpy use only miaplpyApp.py                                  \n\
                                                                                  \n\
+   --asf-download        download using asf_search (Default: ssara)              \n\
    --burst-download      download burst instead of frames                        \n\
    --no-orbit-download   don't download prior to jobfile creation                \n\
                                                                                  \n\
@@ -110,6 +111,8 @@ ifgram_flag=1
 mintpy_flag=1
 miaplpy_flag=0
 finishup_flag=1
+
+ssara_download_flag=1
 
 ##################################
 
@@ -189,6 +192,11 @@ do
             ;;
         --burst-download)
             burst_download_flag=1
+            ssara_download_flag=0
+            shift
+            ;;
+        --asf-download)
+            ssara_download_flag=0
             shift
             ;;
         *)
@@ -370,7 +378,7 @@ if [[ ${template[topsStack.workflow]} == "slc" ]]; then
    mintpy_flag=0
 fi
 
-echo "Switches: select_reference: $select_reference_flag   burst_download: $burst_download_flag  chunks: $chunks_flag"
+echo "Switches: select_reference: $select_reference_flag   ssara_download_flag: $ssara_download_flag burst_download: $burst_download_flag  chunks: $chunks_flag"
 echo "Flags for processing steps:"
 echo "download dem jobfiles ifgram mintpy miaplpy upload insarmaps finishup"
 echo "    $download_flag     $dem_flag      $jobfiles_flag       $ifgram_flag       $mintpy_flag      $miaplpy_flag      $upload_flag       $insarmaps_flag        $finishup_flag"
@@ -409,11 +417,14 @@ if [[ $download_flag == "1" ]]; then
     mkdir -p $download_dir
     cd $download_dir
 
-    if [[ $burst_download_flag == "1" ]]; then
-       cmd=$(cat ../asf_burst_download_commands.txt)
+    if [[ $ssara_download_flag == "1" ]]; then
+       cmd=$(cat ../download_ssara_bash.cmd)
+       run_command "$cmd"
+    elif [[ $burst_download_flag == "1" ]]; then
+       cmd=$(cat ../download_asf_search_burst.cmd)
        run_command "$cmd"
     else
-       cmd=$(cat ../ssara_command.txt)
+       cmd=$(cat ../download_asf_search.cmd)
        run_command "$cmd"
     fi
 
