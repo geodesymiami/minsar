@@ -78,8 +78,8 @@ def main(iargs=None):
 
     with open(run_01_burst2safe_path, "w") as f:
         for date, bursts in sorted(bursts_by_date.items()):
-            if len(bursts) >= 2:
-                f.write("burst2safe " + ' '.join(bursts) + "\n")
+            #if len(bursts) >= 2:
+            f.write("burst2safe " + ' '.join(bursts) + " --keep-files\n")
 
     print("Created: ", run_01_burst2safe_path)
     
@@ -94,7 +94,7 @@ def main(iargs=None):
     else:
         raise FileNotFoundError("No file found ending with *template")
 
-    inps.out_dir = dir
+    inps.out_dir = inps.burst_dir_path
     inps.num_data = 1
     job_obj = JOB_SUBMIT(inps)  
     job_obj.write_batch_jobs(batch_file = str(run_01_burst2safe_path) )
