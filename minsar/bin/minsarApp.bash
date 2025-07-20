@@ -39,9 +39,10 @@ helptext="                                                                      
    --mintpy --miaplpy    use smallbaselineApp.py and miaplpyApp.py               \n\
    --no-mintpy --miaplpy use only miaplpyApp.py                                  \n\
                                                                                  \n\
-   --asf-download        download using asf_search (Default: ssara)              \n\
+   --asf-download        download using asf_search (Default: ssara_download)     \n\
+   --ssara-download      download using ssara (Default: True)                    \n\
    --burst-download      download burst instead of frames                        \n\
-   --no-orbit-download   don't download prior to jobfile creation                \n\
+   --no-orbit-download   don't download orbits prior to jobfile creation         \n\
                                                                                  \n\
    --sleep SECS           sleep seconds before running                           \n\
    --select_reference     select reference date [default].                       \n\
@@ -197,6 +198,10 @@ do
             ;;
         --asf-download)
             ssara_download_flag=0
+            shift
+            ;;
+        --ssara-download)
+            ssara_download_flag=1    # Default
             shift
             ;;
         *)
@@ -414,21 +419,34 @@ if [[ $download_flag == "1" ]]; then
     echo "Running.... generate_download_command.py $template_file"
     run_command "generate_download_command.py $template_file"
 
+    #mkdir -p $download_dir
+    #cd $download_dir
+    #
+    #if [[ $ssara_download_flag == "1" ]]; then
+    #   cmd=$(cat ../download_ssara_bash.cmd)
+    #   run_command "$cmd"
+    #elif [[ $burst_download_flag == "1" ]]; then
+    #   cmd=$(cat ../download_asf_search_burst.cmd)
+    #   run_command "$cmd"
+    #else
+    #   cmd=$(cat ../download_asf_search.cmd)
+    #   run_command "$cmd"
+    #fi
+    #
+    #cd ..
+
     mkdir -p $download_dir
-    cd $download_dir
 
     if [[ $ssara_download_flag == "1" ]]; then
-       cmd=$(cat ../download_ssara_bash.cmd)
-       run_command "$cmd"
+        cd $download_dir
+        cmd=$(cat ../download_ssara_bash.cmd)
+        run_command "$cmd"
+        cd ..
     elif [[ $burst_download_flag == "1" ]]; then
-       cmd=$(cat ../download_asf_search_burst.cmd)
-       run_command "$cmd"
+        run_command "./download_asf_burst.sh"
     else
-       cmd=$(cat ../download_asf_search.cmd)
-       run_command "$cmd"
+        run_command "./download_asf.sh"
     fi
-
-    cd ..
 
     # remove excluded dates
     if [[ ! -z $(grep "^minsar.excludeDates" $template_file) ]];  then
