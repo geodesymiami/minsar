@@ -258,7 +258,7 @@ def generate_download_command(template,inps):
     with open('download_asf_burst.sh', 'w') as f:
         retry_script = create_download_retry_bash_script(asf_burst_download_cmd)
         f.write(''.join(retry_script) + '\n')
-        f.write(' '.join(['bursts_to_burst2safe_jobfile.py','.']) + '\n')
+        f.write(' '.join(['bursts_to_burst2safe_jobfile.py','SLC']) + '\n')
         f.write(' '.join(run_burst2safe) + '\n')
     
     os.chmod('download_asf.sh', 0o755)
