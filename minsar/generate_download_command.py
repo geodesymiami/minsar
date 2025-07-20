@@ -251,6 +251,11 @@ def generate_download_command(template,inps):
     with open('download_asf.sh', 'w') as f:
         retry_script = create_download_retry_bash_script(asf_slc_download_cmd)
         f.write(''.join(retry_script) + '\n')
+    with open('download_asf.sh', 'w') as f:
+        retry_script = create_download_retry_bash_script(asf_slc_download_cmd)
+        f.write(''.join(retry_script) + '\n')
+    with open('download_asf.cmd', 'w') as f:
+        f.write(''.join(asf_slc_download_cmd) + '\n')
 
     # create download_asf_burst.sh
     asf_burst_download_cmd = ['asf_search_args.py', '--product=BURST'] + ssaraopt + ['--dir=SLC', '--print', '--download','2>asf_download.e']
@@ -258,6 +263,10 @@ def generate_download_command(template,inps):
     with open('download_asf_burst.sh', 'w') as f:
         retry_script = create_download_retry_bash_script(asf_burst_download_cmd)
         f.write(''.join(retry_script) + '\n')
+        f.write(' '.join(['bursts_to_burst2safe_jobfile.py','SLC']) + '\n')
+        f.write(' '.join(run_burst2safe) + '\n')
+    with open('download_asf_burst.cmd', 'w') as f:
+        f.write(''.join(asf_burst_download_cmd) + '\n')
         f.write(' '.join(['bursts_to_burst2safe_jobfile.py','SLC']) + '\n')
         f.write(' '.join(run_burst2safe) + '\n')
     
