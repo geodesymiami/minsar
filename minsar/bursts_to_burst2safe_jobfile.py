@@ -78,8 +78,8 @@ def main(iargs=None):
 
     with open(run_01_burst2safe_path, "w") as f:
         for date, bursts in sorted(bursts_by_date.items()):
-            #if len(bursts) >= 2:
-            f.write("burst2safe " + ' '.join(bursts) + " --keep-files\n")
+            output_dir = str(Path(inps.work_dir) / inps.burst_dir_path)
+            f.write("burst2safe " + ' '.join(bursts) + " --keep-files --output-dir " + output_dir + "\n")
 
     print("Created: ", run_01_burst2safe_path)
     
