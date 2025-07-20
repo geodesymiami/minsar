@@ -174,7 +174,8 @@ def convert_intersects_string_to_extent_string(intersects_string):
 
 ###############################################
 def create_download_retry_bash_script(download_command, waittime=10, timeout=86400):
-    command_str = ' '.join(f'"{arg}"' if ' ' in arg else arg for arg in download_command)
+    # command_str = ' '.join(f'"{arg}"' if ' ' in arg else arg for arg in download_command)
+    command_str=' '.join(download_command)
     script = f"""#!/usr/bin/env bash
 
 waittime={waittime}           # seconds to wait between retries
