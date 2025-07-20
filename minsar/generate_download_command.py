@@ -173,6 +173,49 @@ def convert_intersects_string_to_extent_string(intersects_string):
     return extent_str, extent_list
 
 ###############################################
+def create_download_retry_bash_script(download_command, waittime=10, timeout=86400):
+    command_str = ' '.join(f'"{arg}"' if ' ' in arg else arg for arg in download_command)
+    script = f"""#!/usr/bin/env bash
+
+waittime={waittime}           # seconds to wait between retries
+timeout={timeout}          # total seconds before giving up
+logfile="download_retry.log"
+> "$logfile"
+
+start_time=$(date +%s)
+
+# Retry loop
+while true; do
+    echo "Starting download at $(date)" | tee -a "$logfile"
+    {command_str} >> "$logfile" 2>&1
+    exit_code=$?
+
+    if [ $exit_code -eq 0 ]; then
+        echo "Download completed successfully." | tee -a "$logfile"
+        break
+    fi
+
+    # Check for HTTP 50x errors in the log
+    if grep -E -q "HTTP Error 50[0-9]|502 Server Error|502: Proxy Error|500: Internal Server Error" "$logfile"; then
+        echo "Encountered server error (HTTP 50x). Retrying in $waittime seconds..." | tee -a "$logfile"
+        sleep "$waittime"
+
+        now=$(date +%s)
+        elapsed=$((now - start_time))
+
+        if [ $elapsed -ge $timeout ]; then
+            echo "Repeated 50x errors. Exiting after $timeout seconds." | tee -a "$logfile"
+            exit 1
+        fi
+    else
+        echo "Download failed with non-retryable error. Exiting." | tee -a "$logfile"
+        exit $exit_code
+    fi
+done
+"""
+    return script
+
+###############################################
 def generate_download_command(template,inps):
     """ generate ssara download options to use """
 
@@ -194,29 +237,31 @@ def generate_download_command(template,inps):
     print('New intersectsWith string using delta_lat=0.1: ', intersects_string)
     print('New extent string using delta_lat=0.1: ', extent_str)
 
-    ssara_cmd_slc_download_bash = ['ssara_federated_query.bash'] + ssaraopt 
-    ssara_cmd_slc_download_python = ['ssara_federated_query.py'] + ssaraopt + ['--maxResults=20000','--asfResponseTimeout=300', '--kml', '--print','--download']
-    ssara_cmd_slc_listing_python = ['ssara_federated_query.py'] + ssaraopt + ['--maxResults=20000','--asfResponseTimeout=300', '--kml','--print','>','ssara_listing.txt','2> ssara.e']
-
-    asf_cmd_slc_download = ['asf_search_args.py', '--product=SLC'] + ssaraopt + ['--print', '--download']
-
-    asf_cmd_burst_download = ['asf_search_args.py', '--product=BURST'] + ssaraopt + ['--print', '--download','2>asf_download.e']
-    asf_cmd_burst_burst2safe2 = [f'run_workflow.bash {template} --jobfile {inps.work_dir}/SLC/run_01_burst2safe_0.job']
-
+    # create download_ssara_bash.cmd
+    ssara_slc_download_cmd_bash = ['ssara_federated_query.bash'] + ssaraopt 
+    ssara_slc_download_cmd_python = ['ssara_federated_query.py'] + ssaraopt + ['--maxResults=20000','--asfResponseTimeout=300', '--kml', '--print','--download']
     with open('download_ssara_bash.cmd', 'w') as f:
-        f.write(' '.join(ssara_cmd_slc_download_bash) + '\n')
-
-    with open('download_asf_search.cmd', 'w') as f:
-        f.write(' '.join(asf_cmd_slc_download) + '\n')
-
-    with open('download_asf_search_burst.cmd', 'w') as f:
-        # f.write(' '.join(ssara_cmd_slc_listing_python) + '\n')
-        f.write(' '.join(asf_cmd_burst_download) + '\n')
-        f.write(' '.join(['bursts_to_burst2safe_jobfile.py','.']) + '\n')
-        f.write(' '.join(asf_cmd_burst_burst2safe2 ) + '\n')
-
+        f.write(' '.join(ssara_slc_download_cmd_bash) + '\n')
     with open('download_ssara_python.cmd', 'w') as f:
-       f.write(' '.join(ssara_cmd_slc_download_python) + '\n')
+       f.write(' '.join(ssara_slc_download_cmd_python) + '\n')
+
+    # create download_asf.sh
+    asf_slc_download_cmd = ['asf_search_args.py', '--product=SLC'] + ssaraopt + ['--dir=SLC', '--print', '--download']
+    with open('download_asf.sh', 'w') as f:
+        retry_script = create_download_retry_bash_script(asf_slc_download_cmd)
+        f.write(''.join(retry_script) + '\n')
+
+    # create download_asf_burst.sh
+    asf_burst_download_cmd = ['asf_search_args.py', '--product=BURST'] + ssaraopt + ['--dir=SLC', '--print', '--download','2>asf_download.e']
+    run_burst2safe = [f'run_workflow.bash {template} --jobfile {inps.work_dir}/SLC/run_01_burst2safe']
+    with open('download_asf_burst.sh', 'w') as f:
+        retry_script = create_download_retry_bash_script(asf_burst_download_cmd)
+        f.write(''.join(retry_script) + '\n')
+        f.write(' '.join(['bursts_to_burst2safe_jobfile.py','.']) + '\n')
+        f.write(' '.join(run_burst2safe) + '\n')
+    
+    os.chmod('download_asf.sh', 0o755)
+    os.chmod('download_asf_burst.sh', 0o755)
 
     return 
    
