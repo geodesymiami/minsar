@@ -24,14 +24,13 @@ Usage Examples:
     To use parallel downloads:
         asf_search_args.py --product=SLC --start=2014-10-04 --end=2015-10-05 --relativeOrbit=170 --download --dir=path/to/folder --parallel=4
 
-    #To search for a specific polarization:
-    #    asf_search_args.py --product=SLC --pols HH
-
     To search for a specific intersectsWith area:
         asf_search_args.py --product=SLC --intersectsWith='POLYGON((-77.9853 0.7881,-77.9185 0.7881,-77.9185 0.8507,-77.9853 0.8507,-77.9853 0.7881))'
 
     To search for a specific Burst:
         asf_search_args.py --product=BURST --start=2014-10-04 --burst-id=349025 --download
+
+    Polarization is "VV" always.
     """
 
 parser = argparse.ArgumentParser(description=EXAMPLE,
@@ -45,7 +44,6 @@ parser.add_argument('--start-date', metavar='YYYY-MM-DD or YYYYMMDD', help='Star
 parser.add_argument('--end-date', metavar='YYYY-MM-DD or YYYYMMDD', help='End date of the search')
 parser.add_argument('--node', choices=['ASC', 'DESC', 'ASCENDING', 'DESCENDING'], help='Flight direction of the satellite (ASCENDING or DESCENDING)')
 parser.add_argument('--relativeOrbit', type=int, metavar='ORBIT', help='Relative Orbit Path')
-#parser.add_argument('--pols', choices=['HH', 'VV', 'VV+VH', 'HH+HV', 'HH+VV'], default='VV', help='Polarization, default is %(default)s')
 parser.add_argument('--product', dest='product', choices=['SLC', 'CSLC', 'BURST'], help='Choose the product type to download')
 parser.add_argument('--platform', nargs='?',metavar='SENTINEL1, SENTINEL-1A, SENTINEL-1B', help='Choose the platform to search')
 parser.add_argument('--burst-id', nargs='*', type=str, metavar='BURST', help='Burst ID')
@@ -87,26 +85,21 @@ if inps.end or inps.end_date:
         edate = datetime.datetime.strptime(inps.end if inps.end else inps.end_date, '%Y-%m-%d').date()
     except:
         edate = datetime.datetime.strptime(inps.end if inps.end else inps.end_date, '%Y%m%d').date()
-
 else:
     edate = datetime.datetime.now().date()
 
 if inps.platform in ['SENTINEL1', 'SENTINEL-1', 'S1', 'S-1']:
     platform = asf.PLATFORM.SENTINEL1
-
 elif inps.platform in ['SENTINEL-1A', 'SENTINEL1A', 'S-1A', 'S1A']:
     platform = asf.PLATFORM.SENTINEL1A
-
 elif inps.platform in ['SENTINEL-1B', 'SENTINEL1B', 'S-1B', 'S1B']:
     platform = asf.PLATFORM.SENTINEL1B
-
 else:
     platform = asf.PLATFORM.SENTINEL1
 
 if inps.node:
     if inps.node in ['ASCENDING', 'ASC']:
         node = asf.FLIGHT_DIRECTION.ASCENDING
-
     elif inps.node in ['DESCENDING', 'DESC']:
         node = asf.FLIGHT_DIRECTION.DESCENDING
 
@@ -114,7 +107,6 @@ if inps.download is not None:
 
     if inps.dir:
         path = inps.dir
-
     else:
         path = os.getcwd()
 
@@ -122,7 +114,6 @@ else:
     path = None
 
 #pols = inps.pols
-
 
 print("Searching for Sentinel-1 data...")
 results = asf.search(
@@ -134,10 +125,10 @@ results = asf.search(
     flightDirection=node,
     relativeOrbit=inps.relativeOrbit,
     relativeBurstID=burst_id,
+    polarization="VV",
 )
 
-
-print(f"Found {len(results)} results.")
+print(f"Found {len(results)} VV results.")
 if inps.print:
         # print(', '.join(results[0].properties.keys()))
         print(', '.join(k for k in results[0].properties.keys() if k not in ['centerLat', 'centerLon']))
@@ -152,11 +143,7 @@ for r in results:
         else:
             print('-' * 100)
             print(f"Start date: {r.properties['startTime']}, End date: {(r.properties['stopTime'])}, {r.geometry['type']}: {r.geometry['coordinates']}, Path of satellite: {r.properties['pathNumber']}, Granule:  {r.properties['granuleType']}")
-
-
     elif inps.print:
-        # print('')
-        # print(r)
         # print(', '.join(str(v) for v in r.properties.values()))
         print(', '.join(str(v) for k, v in r.properties.items() if k not in ['centerLat', 'centerLon']))
 
