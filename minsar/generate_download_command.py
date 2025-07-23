@@ -56,6 +56,7 @@ def create_parser():
 ###############################################
 def create_download_retry_bash_script(download_command, waittime=10, timeout=86400):
     # command_str = ' '.join(f'"{arg}"' if ' ' in arg else arg for arg in download_command)
+    download_command = [arg for arg in download_command if arg != '--print']
     command_str=' '.join(download_command)
     script = f"""#!/usr/bin/env bash
 
@@ -64,11 +65,11 @@ timeout={timeout}          # total seconds before giving up
 logfile="download_retry.log"
 > "$logfile"
 
+echo "Starting download at $(date)" | tee -a "$logfile"
 start_time=$(date +%s)
 
 # Retry loop
 while true; do
-    echo "Starting download at $(date)" | tee -a "$logfile"
     {command_str} >> "$logfile" 2>&1
     exit_code=$?
 
@@ -131,7 +132,7 @@ def generate_download_command(template,inps):
     asf_slc_download_cmd = ['asf_search_args.py', '--product=SLC'] + ssaraopt + ['--dir=SLC', '--print', '--download']
     with open('download_asf.sh', 'w') as f:
         retry_script = create_download_retry_bash_script(asf_slc_download_cmd)
-        f.write(''.join(retry_script) + '\n')
+        f.write(' '.join(retry_script) + '\n')
     with open('download_asf.sh', 'w') as f:
         retry_script = create_download_retry_bash_script(asf_slc_download_cmd)
         f.write(''.join(retry_script) + '\n')
@@ -143,7 +144,7 @@ def generate_download_command(template,inps):
     run_burst2safe = [f'run_workflow.bash {template} --jobfile {inps.work_dir}/SLC/run_01_burst2safe']
     with open('download_asf_burst.sh', 'w') as f:
         retry_script = create_download_retry_bash_script(asf_burst_download_cmd)
-        f.write(''.join(retry_script) + '\n')
+        f.write(' '.join(retry_script) + '\n')
         f.write(' '.join(['bursts_to_burst2safe_jobfile.py','SLC']) + '\n')
         f.write(' '.join(run_burst2safe) + '\n')
     with open('download_asf_burst.cmd', 'w') as f:
