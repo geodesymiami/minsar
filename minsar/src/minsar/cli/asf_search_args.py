@@ -44,8 +44,10 @@ parser.add_argument('--start-date', metavar='YYYY-MM-DD or YYYYMMDD', help='Star
 parser.add_argument('--end-date', metavar='YYYY-MM-DD or YYYYMMDD', help='End date of the search')
 parser.add_argument('--node', choices=['ASC', 'DESC', 'ASCENDING', 'DESCENDING'], help='Flight direction of the satellite (ASCENDING or DESCENDING)')
 parser.add_argument('--relativeOrbit', type=int, metavar='ORBIT', help='Relative Orbit Path')
-parser.add_argument('--product', dest='product', choices=['SLC', 'CSLC', 'BURST'], help='Choose the product type to download')
-parser.add_argument('--platform', nargs='?',metavar='SENTINEL1, SENTINEL-1A, SENTINEL-1B', help='Choose the platform to search')
+parser.add_argument('--frame', type=int, metavar='FRAME', help='Frame number (Default: None')
+parser.add_argument('--product', dest='product', choices=['SLC', 'CSLC', 'BURST'], help='Product type to download')
+parser.add_argument('--processingLevel', dest='processing_level', choices=['SLC', 'CSLC', 'BURST'], default='SLC', help='Product type to download')
+parser.add_argument('--platform', nargs='?',metavar='SENTINEL1, SENTINEL-1A, SENTINEL-1B, ALOS2', help='Platform to search')
 parser.add_argument('--burst-id', nargs='*', type=str, metavar='BURST', help='Burst ID')
 parser.add_argument('--download', action='store_true', help='Download the data')
 parser.add_argument('--parallel', type=int, default=1, help='Download the data in parallel, specify the number of processes to use')
@@ -62,17 +64,15 @@ orbit = None
 burst_id = None
 product = []
 
-if 'SLC' in inps.product:
-    product.append(asf.PRODUCT_TYPE.SLC)
 
-if 'BURST' in inps.product:
-    product.append(asf.PRODUCT_TYPE.BURST)
+# if 'BURST' in inps.product:
+#     product.append(asf.PRODUCT_TYPE.BURST)
 
-    if inps.burst_id:
-        burst_id = inps.burst_id
+#     if inps.burst_id:
+#         burst_id = inps.burst_id
 
-if 'CSLC' in inps.product or inps.product is None:
-    product.append(asf.PRODUCT_TYPE.CSLC)
+# if 'CSLC' in inps.product or inps.product is None:
+#     product.append(asf.PRODUCT_TYPE.CSLC)
 
 if inps.start or inps.start_date:
     try:
@@ -88,14 +88,25 @@ if inps.end or inps.end_date:
 else:
     edate = datetime.datetime.now().date()
 
+platform = asf.PLATFORM.SENTINEL1
+
+if inps.processing_level=='SLC':
+    inps.polarization = ['VV','VV+VH'] 
+if inps.processing_level=='BURST':
+    inps.polarization = ['VV']
+
+
 if inps.platform in ['SENTINEL1', 'SENTINEL-1', 'S1', 'S-1']:
     platform = asf.PLATFORM.SENTINEL1
 elif inps.platform in ['SENTINEL-1A', 'SENTINEL1A', 'S-1A', 'S1A']:
     platform = asf.PLATFORM.SENTINEL1A
 elif inps.platform in ['SENTINEL-1B', 'SENTINEL1B', 'S-1B', 'S1B']:
     platform = asf.PLATFORM.SENTINEL1B
-else:
-    platform = asf.PLATFORM.SENTINEL1
+elif inps.platform in ['ALOS-2', 'ALOS2']:
+    # platform = asf.PLATFORM.ALOS-2
+    platform = 'ALOS-2'
+    inps.processing_level="L1.1"
+    inps.polarization=None
 
 if inps.node:
     if inps.node in ['ASCENDING', 'ASC']:
@@ -104,31 +115,34 @@ if inps.node:
         node = asf.FLIGHT_DIRECTION.DESCENDING
 
 if inps.download is not None:
-
     if inps.dir:
         path = inps.dir
     else:
         path = os.getcwd()
-
 else:
     path = None
 
 #pols = inps.pols
 
-print("Searching for Sentinel-1 data...")
+print("Searching for data...")
+
+# product = [asf.PRODUCT_TYPE.BURST]  # FA 7/2025: does not seem to work although ChatGPT suggests it
+# platform='ALOS-2'
+
+inps.polarization = ['VV','VV+VH'] 
 results = asf.search(
     platform=platform,
-    processingLevel=product,
+    processingLevel=inps.processing_level,
     start=sdate,
     end=edate,
     intersectsWith=inps.intersectsWith,
     flightDirection=node,
     relativeOrbit=inps.relativeOrbit,
-    relativeBurstID=burst_id,
-    polarization="VV",
+    relativeBurstID=None,
+    polarization=inps.polarization
 )
-
-print(f"Found {len(results)} VV results.")
+print(f"Found {len(results)} results.\n\n")
+print(results[0].properties)
 if inps.print:
         # print(', '.join(results[0].properties.keys()))
         print(', '.join(k for k in results[0].properties.keys() if k not in ['centerLat', 'centerLon']))
@@ -146,6 +160,8 @@ for r in results:
     elif inps.print:
         # print(', '.join(str(v) for v in r.properties.values()))
         print(', '.join(str(v) for k, v in r.properties.items() if k not in ['centerLat', 'centerLon']))
+        # print(r)
+
 
 if inps.download == True:
     print(f"Downloading {len(results)} results")
