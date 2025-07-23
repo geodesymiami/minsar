@@ -1328,3 +1328,124 @@ def set_permission_dask_files(directory):
         os.system('chmod -R 0755 {}'.format(workers))
 
     return
+
+
+###############################################
+def generate_intersects_string(dataset_template, delta_lat=0.0):
+    """generates intersectsWith polygon string from miaplpy.subset.lalo, mintpy.subset.lalo or *Stack.boundingBox"""
+    
+    if not 'acquisition_mode' in dataset_template.get_options():
+        print('WARNING: "acquisition_mode" is not given --> default: tops  (available options: tops, stripmap)')
+        prefix = 'tops'
+    else:
+        prefix = dataset_template.get_options()['acquisition_mode']
+
+
+    if 'miaplpy.subset.lalo' in dataset_template.get_options():
+       print("Creating intersectsWith string using miaplpy.subset.lalo: ", dataset_template.get_options()['miaplpy.subset.lalo'])
+       intersects_string = convert_subset_lalo_to_intersects_string(dataset_template.get_options()['miaplpy.subset.lalo'], delta_lat)
+    elif 'mintpy.subset.lalo' in dataset_template.get_options():
+       print("Creating intersectsWith string using mintpy.subset.lalo: dataset_template.get_options()['mintpy.subset.lalo']")
+       intersects_string = convert_subset_lalo_to_intersects_string(dataset_template.get_options()['mintpy.subset.lalo'], delta_lat)
+    else:
+       print("Creating intersectsWith string using *Stack.boundingBox: ", dataset_template.get_options()[prefix + 'Stack.boundingBox'])
+       intersects_string = convert_bounding_box_to_intersects_string(dataset_template.get_options()[prefix + 'Stack.boundingBox'], delta_lat)
+
+    return intersects_string
+
+###############################################
+def convert_subset_lalo_to_intersects_string(subset_lalo, delta_lat=0):
+   """ Converts a subset.lalo string in S:N,E:W format (e.g., "2.7:2.8,125.3:125.4") to an intersectsWith polygon string."""
+
+   lat_string = subset_lalo.split(',')[0] 
+   lon_string = subset_lalo.split(',')[1] 
+
+   min_lat = float(lat_string.split(':')[0]) - delta_lat
+   max_lat = float(lat_string.split(':')[1]) + delta_lat
+   min_lon = float(lon_string.split(':')[0]) - delta_lat/2
+   max_lon = float(lon_string.split(':')[1]) + delta_lat/2
+
+   min_lat = round(min_lat, 2)
+   max_lat = round(max_lat, 2)
+   min_lon = round(min_lon, 2)
+   max_lon = round(max_lon, 2)
+
+#    intersects_string = '--intersectsWith=\'Polygon(({:.2f} {:.2f}, {:.2f} {:.2f}, {:.2f} {:.2f}, {:.2f} {:.2f}, ' \
+#          '{:.2f} {:.2f}))\''.format(min_lon, min_lat, min_lon, max_lat, max_lon, max_lat, max_lon, min_lat, min_lon, min_lat)
+#    intersects_string = '--intersectsWith=\'Polygon(({0} {1}, {0} {3}, {2} {3}, {2} {1}, {0} {1}))\''\
+#                                         .format(min_lon, min_lat, max_lon, max_lat)
+   intersects_string = '--intersectsWith=\'Polygon(({0} {1}, {2} {1}, {2} {3}, {0} {3}, {0} {1}))\''\
+                                        .format(min_lon, min_lat, max_lon, max_lat)
+
+   return intersects_string
+
+###############################################
+def convert_bounding_box_to_intersects_string(string_bbox, delta_lat):
+   """ Converts a topsStack.boundingBox string  (e.g., 2.5 3.1 124.0 127.0) to an intersectsWith polygon string."""
+   # removing double whitespaces, FA 10/21: should be done where *template input is examined
+
+   string_bbox =  ' '.join(string_bbox.split())
+   bbox_list = string_bbox.split(' ')
+
+   bbox_list[0] = bbox_list[0].replace("\'", '')   # this does ["'-8.75", '-7.8', '115.0', "115.7'"] (needed for run_operations.py, run_operations
+   bbox_list[1] = bbox_list[1].replace("\'", '')   # -->       ['-8.75',  '-7.8', '115.0', '115.7']  (should be modified so that this is not needed)
+   bbox_list[2] = bbox_list[2].replace("\'", '')
+   bbox_list[3] = bbox_list[3].replace("\'", '')
+
+   delta_lon = delta_lat * 0.2
+   min_lat = float(bbox_list[0]) - delta_lat
+   max_lat = float(bbox_list[1]) + delta_lat
+   min_lon = float(bbox_list[2]) - delta_lon
+   max_lon = float(bbox_list[3]) + delta_lon
+
+   intersects_string = '--intersectsWith=\'Polygon(({:.2f} {:.2f}, {:.2f} {:.2f}, {:.2f} {:.2f}, {:.2f} {:.2f}, ' \
+          '{:.2f} {:.2f}))\''.format(min_lon, min_lat, min_lon, max_lat, max_lon, max_lat, max_lon, min_lat, min_lon, min_lat)
+
+   return intersects_string
+
+###############################################
+def point_str_to_bbox(point_str, delta=0.001):
+    # Strip whitespace and split by space
+    lon_str, lat_str = point_str.strip().split()
+    lon = float(lon_str)
+    lat = float(lat_str)
+    
+    # Compute bounding box coordinates: Lower-left,  lower-right, upper-left, frst point
+    p1 = f"{lon - delta} {lat - delta}"
+    p2 = f"{lon + delta} {lat - delta}"
+    p3 = f"{lon + delta} {lat + delta}"
+    p4 = f"{lon - delta} {lat + delta}"
+    p5 = p1
+    
+    return [p1, p2, p3, p4, p5]
+
+###############################################
+def convert_intersects_string_to_extent_string(intersects_string):
+    """ Converts a intersectsWith string  to an extent string."""
+
+    # FA 12/2024. For Polygon we use (( )) and for Point ( ). Unclear why. I may want to allow for both.
+    match_polygon = re.search(r"polygon\(\((.*?)\)\)", intersects_string, re.IGNORECASE)
+    match_point = re.search(r"point\((.*?)\)", intersects_string, re.IGNORECASE)
+
+    if match_polygon:
+        polygon_str = match_polygon.group(1)
+        bbox_list = polygon_str.split(',')
+    elif match_point:
+        point_str = match_point.group(1)
+        bbox_list = point_str_to_bbox(point_str, delta=0.001)
+    else:
+        polygon_str = None
+    
+    lon_list = []
+    lat_list = []
+    for bbox in bbox_list:
+        lon, lat = map(float, bbox.split())
+        lon_list.append(lon)
+        lat_list.append(lat)
+    lon_list.sort()
+    lat_list.sort()
+
+    extent_list = [lon_list[0], lat_list[0], lon_list [-1], lat_list[-1]]
+    extent_str = ' '.join(map(str, extent_list))
+
+    return extent_str, extent_list
