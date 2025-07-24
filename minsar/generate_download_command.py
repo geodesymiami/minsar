@@ -140,7 +140,7 @@ def generate_download_command(template,inps):
         retry_script = create_download_retry_bash_script(asf_slc_download_cmd)
         f.write(' '.join(retry_script) + '\n')
     with open('download_asf.cmd', 'w') as f:
-        f.write(''.join(asf_slc_download_cmd) + '\n')
+        f.write(' '.join(asf_slc_download_cmd) + '\n')
 
     # create download_asf_burst.sh
     asf_burst_download_cmd = ['asf_search_args.py', '--product=BURST'] + ssaraopt + ['--dir=SLC', '--print', '--download','2>asf_download.e']
