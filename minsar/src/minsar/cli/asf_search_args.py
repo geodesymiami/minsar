@@ -16,19 +16,19 @@ descriptions below for details and usage examples.
 epi = """
 Usage Examples:
     These will do the search and download data:
-        asf_search_args.py --product=SLC --start-date=2014-10-04 --end-date=2015-10-05 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.78,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --relativeOrbit 142 --download
-        asf_search_args.py --product=SLC --start=2014-10-04 --end=2015-10-05 --platform SENTINEL1 --print --download
-        asf_search_args.py --product=CSLC --start=20141004 --end=20151005 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.78,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --download --dir=PATH
-        asf_search_args.py --product=CSLC --start=2014-10-04 --end=2015-10-05 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.7881,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --download --dir=PATH
+        asf_search_args.py --processingLevel=SLC --start-date=2014-10-04 --end-date=2015-10-05 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.78,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --relativeOrbit 142 --download
+        asf_search_args.py --processingLevel=SLC --start=2014-10-04 --end=2015-10-05 --platform SENTINEL1 --print --download
+        asf_search_args.py --processingLevel=CSLC --start=20141004 --end=20151005 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.78,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --download --dir=PATH
+        asf_search_args.py --processingLevel=CSLC --start=2014-10-04 --end=2015-10-05 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.7881,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --download --dir=PATH
 
     To use parallel downloads:
-        asf_search_args.py --product=SLC --start=2014-10-04 --end=2015-10-05 --relativeOrbit=170 --download --dir=path/to/folder --parallel=4
+        asf_search_args.py --processingLevel=SLC --start=2014-10-04 --end=2015-10-05 --relativeOrbit=170 --download --dir=path/to/folder --parallel=4
 
     To search for a specific intersectsWith area:
-        asf_search_args.py --product=SLC --intersectsWith='POLYGON((-77.9853 0.7881,-77.9185 0.7881,-77.9185 0.8507,-77.9853 0.8507,-77.9853 0.7881))'
+        asf_search_args.py --processingLevel=SLC --intersectsWith='POLYGON((-77.9853 0.7881,-77.9185 0.7881,-77.9185 0.8507,-77.9853 0.8507,-77.9853 0.7881))'
 
     To search for a specific Burst:
-        asf_search_args.py --product=BURST --start=2014-10-04 --burst-id=349025 --download
+        asf_search_args.py --processingLevel=BURST --start=2014-10-04 --burst-id=349025 --download
 
     Polarization is "VV" always.
     """
@@ -45,7 +45,6 @@ parser.add_argument('--end-date', metavar='YYYY-MM-DD or YYYYMMDD', help='End da
 parser.add_argument('--node', choices=['ASC', 'DESC', 'ASCENDING', 'DESCENDING'], help='Flight direction of the satellite (ASCENDING or DESCENDING)')
 parser.add_argument('--relativeOrbit', type=int, metavar='ORBIT', help='Relative Orbit Path')
 parser.add_argument('--frame', type=int, metavar='FRAME', help='Frame number (Default: None')
-parser.add_argument('--product', dest='product', choices=['SLC', 'CSLC', 'BURST'], help='Product type to download')
 parser.add_argument('--processingLevel', dest='processing_level', choices=['SLC', 'CSLC', 'BURST'], default='SLC', help='Product type to download')
 parser.add_argument('--platform', nargs='?',metavar='SENTINEL1, SENTINEL-1A, SENTINEL-1B, ALOS2', help='Platform to search')
 parser.add_argument('--burst-id', nargs='*', type=str, metavar='BURST', help='Burst ID')

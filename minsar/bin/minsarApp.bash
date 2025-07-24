@@ -410,26 +410,11 @@ srun_cmd="srun -n1 -N1 -A $JOBSHEDULER_PROJECTNAME -p $QUEUENAME  -t 00:25:00 "
 ####################################
 ###       Processing Steps       ###
 ####################################
+
 if [[ $download_flag == "1" ]]; then
 
     echo "Running.... generate_download_command.py $template_file"
     run_command "generate_download_command.py $template_file"
-
-    #mkdir -p $download_dir
-    #cd $download_dir
-    #
-    #if [[ $ssara_download_flag == "1" ]]; then
-    #   cmd=$(cat ../download_ssara_bash.cmd)
-    #   run_command "$cmd"
-    #elif [[ $burst_download_flag == "1" ]]; then
-    #   cmd=$(cat ../download_asf_search_burst.cmd)
-    #   run_command "$cmd"
-    #else
-    #   cmd=$(cat ../download_asf_search.cmd)
-    #   run_command "$cmd"
-    #fi
-    #
-    #cd ..
 
     mkdir -p $download_dir
 
