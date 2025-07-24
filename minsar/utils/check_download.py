@@ -5,8 +5,6 @@
 # Author:  Lv Xiaoran                                      #
 ############################################################
 
-
-
 import os
 import glob
 import sys
@@ -14,10 +12,9 @@ import argparse
 import zipfile
 from minsar.objects import message_rsmas
 
-
 EXAMPLE = """example:
-  check_downloads.py  $TESTDATA_ISCE/project/SLC/
-  check_downloads.py  $TESTDATA_ISCE/project/SLC/ --delete
+  check_download.py  $PWD/SLC
+  check_download.py  $PWD/SLC --delete
 """
 
 def create_parser():
@@ -29,7 +26,6 @@ def create_parser():
     parser.add_argument('--delete', action='store_true', default=False, help='whether delete data.')
 
     return parser
-
 
 def cmd_line_parse(iargs=None):
 

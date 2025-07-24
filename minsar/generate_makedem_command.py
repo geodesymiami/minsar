@@ -5,9 +5,9 @@ import os
 import sys
 import glob
 import shutil
-
 import math
 import argparse
+import errno
 from minsar.objects import message_rsmas
 from minsar.utils import process_utilities as putils
 from minsar.utils import get_boundingBox_from_kml
@@ -51,10 +51,19 @@ def exist_valid_dem_dir(dem_dir):
             print('DEM products already exist. if not satisfying, remove the folder and run again')
             return True
         else:
-            shutil.rmtree(dem_dir)
+            shutil.rmtree(dem_dir, onerror = ignore_nfs_errors)
             return False
     else:
         return False
+
+###########################################################################################
+def ignore_nfs_errors(func, path, exc_info):
+    # Only suppress EBUSY on .nfs* files
+    if os.path.basename(path).startswith('.nfs') and exc_info[1].errno == errno.EBUSY:
+        print(f"Skipping busy NFS file: {path}")
+        return
+    # Otherwise, raise the error
+    raise
 
 ###########################################################################################
 def get_SouthNorthWestEast_from_ssara_kml():

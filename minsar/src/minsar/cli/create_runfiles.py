@@ -139,12 +139,18 @@ def main(iargs=None):
     else:
        dem_dir = inps.template[inps.prefix + 'Stack.demDir']
 
-    try:
-        #dem_file = glob.glob(dem_dir + '/*.wgs84')[0]
-        dem_file = glob.glob(dem_dir + '/*.dem')[0]
-        inps.template[inps.prefix + 'Stack.demDir'] = dem_file
-    except:
-        raise SystemExit('DEM does not exist')
+    wgs84_list = glob.glob(os.path.join(dem_dir, '*.wgs84'))
+
+    if wgs84_list:
+         dem_file = wgs84_list[0]
+    else:
+         dem_list = glob.glob(os.path.join(dem_dir, '*.dem'))
+         if dem_list:
+             dem_file = dem_list[0]
+         else:
+             print(f"No DEM file found in {dem_dir}", file=sys.stderr)
+             sys.exit(1)
+    inps.template[inps.prefix + 'Stack.demDir'] = dem_file
 
     slc_dir = inps.template[inps.prefix + 'Stack.slcDir']
     os.makedirs(slc_dir, exist_ok=True)

@@ -99,9 +99,6 @@ debug_flag=0
 download_ECMWF_flag=1
 download_ECMWgF_before_mintpy_flag=0
 
-runfiles_dir="run_files_tmp"
-configs_dir="configs_tmp"
-
 args=( "$@" )    # copy of command line arguments
 
 ##################################
@@ -409,7 +406,6 @@ else
 fi
 
 ####################################
-srun_cmd="srun -n1 -N1 -A $JOBSHEDULER_PROJECTNAME -p $QUEUENAME  -t 00:07:00 "
 srun_cmd="srun -n1 -N1 -A $JOBSHEDULER_PROJECTNAME -p $QUEUENAME  -t 00:25:00 "
 ####################################
 ###       Processing Steps       ###
@@ -463,14 +459,19 @@ if [[ $download_flag == "1" ]]; then
     fi
 fi
 
+echo QQQ $PWD
+sleep 3
+set -x
 if [[ $dem_flag == "1" ]]; then
     if [[ ! -z $(grep -E "^stripmapStack.demDir|^topsStack.demDir" $template_file) ]];  then
        # copy DEM if given
        demDir=$(grep -E "^stripmapStack.demDir|^topsStack.demDir" $template_file | awk -F = '{printf "%s\n",$2}' | sed 's/ //')
        rm -rf DEM; eval "cp -r $demDir DEM"
     else
-       # download DEM
-       run_command "dem_rsmas.py $template_file --ssara_kml 2>out_dem_rsmas.e 1>out_dem_rsmas.o"
+       # makeDEM
+       #run_command "dem_rsmas.py $template_file --ssara_kml 2>out_dem_rsmas.e 1>out_dem_rsmas.o"
+       run_command "generate_makedem_command.py $template_file 2>out_generate_makedem_command.e 1>out_generate_makedem_command.o"
+       run_command "./makedem_sardem.sh  2>out_makedem.e 1>out_makedem.o"
     fi
 fi
 
@@ -595,8 +596,8 @@ if [[ $ifgram_flag == "1" ]]; then
           template_file=$PWD/modified_template/$(basename $template_file)
           sed -i  "s|topsStack.subswath.*|&\ntopsStack.referenceDate              = $new_reference_date|" $template_file
 
-          mv $runfiles_dir modified_template
-          mv $configs_dir modified_template
+          mv run_files modified_template
+          mv configs modified_template
           rm -rf run_files configs
 
           # clean directory for processing and create jobfiles
