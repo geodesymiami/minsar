@@ -62,7 +62,8 @@ def create_download_retry_bash_script(download_command, waittime=10, timeout=864
 
 waittime={waittime}           # seconds to wait between retries
 timeout={timeout}          # total seconds before giving up
-logfile="download_retry.log"
+mkdir -p SLC
+logfile="download.log"
 > "$logfile"
 
 echo "Starting download at $(date)" | tee -a "$logfile"
@@ -92,6 +93,8 @@ while true; do
         fi
     else
         echo "Download failed with non-retryable error. Exiting." | tee -a "$logfile"
+        echo
+        sed -n '/The above exception was the direct cause of the following exception/,$p' "$logfile"
         exit $exit_code
     fi
 done
@@ -135,7 +138,7 @@ def generate_download_command(template,inps):
         f.write(' '.join(retry_script) + '\n')
     with open('download_asf.sh', 'w') as f:
         retry_script = create_download_retry_bash_script(asf_slc_download_cmd)
-        f.write(''.join(retry_script) + '\n')
+        f.write(' '.join(retry_script) + '\n')
     with open('download_asf.cmd', 'w') as f:
         f.write(''.join(asf_slc_download_cmd) + '\n')
 
@@ -148,7 +151,7 @@ def generate_download_command(template,inps):
         f.write(' '.join(['bursts_to_burst2safe_jobfile.py','SLC']) + '\n')
         f.write(' '.join(run_burst2safe) + '\n')
     with open('download_asf_burst.cmd', 'w') as f:
-        f.write(''.join(asf_burst_download_cmd) + '\n')
+        f.write(' '.join(asf_burst_download_cmd) + '\n')
         f.write(' '.join(['bursts_to_burst2safe_jobfile.py','SLC']) + '\n')
         f.write(' '.join(run_burst2safe) + '\n')
     
