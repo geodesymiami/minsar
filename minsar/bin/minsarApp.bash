@@ -459,9 +459,6 @@ if [[ $download_flag == "1" ]]; then
     fi
 fi
 
-echo QQQ $PWD
-sleep 3
-set -x
 if [[ $dem_flag == "1" ]]; then
     if [[ ! -z $(grep -E "^stripmapStack.demDir|^topsStack.demDir" $template_file) ]];  then
        # copy DEM if given
@@ -469,7 +466,6 @@ if [[ $dem_flag == "1" ]]; then
        rm -rf DEM; eval "cp -r $demDir DEM"
     else
        # makeDEM
-       #run_command "dem_rsmas.py $template_file --ssara_kml 2>out_dem_rsmas.e 1>out_dem_rsmas.o"
        run_command "generate_makedem_command.py $template_file 2>out_generate_makedem_command.e 1>out_generate_makedem_command.o"
        run_command "./makedem_sardem.sh  2>out_makedem.e 1>out_makedem.o"
     fi
