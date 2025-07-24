@@ -84,7 +84,7 @@ def generate_download_command(template,inps):
        f.write(' '.join(ssara_slc_download_cmd_python) + '\n')
 
     # create download_asf.sh
-    asf_slc_download_cmd = ['asf_search_args.py', '--product=SLC'] + ssaraopt + ['--dir=SLC', '--print', '--download']
+    asf_slc_download_cmd = ['asf_search_args.py', '--processingLevel=SLC'] + ssaraopt + ['--dir=SLC', '--print', '--download']
     with open('download_asf.cmd', 'w') as f:
         f.write(' '.join(asf_slc_download_cmd) + '\n')
     with open('download_asf.sh', 'w') as f:
@@ -93,7 +93,7 @@ def generate_download_command(template,inps):
         f.write(' '.join(['asf_download.sh'] + asf_slc_download_cmd[1:]) + '\n')
 
     # create download_asf_burst.sh
-    asf_burst_download_cmd = ['asf_search_args.py', '--product=BURST'] + ssaraopt + ['--dir=SLC', '--print', '--download','2>asf_burst_download.e']
+    asf_burst_download_cmd = ['asf_search_args.py', '--processingLevel=BURST'] + ssaraopt + ['--dir=SLC', '--print', '--download','2>asf_burst_download.e']
     run_burst2safe = [f'run_workflow.bash {template} --jobfile {inps.work_dir}/SLC/run_01_burst2safe']
     with open('download_asf_burst.cmd', 'w') as f:
         f.write(' '.join(asf_burst_download_cmd) + '\n')
