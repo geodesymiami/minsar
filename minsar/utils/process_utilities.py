@@ -625,7 +625,17 @@ def extract_memory_from_job_file(file):
                 memory = line.split('mem=')[1]
                 memory = memory.split(']')[0]
                 return memory
+##########################################################################
 
+def extract_queuename_from_job_file(file):
+    """ Extracts the queue name from a SLURM (SBATCH) job file """
+    with open(file) as fr:
+        lines = fr.readlines()
+        for line in lines:
+            if '#SBATCH -p' in line:
+                queue_name = line.split('-p')[1]
+                queue_name = queue_name.strip()
+                return queue_name
 ##########################################################################
  
 def extract_step_name_from_stdout_name(job_name):
