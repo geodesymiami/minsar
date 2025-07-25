@@ -37,10 +37,11 @@ logfile="download_retry.log"
 # Retry loop
 while true; do
     echo "Starting download at $(date)" | tee -a "$logfile"
-    set -x
+    #set -x
     echo "running ... $cmd"
     eval "$cmd"
-    if [ $exit_code -eq 0 ]; then
+    exit_status="$?"
+    if [ $exit_status -eq 0 ]; then
         echo "Download completed successfully." | tee -a "$logfile"
         break
     fi
