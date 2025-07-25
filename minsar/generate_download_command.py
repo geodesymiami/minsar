@@ -85,21 +85,16 @@ def generate_download_command(template,inps):
 
     # create download_asf.sh
     asf_slc_download_cmd = ['asf_search_args.py', '--processingLevel=SLC'] + ssaraopt + ['--dir=SLC', '--print', '--download']
-    with open('download_asf.cmd', 'w') as f:
-        f.write(' '.join(asf_slc_download_cmd) + '\n')
     with open('download_asf.sh', 'w') as f:
         asf_slc_download_cmd = [arg for arg in asf_slc_download_cmd if arg != '--print']
         f.write(f"#!/usr/bin/env bash\n")
         f.write(' '.join(['asf_download.sh'] + asf_slc_download_cmd[1:]) + '\n')
+    #with open('download_asf.cmd', 'w') as f:
+    #    f.write(' '.join(asf_slc_download_cmd) + '\n')
 
     # create download_asf_burst.sh
     asf_burst_download_cmd = ['asf_search_args.py', '--processingLevel=BURST'] + ssaraopt + ['--dir=SLC', '--print', '--download','2>asf_burst_download.e']
     run_burst2safe = [f'run_workflow.bash {template} --jobfile {inps.work_dir}/SLC/run_01_burst2safe']
-    with open('download_asf_burst.cmd', 'w') as f:
-        f.write(f"mkdir -p SLC\n")
-        f.write(' '.join(asf_burst_download_cmd) + '\n')
-        f.write(' '.join(['bursts_to_burst2safe_jobfile.py','SLC']) + '\n')
-        f.write(' '.join(run_burst2safe) + '\n')
     with open('download_asf_burst.sh', 'w') as f:
         asf_burst_download_cmd = [arg for arg in asf_burst_download_cmd if arg != '--print']
         f.write(f"#!/usr/bin/env bash\n")
@@ -107,6 +102,11 @@ def generate_download_command(template,inps):
         f.write(' '.join(['asf_download.sh'] + asf_burst_download_cmd[1:]) + '\n')
         f.write(' '.join(['bursts_to_burst2safe_jobfile.py','SLC']) + '\n')
         f.write(' '.join(run_burst2safe) + '\n')
+    #with open('download_asf_burst.cmd', 'w') as f:
+    #    f.write(f"mkdir -p SLC\n")
+    #    f.write(' '.join(asf_burst_download_cmd) + '\n')
+    #    f.write(' '.join(['bursts_to_burst2safe_jobfile.py','SLC']) + '\n')
+    #    f.write(' '.join(run_burst2safe) + '\n')
     
     os.chmod('download_asf.sh', 0o755)
     os.chmod('download_asf_burst.sh', 0o755)
