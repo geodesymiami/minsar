@@ -129,19 +129,19 @@ set -- "${POSITIONAL[@]}" # restore positional parameters
 #echo "    $download_flag     $dem_flag      $runfiles_flag      $ifgram_flag        $mintpy_flag     $miaplpy_flag"
 
 if [[ $download_flag == "1" ]]; then
-    rm -rf SLC RAW_data
+    rm -rf SLC RAW_data out_create*.{o,e}
 fi
 
 if [[ $dem_flag == "1" ]]; then
-    rm -rf DEM
+    rm -rf DEM out_*makedem*.{o,e}
 fi
 
 if [[ $runfiles_flag == "1" ]]; then
-    rm -rf run_files run_files_tmp configs configs_tmp
+    rm -rf run_files run_files_tmp configs configs_tmp out_create*.{o,e}
 fi
 
 if [[ $ifgram_flag == "1" ]]; then
-   rm -rf coreg_secondarys baselines coarse_interferograms secondarys geom_reference interferograms reference merged misreg stack hazard_products geom_reference_noDEM ESD *.{o,e} stdout_* remora_*'
+   rm -rf coreg_secondarys baselines coarse_interferograms secondarys geom_reference interferograms reference merged misreg stack hazard_products geom_reference_noDEM ESD out_run*.{o,e} stdout_* remora_*'
    rm -rf baselines coregSLC geom_master Igrams merged offsets refineSecondaryTiming  SLC_crop stdout_* *.{o,e}'
 fi
 

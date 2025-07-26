@@ -424,9 +424,9 @@ if [[ $download_flag == "1" ]]; then
         run_command "$cmd"
         cd ..
     elif [[ $burst_download_flag == "1" ]]; then
-        run_command "./download_asf_burst.sh"
+        run_command "./download_asf_burst.sh  2>out_download_asf_burst.e 1>out_download_asf_burst.o"
     else
-        run_command "./download_asf.sh"
+        run_command "./download_asf.sh 2>out_download_asf.e 1>out_download_asf.o"
     fi
 
     # remove excluded dates
