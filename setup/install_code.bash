@@ -82,6 +82,7 @@ cp -p minsar/additions/isce2/topsStack/FilterAndCoherence.py tools/isce2/contrib
 cp -p minsar/additions/isce2/stripmapStack/prepRawCSK.py tools/isce2/contrib/stack/stripmapStack
 cp -p minsar/additions/isce2/stripmapStack/unpackFrame_TSX.py tools/isce2/contrib/stack/stripmapStack
 cp -p minsar/additions/isce2/DemStitcher.py tools/isce2/contrib/demUtils/demstitcher
+cp -p minsar/additions/isce2/Sentinel1.py tools/isce2/components/isceobj/Sensor/TOPS
 
 ### Copying ISCE fixes into miniforge directory ###
 cp -r tools/isce2/contrib/stack/* tools/miniforge3/share/isce2
