@@ -106,11 +106,10 @@ def main(iargs=None):
     #root_dir = os.path.dirname(cli_dir)  # one level up: additions/mintpy/
     #if root_dir not in sys.path:
         #sys.path.insert(0, root_dir)
+    #from save_hdfeos5 import save_hdfeos5
 
-    # Now import your custom version
-    from save_hdfeos5 import save_hdfeos5
-    ## import
-    #from mintpy.save_hdfeos5 import save_hdfeos5
+    # import
+    from mintpy.save_hdfeos5 import save_hdfeos5
 
     # run
     save_hdfeos5(inps)
