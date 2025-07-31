@@ -248,8 +248,8 @@ def get_output_filename(metadata, template, suffix=None, update_mode=False, subs
             lon0 = float(metadata['X_FIRST'])
             lat0 = lat1 + float(metadata['Y_STEP']) * int(metadata['LENGTH'])
             lon1 = lon0 + float(metadata['X_STEP']) * int(metadata['WIDTH'])
-        elif 'mintpy.subset.lalo' in template.keys(): 
-            # for MiaplPy it would be preferrd to use miaplpy.subset.lalo but that is not available 
+        elif 'mintpy.subset.lalo' in template.keys():
+            # for MiaplPy it would be preferrd to use miaplpy.subset.lalo but that is not available
             lat1 = float(template['mintpy.subset.lalo'].split(',')[0].split(':')[1])
             lon0 = float(template['mintpy.subset.lalo'].split(',')[1].split(':')[0])
             lat0 = float(template['mintpy.subset.lalo'].split(',')[0].split(':')[0])
@@ -268,7 +268,7 @@ def get_output_filename(metadata, template, suffix=None, update_mode=False, subs
 
         SUB = f'_{lat0Str}_{lat1Str}_{lon0Str}_{lon1Str}'
         fbase, fext = os.path.splitext(outName)
-        
+
         if suffix:
             outName = fbase.removesuffix('_' + suffix) + SUB + '_' + suffix + fext
         else:
@@ -302,7 +302,7 @@ def create_hdf5_dataset(group, dsName, data, max_digit=55, compression=COMPRESSI
     return dset
 
 
-def write_hdf5_file(metadata, out_file, ts_file, tcoh_file, scoh_file, mask_file, geom_file):
+def write_hdf5_file(metadata, out_file, ts_file, tcoh_file, scoh_file, mask_file, geom_file, dem_err_file=None):
     """Write HDF5 file in HDF-EOS5 format."""
 
     ts_obj = timeseries(ts_file)
@@ -353,7 +353,7 @@ def write_hdf5_file(metadata, out_file, ts_file, tcoh_file, scoh_file, mask_file
 
         ## O2 - date
         dsName = 'date'
-        data = np.array(dateList, dtype=np.string_)
+        data = np.array(dateList, dtype=np.bytes_)
         dset = create_hdf5_dataset(group, dsName, data)
 
         ## O3 - perp baseline
@@ -394,6 +394,18 @@ def write_hdf5_file(metadata, out_file, ts_file, tcoh_file, scoh_file, mask_file
         dsName = 'mask'
         # read
         data = readfile.read(mask_file, datasetName='mask')[0]
+        # write
+        dset = create_hdf5_dataset(group, dsName, data)
+        # attributes
+        dset.attrs['Title'] = dsName
+        dset.attrs['MissingValue'] = BOOL_ZERO
+        dset.attrs['_FillValue'] = BOOL_ZERO
+        dset.attrs['Units'] = '1'
+
+        ## Q4 - demError
+        dsName = 'demError'
+        # read
+        data = readfile.read(dem_err_file, datasetName='dem')[0]
         # write
         dset = create_hdf5_dataset(group, dsName, data)
         # attributes
@@ -478,6 +490,7 @@ def save_hdfeos5(inps):
         tcoh_file=inps.tcoh_file,
         scoh_file=inps.scoh_file,
         mask_file=inps.mask_file,
+        dem_err_file=inps.dem_err_file,
         geom_file=inps.geom_file)
 
     return

@@ -44,6 +44,7 @@ def create_parser(subparsers=None):
                         help='Average spatial coherence file, i.e. avgSpatialCoh.h5')
     parser.add_argument('-m', '--mask', dest='mask_file', help='Mask file')
     parser.add_argument('-g', '--geometry', dest='geom_file', help='geometry file')
+    parser.add_argument('-de', '--dem-error', dest='dem_err_file', help='DEM error file')
     parser.add_argument('--suffix', dest='suffix', help='suffix to be appended to file name (e.g. PS).')
 
     parser.add_argument('--update', action='store_true',
@@ -100,8 +101,15 @@ def main(iargs=None):
     # parse
     inps = cmd_line_parse(iargs)
 
-    # import
-    from mintpy.save_hdfeos5 import save_hdfeos5
+    cli_dir = os.path.dirname(os.path.abspath(__file__))
+    root_dir = os.path.dirname(cli_dir)  # one level up: additions/mintpy/
+    if root_dir not in sys.path:
+        sys.path.insert(0, root_dir)
+
+    # Now import your custom version
+    from save_hdfeos5 import save_hdfeos5
+    ## import
+    #from mintpy.save_hdfeos5 import save_hdfeos5
 
     # run
     save_hdfeos5(inps)
