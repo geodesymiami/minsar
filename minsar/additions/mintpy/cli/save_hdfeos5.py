@@ -101,10 +101,11 @@ def main(iargs=None):
     # parse
     inps = cmd_line_parse(iargs)
 
-    cli_dir = os.path.dirname(os.path.abspath(__file__))
-    root_dir = os.path.dirname(cli_dir)  # one level up: additions/mintpy/
-    if root_dir not in sys.path:
-        sys.path.insert(0, root_dir)
+    # Hack to make sure save_hdfeos5.py one dir down is imported
+    #cli_dir = os.path.dirname(os.path.abspath(__file__))
+    #root_dir = os.path.dirname(cli_dir)  # one level up: additions/mintpy/
+    #if root_dir not in sys.path:
+        #sys.path.insert(0, root_dir)
 
     # Now import your custom version
     from save_hdfeos5 import save_hdfeos5
