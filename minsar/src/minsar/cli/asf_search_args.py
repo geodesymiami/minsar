@@ -63,7 +63,6 @@ orbit = None
 burst_id = None
 product = []
 
-
 # if 'BURST' in inps.product:
 #     product.append(asf.PRODUCT_TYPE.BURST)
 
@@ -128,6 +127,7 @@ print("Searching for data...")
 # product = [asf.PRODUCT_TYPE.BURST]  # FA 7/2025: does not seem to work although ChatGPT suggests it
 # platform='ALOS-2'
 
+inps.beam_swath = 'IW' 
 inps.polarization = ['VV','VV+VH'] 
 results = asf.search(
     platform=platform,
@@ -136,6 +136,7 @@ results = asf.search(
     end=edate,
     intersectsWith=inps.intersectsWith,
     flightDirection=node,
+    #beamSwath=inps.beam_swath,    #FA 8/2025   Unclear why this does not work. Needed for FogoSenA75
     relativeOrbit=inps.relativeOrbit,
     relativeBurstID=None,
     polarization=inps.polarization
