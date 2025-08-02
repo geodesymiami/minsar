@@ -108,9 +108,9 @@ def main(iargs=None):
     command.append( f'generate_mask.py temporalCoherence_lowpass_gaussian.h5 -m {mask_thresh} &' )
     command.append( f'wait' )
 
-    command.append( f'save_hdfeos5.py timeseries_*demErr.h5 --tc temporalCoherence.h5 --asc avgSpatialCoh.h5 -m ../maskPS.h5 -g inputs/geometryRadar.h5 -t smallbaselineApp.cfg --suffix {prefix}PS &' )
-    command.append( f'save_hdfeos5.py timeseries_*demErr.h5 --tc temporalCoherence.h5 --asc avgSpatialCoh.h5 -m maskTempCoh.h5 -g inputs/geometryRadar.h5 -t smallbaselineApp.cfg --suffix {prefix}DS &' )
-    command.append( f'save_hdfeos5.py timeseries_*demErr.h5 --tc temporalCoherence_lowpass_gaussian.h5 --asc avgSpatialCoh.h5 -m maskTempCoh_lowpass_gaussian.h5  -g inputs/geometryRadar.h5 -t smallbaselineApp.cfg --suffix filt{prefix}DS &' )
+    command.append( f'save_hdfeos5.py timeseries_*demErr.h5 --tc temporalCoherence.h5 --asc avgSpatialCoh.h5 -m ../maskPS.h5 -g inputs/geometryRadar.h5 --dem-error demErr.h5 -t smallbaselineApp.cfg --suffix {prefix}PS &' )
+    command.append( f'save_hdfeos5.py timeseries_*demErr.h5 --tc temporalCoherence.h5 --asc avgSpatialCoh.h5 -m maskTempCoh.h5 -g inputs/geometryRadar.h5 --dem-error demErr.h5 -t smallbaselineApp.cfg --suffix {prefix}DS &' )
+    command.append( f'save_hdfeos5.py timeseries_*demErr.h5 --tc temporalCoherence_lowpass_gaussian.h5 --asc avgSpatialCoh.h5 -m maskTempCoh_lowpass_gaussian.h5 --dem-error demErr.h5  -g inputs/geometryRadar.h5 -t smallbaselineApp.cfg --suffix filt{prefix}DS &' )
     command.append( f'geocode.py temporalCoherence_lowpass_gaussian.h5 -t smallbaselineApp.cfg  --outdir geo &' )
     command.append( f'geocode.py maskTempCoh_lowpass_gaussian.h5 -t smallbaselineApp.cfg  --outdir geo &' )
     command.append( f'geocode.py ../maskPS.h5 -t smallbaselineApp.cfg  --outdir geo &' )
