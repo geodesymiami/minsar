@@ -196,7 +196,7 @@ fi
 #for jobfile in "${jobfiles[@]}"; do
 #    echo "Processing job file: $jobfile"
 #done
-echo "jobfile: <${jobfile}>"
+echo "job from --jobfile: <${jobfile}>"
 sleep 3
 
 # set startstep, stopstep if miaplpy options are given
@@ -321,15 +321,16 @@ if [[ $miaplpy_flag == "true" ]]; then
    echo "Running miaplpy jobs in ${RUNFILES_DIR}"
 fi
 
-#set -xv
+set -x
 #find the last job (11 for 'geometry' and 16 for 'NESD', 9 for stripmap) and remove leading zero
 jobfile_arr=(ls $RUNFILES_DIR/run_*_0.job)
 last_jobfile=${jobfile_arr[-1]}
 last_jobfile=${last_jobfile##*/}
 last_jobfile_number=${last_jobfile:4:2}
 last_jobfile_number=$(echo $((10#${last_jobfile_number})))
-echo last_jobfile_number: $last_jobfile_number
+echo "last jobfile number: <$last_jobfile_number>"
 
+sleep 20
 
 if [[ $startstep == "ifgram" || $startstep == "miaplpy" ]]; then
     startstep=1
@@ -347,7 +348,7 @@ elif [[ $stopstep == "insarmaps" ]]; then
     stopstep=$((last_jobfile_number+2))
 fi
 
-echo "last_jobfile_number: $last_jobfile_number, startstep: $startstep, stopstep: $stopstep"
+echo "last jobfile number: <$last_jobfile_number>, startstep: <$startstep>, stopstep: <$stopstep>"
 for (( i=$startstep; i<=$stopstep; i++ )) do
     stepnum="$(printf "%02d" ${i})"
     if [[ $i -le $last_jobfile_number ]]; then
