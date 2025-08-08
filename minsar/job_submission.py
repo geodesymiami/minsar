@@ -86,7 +86,7 @@ def parse_arguments(args):
     job_params = parser.parse_args(args)
 
     try:
-        scratch_dir = os.getenv('SCRATCH')
+        scratch_dir = os.getenv('SCRATCHDIR')
     except:
         scratch_dir = os.getcwd()
 
@@ -136,7 +136,7 @@ class JOB_SUBMIT:
             self.out_dir = '.'
         if not 'remora' in inps:
             self.remora = None
-        if not 'copy_to_tmp' in inps: 
+        if not 'copy_to_tmp' in inps:
             self.copy_to_tmp = None
         self.num_data = inps.num_data
 
@@ -178,7 +178,7 @@ class JOB_SUBMIT:
         command_line = " ".join(flag for flag in argv[0:] if flag != "--submit")
 
         self.get_memory_walltime(job_file_name, job_type='script')
-        
+
         self.job_files = [os.path.join(self.work_dir, "{0}.job".format(job_file_name))]
 
         self.write_single_job_file(job_name, job_file_name, command_line, work_dir=self.work_dir,
@@ -208,11 +208,11 @@ class JOB_SUBMIT:
             #print('\nWorking on a {} machine ...\n'.format(self.scheduler))
 
             # assume stripmap size corredponds to 8 busts
-            if self.prefix == 'stripmap':       
+            if self.prefix == 'stripmap':
                self.num_memory_units = 8
 
             self.get_memory_walltime(batch_file, job_type='batch')
-            
+
             log_args = 'job_submission.py --template {t} {a} --outdir {b} ' \
                        '--numMemoryUnits {c} --writeonly'.format(t=self.custom_template_file,
                                                             a=batch_file, b=self.out_dir,
@@ -391,7 +391,7 @@ class JOB_SUBMIT:
         :param batch_file: File containing tasks that we are submitting.
         :param work_dir: the directory to check outputs and error files of job
         """
-        
+
         job_numbers = []
         jobs_out = []
         jobs_err = []
@@ -404,7 +404,7 @@ class JOB_SUBMIT:
             job_numbers.append(job_num)
             jobs_out.append(out)
             jobs_err.append(err)
-         
+
         if wait_flag:
             i = 0
             wait_time_sec = 60
@@ -438,21 +438,21 @@ class JOB_SUBMIT:
                             else:
                                 job_stat = 'failed'
                                 raise RuntimeError('Error: {} job was terminated with Error'.format(job_file_name))
-    
+
                 if len(rerun_job_files) > 0:
                    for job_file_name in rerun_job_files:
                        wall_time = putils.extract_walltime_from_job_file(job_file_name)
                        new_wall_time = putils.multiply_walltime(wall_time, factor=1.2)
                        putils.replace_walltime_in_job_file(job_file_name, new_wall_time)
-    
+
                        dateStr=datetime.strftime(datetime.now(), '%Y%m%d:%H-%M')
                        string = dateStr + ': re-running: ' + os.path.basename(job_file_name) + ': ' + wall_time + ' --> ' + new_wall_time
-    
+
                        with open(self.out_dir + '/rerun.log', 'a') as rerun:
                           rerun.writelines(string)
-    
+
                    self.submit_and_check_job_status(rerun_job_files, work_dir=self.work_dir)
-    
+
             else:
                 for out, job_file_name in zip(jobs_out, job_files):
                     if not 'None' in out:
@@ -461,7 +461,7 @@ class JOB_SUBMIT:
                             total_wait_time_min += wait_time_sec / 60
                             time.sleep(wait_time_sec)
                             # i += 1
-    
+
             for job_file_name in job_files:
                 error_files = glob.glob(job_file_name.split('.')[0] + '*.e')
                 for errfile in error_files:
@@ -471,7 +471,7 @@ class JOB_SUBMIT:
                                 check_words_in_file(errfile, 'Error')]
                     if np.array(job_exit).any():
                         raise RuntimeError('Error terminating job: {}'.format(job_file_name))
-                    
+
         return
 
     def split_jobs(self, batch_file, tasks, number_of_nodes, distribute=None, num_cores_per_task=None):
@@ -552,7 +552,7 @@ class JOB_SUBMIT:
         :param job_type: 'batch' or 'script'
         """
         config = putils.get_config_defaults(config_file='job_defaults.cfg')
-        
+
         if job_type == 'batch':
             step_name = '_'
             step_name = step_name.join(job_name.split('/')[-1].split('_')[2::])
@@ -590,7 +590,7 @@ class JOB_SUBMIT:
                 c_walltime = config['default']['c_walltime']
                 s_walltime = config['default']['s_walltime']
                 extra_seconds = float(config['default']['seconds_factor']) * self.num_data
-            
+
             if extra_seconds == 0:
                 extra_seconds = 1
         else:
@@ -604,7 +604,7 @@ class JOB_SUBMIT:
 
         if "dev" in self.queue_name:
             self.default_wall_time = "2:00:00"
-            
+
         if step_name in config:
             self.default_num_threads = config[step_name]['num_threads']
         else:
@@ -683,7 +683,7 @@ class JOB_SUBMIT:
             prefix + name_option.format(os.path.basename(job_name)),
             prefix + project_option.format(os.getenv('JOBSHEDULER_PROJECTNAME'))
         ]
- 
+
         if self.email_notif:
             job_file_lines.append(prefix + email_option.format(os.getenv("NOTIFICATIONEMAIL")))
 
@@ -710,7 +710,7 @@ class JOB_SUBMIT:
         return job_file_lines
 
     def add_slurm_commands(self, job_file_lines, job_file_name, hostname, batch_file=None, distribute=None):
-        
+
         if not self.copy_to_tmp or self.copy_to_tmp_flag == "no":
              return job_file_lines
 
@@ -741,7 +741,7 @@ class JOB_SUBMIT:
         # job_file_lines.append( "cp $SCRATCH/miniconda3.tar /tmp\n" )
         # job_file_lines.append( "tar xf /tmp/miniconda3.tar -C /tmp/rsmas_insar/3rdparty\n" )
         # job_file_lines.append( "rm /tmp/miniconda3.tar\n" )
-        # job_file_lines.append( "cp -r $RSMASINSAR_HOME/sources/isce2/contrib/stack/*  /tmp/rsmas_insar/3rdparty/miniconda3/share/isce2\n" )   
+        # job_file_lines.append( "cp -r $RSMASINSAR_HOME/sources/isce2/contrib/stack/*  /tmp/rsmas_insar/3rdparty/miniconda3/share/isce2\n" )
 
 
         # job_file_lines.append( '# remove /scratch and /work from PATH\n' )
@@ -790,8 +790,8 @@ class JOB_SUBMIT:
         #             job_file_lines.append( 'export CDTOOL=/scratch1/01255/siliu/collect_distribute\n' )
 
         #         job_file_lines.append( 'module load intel/19.1.1 2> /dev/null\n' )
-        #         job_file_lines.append( 'export PATH=${PATH}:${CDTOOL}/bin\n' )  
-        #         job_file_lines.append( '\n' )                                   #keep `\n` for splitting and remove first 12 characters of line 
+        #         job_file_lines.append( 'export PATH=${PATH}:${CDTOOL}/bin\n' )
+        #         job_file_lines.append( '\n' )                                   #keep `\n` for splitting and remove first 12 characters of line
 
         #     # run_02_unpack_secondary_slc
         #     if "run_02_unpack_secondary_slc" in job_file_name:
@@ -804,7 +804,7 @@ class JOB_SUBMIT:
 
         #     # run_03_average_baseline
         #     if 'average_baseline' in job_file_name and not batch_file is None:
-        #         job_file_lines.append(""" 
+        #         job_file_lines.append("""
         #         # reference
         #         #cp -r """ + self.out_dir + """/reference /tmp
         #         distribute.bash """ + self.out_dir + """/reference
@@ -820,7 +820,7 @@ class JOB_SUBMIT:
         #         done
         #         files1="/tmp/secondarys/????????/*.xml"
         #         files2="/tmp/secondarys/????????/*/*.xml"
-        #         old=""" + self.out_dir + """ 
+        #         old=""" + self.out_dir + """
         #         sed -i "s|$old|/tmp|g" $files1
         #         sed -i "s|$old|/tmp|g" $files2
         #         """)
@@ -831,14 +831,14 @@ class JOB_SUBMIT:
 
         #         # reference
         #         #cp -r """ + self.out_dir + """/reference /tmp
-        #         distribute.bash """ + self.out_dir + """/reference 
+        #         distribute.bash """ + self.out_dir + """/reference
         #         files="/tmp/reference/*.xml /tmp/reference/*/*.xml"
-        #         old=""" + self.out_dir + """ 
+        #         old=""" + self.out_dir + """
         #         sed -i "s|$old|/tmp|g" $files
 
         #         # geom_reference
         #         #cp -r """ + self.out_dir + """/geom_reference /tmp
-        #         distribute.bash """ + self.out_dir + """/geom_reference 
+        #         distribute.bash """ + self.out_dir + """/geom_reference
         #         files="/tmp/geom_reference/*/*.xml"
         #         old=""" + self.out_dir + """
         #         sed -i "s|$old|/tmp|g" $files
@@ -864,7 +864,7 @@ class JOB_SUBMIT:
         #         #cp -r """ + self.out_dir + """/reference /tmp
         #         distribute.bash """ + self.out_dir + """/reference
         #         files="/tmp/reference/*.xml /tmp/reference/*/*.xml"
-        #         old=""" + self.out_dir + """ 
+        #         old=""" + self.out_dir + """
         #         sed -i "s|$old|/tmp|g" $files
 
         #         # secondarys
@@ -895,7 +895,7 @@ class JOB_SUBMIT:
         #         # reference
         #         #cp -r """ + self.out_dir + """/reference /tmp
         #         distribute.bash """ + self.out_dir + """/reference; files="/tmp/reference/*.xml /tmp/reference/*/*.xml"
-        #         old=""" + self.out_dir + """ 
+        #         old=""" + self.out_dir + """
         #         sed -i "s|$old|/tmp|g" $files
 
         #         # coreg_secondarys      (different awk)
@@ -922,10 +922,10 @@ class JOB_SUBMIT:
 
         #     # run_08_generate_burst_igram
         #     if 'generate_burst_igram' in job_file_name and not batch_file is None:
-        #         # awk '{printf "%s\\n",$3}' run_03_average_baseline_0 | awk -F _ '{printf "%s\\n",$3}' 
-        #         # awk '{printf "%s\\n",$3}' run_04_fullBurst_geo2rdr_0 | awk -F _ '{printf "%s\\n",$4}' 
-        #         # awk '{printf "%s\\n",$3}' run_05_fullBurst_resample_0 | awk -F _ '{printf "%s\\n",$4}' 
-        #         # awk '{printf "%s\\n",$3}' run_07_merge_reference_secondary_slc_0 | awk -F _ '{printf "%s\\n",$3}' 
+        #         # awk '{printf "%s\\n",$3}' run_03_average_baseline_0 | awk -F _ '{printf "%s\\n",$3}'
+        #         # awk '{printf "%s\\n",$3}' run_04_fullBurst_geo2rdr_0 | awk -F _ '{printf "%s\\n",$4}'
+        #         # awk '{printf "%s\\n",$3}' run_05_fullBurst_resample_0 | awk -F _ '{printf "%s\\n",$4}'
+        #         # awk '{printf "%s\\n",$3}' run_07_merge_reference_secondary_slc_0 | awk -F _ '{printf "%s\\n",$3}'
         #         # awk '{printf "%s\\n",$3}' run_08_generate_burst_igram | awk -F _ '{printf "%s\\n%s\\n",$4,$5}' | sort -n | uniq
         #         # awk '{printf "%s\\n",$3}' run_09_merge_burst_igram_0 | awk -F _merge_igram_ '{printf "%s\\n",$2}' | sort -n | uniq
         #         # awk '{printf "%s\\n",$3}' run_10_filter_coherence | awk -F _igram_filt_coh_ '{printf "%s\\n",$2}' | sort -n | uniq
@@ -936,16 +936,16 @@ class JOB_SUBMIT:
         #         date_list=( $(awk '{printf "%s\\n",$3}' """ + batch_file + """ | awk -F _ '{printf "%s\\n%s\\n",$(NF-1),$NF}' | sort -n | uniq ) )
         #         ref_date=( $(xmllint --xpath 'string(/productmanager_name/component[@name="instance"]/component[@name="bursts"]/component[@name="burst1"]/property[@name="burststartutc"]/value)' """ \
         #             + self.out_dir + """/reference/IW*.xml | cut -d ' ' -f 1 | sed "s|-||g") )
-                
+
         #         # reference
         #         if [[ " ${date_list[@]} " =~ " $ref_date " ]] ; then
         #         #cp -r """ + self.out_dir + """/reference /tmp
         #         distribute.bash """ + self.out_dir + """/reference
         #         files="/tmp/reference/*.xml /tmp/reference/*/*.xml"
-        #         old=""" + self.out_dir + """ 
+        #         old=""" + self.out_dir + """
         #         sed -i "s|$old|/tmp|g" $files
         #         fi
-                
+
         #         # remove ref_date from array
         #         index=$(echo ${date_list[@]/$ref_date//} | cut -d/ -f1 | wc -w | tr -d ' ')
         #         unset date_list[$index]
@@ -962,11 +962,11 @@ class JOB_SUBMIT:
         #         sed -i "s|$old|/tmp|g" $files2
         #         fi
         #         """)
-            
+
         #     # run_09_merge_burst_igram
         #     if 'merge_burst_igram' in job_file_name and not batch_file is None:
         #         job_file_lines.append("""
-            
+
         #         # stack
         #         #cp -r """ + self.out_dir + """/stack /tmp
         #         distribute.bash """ + self.out_dir + """/stack
@@ -991,8 +991,8 @@ class JOB_SUBMIT:
         #     # run_10_filter_coherence
         #     if 'filter_coherence' in job_file_name and not batch_file is None:
         #         job_file_lines.append("""
-    
-        #         # merged/interferograms       
+
+        #         # merged/interferograms
         #         pair_list=( $(awk '{printf "%s\\n",$3}' """ + batch_file + """ | awk -F _igram_filt_coh_ '{printf "%s\\n",$2}' | sort -n | uniq) )
         #         mkdir -p /tmp/merged/interferograms
         #         for pair in "${pair_list[@]}"; do
@@ -1023,10 +1023,10 @@ class JOB_SUBMIT:
         #         #cp -r """ + self.out_dir + """/reference /tmp
         #         distribute.bash """ + self.out_dir + """/reference /tmp
         #         files="/tmp/reference/*.xml /tmp/reference/*/*.xml"
-        #         old=""" + self.out_dir + """ 
+        #         old=""" + self.out_dir + """
         #         sed -i "s|$old|/tmp|g" $files
-                
-        #         # merged/interferograms       
+
+        #         # merged/interferograms
         #         pair_list=( $(awk '{printf "%s\\n",$3}' """ + batch_file + """ | awk -F _igram_unw_ '{printf "%s\\n",$2}' | sort -n | uniq) )
         #         mkdir -p /tmp/merged/interferograms
         #         for pair in "${pair_list[@]}"; do
@@ -1044,7 +1044,7 @@ class JOB_SUBMIT:
 
         #     # run_01_crop
         #     if 'crop' in job_file_name and not batch_file is None:
-        #         job_file_lines.append(""" 
+        #         job_file_lines.append("""
         #         date_list=( $(awk '{printf "%s\\n",$3}' """ + batch_file +  """ | awk -F _ '{printf "%s\\n",$NF}' ) )
         #         mkdir -p /tmp/SLC
         #         for date in "${date_list[@]}"; do
@@ -1061,7 +1061,7 @@ class JOB_SUBMIT:
         #     # run_04_geo2rdr_coarseResamp
         #     if 'geo2rdr_coarseResamp' in job_file_name and not batch_file is None:
         #         job_file_lines.append("""
-    
+
         #         # cropped reference and secondarys
         #         ref_date=( $(awk '{printf "%s\\n",$3}' """ + self.out_dir +  """/run_files/run_02_reference | awk -F _ '{printf "%s\\n",$NF}' ) )
         #         date_list=( $(awk '{printf "%s\\n",$3}' """ + batch_file +  """ | awk -F _ '{printf "%s\\n",$NF}' ) )
@@ -1074,9 +1074,9 @@ class JOB_SUBMIT:
         #         done
 
         #         files="/tmp/SLC_crop/*/*.xml"
-        #         old=""" + self.out_dir + """ 
+        #         old=""" + self.out_dir + """
         #         sed -i "s|$old|/tmp|g" $files
-                
+
         #         # geom_reference
         #         mkdir -p /tmp/merged
         #         #cp -r """ + self.out_dir + """/merged/geom_reference /tmp/merged
@@ -1086,10 +1086,10 @@ class JOB_SUBMIT:
         #     # run_05_refineSecondaryTiming
         #     if 'refineSecondaryTimin' in job_file_name and not batch_file is None:
         #         job_file_lines.append("""
-    
+
         #         mkdir -p /tmp/SLC_crop
         #         mkdir -p /tmp/coregSLC/Coarse
-                
+
         #         date_list=( $(awk '{printf "%s\\n",$3}' """ + batch_file +  """ | awk -F _ '{printf "%s\\n",$NF}' |  sort -n | uniq ) )
         #         for date in "${date_list[@]}"; do
         #             #cp -r """ + self.out_dir + """/SLC_crop/$date /tmp/SLC_crop
@@ -1100,7 +1100,7 @@ class JOB_SUBMIT:
 
         #         files1="/tmp/SLC_crop/*/*.xml"
         #         files2="/tmp/coregSLC/Coarse/*/*.xml"
-        #         old=""" + self.out_dir + """ 
+        #         old=""" + self.out_dir + """
         #         sed -i "s|$old|/tmp|g" $files1
         #         sed -i "s|$old|/tmp|g" $files2
         #         """)
@@ -1110,17 +1110,17 @@ class JOB_SUBMIT:
         #     # run_07_fineResamp
         #     if 'fineResamp' in job_file_name and not batch_file is None:
         #         job_file_lines.append("""
-    
+
         #         mkdir -p /tmp/SLC_crop
         #         mkdir -p /tmp/coregSLC/Coarse
         #         mkdir -p /tmp/offsets
-                
+
         #         ref_date=( $(awk '{printf "%s\\n",$3}' """ + self.out_dir +  """/run_files/run_02_reference | awk -F _ '{printf "%s\\n",$NF}' ) )
         #         date_list=( $(awk '{printf "%s\\n",$3}' """ + batch_file +  """ | grep config_fineResamp | awk -F _ '{printf "%s\\n",$NF}' ) )
 
         #         #cp -r """ + self.out_dir + """/SLC_crop/$ref_date /tmp/SLC_crop
         #         distribute.bash """ + self.out_dir + """/SLC_crop/$ref_date; mv /tmp/$ref_date /tmp/SLC_crop
-                
+
         #         for date in "${date_list[@]}"; do
         #             #cp -r """ + self.out_dir + """/SLC_crop/$date /tmp/SLC_crop
         #             #cp -r """ + self.out_dir + """/coregSLC/Coarse/$date /tmp/coregSLC/Coarse
@@ -1133,7 +1133,7 @@ class JOB_SUBMIT:
         #         files1="/tmp/SLC_crop/*/*.xml"
         #         files2="/tmp/coregSLC/Coarse/*/*.xml"
         #         files3="/tmp/offsets/*/*.xml"
-        #         old=""" + self.out_dir + """ 
+        #         old=""" + self.out_dir + """
         #         sed -i "s|$old|/tmp|g" $files1
         #         sed -i "s|$old|/tmp|g" $files2
         #         sed -i "s|$old|/tmp|g" $files3
@@ -1143,15 +1143,15 @@ class JOB_SUBMIT:
         #     # run_08_grid_baseline
         #     if 'grid_baseline' in job_file_name and not batch_file is None:
         #         job_file_lines.append("""
-    
+
         #         mkdir -p /tmp/merged/SLC
-            
+
         #         ref_date=( $(awk '{printf "%s\\n",$3}' """ + self.out_dir +  """/run_files/run_02_reference | awk -F _ '{printf "%s\\n",$NF}' ) )
         #         date_list=( $(awk '{printf "%s\\n",$3}' """ + batch_file +  """ | awk -F _ '{printf "%s\\n",$NF}' ) )
-                
+
         #         #cp -r """ + self.out_dir + """/merged/SLC/$ref_date/ /tmp/merged/SLC
         #         #distribute.bash """ + self.out_dir + """/merged/SLC/$ref_date/; mv /tmp/$ref_date /tmp/merged/SLC
-                
+
         #         date_list+=($ref_date)
         #         #date_list=( $(echo "${date_list[@]}" | sort -n | uniq) )
         #         date_list=( $(printf "%s\\n" ${date_list[@]} | sort -n | uniq) )
@@ -1166,16 +1166,16 @@ class JOB_SUBMIT:
         #     # run_09_igram
         #     if 'run_09_igram' in job_file_name and not batch_file is None:
         #         job_file_lines.append("""
-    
+
         #         mkdir -p /tmp/merged/SLC
         #         mkdir -p /tmp/SLC_crop
-            
+
         #         ref_date=( $(awk '{printf "%s\\n",$3}' """ + self.out_dir +  """/run_files/run_02_reference | awk -F _ '{printf "%s\\n",$NF}' ) )
         #         date_list=( $(awk '{printf "%s\\n",$3}' """ + batch_file + """ | awk -F _ '{printf "%s\\n%s\\n",$(NF-1),$NF}' ) )
-                
+
         #         #cp -r """ + self.out_dir + """/merged/SLC/$ref_date/ /tmp/merged/SLC
         #         #distribute.bash """ + self.out_dir + """/merged/SLC/$ref_date/; mv /tmp/$ref_date /tmp/merged/SLC
-                
+
         #         date_list+=($ref_date)
         #         date_list=( $(printf "%s\\n" ${date_list[@]} | sort -n | uniq) )
 
@@ -1330,7 +1330,7 @@ def check_words_in_file(errfile, eword):
 
 
 def set_job_queue_values(args):
-    
+
     template = auto_template_not_existing_options(args)
     submission_scheme = template['job_submission_scheme']
     if submission_scheme == 'auto':
@@ -1407,8 +1407,8 @@ def set_job_queue_values(args):
 
     # scheduler = 'SLURM'
     # platform_name = 'stampede3'
- 
-  
+
+
     def_auto = [None, 16, 1, 1, 16000, 1]
     i = 0
     for key, value in check_auto.items():
