@@ -33,15 +33,14 @@ helptext="                                                                      
    --start STEP          start processing at the named step [default: download]. \n\
    --end STEP, --stop STEP                                                       \n\
    --dostep STEP         run processing at the named step only                   \n\
+   --download {asf,ssara} download method (default: asf)                     \n\
+   --burst-download      download bursts instead of frames                        \n\
                                                                                  \n\
    --mintpy              use smallbaselineApp.py for time series [default]       \n\
    --miaplpy             use miaplpyApp.py                                       \n\
    --mintpy --miaplpy    use smallbaselineApp.py and miaplpyApp.py               \n\
    --no-mintpy --miaplpy use only miaplpyApp.py                                  \n\
                                                                                  \n\
-   --asf-download        download using asf_search (Default: ssara_download)     \n\
-   --ssara-download      download using ssara (Default: True)                    \n\
-   --burst-download      download burst instead of frames                        \n\
    --no-orbit-download   don't download orbits prior to jobfile creation         \n\
                                                                                  \n\
    --sleep SECS           sleep seconds before running                           \n\
@@ -110,8 +109,9 @@ mintpy_flag=1
 miaplpy_flag=0
 finishup_flag=1
 
-ssara_download_flag=1
+download="asf"
 
+srun_cmd="srun -n1 -N1 -A $JOBSHEDULER_PROJECTNAME -p $QUEUENAME  -t 00:25:00 "
 ##################################
 
 while [[ $# -gt 0 ]]
@@ -167,7 +167,7 @@ do
             orbit_download_flag=0
             shift
             ;;
-         --sleep)
+        --sleep)
             sleep_time="$2"
             shift
             shift
@@ -188,19 +188,21 @@ do
             debug_flag=1
             shift
             ;;
+        --download)
+            if [[ "$2" == "ssara" ]]; then
+               download=ssara
+            elif [[ "$2" != "asf" && "$2" != "ssara" ]]; then
+                echo "error: argument --download: invalid choice: '$2' (choose from 'asf', 'ssara')" >&2
+                exit 1
+            fi
+            shift 2
+            ;;
         --burst-download)
             burst_download_flag=1
             ssara_download_flag=0
             shift
             ;;
-        --asf-download)
-            ssara_download_flag=0
-            shift
-            ;;
-        --ssara-download)
-            ssara_download_flag=1    # Default
-            shift
-            ;;
+
         *)
             POSITIONAL+=("$1") # save it in an array for later
             shift # past argument
@@ -219,6 +221,11 @@ if [[ $debug_flag == "1" ]]; then
 fi
 
 create_template_array $template_file
+
+# FA 8/2025: this should go into a function that adjusts defaults
+if [[ -v template[minsar.upload_option] && "${template[minsar.upload_option]}" == "None" ]]; then
+  unset 'template[minsar.upload_option]'
+fi
 
 # adjust switches according to template options if insarmaps_flag is not set
 # first test if insarmaps_flag is set
@@ -380,7 +387,7 @@ if [[ ${template[topsStack.workflow]} == "slc" ]]; then
    mintpy_flag=0
 fi
 
-echo "Switches: select_reference: $select_reference_flag   ssara_download_flag: $ssara_download_flag burst_download: $burst_download_flag  chunks: $chunks_flag"
+echo "Switches: select_reference: <$select_reference_flag>   download: <$download> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
 echo "Flags for processing steps:"
 echo "download dem jobfiles ifgram mintpy miaplpy upload insarmaps finishup"
 echo "    $download_flag     $dem_flag      $jobfiles_flag       $ifgram_flag       $mintpy_flag      $miaplpy_flag      $upload_flag       $insarmaps_flag        $finishup_flag"
@@ -398,15 +405,15 @@ if [[ -z $platform_str ]]; then
 fi
 
 if [[ $platform_str == *"COSMO-SKYMED"* ]]; then
+    download="ssara"
     download_dir="$WORK_DIR/RAW_data"
 elif [[ $platform_str == *"TERRASAR-X"* ]]; then
+    download="ssara"
     download_dir="$WORK_DIR/SLC_ORIG"
 else
     download_dir="$WORK_DIR/SLC"
 fi
 
-####################################
-srun_cmd="srun -n1 -N1 -A $JOBSHEDULER_PROJECTNAME -p $QUEUENAME  -t 00:25:00 "
 ####################################
 ###       Processing Steps       ###
 ####################################
@@ -418,15 +425,15 @@ if [[ $download_flag == "1" ]]; then
 
     mkdir -p $download_dir
 
-    if [[ $ssara_download_flag == "1" ]]; then
+    if [[ $download == "asf" ]]; then
+        run_command "./download_asf.sh 2>out_download_asf.e 1>out_download_asf.o"
+    elif [[ $download == "ssara" ]]; then
         cd $download_dir
         cmd=$(cat ../download_ssara_bash.cmd)
         run_command "$cmd"
         cd ..
     elif [[ $burst_download_flag == "1" ]]; then
         run_command "./download_asf_burst.sh  2>out_download_asf_burst.e 1>out_download_asf_burst.o"
-    else
-        run_command "./download_asf.sh 2>out_download_asf.e 1>out_download_asf.o"
     fi
 
     # remove excluded dates
@@ -444,6 +451,7 @@ if [[ $download_flag == "1" ]]; then
     fi
 fi
 
+    set -x
 if [[ $dem_flag == "1" ]]; then
     if [[ ! -z $(grep -E "^stripmapStack.demDir|^topsStack.demDir" $template_file) ]];  then
        # copy DEM if given
