@@ -321,16 +321,14 @@ if [[ $miaplpy_flag == "true" ]]; then
    echo "Running miaplpy jobs in ${RUNFILES_DIR}"
 fi
 
-set -x
 #find the last job (11 for 'geometry' and 16 for 'NESD', 9 for stripmap) and remove leading zero
-jobfile_arr=(ls $RUNFILES_DIR/run_*_0.job)
+#jobfile_arr=(ls $RUNFILES_DIR/run_*_0.job)   # before FA 8/2025 change
+jobfile_arr=(ls $RUNFILES_DIR/run_*_*.job)    # FA 8/2025   (not 
 last_jobfile=${jobfile_arr[-1]}
 last_jobfile=${last_jobfile##*/}
 last_jobfile_number=${last_jobfile:4:2}
 last_jobfile_number=$(echo $((10#${last_jobfile_number})))
 echo "last jobfile number: <$last_jobfile_number>"
-
-sleep 20
 
 if [[ $startstep == "ifgram" || $startstep == "miaplpy" ]]; then
     startstep=1
