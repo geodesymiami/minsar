@@ -13,6 +13,16 @@ elif [[ $PLATFORM_NAME == "stampede3" ]] ; then
 fi
 }
 ###########################################
+function changequeueicx() {
+if [[ "$1" == "--help" || "$1" == "-h" ]]; then
+   echo "  Usage: changequeueicx run_10*.job"; return
+fi
+if [[ $PLATFORM_NAME == "stampede3" ]] ; then
+          sed -i "s|skx-dev|icx|g" "$@" ;
+          sed -i "s|skx|icx|g" "$@" ;
+fi
+}
+###########################################
 scancel_jobs() {
     if [ -z "$1" ] || [ "$1" == "--help" ]; then
         echo
