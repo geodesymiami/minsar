@@ -451,7 +451,6 @@ if [[ $download_flag == "1" ]]; then
     fi
 fi
 
-    set -x
 if [[ $dem_flag == "1" ]]; then
     if [[ ! -z $(grep -E "^stripmapStack.demDir|^topsStack.demDir" $template_file) ]];  then
        # copy DEM if given
