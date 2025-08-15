@@ -552,28 +552,37 @@ if [[ $ifgram_flag == "1" ]]; then
 
        reference_date=$(get_reference_date)
        echo "Reference date: $reference_date" | tee reference_date_isce.txt
+       new_reference_flag=0
 
-       # determine whether to select new reference date
-       countbursts | tr '/' ' ' | sort -k 1 | sort -k 2 | sort -k 4 -s | sed 's/ /\//' > number_of_bursts_sorted.txt
-       number_of_dates_with_less_or_equal_bursts_than_reference=$(grep -n reference number_of_bursts_sorted.txt | cut -f1 -d:)
-       number_of_dates_with_less_bursts_than_reference=$(( $number_of_dates_with_less_or_equal_bursts_than_reference - 1 ))
-       number_of_dates=$(wc -l < number_of_bursts_sorted.txt)
-       percentage_of_dates_with_less_bursts_than_reference=$(echo "scale=2; $number_of_dates_with_less_bursts_than_reference / $number_of_dates * 100"  | bc)
-       echo "#########################################" | tee -a log | tee -a `ls wor* | tail -1`
-       echo "Number of dates with less bursts than reference: $number_of_dates_with_less_bursts_than_reference" | tee -a log | tee -a  `ls wor* | tail -1`
-       echo "Total number of dates: $number_of_dates" | tee -a log | tee -a  `ls wor* | tail -1`
-       echo "Percentage of dates with less bursts than reference: $percentage_of_dates_with_less_bursts_than_reference" | tee -a log | tee -a  `ls wor* | tail -1`
-       echo "# head -$number_of_dates_with_less_or_equal_bursts_than_reference  number_of_bursts_sorted.txt:" | tee -a log | tee -a `ls wor* | tail -1`
-       head -"$number_of_dates_with_less_or_equal_bursts_than_reference" number_of_bursts_sorted.txt | tee -a log | tee -a `ls wor* | tail -1`
-       percentage_of_dates_allowed_to_exclude=3  # FA 12 Mar 2022: changed to 1 %
-       percentage_of_dates_allowed_to_exclude=1
-       tmp=$(echo "$percentage_of_dates_allowed_to_exclude $number_of_dates" | awk '{printf "%f", $1 / 100 * $2}')
-       number_of_dates_allowed_to_exclude="${tmp%.*}"
-       new_reference_date=$(head -$((number_of_dates_allowed_to_exclude+1))  number_of_bursts_sorted.txt | tail -1 | awk '{print $1}' | cut -d'/' -f2)
+       #FA# determine whether to select new reference date
+       #FAcountbursts | tr '/' ' ' | sort -k 1 | sort -k 2 | sort -k 4 -s | sed 's/ /\//' > number_of_bursts_sorted.txt
+       #FA#countbursts | tr '/' ' ' | sort -k4,4nr | sed 's/ /\//' > number_of_bursts_sorted.txt
+       #FAnumber_of_dates_with_less_or_equal_bursts_than_reference=$(grep -n reference number_of_bursts_sorted.txt | cut -f1 -d:)
+       #FAnumber_of_dates_with_less_bursts_than_reference=$(( $number_of_dates_with_less_or_equal_bursts_than_reference - 1 ))
+       #FAnumber_of_dates=$(wc -l < number_of_bursts_sorted.txt)
+       #FApercentage_of_dates_with_less_bursts_than_reference=$(echo "scale=2; $number_of_dates_with_less_bursts_than_reference / $number_of_dates * 100"  | bc)
+       #FAecho "#########################################" | tee -a log | tee -a `ls wor* | tail -1`
+       #FAecho "Number of dates with less bursts than reference: $number_of_dates_with_less_bursts_than_reference" | tee -a log | tee -a  `ls wor* | tail -1`
+       #FAecho "Total number of dates: $number_of_dates" | tee -a log | tee -a  `ls wor* | tail -1`
+       #FAecho "Percentage of dates with less bursts than reference: $percentage_of_dates_with_less_bursts_than_reference" | tee -a log | tee -a  `ls wor* | tail -1`
+       #FAecho "# head -$number_of_dates_with_less_or_equal_bursts_than_reference  number_of_bursts_sorted.txt:" | tee -a log | tee -a `ls wor* | tail -1`
+       #FAhead -"$number_of_dates_with_less_or_equal_bursts_than_reference" number_of_bursts_sorted.txt | tee -a log | tee -a `ls wor* | tail -1`
+       #FApercentage_of_dates_allowed_to_exclude=3  # FA 12 Mar 2022: changed to 1 %
+       #FApercentage_of_dates_allowed_to_exclude=1
+       #FAtmp=$(echo "$percentage_of_dates_allowed_to_exclude $number_of_dates" | awk '{printf "%f", $1 / 100 * $2}')
+       #FAnumber_of_dates_allowed_to_exclude="${tmp%.*}"
+       #FAnew_reference_date=$(head -$((number_of_dates_allowed_to_exclude+1))  number_of_bursts_sorted.txt | tail -1 | awk '{print $1}' | cut -d'/' -f2)
+       #FAif [[ $(echo "$percentage_of_dates_with_less_bursts_than_reference > $percentage_of_dates_allowed_to_exclude"  | bc -l ) -eq 1 ]] && [[ $new_reference_date != $reference_date ]] ; then
+       #FA   new_reference_flag=1
+       #FAfi
+       #FAecho "new_reference_flag: <$new_reference_flag>"
 
-       if [[ $(echo "$percentage_of_dates_with_less_bursts_than_reference > $percentage_of_dates_allowed_to_exclude"  | bc -l ) -eq 1 ]] && [[ $new_reference_date != $reference_date ]] ; then
+       read -r new_reference_flag new_reference_date < <(check_bursts_of_refernce_date)
+       echo "new reference flag, date: <$new_reference_flag>"
+       sleep 3
+
+       if [[ $new_reference_flag == "1" ]] ; then
           # insert new reference date into templatefile and rerun from beginning
-          new_reference_flag=1
           echo "Original reference date:  $reference_date" | tee -a log | tee -a `ls wor* | tail -1` | tee reference_date_isce.txt
           echo "Selected reference date (image $((number_of_dates_allowed_to_exclude+1)) after sorting): $new_reference_date" | tee -a log | tee -a `ls wor* | tail -1` | tee -a tee reference_date_isce.txt
           echo "#########################################" | tee -a log | tee -a `ls wor* | tail -1`
@@ -596,7 +605,7 @@ if [[ $ifgram_flag == "1" ]]; then
 	      echo "### Re-running step 1 to 5 with reference $new_reference_date"
           run_command "run_workflow.bash $template_file --start 1 --stop 5 --append"
        else
-          echo "No new reference date selected. Continue with original date: $reference_date" | tee -a log | tee -a `ls wor* | tail -1`
+          echo "No new reference date selected. Continue with original reference date: $reference_date" | tee -a log | tee -a `ls wor* | tail -1`
           echo "#########################################" | tee -a log | tee -a `ls wor* | tail -1`
        fi
 

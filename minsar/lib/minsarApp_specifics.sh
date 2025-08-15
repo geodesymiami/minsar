@@ -142,6 +142,38 @@ function countbursts(){
                        echo "$date #of_bursts: `ls $date/IW*/burst*xml | wc -l`   ${array[@]}"
                    done;
                    }
+#####################################################################
+function check_bursts_of_refernce_date(){
+   # determine whether to select new reference date
+   countbursts | tr '/' ' ' | sort -k 1 | sort -k 2 | sort -k 4 -s | sed 's/ /\//' > number_of_bursts_sorted.txt
+   #countbursts | tr '/' ' ' | sort -k4,4nr | sed 's/ /\//' > number_of_bursts_sorted.txt
+   number_of_dates_with_less_or_equal_bursts_than_reference=$(grep -n reference number_of_bursts_sorted.txt | cut -f1 -d:)
+   number_of_dates_with_less_bursts_than_reference=$(( $number_of_dates_with_less_or_equal_bursts_than_reference - 1 ))
+   number_of_dates=$(wc -l < number_of_bursts_sorted.txt)
+   percentage_of_dates_with_less_bursts_than_reference=$(echo "scale=2; $number_of_dates_with_less_bursts_than_reference / $number_of_dates * 100"  | bc)
+   percentage_of_dates_allowed_to_exclude=3  # FA 12 Mar 2022: changed to 1 %
+   percentage_of_dates_allowed_to_exclude=1
+   tmp=$(echo "$percentage_of_dates_allowed_to_exclude $number_of_dates" | awk '{printf "%f", $1 / 100 * $2}')
+   number_of_dates_allowed_to_exclude="${tmp%.*}"
+
+   new_reference_date=$(head -$((number_of_dates_allowed_to_exclude+1))  number_of_bursts_sorted.txt | tail -1 | awk '{print $1}' | cut -d'/' -f2)
+
+   if [[ $(echo "$percentage_of_dates_with_less_bursts_than_reference > $percentage_of_dates_allowed_to_exclude"  | bc -l ) -eq 1 ]] && [[ $new_reference_date != $reference_date ]] ; then
+      new_reference_flag=1
+   else
+      new_reference_flag=0
+   fi
+
+   echo "#########################################">> log 
+   echo "Number of dates with less bursts than reference: $number_of_dates_with_less_bursts_than_reference">> log
+   echo "Total number of dates: $number_of_dates">> log
+   echo "Percentage of dates with less bursts than reference: $percentage_of_dates_with_less_bursts_than_reference">> log
+   echo "# head -$number_of_dates_with_less_or_equal_bursts_than_reference  number_of_bursts_sorted.txt:">> log
+   head -"$number_of_dates_with_less_or_equal_bursts_than_reference" number_of_bursts_sorted.txt>> log
+   echo "new_reference_flag, new_reference_date: $new_reference_flag $new_reference_date">> log
+
+   echo "$new_reference_flag $new_reference_date"
+}
 # Function: shorten_path
 # Usage: shorten_path <template_file>
 # Description:
