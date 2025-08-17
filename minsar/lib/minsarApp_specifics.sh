@@ -143,16 +143,22 @@ function countbursts(){
                    done;
                    }
 #####################################################################
-function check_bursts_of_refernce_date(){
+function check_bursts(){
+   # FA 8/2025: This  function does not properly calculate number_of_dates_with_less_or_equal_bursts_than_reference and number_of_dates_with_less_bursts_than_reference for example when reference has most bursts
    # determine whether to select new reference date
-   countbursts | tr '/' ' ' | sort -k 1 | sort -k 2 | sort -k 4 -s | sed 's/ /\//' > number_of_bursts_sorted.txt
+   #countbursts | tr '/' ' ' | sort -k 1 | sort -k 2 | sort -k 4 -s | sed 's/ /\//' > number_of_bursts_sorted.txt
    #countbursts | tr '/' ' ' | sort -k4,4nr | sed 's/ /\//' > number_of_bursts_sorted.txt
+   countbursts | awk '{$1=$1}1' OFS='\t' | sort -k4,4r -k1,1r > number_of_bursts_sorted.txt
    number_of_dates_with_less_or_equal_bursts_than_reference=$(grep -n reference number_of_bursts_sorted.txt | cut -f1 -d:)
+      echo "Number of dates with less or equal bursts than reference: $number_of_dates_with_less_or_equal_bursts_than_reference"
    number_of_dates_with_less_bursts_than_reference=$(( $number_of_dates_with_less_or_equal_bursts_than_reference - 1 ))
+      echo "Number of dates with less bursts than reference: $number_of_dates_with_less_bursts_than_reference"
    number_of_dates=$(wc -l < number_of_bursts_sorted.txt)
+       echo "Total number of dates: $number_of_dates"
    percentage_of_dates_with_less_bursts_than_reference=$(echo "scale=2; $number_of_dates_with_less_bursts_than_reference / $number_of_dates * 100"  | bc)
-   percentage_of_dates_allowed_to_exclude=3  # FA 12 Mar 2022: changed to 1 %
+       echo "Percentage of dates with less bursts than reference: $percentage_of_dates_with_less_bursts_than_reference"
    percentage_of_dates_allowed_to_exclude=1
+   percentage_of_dates_allowed_to_exclude=3  # FA 12 Mar 2022: changed to 1 %
    tmp=$(echo "$percentage_of_dates_allowed_to_exclude $number_of_dates" | awk '{printf "%f", $1 / 100 * $2}')
    number_of_dates_allowed_to_exclude="${tmp%.*}"
 
