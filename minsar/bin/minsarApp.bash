@@ -33,8 +33,8 @@ helptext="                                                                      
    --start STEP          start processing at the named step [default: download]. \n\
    --end STEP, --stop STEP                                                       \n\
    --dostep STEP         run processing at the named step only                   \n\
-   --download {asf,ssara} download method (default: asf)                     \n\
-   --burst-download      download bursts instead of frames                        \n\
+   --download-method {asf-slc, asf-burst ssara-slc, ssara} download method       \n\
+          (default: asf-slc)                                                     \n\
                                                                                  \n\
    --mintpy              use smallbaselineApp.py for time series [default]       \n\
    --miaplpy             use miaplpyApp.py                                       \n\
@@ -109,7 +109,8 @@ mintpy_flag=1
 miaplpy_flag=0
 finishup_flag=1
 
-download="asf"
+download_method="asf-slc"
+
 
 srun_cmd="srun -n1 -N1 -A $JOBSHEDULER_PROJECTNAME -p $QUEUENAME  -t 00:25:00 "
 ##################################
@@ -188,19 +189,9 @@ do
             debug_flag=1
             shift
             ;;
-        --download)
-            if [[ "$2" == "ssara" ]]; then
-               download=ssara
-            elif [[ "$2" != "asf" && "$2" != "ssara" ]]; then
-                echo "error: argument --download: invalid choice: '$2' (choose from 'asf', 'ssara')" >&2
-                exit 1
-            fi
+        --download-method)
+            download_method=$2
             shift 2
-            ;;
-        --burst-download)
-            burst_download_flag=1
-            ssara_download_flag=0
-            shift
             ;;
 
         *)
@@ -252,19 +243,6 @@ if [[ ! -v upload_flag ]]; then
        fi
    else
        upload_flag=0
-   fi
-fi
-
-# adjust switches according to template options if burst_download_flag is not given on command line
-if [[ ! -v burst_download_flag ]]; then
-   if [[ -n ${template[minsar.burst_download_flag]+_} ]]; then
-       if [[ ${template[minsar.burst_download_flag]} == "True" ]]; then
-           burst_download_flag=1
-       else
-           burst_download_flag=0
-       fi
-   else
-       burst_download_flag=0
    fi
 fi
 
@@ -387,12 +365,12 @@ if [[ ${template[topsStack.workflow]} == "slc" ]]; then
    mintpy_flag=0
 fi
 
-echo "Switches: select_reference: <$select_reference_flag>   download: <$download> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
+echo "Switches: select_reference: <$select_reference_flag>   download_method: <$download_method> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
 echo "Flags for processing steps:"
 echo "download dem jobfiles ifgram mintpy miaplpy upload insarmaps finishup"
 echo "    $download_flag     $dem_flag      $jobfiles_flag       $ifgram_flag       $mintpy_flag      $miaplpy_flag      $upload_flag       $insarmaps_flag        $finishup_flag"
 
-sleep 1
+sleep 2
 
 #############################################################
 
@@ -405,10 +383,10 @@ if [[ -z $platform_str ]]; then
 fi
 
 if [[ $platform_str == *"COSMO-SKYMED"* ]]; then
-    download="ssara"
+    download_method="ssara"
     download_dir="$WORK_DIR/RAW_data"
 elif [[ $platform_str == *"TERRASAR-X"* ]]; then
-    download="ssara"
+    download_method="ssara"
     download_dir="$WORK_DIR/SLC_ORIG"
 else
     download_dir="$WORK_DIR/SLC"
@@ -420,22 +398,23 @@ fi
 
 if [[ $download_flag == "1" ]]; then
 
-    #echo "Running.... generate_download_command.py $template_file"
-    #run_command "generate_download_command.py $template_file"
     echo "Running.... generate_download_command.py $template_file --delta-lat 0.0 --delta-lon 0.0"
     run_command "generate_download_command.py $template_file --delta-lat 0.0 --delta-lon 0.0"
 
     mkdir -p $download_dir
-
-    if [[ $download == "asf" ]]; then
+  
+    if [[ "$download_method" == "asf-slc" ]]; then
         run_command "./download_asf.sh 2>out_download_asf.e 1>out_download_asf.o"
-    elif [[ $download == "ssara" ]]; then
+    elif [[ $download_method == "asf-burst" ]]; then
+        run_command "./download_asf_burst.sh  2>out_download_asf_burst.e 1>out_download_asf_burst.o"
+    elif [[ $download_method == "ssara-slc" || $download_method == "ssara" ]]; then
         cd $download_dir
         cmd=$(cat ../download_ssara_bash.cmd)
         run_command "$cmd"
         cd ..
-    elif [[ $burst_download_flag == "1" ]]; then
-        run_command "./download_asf_burst.sh  2>out_download_asf_burst.e 1>out_download_asf_burst.o"
+    else 
+        echo "ERROR: Unknown download method <$download_method>, Exiting"
+        exit 1
     fi
 
     # remove excluded dates
