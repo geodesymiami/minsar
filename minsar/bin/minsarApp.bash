@@ -420,8 +420,10 @@ fi
 
 if [[ $download_flag == "1" ]]; then
 
-    echo "Running.... generate_download_command.py $template_file"
-    run_command "generate_download_command.py $template_file"
+    #echo "Running.... generate_download_command.py $template_file"
+    #run_command "generate_download_command.py $template_file"
+    echo "Running.... generate_download_command.py $template_file --delta-lat 0.0 --delta-lon 0.0"
+    run_command "generate_download_command.py $template_file --delta-lat 0.0 --delta-lon 0.0"
 
     mkdir -p $download_dir
 
@@ -577,7 +579,8 @@ if [[ $ifgram_flag == "1" ]]; then
        #FAfi
        #FAecho "new_reference_flag: <$new_reference_flag>"
 
-       read -r new_reference_flag new_reference_date < <(check_bursts_of_refernce_date)
+       #FA 8/2025: calculations are not accurate. Hopefully this section can be removed once only dates with equal number of scenes are downloaded
+       read -r new_reference_flag new_reference_date < <(check_bursts)
        echo "new reference flag, date: <$new_reference_flag>"
        sleep 3
 

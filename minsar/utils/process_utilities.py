@@ -1341,7 +1341,7 @@ def set_permission_dask_files(directory):
 
 
 ###############################################
-def generate_intersects_string(dataset_template, delta_lat=0.0):
+def generate_intersects_string(dataset_template, delta_lat=0.0, delta_lon=0.0):
     """generates intersectsWith polygon string from miaplpy.subset.lalo, mintpy.subset.lalo or *Stack.boundingBox"""
     
     if not 'acquisition_mode' in dataset_template.get_options():
@@ -1353,27 +1353,29 @@ def generate_intersects_string(dataset_template, delta_lat=0.0):
 
     if 'miaplpy.subset.lalo' in dataset_template.get_options():
        print("Creating intersectsWith string using miaplpy.subset.lalo: ", dataset_template.get_options()['miaplpy.subset.lalo'])
-       intersects_string = convert_subset_lalo_to_intersects_string(dataset_template.get_options()['miaplpy.subset.lalo'], delta_lat)
+       intersects_string = convert_subset_lalo_to_intersects_string(dataset_template.get_options()['miaplpy.subset.lalo'], delta_lat, delta_lon)
     elif 'mintpy.subset.lalo' in dataset_template.get_options():
        print("Creating intersectsWith string using mintpy.subset.lalo: dataset_template.get_options()['mintpy.subset.lalo']")
-       intersects_string = convert_subset_lalo_to_intersects_string(dataset_template.get_options()['mintpy.subset.lalo'], delta_lat)
+       intersects_string = convert_subset_lalo_to_intersects_string(dataset_template.get_options()['mintpy.subset.lalo'], delta_lat, delta_lon)
     else:
        print("Creating intersectsWith string using *Stack.boundingBox: ", dataset_template.get_options()[prefix + 'Stack.boundingBox'])
-       intersects_string = convert_bounding_box_to_intersects_string(dataset_template.get_options()[prefix + 'Stack.boundingBox'], delta_lat)
+       intersects_string = convert_bounding_box_to_intersects_string(dataset_template.get_options()[prefix + 'Stack.boundingBox'], delta_lat, delta_lon)
 
     return intersects_string
 
 ###############################################
-def convert_subset_lalo_to_intersects_string(subset_lalo, delta_lat=0):
+def convert_subset_lalo_to_intersects_string(subset_lalo, delta_lat=0.0, delta_lon=None):
    """ Converts a subset.lalo string in S:N,E:W format (e.g., "2.7:2.8,125.3:125.4") to an intersectsWith polygon string."""
+   if delta_lon is None:
+       delta_lon = delta_lat / 2
 
    lat_string = subset_lalo.split(',')[0] 
    lon_string = subset_lalo.split(',')[1] 
 
    min_lat = float(lat_string.split(':')[0]) - delta_lat
    max_lat = float(lat_string.split(':')[1]) + delta_lat
-   min_lon = float(lon_string.split(':')[0]) - delta_lat/2
-   max_lon = float(lon_string.split(':')[1]) + delta_lat/2
+   min_lon = float(lon_string.split(':')[0]) - delta_lon
+   max_lon = float(lon_string.split(':')[1]) + delta_lon
 
    min_lat = round(min_lat, 2)
    max_lat = round(max_lat, 2)
@@ -1390,9 +1392,11 @@ def convert_subset_lalo_to_intersects_string(subset_lalo, delta_lat=0):
    return intersects_string
 
 ###############################################
-def convert_bounding_box_to_intersects_string(string_bbox, delta_lat):
+def convert_bounding_box_to_intersects_string(string_bbox, delta_lat, delta_lon=None):
    """ Converts a topsStack.boundingBox string  (e.g., 2.5 3.1 124.0 127.0) to an intersectsWith polygon string."""
    # removing double whitespaces, FA 10/21: should be done where *template input is examined
+   if delta_lon is None:
+       delta_lon = delta_lat * 0.2
 
    string_bbox =  ' '.join(string_bbox.split())
    bbox_list = string_bbox.split(' ')
@@ -1402,7 +1406,7 @@ def convert_bounding_box_to_intersects_string(string_bbox, delta_lat):
    bbox_list[2] = bbox_list[2].replace("\'", '')
    bbox_list[3] = bbox_list[3].replace("\'", '')
 
-   delta_lon = delta_lat * 0.2
+   #delta_lon = delta_lat * 0.2
    min_lat = float(bbox_list[0]) - delta_lat
    max_lat = float(bbox_list[1]) + delta_lat
    min_lon = float(bbox_list[2]) - delta_lon

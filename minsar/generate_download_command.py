@@ -41,7 +41,8 @@ def create_parser():
     parser = argparse.ArgumentParser(description=DESCRIPTION, epilog=EXAMPLE, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('custom_template_file', help='custom template with option settings.\n')
     parser.add_argument('--triplets', dest='triplets_flag', action='store_true', default=True, help='uploads numTriNonzeroIntAmbiguity.h5')
-    parser.add_argument('--delta_lat', dest='delta_lat', default='0.0', type=float, help='delta to add to latitude from boundingBox field, default is 0.0')
+    parser.add_argument('--delta-lat', dest='delta_lat', default=0.1, type=float, help='delta to add to latitude from boundingBox field, default is 0.1')
+    parser.add_argument('--delta-lon', dest='delta_lon', default=0.1, type=float, help='delta to add to longitude from boundingBox field, default is 0.1')
     parser.add_argument('--seasonalStartDate', dest='seasonalStartDate', type=str,
                              help='seasonal start date to specify download dates within start and end dates, example: a seasonsal start date of January 1 would be added as --seasonalEndDate 0101')
     parser.add_argument('--seasonalEndDate', dest='seasonalEndDate', type=str,
@@ -68,12 +69,12 @@ def generate_download_command(template,inps):
     if any(option.startswith('ssaraopt.intersectsWith') for option in dataset_template.get_options()):
        intersects_string = f"--intersectsWith={ssaraopt_dict['intersectsWith']}"
     else:
-       intersects_string = putils.generate_intersects_string(dataset_template, delta_lat=0.1)
+       intersects_string = putils.generate_intersects_string(dataset_template, delta_lat=inps.delta_lat, delta_lon=inps.delta_lon)
        ssaraopt.insert(2, intersects_string)
 
     extent_str, extent_list = putils.convert_intersects_string_to_extent_string(intersects_string)
-    print('New intersectsWith string using delta_lat=0.1: ', intersects_string)
-    print('New extent string using delta_lat=0.1: ', extent_str)
+    print(f"New intersectsWith string using delta_lat, delta_lon: {inps.delta_lat},{inps.delta_lon}: ", intersects_string)
+    print(f'New extent string: ', extent_str)
 
     # create download_ssara_bash.cmd
     ssara_slc_download_cmd_bash = ['ssara_federated_query.bash'] + ssaraopt
