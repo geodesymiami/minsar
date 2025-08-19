@@ -17,18 +17,17 @@ epi = """
 Usage Examples:
     These will do the search and download data:
         asf_search_args.py --processingLevel=SLC --start-date=2014-10-04 --end-date=2015-10-05 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.78,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --relativeOrbit 142 --download
-        asf_search_args.py --processingLevel=SLC --start=2014-10-04 --end=2015-10-05 --platform SENTINEL1 --print --download
+        asf_search_args.py --processingLevel=SLC --start-date=2014-10-04 --end-date=2015-10-05 --platform SENTINEL1 --print --download
         asf_search_args.py --processingLevel=CSLC --start=20141004 --end=20151005 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.78,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --download --dir=PATH
         asf_search_args.py --processingLevel=CSLC --start=2014-10-04 --end=2015-10-05 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.7881,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --download --dir=PATH
 
-    To use parallel downloads:
+        asf_search_args.py --processingLevel=BURST --relativeOrbit=142 --intersectsWith='Polygon((-78.09 0.6, -77.74 0.6, -77.74 0.83, -78.09 0.83, -78.09 0.6))' --start=2014-10-31 --end=2015-01-01 --parallel=6 --dir=SLC --print
+
         asf_search_args.py --processingLevel=SLC --start=2014-10-04 --end=2015-10-05 --relativeOrbit=170 --download --dir=path/to/folder --parallel=4
-
-    To search for a specific intersectsWith area:
         asf_search_args.py --processingLevel=SLC --intersectsWith='POLYGON((-77.9853 0.7881,-77.9185 0.7881,-77.9185 0.8507,-77.9853 0.8507,-77.9853 0.7881))'
-
-    To search for a specific Burst:
-        asf_search_args.py --processingLevel=BURST --start=2014-10-04 --burst-id=349025 --download
+        asf_search_args.py --processingLevel=BURST --start=2014-10-04 --end=2015-12-31 --burst-id=349025 --download
+        asf_search_args.py --processingLevel=1.1 --relativeOrbit 89 --intersectsWith=POLYGON((9.164 4.205,9.184 4.205,9.184 4.225,9.164 4.225,9.164 4.205)) --start=2014-10-04 --end=2015-12-31 --parallel 6 --download
+        asf_search_args.py --processingLevel=SLC --relativeOrbit 75 --intersectsWith=`POLYGON((-24.5094 14.8091,-24.2739 14.8091,-24.2739 15.0586,-24.5094 15.0586,-24.5094 14.8091))` --start=2018-05-01 --end=2018-10-31 --parallel 6 --beamMode=S6 --download
 
     Polarization is "VV" always.
     """
@@ -61,7 +60,6 @@ edate = None
 node = None
 orbit = None
 burst_id = None
-product = []
 
 # if 'BURST' in inps.product:
 #     product.append(asf.PRODUCT_TYPE.BURST)
@@ -115,6 +113,7 @@ if inps.node:
 if inps.download is not None:
     if inps.dir:
         path = inps.dir
+        os.makedirs(inps.dir, exist_ok=True)
     else:
         path = os.getcwd()
 else:
@@ -150,7 +149,7 @@ if inps.print:
 burst_ids =[]
 for r in results:
     if inps.print_burst:
-        if 'BURST' in product:
+        if 'BURST' in processingLevel:
             if r.properties['burst']['relativeBurstID'] not in burst_ids:
                 burst_ids.append(r.properties['burst']['relativeBurstID'])
                 print(f"Relative Burst ID: {r.properties['burst']['relativeBurstID']}")
