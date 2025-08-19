@@ -22,7 +22,7 @@ Usage Examples:
         asf_search_args.py --processingLevel=CSLC --start=2014-10-04 --end=2015-10-05 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.7881,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --print --dir=PATH
 
         asf_search_args.py --processingLevel=BURST --relativeOrbit=142 --intersectsWith='Polygon((-78.09 0.6, -77.74 0.6, -77.74 0.83, -78.09 0.83, -78.09 0.6))' --start=2014-10-31 --end=2015-01-01 --print
-        asf_search_args.py --processingLevel=BURST --relativeOrbit=142 --intersectsWith='Polygon((-78.09 0.6, -77.74 0.6, -77.74 0.83, -78.09 0.83, -78.09 0.6))' --start=2014-10-31 --end=2015-01-01 --print-bursts
+        asf_search_args.py --processingLevel=BURST --relativeOrbit=142 --intersectsWith='Polygon((-78.09 0.6, -77.74 0.6, -77.74 0.83, -78.09 0.83, -78.09 0.6))' --start=2014-10-31 --end=2015-01-01 --print-burst
 
 
         asf_search_args.py --processingLevel=SLC --start=2014-10-04 --end=2015-10-05 --relativeOrbit=170 --download --dir=path/to/folder --parallel=4
