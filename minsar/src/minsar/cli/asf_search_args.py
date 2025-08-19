@@ -16,12 +16,14 @@ descriptions below for details and usage examples.
 epi = """
 Usage Examples:
     These will do the search and download data:
-        asf_search_args.py --processingLevel=SLC --start-date=2014-10-04 --end-date=2015-10-05 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.78,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --relativeOrbit 142 --download
-        asf_search_args.py --processingLevel=SLC --start-date=2014-10-04 --end-date=2015-10-05 --platform SENTINEL1 --print --download
-        asf_search_args.py --processingLevel=CSLC --start=20141004 --end=20151005 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.78,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --download --dir=PATH
-        asf_search_args.py --processingLevel=CSLC --start=2014-10-04 --end=2015-10-05 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.7881,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --download --dir=PATH
+        asf_search_args.py --processingLevel=SLC --start-date=2014-10-04 --end-date=2015-10-05 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.78,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --relativeOrbit 142 --print
+        asf_search_args.py --processingLevel=SLC --start-date=2014-10-04 --end-date=2015-10-05 --platform SENTINEL1 --print 
+        asf_search_args.py --processingLevel=CSLC --start=20141004 --end=20151005 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.78,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --print --dir=PATH
+        asf_search_args.py --processingLevel=CSLC --start=2014-10-04 --end=2015-10-05 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.7881,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --print --dir=PATH
 
-        asf_search_args.py --processingLevel=BURST --relativeOrbit=142 --intersectsWith='Polygon((-78.09 0.6, -77.74 0.6, -77.74 0.83, -78.09 0.83, -78.09 0.6))' --start=2014-10-31 --end=2015-01-01 --parallel=6 --dir=SLC --print
+        asf_search_args.py --processingLevel=BURST --relativeOrbit=142 --intersectsWith='Polygon((-78.09 0.6, -77.74 0.6, -77.74 0.83, -78.09 0.83, -78.09 0.6))' --start=2014-10-31 --end=2015-01-01 --print
+        asf_search_args.py --processingLevel=BURST --relativeOrbit=142 --intersectsWith='Polygon((-78.09 0.6, -77.74 0.6, -77.74 0.83, -78.09 0.83, -78.09 0.6))' --start=2014-10-31 --end=2015-01-01 --print-bursts
+
 
         asf_search_args.py --processingLevel=SLC --start=2014-10-04 --end=2015-10-05 --relativeOrbit=170 --download --dir=path/to/folder --parallel=4
         asf_search_args.py --processingLevel=SLC --intersectsWith='POLYGON((-77.9853 0.7881,-77.9185 0.7881,-77.9185 0.8507,-77.9853 0.8507,-77.9853 0.7881))'
@@ -42,15 +44,16 @@ parser.add_argument('--end', metavar='YYYY-MM-DD or YYYYMMDD', help='End date of
 parser.add_argument('--start-date', metavar='YYYY-MM-DD or YYYYMMDD', help='Start date of the search')
 parser.add_argument('--end-date', metavar='YYYY-MM-DD or YYYYMMDD', help='End date of the search')
 parser.add_argument('--node', choices=['ASC', 'DESC', 'ASCENDING', 'DESCENDING'], help='Flight direction of the satellite (ASCENDING or DESCENDING)')
-parser.add_argument('--relativeOrbit', type=int, metavar='ORBIT', help='Relative Orbit Path')
+parser.add_argument('--relativeOrbit', dest='relative_orbit', type=int, metavar='ORBIT', help='Relative Orbit Path')
 parser.add_argument('--frame', type=int, metavar='FRAME', help='Frame number (Default: None')
 parser.add_argument('--processingLevel', dest='processing_level', choices=['SLC', 'CSLC', 'BURST'], default='SLC', help='Product type to download')
 parser.add_argument('--platform', nargs='?',metavar='SENTINEL1, SENTINEL-1A, SENTINEL-1B, ALOS2', help='Platform to search')
 parser.add_argument('--burst-id', nargs='*', type=str, metavar='BURST', help='Burst ID')
-parser.add_argument('--download', action='store_true', help='Download the data')
 parser.add_argument('--parallel', type=int, default=1, help='Download the data in parallel, specify the number of processes to use')
-parser.add_argument('--print-burst', dest='print_burst',action='store_true', help='Print the search results')
-parser.add_argument('--print', dest='print',action='store_true', help='Print the whole search results ')
+parser.add_argument('--print', dest='print', action='store_true', help='Print the whole search results')
+parser.add_argument('--download', action='store_true', help='Download the data')
+parser.add_argument('--print-burst', dest='print_burst', action='store_true', help='Print burst IDs')
+
 parser.add_argument('--dir', metavar='FOLDER', help='Specify path to download the data, if not specified, the data will be downloaded in SCRATCHDIR directory')
 
 inps = parser.parse_args()
@@ -91,7 +94,6 @@ if inps.processing_level=='SLC':
 if inps.processing_level=='BURST':
     inps.polarization = ['VV']
 
-
 if inps.platform in ['SENTINEL1', 'SENTINEL-1', 'S1', 'S-1']:
     platform = asf.PLATFORM.SENTINEL1
 elif inps.platform in ['SENTINEL-1A', 'SENTINEL1A', 'S-1A', 'S1A']:
@@ -119,7 +121,8 @@ if inps.download is not None:
 else:
     path = None
 
-#pols = inps.pols
+if not (inps.download or inps.print_burst):
+    inps.print = True
 
 print("Searching for data...")
 
@@ -136,12 +139,12 @@ results = asf.search(
     intersectsWith=inps.intersectsWith,
     flightDirection=node,
     #beamModeType=inps.beam_swath,    #FA 8/2025   Unclear why this does not work. Needed for FogoSenA75
-    relativeOrbit=inps.relativeOrbit,
+    relativeOrbit=inps.relative_orbit,
     relativeBurstID=None,
     polarization=inps.polarization
 )
-print(f"Found {len(results)} results.\n\n")
-print(results[0].properties)
+print(f"Found {len(results)} results.")
+# print(results[0].properties)
 if inps.print:
         # print(', '.join(results[0].properties.keys()))
         print(', '.join(k for k in results[0].properties.keys() if k not in ['centerLat', 'centerLon']))
@@ -149,7 +152,7 @@ if inps.print:
 burst_ids =[]
 for r in results:
     if inps.print_burst:
-        if 'BURST' in processingLevel:
+        if 'BURST' in inps.processing_level:
             if r.properties['burst']['relativeBurstID'] not in burst_ids:
                 burst_ids.append(r.properties['burst']['relativeBurstID'])
                 print(f"Relative Burst ID: {r.properties['burst']['relativeBurstID']}")
