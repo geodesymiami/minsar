@@ -76,8 +76,13 @@ def main(iargs=None):
         date_str = burst.split('_')[3][:8]  # Extract YYYYMMDD
         bursts_by_date[date_str].append(burst)
 
+    max_date = max(bursts_by_date, key=lambda k: len(bursts_by_date[k]))
+    print("Date with most bursts:", max_date)
+
+    filtered_bursts_by_date = { date: bursts for date, bursts in bursts_by_date.items() if len(bursts) == len(bursts_by_date[max_date]) }
+
     with open(run_01_burst2safe_path, "w") as f:
-        for date, bursts in sorted(bursts_by_date.items()):
+        for date, bursts in sorted(filtered_bursts_by_date.items()):
             output_dir = str(Path(inps.work_dir) / inps.burst_dir_path)
             f.write("burst2safe " + ' '.join(bursts) + " --keep-files --output-dir " + output_dir + "\n")
 
