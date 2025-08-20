@@ -5,7 +5,6 @@ echo "sourcing ${SCRIPT_DIR}/platforms_defaults.bash ..."
 [[ -z "${USER_PREFERRED:-}" ]] && export USER_PREFERRED=$USER
 [[ -z "${HOSTNAME:-}" ]] && export HOSTNAME=`hostname`
 export JOBSCHEDULER=NONE
-export QUEUENAME=NONE
 export WORKDIR=~/insarlab
 export SCRATCHDIR=${WORKDIR}/scratch
 
@@ -51,7 +50,7 @@ then
   export SCRATCHDIR=${SCRATCH}
   export QUEUE_NORMAL=skx
   export QUEUE_DEV=skx-dev
-  export QUEUENAME=$QUEUE_NORMAL
+  : "${QUEUENAME:=$QUEUE_NORMAL}"
 fi
 ###############################################
 if [[ ${HOSTNAME} == *frontera* ]] || [[ ${TACC_SYSTEM:-} == *frontera* ]]
