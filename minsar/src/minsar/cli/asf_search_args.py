@@ -16,6 +16,7 @@ descriptions below for details and usage examples.
 epi = """
 Usage Examples:
     These will do the search and download data:
+    Sentinel-1(IW, standard interferomrtric wide swath):
         asf_search_args.py --processingLevel=SLC --start-date=2014-10-04 --end-date=2015-10-05 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.78,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --relativeOrbit 142 --print
         asf_search_args.py --processingLevel=SLC --start-date=2014-10-04 --end-date=2015-10-05 --platform SENTINEL1 --print 
         asf_search_args.py --processingLevel=CSLC --start=20141004 --end=20151005 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.78,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --print --dir=PATH
@@ -25,8 +26,10 @@ Usage Examples:
         asf_search_args.py --processingLevel=SLC --start=2014-10-04 --end=2015-10-05 --relativeOrbit=170 --download --dir=path/to/folder --parallel=4
         asf_search_args.py --processingLevel=SLC --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.78,-77.91 0.85,-77.98 0.85,-77.98 0.78))'
         asf_search_args.py --processingLevel=BURST --start=2014-10-04 --end=2015-12-31 --burst-id=349025 --download
+    Stripmap (SM): 
+        asf_search_args.py --processingLevel=SLC --relativeOrbit 75 --intersectsWith='POLYGON((-24.5 14.8,-24.3 14.8,-24.3 15.1,-24.5 15.1,-24.5 14.8))' --start=2018-05-01 --end=2018-10-31 --beamMode=S6 --print
+    ALOS-2 (ScanSAR L1.1):   
         asf_search_args.py --processingLevel=1.1 --relativeOrbit 89 --intersectsWith=POLYGON((9.16 4.20,9.18 4.20,9.18 4.22,9.16 4.22,9.16 4.20)) --start=2014-10-04 --end=2015-12-31 --print
-        asf_search_args.py --processingLevel=SLC --relativeOrbit 75 --intersectsWith='POLYGON((-24.5 14.8,-24.3 14.8,-24.3 15.1,-24.5 15.1,-24.5 14.8))' --start=2018-05-01 --end=2018-10-31 --beamMode=SM --print
 
     Polarization is "VV" always.
     """
@@ -41,8 +44,7 @@ parser.add_argument('--end', metavar='YYYY-MM-DD or YYYYMMDD', help='End date of
 parser.add_argument('--start-date', metavar='YYYY-MM-DD or YYYYMMDD', help='Start date of the search')
 parser.add_argument('--end-date', metavar='YYYY-MM-DD or YYYYMMDD', help='End date of the search')
 parser.add_argument('--processingLevel', dest='processing_level', choices=['SLC', 'CSLC', 'BURST'], default='SLC', help='Product type to download')
-parser.add_argument('--beamMode', dest='beam_mode', choices=['IW', 'SM'], default='IW', help='Beam mode (IW or SM, Default: IW)')
-parser.add_argument('--beamSwath', dest='beam_swath',  default=None, help='Beam swath (IW1, IW2, IW3, S1 to S7, Default: None)')
+parser.add_argument('--beamMode', dest='beam_mode',  default='IW', help='Beam mode (IW, S1 to S7, Default: IW)')
 parser.add_argument('--node', choices=['ASC', 'DESC', 'ASCENDING', 'DESCENDING'], help='Flight direction of the satellite (ASCENDING or DESCENDING)')
 parser.add_argument('--relativeOrbit', dest='relative_orbit', type=int, metavar='ORBIT', help='Relative Orbit Path')
 parser.add_argument('--burst-id', nargs='*', type=str, metavar='BURST', help='Burst ID')
@@ -52,7 +54,6 @@ parser.add_argument('--parallel', type=int, default=1, help='Number of parallel 
 parser.add_argument('--print', dest='print', action='store_true', help='Print the whole search results')
 parser.add_argument('--download', action='store_true', help='Download the data')
 parser.add_argument('--print-burst', dest='print_burst', action='store_true', help='Print burst IDs')
-
 parser.add_argument('--dir', metavar='FOLDER', help='Specify path to download the data, if not specified, the data will be downloaded in SCRATCHDIR directory')
 
 inps = parser.parse_args()
@@ -130,19 +131,6 @@ print("Searching for data...")
 
 inps.beam_swath = 'IW' 
 inps.polarization = ['VV','VV+VH'] 
-# inps.intersectsWith = None
-# results = asf.search(
-#     platform=platform,
-#     processingLevel=inps.processing_level,
-#     start=sdate,
-#     end=edate,
-#     intersectsWith=inps.intersectsWith,
-#     flightDirection=node,
-#     #beamModeType=inps.beam_swath,    #FA 8/2025   Unclear why this does not work. Needed for FogoSenA75
-#     relativeOrbit=inps.relative_orbit,
-#     relativeBurstID=inps.burst_id[0],
-#     polarization=inps.polarization
-# )
 
 results = asf.search(
     platform=platform,
@@ -151,7 +139,9 @@ results = asf.search(
     end=edate,
     intersectsWith=inps.intersectsWith,
     flightDirection=node,
-    #beamModeType=inps.beam_swath,    #FA 8/2025   Unclear why this does not work. Needed for FogoSenA75
+    beamMode=inps.beam_mode, 
+    # beamMode='S6', 
+    # beamSwath=inps.beam_swath,
     relativeOrbit=inps.relative_orbit,
     relativeBurstID=inps.burst_id,
     polarization=inps.polarization,
