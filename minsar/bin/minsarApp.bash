@@ -34,7 +34,7 @@ helptext="                                                                      
    --end STEP, --stop STEP                                                       \n\
    --dostep STEP         run processing at the named step only                   \n\
    --download-method {asf-slc, asf-burst ssara-slc, ssara} download method       \n\
-          (default: asf-slc)                                                     \n\
+          (default: asf-burst)                                                     \n\
                                                                                  \n\
    --mintpy              use smallbaselineApp.py for time series [default]       \n\
    --miaplpy             use miaplpyApp.py                                       \n\
@@ -109,8 +109,7 @@ mintpy_flag=1
 miaplpy_flag=0
 finishup_flag=1
 
-download_method="asf-slc"
-
+download_method="asf-burst"
 
 srun_cmd="srun -n1 -N1 -A $JOBSHEDULER_PROJECTNAME -p $QUEUENAME  -t 00:25:00 "
 ##################################
@@ -403,10 +402,10 @@ if [[ $download_flag == "1" ]]; then
 
     mkdir -p $download_dir
   
-    if [[ "$download_method" == "asf-slc" ]]; then
-        run_command "./download_asf.sh 2>out_download_asf.e 1>out_download_asf.o"
-    elif [[ $download_method == "asf-burst" ]]; then
+    if [[ $download_method == "asf-burst" ]]; then
         run_command "./download_asf_burst.sh  2>out_download_asf_burst.e 1>out_download_asf_burst.o"
+    elif [[ "$download_method" == "asf-slc" ]]; then
+        run_command "./download_asf.sh 2>out_download_asf.e 1>out_download_asf.o"
     elif [[ $download_method == "ssara-slc" || $download_method == "ssara" ]]; then
         cd $download_dir
         cmd=$(cat ../download_ssara_bash.cmd)
