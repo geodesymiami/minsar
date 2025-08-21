@@ -43,7 +43,7 @@ parser.add_argument('--start-date', metavar='YYYY-MM-DD or YYYYMMDD', help='Star
 parser.add_argument('--end-date', metavar='YYYY-MM-DD or YYYYMMDD', help='End date of the search')
 parser.add_argument('--processingLevel', dest='processing_level', choices=['SLC', 'CSLC', 'BURST'], default='SLC', help='Product type to download')
 parser.add_argument('--beamMode', dest='beam_mode',  default='IW', help='Beam mode (IW, S1 to S7, Default: IW)')
-parser.add_argument('--node', choices=['ASC', 'DESC', 'ASCENDING', 'DESCENDING'], help='Flight direction of the satellite (ASCENDING or DESCENDING)')
+parser.add_argument('--flightDirection', choices=['ASC', 'DESC', 'ASCENDING', 'DESCENDING'], default=None, help='Flight direction of the satellite (ASCENDING or DESCENDING)')
 parser.add_argument('--relativeOrbit', dest='relative_orbit', type=int, metavar='ORBIT', help='Relative Orbit Path')
 parser.add_argument('--burst-id', nargs='*', type=str, metavar='BURST', help='Burst ID')
 parser.add_argument('--frame', type=int, metavar='FRAME', help='Frame number (Default: None')
@@ -58,7 +58,7 @@ inps = parser.parse_args()
 
 sdate = None
 edate = None
-node = None
+flightDirection = None
 orbit = None
 burst_id = None
 
@@ -102,11 +102,11 @@ elif inps.platform in ['ALOS-2', 'ALOS2']:
     inps.processing_level="L1.1"
     inps.polarization=None
 
-if inps.node:
-    if inps.node in ['ASCENDING', 'ASC']:
-        node = asf.FLIGHT_DIRECTION.ASCENDING
-    elif inps.node in ['DESCENDING', 'DESC']:
-        node = asf.FLIGHT_DIRECTION.DESCENDING
+if inps.flightDirection:
+    if inps.flightDirection in ['ASCENDING', 'ASC']:
+        inps.flightDirection = asf.FLIGHT_DIRECTION.ASCENDING
+    elif inps.flightDirection in ['DESCENDING', 'DESC']:
+        inps.flightDirection = asf.FLIGHT_DIRECTION.DESCENDING
 
 if inps.download is not None:
     if inps.dir:
@@ -134,7 +134,7 @@ results = asf.search(
     start=sdate,
     end=edate,
     intersectsWith=inps.intersectsWith,
-    flightDirection=node,
+    flightDirection=inps.flightDirection,
     beamMode=inps.beam_mode, 
     # beamMode='S6', 
     # beamSwath=inps.beam_swath,
