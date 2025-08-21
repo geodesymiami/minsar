@@ -34,9 +34,7 @@ Usage Examples:
     Polarization is "VV" always.
     """
 
-parser = argparse.ArgumentParser(description=EXAMPLE,
-                formatter_class=argparse.RawTextHelpFormatter,
-                epilog=epi)
+parser = argparse.ArgumentParser(description=EXAMPLE, formatter_class=argparse.RawTextHelpFormatter, epilog=epi)
 
 parser.add_argument('--intersectsWith', metavar='POLYGON', help='Poligon of the wanted area of interest to intersect with the search')
 parser.add_argument('--start', metavar='YYYY-MM-DD or YYYYMMDD', help='Start date of the search')
@@ -64,14 +62,12 @@ node = None
 orbit = None
 burst_id = None
 
-# if 'BURST' in inps.product:
-#     product.append(asf.PRODUCT_TYPE.BURST)
-
-#     if inps.burst_id:
-#         burst_id = inps.burst_id
-
-# if 'CSLC' in inps.product or inps.product is None:
-#     product.append(asf.PRODUCT_TYPE.CSLC)
+if "BURST" in inps.processing_level:
+    inps.processing_level = asf.PRODUCT_TYPE.BURST
+elif "CSLC" in inps.processing_level:
+    inps.processing_level = asf.PRODUCT_TYPE.CSLC
+elif "SLC" in inps.processing_level:
+    inps.processing_level = asf.PRODUCT_TYPE.SLC
 
 if inps.start or inps.start_date:
     try:
@@ -89,9 +85,9 @@ else:
 
 platform = asf.PLATFORM.SENTINEL1
 
-if inps.processing_level=='SLC':
+if inps.processing_level==asf.PRODUCT_TYPE.SLC:
     inps.polarization = ['VV','VV+VH'] 
-if inps.processing_level=='BURST':
+if inps.processing_level==asf.PRODUCT_TYPE.BURST:
     inps.polarization = ['VV']
 
 if inps.platform in ['SENTINEL1', 'SENTINEL-1', 'S1', 'S-1']:
@@ -149,7 +145,7 @@ results = asf.search(
 
 print(f"Found {len(results)} results.")
 # print(results[0].properties)
-if inps.print:
+if inps.print and len(results) > 0:
         # print(', '.join(results[0].properties.keys()))
         print(', '.join(k for k in results[0].properties.keys() if k not in ['centerLat', 'centerLon']))
 
