@@ -118,9 +118,6 @@ def create_parser(iargs=None, namespace=None):
     if not (inps.download or inps.print_burst):
         inps.print = True
 
-    # product = [asf.PRODUCT_TYPE.BURST]  # FA 7/2025: does not seem to work although ChatGPT suggests it
-    # platform='ALOS-2'
-
     inps.beam_swath = 'IW' 
     inps.polarization = ['VV','VV+VH']
 
@@ -148,9 +145,7 @@ def main(iargs=None, namespace=None):
     )
 
     print(f"Found {len(results)} results.")
-    # print(results[0].properties)
     if inps.print and len(results) > 0:
-            # print(', '.join(results[0].properties.keys()))
             print(', '.join(k for k in results[0].properties.keys() if k not in ['centerLat', 'centerLon']))
 
     burst_ids =[]
@@ -164,10 +159,7 @@ def main(iargs=None, namespace=None):
                 print('-' * 100)
                 print(f"Start date: {r.properties['startTime']}, End date: {(r.properties['stopTime'])}, {r.geometry['type']}: {r.geometry['coordinates']}, Path of satellite: {r.properties['pathNumber']}, Granule:  {r.properties['granuleType']}")
         elif inps.print:
-            # print(', '.join(str(v) for v in r.properties.values()))
             print(', '.join(str(v) for k, v in r.properties.items() if k not in ['centerLat', 'centerLon']))
-            # print(r)
-
 
     if inps.download == True:
         print(f"Downloading {len(results)} results")
