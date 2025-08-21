@@ -70,7 +70,7 @@ def create_parser():
 
     if inps.template:
         if os.path.isabs(inps.template):
-            inps.template = inps.template
+            pass
 
         elif TEMPLATES not in os.path.basename:
             inps.template = os.path.join(TEMPLATES, inps.template)
@@ -107,7 +107,10 @@ def topstack_check_longitude(lon1, lon2):
 
 
 def read_excel(file_name):
-    path = os.path.join(SCRATCHDIR, file_name)
+    if os.path.isabs(file_name):
+        path = file_name
+    else:
+        path = os.path.join(SCRATCHDIR, file_name)
 
     if not os.path.exists(path):
         raise FileNotFoundError(f"File {file_name} does not exist in {SCRATCHDIR}")
