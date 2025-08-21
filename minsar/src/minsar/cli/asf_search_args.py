@@ -43,7 +43,7 @@ def create_parser(iargs=None, namespace=None):
     parser.add_argument('--end', metavar='YYYY-MM-DD or YYYYMMDD', help='End date of the search')
     parser.add_argument('--start-date', metavar='YYYY-MM-DD or YYYYMMDD', default=None, help='Start date of the search')
     parser.add_argument('--end-date', metavar='YYYY-MM-DD or YYYYMMDD', default=None, help='End date of the search')
-    parser.add_argument('--processingLevel', dest='processing_level', choices=['SLC', 'CSLC', 'BURST'], default='SLC', help='Product type to download')
+    parser.add_argument('--processingLevel', dest='processing_level', choices=['SLC', 'CSLC', 'BURST', '1.1'], default='SLC', help='Product type to download')
     parser.add_argument('--beamMode', dest='beam_mode',  default='IW', help='Beam mode (IW, S1 to S7, Default: IW)')
     parser.add_argument('--flightDirection', choices=['ASC', 'DESC', 'ASCENDING', 'DESCENDING'], default=None, help='Flight direction of the satellite (ASCENDING or DESCENDING)')
     parser.add_argument('--relativeOrbit', dest='relative_orbit', type=int, default=None, metavar='ORBIT', help='Relative Orbit Path')
@@ -64,6 +64,8 @@ def create_parser(iargs=None, namespace=None):
         inps.processing_level = asf.PRODUCT_TYPE.CSLC
     elif "SLC" in inps.processing_level:
         inps.processing_level = asf.PRODUCT_TYPE.SLC
+    elif "1.1" in inps.processing_level:
+        inps.processing_level = asf.PRODUCT_TYPE.L1_1
 
     if inps.start or inps.start_date:
         try:
@@ -95,7 +97,7 @@ def create_parser(iargs=None, namespace=None):
     elif inps.platform in ['ALOS-2', 'ALOS2']:
         # platform = asf.PLATFORM.ALOS-2
         inps.platform = 'ALOS-2'
-        inps.processing_level="L1.1"
+        inps.processing_level=asf.PRODUCT_TYPE.L1_1
         inps.polarization=None
 
     if inps.flightDirection:
