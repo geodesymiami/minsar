@@ -135,8 +135,6 @@ def main(iargs=None, namespace=None):
         intersectsWith=inps.intersectsWith,
         flightDirection=inps.flightDirection,
         beamMode=inps.beam_mode,
-        # beamMode='S6',
-        # beamSwath=inps.beam_swath,
         relativeOrbit=inps.relative_orbit,
         relativeBurstID=inps.burst_id,
         polarization=inps.polarization,
