@@ -44,12 +44,12 @@ def create_parser(iargs=None, namespace=None):
     parser.add_argument('--start-date', metavar='YYYY-MM-DD or YYYYMMDD', default=None, help='Start date of the search')
     parser.add_argument('--end-date', metavar='YYYY-MM-DD or YYYYMMDD', default=None, help='End date of the search')
     parser.add_argument('--processingLevel', dest='processing_level', choices=['SLC', 'CSLC', 'BURST', '1.1'], default='SLC', help='Product type to download')
-    parser.add_argument('--beamMode', dest='beam_mode',  default='IW', help='Beam mode (IW, S1 to S7, Default: IW)')
+    parser.add_argument('--beamMode', dest='beam_mode',  default=None, help='Beam mode (IW, S1 to S7)')
     parser.add_argument('--flightDirection', choices=['ASC', 'DESC', 'ASCENDING', 'DESCENDING'], default=None, help='Flight direction of the satellite (ASCENDING or DESCENDING)')
     parser.add_argument('--relativeOrbit', dest='relative_orbit', type=int, default=None, metavar='ORBIT', help='Relative Orbit Path')
     parser.add_argument('--burst-id', nargs='*', type=str, metavar='BURST', default=None, help='Burst ID')
     parser.add_argument('--frame', type=int, metavar='FRAME', help='Frame number (Default: None')
-    parser.add_argument('--platform', nargs='?',metavar='SENTINEL1, SENTINEL-1A, SENTINEL-1B, ALOS2', help='Platform to search')
+    parser.add_argument('--platform', nargs='?',metavar='SENTINEL1, ALOS2', help='Platform to search')
     parser.add_argument('--parallel', type=int, default=1, help='Number of parallel downloads (Default: 1)')
     parser.add_argument('--print', dest='print', action='store_true', help='Print the whole search results')
     parser.add_argument('--download', action='store_true', help='Download the data')
@@ -57,6 +57,9 @@ def create_parser(iargs=None, namespace=None):
     parser.add_argument('--dir', metavar='FOLDER', help='Specify path to download the data, if not specified, the data will be downloaded in SCRATCHDIR directory')
 
     inps = parser.parse_args()
+
+    # inps.beam_swath = 'IW'
+    inps.dataset = asf.DATASET.ALOS_2
 
     if "BURST" in inps.processing_level:
         inps.processing_level = asf.PRODUCT_TYPE.BURST
@@ -81,24 +84,22 @@ def create_parser(iargs=None, namespace=None):
     else:
         inps.end_date = datetime.datetime.now().date()
 
-    platform = asf.PLATFORM.SENTINEL1
-
     if inps.processing_level==asf.PRODUCT_TYPE.SLC:
         inps.polarization = ['VV','VV+VH'] 
-    if inps.processing_level==asf.PRODUCT_TYPE.BURST:
+    elif inps.processing_level==asf.PRODUCT_TYPE.BURST:
         inps.polarization = ['VV']
+    else:
+        inps.polarization = ['VV', 'VV+VH']
 
     if inps.platform in ['SENTINEL1', 'SENTINEL-1', 'S1', 'S-1']:
         inps.platform = asf.PLATFORM.SENTINEL1
-    elif inps.platform in ['SENTINEL-1A', 'SENTINEL1A', 'S-1A', 'S1A']:
-        inps.platform = asf.PLATFORM.SENTINEL1A
-    elif inps.platform in ['SENTINEL-1B', 'SENTINEL1B', 'S-1B', 'S1B']:
-        inps.platform = asf.PLATFORM.SENTINEL1B
-    elif inps.platform in ['ALOS-2', 'ALOS2']:
+        inps.beam_swath = 'IW'
+    elif inps.platform in ['ALOS-2', 'ALOS2'] or inps.processing_level==asf.PRODUCT_TYPE.L1_1:
         # platform = asf.PLATFORM.ALOS-2
-        inps.platform = 'ALOS-2'
+        inps.platform = asf.PLATFORM.ALOS
         inps.processing_level=asf.PRODUCT_TYPE.L1_1
-        inps.polarization=None
+        inps.dataset = asf.DATASET.ALOS_2
+        inps.polarization=['HH', 'HV']
 
     if inps.flightDirection:
         if inps.flightDirection in ['ASCENDING', 'ASC']:
@@ -118,9 +119,6 @@ def create_parser(iargs=None, namespace=None):
     if not (inps.download or inps.print_burst):
         inps.print = True
 
-    inps.beam_swath = 'IW' 
-    inps.polarization = ['VV','VV+VH']
-
     return inps
 
 def main(iargs=None, namespace=None):
@@ -136,12 +134,13 @@ def main(iargs=None, namespace=None):
         end=inps.end_date,
         intersectsWith=inps.intersectsWith,
         flightDirection=inps.flightDirection,
-        beamMode=inps.beam_mode, 
-        # beamMode='S6', 
+        beamMode=inps.beam_mode,
+        # beamMode='S6',
         # beamSwath=inps.beam_swath,
         relativeOrbit=inps.relative_orbit,
         relativeBurstID=inps.burst_id,
         polarization=inps.polarization,
+        dataset=inps.dataset,
     )
 
     print(f"Found {len(results)} results.")
