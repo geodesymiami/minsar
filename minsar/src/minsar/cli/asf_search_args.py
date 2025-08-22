@@ -26,10 +26,10 @@ Usage Examples:
         asf_search_args.py --processingLevel=SLC --start=2014-10-04 --end=2015-10-05 --relativeOrbit=170 --download --dir=$SCRATCHDIR/SLC --parallel=4
         asf_search_args.py --processingLevel=SLC --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.78,-77.91 0.85,-77.98 0.85,-77.98 0.78))'
         asf_search_args.py --processingLevel=BURST --start=2014-10-04 --end=2015-12-31 --burst-id=349025 --download
-    Stripmap (SM): 
+    Stripmap (SM):
         asf_search_args.py --processingLevel=SLC --relativeOrbit 75 --intersectsWith='POLYGON((-24.5 14.8,-24.3 14.8,-24.3 15.1,-24.5 15.1,-24.5 14.8))' --start=2018-05-01 --end=2018-10-31 --beamMode=S6 --print
-    ALOS-2 (ScanSAR L1.1):   
-        asf_search_args.py --processingLevel=1.1 --relativeOrbit 89 --intersectsWith=POLYGON((9.16 4.20,9.18 4.20,9.18 4.22,9.16 4.22,9.16 4.20)) --start=2014-10-04 --end=2015-12-31 --print
+    ALOS-2 (ScanSAR L1.1):
+        asf_search_args.py --processingLevel=1.1 --relativeOrbit 89 --intersectsWith='POLYGON((9.16 4.20,9.18 4.20,9.18 4.22,9.16 4.22,9.16 4.20))' --start=2014-10-04 --end=2015-12-31 --print
 
     Polarization is "VV" always.
     """
@@ -50,7 +50,7 @@ def create_parser(iargs=None, namespace=None):
     parser.add_argument('--burst-id', nargs='*', type=str, metavar='BURST', default=None, help='Burst ID')
     parser.add_argument('--frame', type=int, metavar='FRAME', help='Frame number (Default: None')
     parser.add_argument('--platform', nargs='?',metavar='SENTINEL1, ALOS2', help='Platform to search')
-    parser.add_argument('--parallel', type=int, default=1, help='Number of parallel downloads (Default: 1)')
+    parser.add_argument('--parallel', type=int, default=6, help='Number of parallel downloads (Default: 1)')
     parser.add_argument('--print', dest='print', action='store_true', help='Print the whole search results')
     parser.add_argument('--download', action='store_true', help='Download the data')
     parser.add_argument('--print-burst', dest='print_burst', action='store_true', help='Print burst IDs')
@@ -159,7 +159,9 @@ def main(iargs=None, namespace=None):
             print(', '.join(str(v) for k, v in r.properties.items() if k not in ['centerLat', 'centerLon']))
 
     if inps.download == True:
-        print(f"Downloading {len(results)} results")
+        print(f"Downloading {len(results)} results...")
+        print(f"Parallel: {inps.parallel}")
+        print(f"Download directory: {inps.dir}")
         results.download(
             path = inps.dir,
             session = asf.ASFSession(),
