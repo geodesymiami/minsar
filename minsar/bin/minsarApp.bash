@@ -44,8 +44,8 @@ helptext="                                                                      
    --no-orbit-download   don't download orbits prior to jobfile creation         \n\
                                                                                  \n\
    --sleep SECS           sleep seconds before running                           \n\
-   --select_reference     select reference date [default].                       \n\
-   --no_select_reference  don't select reference date.                           \n\
+   --no-select-reference  don't select reference date [default]                  \n\
+   --select-reference     select reference date.                       \n\
    --chunks         process in form of multiple chunks.                          \n\
    --debug
                                                                                  \n\
@@ -92,7 +92,8 @@ cli_command=$(echo "$SCRIPT_NAME $template_print_name ${@:2}")
 chunks_flag=0
 jobfiles_flag=1
 orbit_download_flag=1
-select_reference_flag=1
+
+select_reference_flag=0
 new_reference_flag=0
 debug_flag=0
 download_ECMWF_flag=1
@@ -172,11 +173,11 @@ do
             shift
             shift
             ;;
-        --select_reference)
+        --select-reference)
             select_reference_flag=1
             shift
             ;;
-        --no_select_reference)
+        --no-select-reference)
             select_reference_flag=0
             shift
             ;;
@@ -364,7 +365,7 @@ if [[ ${template[topsStack.workflow]} == "slc" ]]; then
    mintpy_flag=0
 fi
 
-echo "Switches: select_reference: <$select_reference_flag>   download_method: <$download_method> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
+echo "Switches: select-reference: <$select_reference_flag>   download_method: <$download_method> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
 echo "Flags for processing steps:"
 echo "download dem jobfiles ifgram mintpy miaplpy upload insarmaps finishup"
 echo "    $download_flag     $dem_flag      $jobfiles_flag       $ifgram_flag       $mintpy_flag      $miaplpy_flag      $upload_flag       $insarmaps_flag        $finishup_flag"
