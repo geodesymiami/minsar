@@ -21,10 +21,11 @@ sys.path.insert(0, os.getenv('SSARAHOME'))
 import password_config as password
 
 ##############################################################################
-EXAMPLE = """example:
+EXAMPLE = """examples:
     upload_data_products.py mintppy
     upload_data_products.py miaplpy
     upload_data_products.py miaplpy/network_single_reference
+    upload_data_products.py miaplpy_SN_201606_201608 --slcStack
     upload_data_products.py outputs
 """
 
