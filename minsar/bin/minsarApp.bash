@@ -44,8 +44,6 @@ helptext="                                                                      
    --no-orbit-download   don't download orbits prior to jobfile creation         \n\
                                                                                  \n\
    --sleep SECS           sleep seconds before running                           \n\
-   --no-select-reference  don't select reference date [default]                  \n\
-   --select-reference     select reference date.                       \n\
    --chunks         process in form of multiple chunks.                          \n\
    --debug
                                                                                  \n\
@@ -93,8 +91,6 @@ chunks_flag=0
 jobfiles_flag=1
 orbit_download_flag=1
 
-select_reference_flag=0
-new_reference_flag=0
 debug_flag=0
 download_ECMWF_flag=1
 download_ECMWgF_before_mintpy_flag=0
@@ -171,14 +167,6 @@ do
         --sleep)
             sleep_time="$2"
             shift
-            shift
-            ;;
-        --select-reference)
-            select_reference_flag=1
-            shift
-            ;;
-        --no-select-reference)
-            select_reference_flag=0
             shift
             ;;
         --chunks)
@@ -365,7 +353,7 @@ if [[ ${template[topsStack.workflow]} == "slc" ]]; then
    mintpy_flag=0
 fi
 
-echo "Switches: select-reference: <$select_reference_flag>   download_method: <$download_method> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
+echo "Switches: download_method: <$download_method> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
 echo "Flags for processing steps:"
 echo "download dem jobfiles ifgram mintpy miaplpy upload insarmaps finishup"
 echo "    $download_flag     $dem_flag      $jobfiles_flag       $ifgram_flag       $mintpy_flag      $miaplpy_flag      $upload_flag       $insarmaps_flag        $finishup_flag"
@@ -517,61 +505,20 @@ fi
 
 if [[ $ifgram_flag == "1" ]]; then
 
-    if [[ $template_file != *"Sen"* || $select_reference_flag == "0" ]]; then
+    if [[ $template_file != *"Sen"* ]]; then
        run_command "run_workflow.bash $template_file --dostep ifgram"
     else
-
        echo "topsStack.workflow: <${template[topsStack.workflow]}>"
        ifgram_stopstep=11              # default for interferogram workflow
        if [[ ${template[topsStack.workflow]} == "slc" ]] || [[ $mintpy_flag == 0 ]]; then
           ifgram_stopstep=7
        fi
 
-       # run with checking and selecting of reference date
-       echo "### Running step 1 to 5 to check whether reference date has enough bursts"
-       run_command "run_workflow.bash $template_file --start 1 --stop 5"
-
-       reference_date=$(get_reference_date)
-       echo "Reference date: $reference_date" | tee reference_date_isce.txt
-
-       #FA 8/2025: calculations are not accurate. This can all be removed as we now use bursts
-       new_reference_flag=0
-       read -r new_reference_flag new_reference_date < <(check_bursts)
-       echo "new reference flag, date: <$new_reference_flag>"
-       sleep 3
-
-       if [[ $new_reference_flag == "1" ]] ; then
-          # insert new reference date into templatefile and rerun from beginning
-          echo "Original reference date:  $reference_date" | tee -a log | tee -a `ls wor* | tail -1` | tee reference_date_isce.txt
-          echo "Selected reference date (image $((number_of_dates_allowed_to_exclude+1)) after sorting): $new_reference_date" | tee -a log | tee -a `ls wor* | tail -1` | tee -a tee reference_date_isce.txt
-          echo "#########################################" | tee -a log | tee -a `ls wor* | tail -1`
-
-          rm -rf modified_template
-          mkdir modified_template
-          cp $template_file modified_template
-          template_file=$PWD/modified_template/$(basename $template_file)
-          sed -i  "s|topsStack.subswath.*|&\ntopsStack.referenceDate              = $new_reference_date|" $template_file
-
-          mv run_files modified_template
-          mv configs modified_template
-          rm -rf run_files configs
-
-          # clean directory for processing and create jobfiles
-          run_command "run_clean_dir.bash $PWD --runfiles --ifgram"
-          run_command "create_runfiles.py $template_file --jobfiles --queue $QUEUENAME 2>create_jobfiles.e 1>out_create_jobfiles.o"
-
-          # rerun steps 1 to 5  with new reference
-	      echo "### Re-running step 1 to 5 with reference $new_reference_date"
-          run_command "run_workflow.bash $template_file --start 1 --stop 5 --append"
-       else
-          echo "No new reference date selected. Continue with original reference date: $reference_date" | tee -a log | tee -a `ls wor* | tail -1`
-          echo "#########################################" | tee -a log | tee -a `ls wor* | tail -1`
-       fi
-
-       # continue running starting step 6
-       run_command "run_workflow.bash $template_file --start 6 --stop $ifgram_stopstep --append"
-
+       run_command "run_workflow.bash $template_file --start 1 --stop $ifgram_stopstep"
     fi
+
+    reference_date=$(get_reference_date)
+    echo "Reference date: $reference_date" | tee reference_date_isce.txt
 fi
 
 ########################
