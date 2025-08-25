@@ -51,8 +51,8 @@ def get_file_length(file_path):
 def get_num_workers_hdf5eos(files, number_of_cores_per_node):
 
     # Define thresholds in GB and corresponding percentages
-    thresholds = [1, 5, 10, 20]  # in GB
-    percentage_of_cores = [40, 20, 10, 2]  # corresponding percentages in %
+    thresholds = [1, 5, 10, 20, 200]  # in GB
+    percentage_of_cores = [40, 20, 10, 2, 1]  # corresponding percentages in %
 
     file_lengths = [get_file_length(file[0]) for file in files]
 
