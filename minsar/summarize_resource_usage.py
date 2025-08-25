@@ -3,7 +3,7 @@
 Summarize memory and wall time from multiple *.time_log files.
 
 Usage:
-    summarize_resource_usage.py $TE/GalapagosSenDT128.template run_files/run_*time_log other_dir/*run*time_log
+    summarize_resource_usage.py $TE/GalapagosSenDT128.template run_files other_dir
 
 The script groups timing log files by run_file name, stripping only trailing numeric/date suffixes.
 It computes max, median, and mean of memory (MB), and max and mean wall time (HH:MM:SS). It gets the number of bursts and looks using teh *template file
@@ -13,15 +13,53 @@ Output is written to summary.time_log.
 import re
 import os
 import glob
+import sys
 import h5py
+import argparse
 from osgeo import gdal
 from collections import defaultdict
 from statistics import mean, median
 from datetime import timedelta
 from minsar.objects.dataset_template import Template
 from minsar.utils import process_utilities as putils
+from minsar.objects import message_rsmas
+from argparse import Namespace
 
 NOMINAL_BURST_SIZE_SAMPLES = 23811 * 1505
+
+##########################################################
+def create_parser():
+    DESCRIPTION = "Summarize memory usage and walltimes from multiple *.time_log files."
+    EXAMPLE = """
+Examples:
+  summarize_resource_usage.py $TE/GalapagosSenD128.template run_files
+  summarize_resource_usage.py $TE/qburstChilesSenD142.template run_files miaplpy_201411_201703/network_delaunay_4/run_files
+    """.strip()
+
+    parser = argparse.ArgumentParser( description=DESCRIPTION, epilog=EXAMPLE, formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument(dest='custom_template_file',  help="Template file with option settings (*.template)")
+    parser.add_argument(dest="log_dirs", nargs="+", help="One or more dirs containing *.time_log files")
+    parser.add_argument('--outdir', dest="outdir", type=str, default=os.getcwd(),  help="Output directory for summary file (Default: current directory).")
+
+    inps = parser.parse_args()
+    inps = putils.create_or_update_template(inps)
+
+    if not os.path.isfile(inps.template_file) or not inps.template_file.endswith(".template"):
+        parser.error(f"Ttemplate file not found : {inps.template_file}")
+
+    log_files = []
+    for pattern in inps.log_dirs:
+        matched = glob.glob(os.path.join(pattern, "*.time_log"))
+        if not matched:
+            print(f"Warning: No files matched pattern: {pattern}/*.time_log", file=sys.stderr)
+        log_files.extend(matched)
+
+    if not log_files:
+        parser.error("No valid *.time_log files found.")
+
+    inps.log_files = log_files
+
+    return inps
 
 ##########################################################
 def parse_time_log_file(filepath):
@@ -107,45 +145,65 @@ def get_miaplpy_data_size_from_data(dir):
     return burst_size_units
 
 ##########################################################
-def main():
-    hardcoded_patterns = [
-        "run_files/run_*time_log",
-        "miaplpy_SN_201606_201608/network_single_reference/run_files/run*time_log",
-        "/Users/famelung/code/minsar/samples/unittestGalapagosSenDT128.template"
-    ]
+def get_number_of_bursts_from_out_create_jobfiles(file_path='out_create_jobfiles.o'):
+    """Extracts and returns the number of bursts from the output file."""
+    if not os.path.isfile(file_path):
+        raise FileNotFoundError(f"{file_path} does not exist.")
 
-    files = []
-    for pattern in hardcoded_patterns:
-        matched = glob.glob(pattern)
-        print(f"Pattern: {pattern}")
-        print(f"Matched files: {matched}")
-        files.extend(matched)
+    number_of_bursts = None
 
-    if not files:
-        print("No matching .time_log files found.")
-        return
+    with open(file_path, 'r') as f:
+        for line in f:
+            if "number of bursts" in line:
+                match = re.search(r'number of bursts: (\d+)', line)
+                if match:
+                    number_of_bursts = int(match.group(1))
+                    break
+                else:
+                    raise ValueError("Line found but pattern did not match: " + line)
 
-    custom_template_file = next(f for f in files if f.endswith(".template"))
-    dataset_template = Template(custom_template_file)
+    if number_of_bursts is None:
+        raise ValueError("No line containing 'number of bursts' found.")
 
-    miaplpy_time_log_files = [f for f in files if "miaplpy" in f and f.endswith(".time_log")]
-    miaplpy_time_log_file = miaplpy_time_log_files[0]
-    miaplpy_dir = next(part for part in miaplpy_time_log_file.split("/") if part.startswith("miaplpy"))
+    return number_of_bursts
 
-    # number_of_bursts = putils.get_number_of_bursts(self.inps)
-    number_of_bursts = 2
+##########################################################
+def main(iargs=None):
+
+    if not iargs is None:
+        input_arguments = iargs
+    else:
+        input_arguments = sys.argv[1::]
+    message_rsmas.log(os.getcwd(), os.path.basename(__file__) + ' ' + ' '.join(input_arguments))
+    inps = create_parser()
+
+    isce_log_files = [f for f in inps.log_files if f.endswith(".time_log") and "miaplpy" not in f]
+    miaplpy_log_files = [f for f in inps.log_files if "miaplpy" in f and f.endswith(".time_log")]
+
+    if miaplpy_log_files:
+        miaplpy_log_file = miaplpy_log_files[0]
+        miaplpy_dir = next(part for part in miaplpy_log_file.split("/") if part.startswith("miaplpy"))
+
+    dataset_template = Template(inps.custom_template_file)
     az_looks = dataset_template.options.get('topsStack.azimuthLooks')
     range_looks = dataset_template.options.get('topsStack.rangeLooks')
+    inps_dict = dataset_template.options
 
-    slc_size_units = get_slc_data_size_from_data(dir='SLC', number_of_bursts=number_of_bursts)
-    miaplpy_size_units = get_miaplpy_data_size_from_data(miaplpy_dir + '/inputs/')
+    number_of_bursts = get_number_of_bursts_from_out_create_jobfiles()
+
+    slc_size_units = miaplpy_size_units = 0
+    if isce_log_files:
+       slc_size_units = number_of_bursts
+    if miaplpy_log_files:
+       miaplpy_size_units = get_miaplpy_data_size_from_data(miaplpy_dir + '/inputs/')
 
     summary_lines=[]
     summary_lines.append(f"Number of bursts, azimuth looks, range looks, miaplpy_file_size: {number_of_bursts} {az_looks} {range_looks}")
     summary_lines.append(f"SLC and miaplpy burst units: {slc_size_units:.2f} {miaplpy_size_units:.3f}")
+    summary_lines.append(f"Queue: {os.getenv('QUEUENAME')}")
 
     data = defaultdict(list)
-    for file in files:
+    for file in isce_log_files + miaplpy_log_files:
         mem_mb, wall_sec = parse_time_log_file(file)
         if mem_mb is not None:
             group = extract_runfile_name(file)
@@ -158,7 +216,7 @@ def main():
             return (2, name)
         return (0, name)
 
-    with open("summary.time_log", "w") as f:
+    with open(f"{inps.outdir}/walltimes_memory.log", "w") as f:
         f.write("\n".join(summary_lines) + "\n")        
         for group in sorted(data, key=group_sort_key):
             mem_vals = [x[0] for x in data[group]]
