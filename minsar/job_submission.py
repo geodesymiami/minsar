@@ -711,7 +711,8 @@ class JOB_SUBMIT:
 
     def add_slurm_commands(self, job_file_lines, job_file_name, hostname, batch_file=None, distribute=None):
 
-        if not self.copy_to_tmp or self.copy_to_tmp_flag == "no":
+        #if not self.copy_to_tmp or self.copy_to_tmp_flag == "no":
+        if not self.copy_to_tmp:
              return job_file_lines
 
         job_file_lines.append("\n" )
@@ -1232,9 +1233,16 @@ class JOB_SUBMIT:
             for line in tasks:
                 config_file = putils.extract_config_file_from_task_string(line)
                 date_string = putils.extract_date_string_from_config_file_name(config_file)
-                tasks_with_output.append("{} > {} 2>{}\n".format(line.split('\n')[0],
+
+                prepend_str=''
+                if os.getenv('PROFILE_FLAG', '0') in ['1', 'True']:
+                    prepend_str = f"/usr/bin/time -v -o {os.path.abspath(batch_file)}_{date_string}_$LAUNCHER_JID.time_log "
+                tasks_with_output.append("{}{} > {} 2>{}\n".format(prepend_str, line.split('\n')[0],
                                                                  os.path.abspath(batch_file) + '_' + date_string + '_$LAUNCHER_JID.o',
                                                                  os.path.abspath(batch_file) + '_' + date_string + '_$LAUNCHER_JID.e'))
+                #tasks_with_output.append("{} > {} 2>{}\n".format(line.split('\n')[0],
+                #                                                 os.path.abspath(batch_file) + '_' + date_string + '_$LAUNCHER_JID.o',
+                #                                                 os.path.abspath(batch_file) + '_' + date_string + '_$LAUNCHER_JID.e'))
             if os.path.exists(batch_file):
                 os.remove(batch_file)
 
