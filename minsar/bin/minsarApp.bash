@@ -44,8 +44,6 @@ helptext="                                                                      
    --no-orbit-download   don't download orbits prior to jobfile creation         \n\
                                                                                  \n\
    --sleep SECS           sleep seconds before running                           \n\
-   --select_reference     select reference date [default].                       \n\
-   --no_select_reference  don't select reference date.                           \n\
    --chunks         process in form of multiple chunks.                          \n\
    --debug
                                                                                  \n\
@@ -85,6 +83,7 @@ elif [[ $template_file_dir == $SAMPLESDIR ]]; then
 else
     template_print_name="$template_file"
 fi
+echo "#############################################################################################" | tee -a "${WORK_DIR}"/log
 echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $template_print_name ${@:2}" | tee -a "${WORK_DIR}"/log
 cli_command=$(echo "$SCRIPT_NAME $template_print_name ${@:2}")
 
@@ -92,8 +91,7 @@ cli_command=$(echo "$SCRIPT_NAME $template_print_name ${@:2}")
 chunks_flag=0
 jobfiles_flag=1
 orbit_download_flag=1
-select_reference_flag=1
-new_reference_flag=0
+
 debug_flag=0
 download_ECMWF_flag=1
 download_ECMWgF_before_mintpy_flag=0
@@ -170,14 +168,6 @@ do
         --sleep)
             sleep_time="$2"
             shift
-            shift
-            ;;
-        --select_reference)
-            select_reference_flag=1
-            shift
-            ;;
-        --no_select_reference)
-            select_reference_flag=0
             shift
             ;;
         --chunks)
@@ -364,7 +354,7 @@ if [[ ${template[topsStack.workflow]} == "slc" ]]; then
    mintpy_flag=0
 fi
 
-echo "Switches: select_reference: <$select_reference_flag>   download_method: <$download_method> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
+echo "Switches: download_method: <$download_method> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
 echo "Flags for processing steps:"
 echo "download dem jobfiles ifgram mintpy miaplpy upload insarmaps finishup"
 echo "    $download_flag     $dem_flag      $jobfiles_flag       $ifgram_flag       $mintpy_flag      $miaplpy_flag      $upload_flag       $insarmaps_flag        $finishup_flag"
@@ -516,84 +506,20 @@ fi
 
 if [[ $ifgram_flag == "1" ]]; then
 
-    if [[ $template_file != *"Sen"* || $select_reference_flag == "0" ]]; then
+    if [[ $template_file != *"Sen"* ]]; then
        run_command "run_workflow.bash $template_file --dostep ifgram"
     else
-
        echo "topsStack.workflow: <${template[topsStack.workflow]}>"
        ifgram_stopstep=11              # default for interferogram workflow
        if [[ ${template[topsStack.workflow]} == "slc" ]] || [[ $mintpy_flag == 0 ]]; then
           ifgram_stopstep=7
        fi
 
-       # run with checking and selecting of reference date
-       echo "### Running step 1 to 5 to check whether reference date has enough bursts"
-       run_command "run_workflow.bash $template_file --start 1 --stop 5"
-
-       reference_date=$(get_reference_date)
-       echo "Reference date: $reference_date" | tee reference_date_isce.txt
-       new_reference_flag=0
-
-       #FA# determine whether to select new reference date
-       #FAcountbursts | tr '/' ' ' | sort -k 1 | sort -k 2 | sort -k 4 -s | sed 's/ /\//' > number_of_bursts_sorted.txt
-       #FA#countbursts | tr '/' ' ' | sort -k4,4nr | sed 's/ /\//' > number_of_bursts_sorted.txt
-       #FAnumber_of_dates_with_less_or_equal_bursts_than_reference=$(grep -n reference number_of_bursts_sorted.txt | cut -f1 -d:)
-       #FAnumber_of_dates_with_less_bursts_than_reference=$(( $number_of_dates_with_less_or_equal_bursts_than_reference - 1 ))
-       #FAnumber_of_dates=$(wc -l < number_of_bursts_sorted.txt)
-       #FApercentage_of_dates_with_less_bursts_than_reference=$(echo "scale=2; $number_of_dates_with_less_bursts_than_reference / $number_of_dates * 100"  | bc)
-       #FAecho "#########################################" | tee -a log | tee -a `ls wor* | tail -1`
-       #FAecho "Number of dates with less bursts than reference: $number_of_dates_with_less_bursts_than_reference" | tee -a log | tee -a  `ls wor* | tail -1`
-       #FAecho "Total number of dates: $number_of_dates" | tee -a log | tee -a  `ls wor* | tail -1`
-       #FAecho "Percentage of dates with less bursts than reference: $percentage_of_dates_with_less_bursts_than_reference" | tee -a log | tee -a  `ls wor* | tail -1`
-       #FAecho "# head -$number_of_dates_with_less_or_equal_bursts_than_reference  number_of_bursts_sorted.txt:" | tee -a log | tee -a `ls wor* | tail -1`
-       #FAhead -"$number_of_dates_with_less_or_equal_bursts_than_reference" number_of_bursts_sorted.txt | tee -a log | tee -a `ls wor* | tail -1`
-       #FApercentage_of_dates_allowed_to_exclude=3  # FA 12 Mar 2022: changed to 1 %
-       #FApercentage_of_dates_allowed_to_exclude=1
-       #FAtmp=$(echo "$percentage_of_dates_allowed_to_exclude $number_of_dates" | awk '{printf "%f", $1 / 100 * $2}')
-       #FAnumber_of_dates_allowed_to_exclude="${tmp%.*}"
-       #FAnew_reference_date=$(head -$((number_of_dates_allowed_to_exclude+1))  number_of_bursts_sorted.txt | tail -1 | awk '{print $1}' | cut -d'/' -f2)
-       #FAif [[ $(echo "$percentage_of_dates_with_less_bursts_than_reference > $percentage_of_dates_allowed_to_exclude"  | bc -l ) -eq 1 ]] && [[ $new_reference_date != $reference_date ]] ; then
-       #FA   new_reference_flag=1
-       #FAfi
-       #FAecho "new_reference_flag: <$new_reference_flag>"
-
-       #FA 8/2025: calculations are not accurate. Hopefully this section can be removed once only dates with equal number of scenes are downloaded
-       read -r new_reference_flag new_reference_date < <(check_bursts)
-       echo "new reference flag, date: <$new_reference_flag>"
-       sleep 3
-
-       if [[ $new_reference_flag == "1" ]] ; then
-          # insert new reference date into templatefile and rerun from beginning
-          echo "Original reference date:  $reference_date" | tee -a log | tee -a `ls wor* | tail -1` | tee reference_date_isce.txt
-          echo "Selected reference date (image $((number_of_dates_allowed_to_exclude+1)) after sorting): $new_reference_date" | tee -a log | tee -a `ls wor* | tail -1` | tee -a tee reference_date_isce.txt
-          echo "#########################################" | tee -a log | tee -a `ls wor* | tail -1`
-
-          rm -rf modified_template
-          mkdir modified_template
-          cp $template_file modified_template
-          template_file=$PWD/modified_template/$(basename $template_file)
-          sed -i  "s|topsStack.subswath.*|&\ntopsStack.referenceDate              = $new_reference_date|" $template_file
-
-          mv run_files modified_template
-          mv configs modified_template
-          rm -rf run_files configs
-
-          # clean directory for processing and create jobfiles
-          run_command "run_clean_dir.bash $PWD --runfiles --ifgram"
-          run_command "create_runfiles.py $template_file --jobfiles --queue $QUEUENAME 2>create_jobfiles.e 1>out_create_jobfiles.o"
-
-          # rerun steps 1 to 5  with new reference
-	      echo "### Re-running step 1 to 5 with reference $new_reference_date"
-          run_command "run_workflow.bash $template_file --start 1 --stop 5 --append"
-       else
-          echo "No new reference date selected. Continue with original reference date: $reference_date" | tee -a log | tee -a `ls wor* | tail -1`
-          echo "#########################################" | tee -a log | tee -a `ls wor* | tail -1`
-       fi
-
-       # continue running starting step 6
-       run_command "run_workflow.bash $template_file --start 6 --stop $ifgram_stopstep --append"
-
+       run_command "run_workflow.bash $template_file --start 1 --stop $ifgram_stopstep"
     fi
+
+    reference_date=$(get_reference_date)
+    echo "Reference date: $reference_date" | tee reference_date_isce.txt
 fi
 
 ########################
@@ -604,6 +530,10 @@ if [[ $mintpy_flag == "1" ]]; then
     # run MintPy
     run_command "run_workflow.bash $template_file --append --dostep mintpy"
 
+    # summarize profiling logs
+    if [[ $PROFILE_FLAG == "True" ]]; then
+        run_command "summarize_resource_usage.py $template_file run_files --outdir mintpy/pic"
+    fi
     # upload mintpy directory
     if [[ $upload_flag == "1" ]]; then
         run_command "upload_data_products.py mintpy ${template[minsar.upload_option]}"
@@ -633,7 +563,8 @@ if [[ $miaplpy_flag == "1" ]]; then
     network_type=$(get_network_type)
     network_dir=${miaplpy_dir_name}/network_${network_type}
 
-    # create miaplpy jobfiles
+    # create miaplpy jobfiles and remove existing slcStack.h5  (FA 8/25: we may want to remove entire miaplpy folder)
+    rm -f ${miaplpy_dir_name}/inputs/slcStack.h5 ${miaplpy_dir_name}/inputs/geometryRadar.h5
     run_command "$srun_cmd miaplpyApp.py $template_file --dir $miaplpy_dir_name --jobfiles --queue $QUEUENAME"
 
     # run miaplpy jobfiles ( after create_save_hdfeos5_jobfile.py to include run_10_save_hdfeos5_radar_0.job )
@@ -643,11 +574,36 @@ if [[ $miaplpy_flag == "1" ]]; then
     run_command "create_save_hdfeos5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME --walltime 0:30"
 
     # run save_hdfeos5_radar jobfile
-    run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 10"
+    #run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 10"
 
     # create index.html with all images
     run_command "create_html.py ${network_dir}/pic"
 
+    # summarize profiling logs
+    if [[ $PROFILE_FLAG == "True" ]]; then
+        run_command "summarize_resource_usage.py $template_file run_files ${network_dir}/run_files --outdir ${network_dir}/pic"
+    fi
+
+    ## insarmaps
+    if [[ $insarmaps_flag == "1" ]]; then
+        run_command "create_insarmaps_jobfile.py $network_dir --dataset $insarmaps_dataset"
+
+        # run jobfile
+        insarmaps_jobfile=$(ls -t insar*job | head -n 1)
+        run_command "run_workflow.bash $template_file --jobfile $PWD/$insarmaps_jobfile"
+
+    fi
+
+    # upload data products
+    run_command "upload_data_products.py $network_dir ${template[minsar.upload_option]}"
+
+fi
+
+if [[ $finishup_flag == "1" ]]; then
+    if [[ $miaplpy_flag == "1" ]]; then
+        miaplpy_opt="--miaplpyDir $miaplpy_dir_name"
+    else
+        miaplpy_opt=""
     ## insarmaps
     if [[ $insarmaps_flag == "1" ]]; then
         run_command "create_insarmaps_jobfile.py $network_dir --dataset $insarmaps_dataset"
@@ -692,7 +648,7 @@ echo "Yup! That's all from minsarApp.bash."
 echo
 
 echo "Data products uploaded to:"
-if [ -f "upload.log" ]; then
+if [[ -f "upload.log" ]]; then
     tail -n -1 upload.log
 fi
 
@@ -705,7 +661,7 @@ if [[ "$insarmaps_dataset" == "all" ]]; then
 fi
 
 lines=$((lines * 2))  # multiply as long as we ingestinto two servers
-if [ -f "insarmaps.log" ]; then
+if [[ -f "insarmaps.log" ]]; then
     tail -n $lines insarmaps.log
 fi
 

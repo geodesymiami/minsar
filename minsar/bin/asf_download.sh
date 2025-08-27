@@ -14,7 +14,7 @@ helptext="                                                                      
 fi
 
 SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
-echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $*" | tee -a log
+echo "$(date +"%Y%m%d:%H-%M") + $SCRIPT_NAME $*" | tee -a log
 
 cmd="asf_search_args.py"
 for arg in "$@"; do

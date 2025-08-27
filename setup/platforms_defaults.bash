@@ -51,6 +51,7 @@ then
   export QUEUE_NORMAL=skx
   export QUEUE_DEV=skx-dev
   : "${QUEUENAME:=$QUEUE_NORMAL}"
+  export PROFILE_FLAG=True
 fi
 ###############################################
 if [[ ${HOSTNAME} == *frontera* ]] || [[ ${TACC_SYSTEM:-} == *frontera* ]]

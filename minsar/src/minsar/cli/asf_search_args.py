@@ -22,7 +22,6 @@ Usage Examples:
         asf_search_args.py --processingLevel=CSLC --start=20141004 --end=20151005 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.78,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --print --dir=$SCRATCHDIR/CSLC
         asf_search_args.py --processingLevel=CSLC --start=2014-10-04 --end=2015-10-05 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.7881,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --print --dir=$SCRATCHDIR/CSLC
         asf_search_args.py --processingLevel=BURST --relativeOrbit=142 --intersectsWith='Polygon((-78.09 0.6, -77.74 0.6, -77.74 0.83, -78.09 0.83, -78.09 0.6))' --start=2014-10-31 --end=2015-01-01 --print
-        asf_search_args.py --processingLevel=BURST --relativeOrbit=142 --intersectsWith='Polygon((-78.09 0.6, -77.74 0.6, -77.74 0.83, -78.09 0.83, -78.09 0.6))' --start=2014-10-31 --end=2015-01-01 --print-burst
         asf_search_args.py --processingLevel=SLC --start=2014-10-04 --end=2015-10-05 --relativeOrbit=170 --download --dir=$SCRATCHDIR/SLC --parallel=4
         asf_search_args.py --processingLevel=SLC --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.78,-77.91 0.85,-77.98 0.85,-77.98 0.78))'
         asf_search_args.py --processingLevel=BURST --start=2014-10-04 --end=2015-12-31 --burst-id=349025 --download
@@ -53,13 +52,9 @@ def create_parser(iargs=None, namespace=None):
     parser.add_argument('--parallel', type=int, default=6, help='Number of parallel downloads (Default: 1)')
     parser.add_argument('--print', dest='print', action='store_true', help='Print the whole search results')
     parser.add_argument('--download', action='store_true', help='Download the data')
-    parser.add_argument('--print-burst', dest='print_burst', action='store_true', help='Print burst IDs')
     parser.add_argument('--dir', metavar='FOLDER', help='Specify path to download the data, if not specified, the data will be downloaded in SCRATCHDIR directory')
 
     inps = parser.parse_args()
-
-    if not (inps.download or inps.print_burst):
-        inps.print = True
 
     if "BURST" in inps.processing_level:
         inps.processing_level = asf.PRODUCT_TYPE.BURST
@@ -117,7 +112,7 @@ def create_parser(iargs=None, namespace=None):
     else:
         inps.dir = None
 
-    if not (inps.download or inps.print_burst):
+    if not inps.download:
         inps.print = True
 
     return inps
@@ -146,17 +141,17 @@ def main(iargs=None, namespace=None):
     if inps.print and len(results) > 0:
             print(', '.join(k for k in results[0].properties.keys() if k not in ['centerLat', 'centerLon']))
 
-    burst_ids =[]
+    # burst_ids =[]
     for r in results:
-        if inps.print_burst:
-            if asf.PRODUCT_TYPE.BURST in inps.processing_level:
-                if r.properties['burst']['relativeBurstID'] not in burst_ids:
-                    burst_ids.append(r.properties['burst']['relativeBurstID'])
-                    print(f"Relative Burst ID: {r.properties['burst']['relativeBurstID']}")
-            else:
-                print('-' * 100)
-                print(f"Start date: {r.properties['startTime']}, End date: {(r.properties['stopTime'])}, {r.geometry['type']}: {r.geometry['coordinates']}, Path of satellite: {r.properties['pathNumber']}, Granule:  {r.properties['granuleType']}")
-        elif inps.print:
+        # if inps.print_burst:
+        #     if asf.PRODUCT_TYPE.BURST in inps.processing_level:
+        #         if r.properties['burst']['relativeBurstID'] not in burst_ids:
+        #             burst_ids.append(r.properties['burst']['relativeBurstID'])
+        #             print(f"Relative Burst ID: {r.properties['burst']['relativeBurstID']}")
+        #     else:
+        #         print('-' * 100)
+        #         print(f"Start date: {r.properties['startTime']}, End date: {(r.properties['stopTime'])}, {r.geometry['type']}: {r.geometry['coordinates']}, Path of satellite: {r.properties['pathNumber']}, Granule:  {r.properties['granuleType']}")
+        if inps.print:
             print(', '.join(str(v) for k, v in r.properties.items() if k not in ['centerLat', 'centerLon']))
 
     if inps.download == True:
