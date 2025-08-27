@@ -58,6 +58,9 @@ def create_parser(iargs=None, namespace=None):
 
     inps = parser.parse_args()
 
+    if not (inps.download or inps.print_burst):
+        inps.print = True
+
     if "BURST" in inps.processing_level:
         inps.processing_level = asf.PRODUCT_TYPE.BURST
     elif "CSLC" in inps.processing_level:
