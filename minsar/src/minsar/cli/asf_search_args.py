@@ -58,9 +58,6 @@ def create_parser(iargs=None, namespace=None):
 
     inps = parser.parse_args()
 
-    # inps.beam_swath = 'IW'
-    inps.dataset = asf.DATASET.ALOS_2
-
     if "BURST" in inps.processing_level:
         inps.processing_level = asf.PRODUCT_TYPE.BURST
     elif "CSLC" in inps.processing_level:
@@ -88,6 +85,7 @@ def create_parser(iargs=None, namespace=None):
         inps.polarization = ['VV','VV+VH'] 
     elif inps.processing_level==asf.PRODUCT_TYPE.BURST:
         inps.polarization = ['VV']
+        inps.dataset = asf.DATASET.SLC_BURST
     else:
         inps.polarization = ['VV', 'VV+VH']
 
