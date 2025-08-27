@@ -56,6 +56,9 @@ parser.add_argument('--dir', metavar='FOLDER', help='Specify path to download th
 
 inps = parser.parse_args()
 
+    if not (inps.download or inps.print_burst):
+        inps.print = True
+
     if "BURST" in inps.processing_level:
         inps.processing_level = asf.PRODUCT_TYPE.BURST
     elif "CSLC" in inps.processing_level:
