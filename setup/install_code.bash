@@ -51,7 +51,7 @@ pip install -e tools/sardem
 # FA 6/2025: Installing using requirements did not work. json_2_hdf raised weried error
 # mamba install --file minsar/conda_requirements.txt --yes -c conda-forge
 # mamba install --file tools/insarmaps_scripts/conda_requirements.txt --yes -c conda-forge
-mamba install tippecanoe mintpy --yes -c conda-forge
+mamba install tippecanoe --yes -c conda-forge
 pip install psycopg2 pycurl geocoder
 
 ###  Reduce miniforge3 directory size #################
