@@ -56,18 +56,14 @@ parser.add_argument('--dir', metavar='FOLDER', help='Specify path to download th
 
 inps = parser.parse_args()
 
-sdate = None
-edate = None
-node = None
-orbit = None
-burst_id = None
-
-if "BURST" in inps.processing_level:
-    inps.processing_level = asf.PRODUCT_TYPE.BURST
-elif "CSLC" in inps.processing_level:
-    inps.processing_level = asf.PRODUCT_TYPE.CSLC
-elif "SLC" in inps.processing_level:
-    inps.processing_level = asf.PRODUCT_TYPE.SLC
+    if "BURST" in inps.processing_level:
+        inps.processing_level = asf.PRODUCT_TYPE.BURST
+    elif "CSLC" in inps.processing_level:
+        inps.processing_level = asf.PRODUCT_TYPE.CSLC
+    elif "SLC" in inps.processing_level:
+        inps.processing_level = asf.PRODUCT_TYPE.SLC
+    elif "1.1" in inps.processing_level:
+        inps.processing_level = asf.PRODUCT_TYPE.L1_1
 
 if inps.start or inps.start_date:
     try:
@@ -117,8 +113,13 @@ if inps.download is not None:
 else:
     path = None
 
-if not (inps.download or inps.print_burst):
-    inps.print = True
+    if inps.processing_level==asf.PRODUCT_TYPE.SLC:
+        inps.polarization = ['VV','VV+VH'] 
+    elif inps.processing_level==asf.PRODUCT_TYPE.BURST:
+        inps.polarization = ['VV']
+        inps.dataset = asf.DATASET.SLC_BURST
+    else:
+        inps.polarization = ['VV', 'VV+VH']
 
 print("Searching for data...")
 
