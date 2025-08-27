@@ -89,6 +89,7 @@ def create_parser(iargs=None, namespace=None):
 
     if inps.platform in ['SENTINEL1', 'SENTINEL-1', 'S1', 'S-1']:
         inps.platform = asf.PLATFORM.SENTINEL1
+        inps.dataset = asf.DATASET.SENTINEL1
         inps.beam_swath = 'IW'
     elif inps.platform in ['ALOS-2', 'ALOS2'] or inps.processing_level==asf.PRODUCT_TYPE.L1_1:
         # platform = asf.PLATFORM.ALOS-2
