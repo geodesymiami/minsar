@@ -83,6 +83,7 @@ elif [[ $template_file_dir == $SAMPLESDIR ]]; then
 else
     template_print_name="$template_file"
 fi
+echo "#############################################################################################" | tee -a "${WORK_DIR}"/log
 echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $template_print_name ${@:2}" | tee -a "${WORK_DIR}"/log
 cli_command=$(echo "$SCRIPT_NAME $template_print_name ${@:2}")
 
@@ -562,7 +563,8 @@ if [[ $miaplpy_flag == "1" ]]; then
     network_type=$(get_network_type)
     network_dir=${miaplpy_dir_name}/network_${network_type}
 
-    # create miaplpy jobfiles
+    # create miaplpy jobfiles and remove existing slcStack.h5  (FA 8/25: we may want to remove entire miaplpy folder)
+    rm -f ${miaplpy_dir_name}/inputs/slcStack.h5 ${miaplpy_dir_name}/inputs/geometryRadar.h5
     run_command "$srun_cmd miaplpyApp.py $template_file --dir $miaplpy_dir_name --jobfiles --queue $QUEUENAME"
 
     # run miaplpy jobfiles ( after create_save_hdfeos5_jobfile.py to include run_10_save_hdfeos5_radar_0.job )
