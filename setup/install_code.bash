@@ -8,7 +8,7 @@ source setup/platforms_defaults.bash;
 source setup/environment.bash;
 
 ### Install basic code and c-dependencies (isce fails on Mac) ###
-mamba install python=3.10 wget git tree numpy --yes
+mamba install python=3.10 wget git tree "numpy<2.0" --yes
 pip install bypy
 
 if [[ "$(uname)" == "Linux" ]]; then
