@@ -19,9 +19,7 @@ from minsar.objects.auto_defaults import queue_config_file, supported_platforms
 sys.path.insert(0, os.getenv('SSARAHOME'))
 import password_config as password
 
-REMOTEHOST_INSARMAPS1 = os.getenv('REMOTEHOST_INSARMAPS1')
-REMOTEHOST_INSARMAPS2 = os.getenv('REMOTEHOST_INSARMAPS2')
-REMOTEHOST_INSARMAPS3 = os.getenv('REMOTEHOST_INSARMAPS3')
+insarmaps_hosts = os.environ["INSARMAPSHOST"].split(",")
 
 pathObj = PathFind()
 ############################################################
@@ -32,7 +30,7 @@ EXAMPLE = """example:
 """
 ###########################################################################################
 def create_parser():
-    synopsis = 'Create jobfile for ingestion into insarmaps'
+    synopsis = 'Create jobfile for ingestion into insarmaps. The host server(s) are given by INSARMAPSHOST evironment variable'
     epilog = EXAMPLE
     parser = argparse.ArgumentParser(description=synopsis, epilog=epilog, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('data_dir', nargs=1, help='Directory with hdf5eos file.\n')
@@ -51,8 +49,8 @@ def get_file_length(file_path):
 def get_num_workers_hdf5eos(files, number_of_cores_per_node):
 
     # Define thresholds in GB and corresponding percentages
-    thresholds = [1, 5, 10, 20, 200]  # in GB
-    percentage_of_cores = [40, 20, 10, 2, 1]  # corresponding percentages in %
+    thresholds = [0.05, 1, 10, 20, 50, 200]  # in GB
+    percentage_of_cores = [2, 40, 20, 10, 2, 1]  # corresponding percentages in %
 
     file_lengths = [get_file_length(file[0]) for file in files]
 
@@ -71,7 +69,11 @@ def get_num_workers_json_mbtiles(files, number_of_cores_per_node):
     '''Distribute 98% of the available cores on the number on the files to be uploaded'''
     num_files = len(files)
     num_cores = int(0.98 * number_of_cores_per_node / 2)     #  change to 1 for uploading to one insarmaps server
-    num_workers = int(num_cores / num_files)
+    if num_files > num_cores:
+        num_workers = num_cores
+    else:
+        num_workers = num_files
+
     return num_workers
         
 def main(iargs=None):
@@ -131,7 +133,8 @@ def main(iargs=None):
     inps.num_data = 1
     job_obj = JOB_SUBMIT(inps)
 
-    number_of_cores_per_node = job_obj.number_of_cores_per_node
+    number_of_cores_per_node = job_obj.number_of_cores_per_node or 10
+    half_number_of_cores_per_node = number_of_cores_per_node // 2
     num_workers_hdf5eos = get_num_workers_hdf5eos(files, number_of_cores_per_node)
     num_workers_json_mbtiles = get_num_workers_json_mbtiles(files, number_of_cores_per_node)
 
@@ -141,35 +144,44 @@ def main(iargs=None):
         command.append( f'hdfeos5_2json_mbtiles.py {file[0]} {inps.work_dir}/{inps.data_dir[0]}/JSON{suffix} --num-workers {num_workers_hdf5eos}' )
     
     command.append('wait\n')
-    for file, suffix in zip(files, suffixes):
-        path_obj = Path(file[0])
-        mbtiles_file = f"{path_obj.parent}/JSON{suffix}/{path_obj.name}"
-        mbtiles_file = mbtiles_file.replace('he5','mbtiles')
-        command.append( f'json_mbtiles2insarmaps.py --num-workers {num_workers_json_mbtiles} -u {password.docker_insaruser} -p {password.docker_insarpass} --host {REMOTEHOST_INSARMAPS1} -P {password.docker_databasepass} -U {password.docker_databaseuser} --json_folder {inps.work_dir}/{inps.data_dir[0]}/JSON{suffix} --mbtiles_file {mbtiles_file} &' )
-        command.append( f'json_mbtiles2insarmaps.py --num-workers {num_workers_json_mbtiles} -u {password.docker_insaruser} -p {password.docker_insarpass} --host {REMOTEHOST_INSARMAPS2} -P {password.docker_databasepass} -U {password.docker_databaseuser} --json_folder {inps.work_dir}/{inps.data_dir[0]}/JSON{suffix} --mbtiles_file {mbtiles_file} &' )
-        #command.append( f'json_mbtiles2insarmaps.py --num-workers {num_workers_json_mbtiles} -u {password.docker_insaruser} -p {password.docker_insarpass} --host {REMOTEHOST_INSARMAPS3} -P {password.docker_databasepass} -U {password.docker_databaseuser} --json_folder {inps.work_dir}/{inps.data_dir[0]}/JSON{suffix} --mbtiles_file {mbtiles_file} &' )
+    command.append(f'num_chunk_files=$(find {inps.data_dir[0]}/JSON{suffix} -maxdepth 1 -type f -name "chunk_*" | wc -l)')
+    command.append(
+    f"""if [ "$num_chunk_files" -gt "{number_of_cores_per_node}" ]; then
+     num_workers={half_number_of_cores_per_node}
+    else
+     num_workers=$num_chunk_files
+    fi"""
+    )
+    command.append("")
+
+
+    for insarmaps_host in insarmaps_hosts:
+        for file, suffix in zip(files, suffixes):
+            path_obj = Path(file[0])
+            mbtiles_file = f"{path_obj.parent}/JSON{suffix}/{path_obj.name}"
+            mbtiles_file = mbtiles_file.replace('he5','mbtiles')
+            command.append( f'json_mbtiles2insarmaps.py --num-workers $num_workers -u {password.docker_insaruser} -p {password.docker_insarpass} --host {insarmaps_host} -P {password.docker_databasepass} -U {password.docker_databaseuser} --json_folder {inps.work_dir}/{inps.data_dir[0]}/JSON{suffix} --mbtiles_file {mbtiles_file} &' )
     
     command.append('wait\n')
-    str1 = [f'cat >> insarmaps.log<<EOF']
-    str2 = [f'cat > {inps.work_dir}/{inps.data_dir[0]}/pic/insarmaps.log<<EOF']
+    str = [f'cat >> insarmaps.log<<EOF']
 
-    for file in files:
-        base_name = os.path.basename(file[0])
-        name_without_extension = os.path.splitext(base_name)[0]
-        str1.append(f"https://{REMOTEHOST_INSARMAPS1}/start/{ref_lat:.1f}/{ref_lon:.1f}/11.0?flyToDatasetCenter=true&startDataset={name_without_extension}")
-        str1.append(f"http://{REMOTEHOST_INSARMAPS2}/start/{ref_lat:.1f}/{ref_lon:.1f}/11.0?flyToDatasetCenter=true&startDataset={name_without_extension}")
-        #str1.append(f"http://{REMOTEHOST_INSARMAPS3}/start/{ref_lat:.1f}/{ref_lon:.1f}/11.0?flyToDatasetCenter=true&startDataset={name_without_extension}")
-        str2.append(f"https://{REMOTEHOST_INSARMAPS1}/start/{ref_lat:.1f}/{ref_lon:.1f}/11.0?flyToDatasetCenter=true&startDataset={name_without_extension}")
-        str2.append(f"http://{REMOTEHOST_INSARMAPS2}/start/{ref_lat:.1f}/{ref_lon:.1f}/11.0?flyToDatasetCenter=true&startDataset={name_without_extension}")
-        #str2.append(f"http://{REMOTEHOST_INSARMAPS3}/start/{ref_lat:.1f}/{ref_lon:.1f}/11.0?flyToDatasetCenter=true&startDataset={name_without_extension}")
+    for insarmaps_host in insarmaps_hosts:
+        for file in files:
+            base_name = os.path.basename(file[0])
+            name_without_extension = os.path.splitext(base_name)[0]
+            if 'insarmaps' in file:
+                http_str='https'
+            else:
+                http_str='http'
 
-    str1.append( 'EOF' ) 
-    str2.append( 'EOF' ) 
+            str.append(f"{http_str}://{insarmaps_host}/start/{ref_lat:.1f}/{ref_lon:.1f}/11.0?flyToDatasetCenter=true&startDataset={name_without_extension}")
 
-    command.append( '\n'.join(str1) )
-    command.append( '\n'.join(str2) )
-    final_command =[ '\n'.join(command) ]
+    str.append( 'EOF' ) 
+    str.append( f"cp insarmaps.log  {inps.data_dir[0]}/pic/insarmaps.log" ) 
+    command.append( '\n'.join(str) )
     
+    final_command =[ '\n'.join(command) ]    
+
     job_obj.submit_script(job_name, job_file_name, final_command, writeOnly='True')
     print('jobfile created: ',job_file_name + '.job')
 
