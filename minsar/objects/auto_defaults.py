@@ -76,12 +76,25 @@ class PathFind:
         inps_dict = template_options
 
         if 'ssaraopt.startDate' in inps_dict:
-            inps_dict['ssaraopt.startDate'] = \
-                datetime.datetime.strptime(inps_dict['ssaraopt.startDate'], '%Y%m%d').strftime('%Y-%m-%d')
+            if inps_dict['ssaraopt.startDate'] == "auto":
+                inps_dict['ssaraopt.startDate'] = '20010101'
+            # try to parse as YYYYMMDD
+            try:
+                dt = datetime.datetime.strptime(inps_dict['ssaraopt.startDate'], "%Y%m%d")
+                inps_dict['ssaraopt.startDate'] = dt.strftime("%Y-%m-%d")
+            except ValueError:
+                 raise ValueError( f"Invalid ssaraopt.startDate '{inps_dict['ssaraopt.startDate']}': must be 'YYYYMMDD' or 'auto'")
 
         if 'ssaraopt.endDate' in inps_dict:
-            inps_dict['ssaraopt.endDate'] = \
-                datetime.datetime.strptime(inps_dict['ssaraopt.endDate'], '%Y%m%d').strftime('%Y-%m-%d')
+            if inps_dict['ssaraopt.endDate'] == "auto":
+                today = datetime.date.today()
+                inps_dict['ssaraopt.endDate' ]= today.strftime("%Y%m%d")
+            # try to parse as YYYYMMDD
+            try:
+                dt = datetime.datetime.strptime(inps_dict['ssaraopt.endDate'], "%Y%m%d")
+                inps_dict['ssaraopt.endDate'] = dt.strftime("%Y-%m-%d")
+            except ValueError:
+                 raise ValueError( f"Invalid ssaraopt.startDate '{inps_dict['ssaraopt.endDate']}': must be 'YYYYMMDD' or 'auto'")
 
         return inps_dict
 
