@@ -15,7 +15,7 @@ if [[ "$(uname)" == "Linux" ]]; then
   mamba install isce2 --yes
 fi
 
-mamba install numpy pandas xarray netcdf4 packaging gmt pygmt --yes
+mamba install pandas xarray netcdf4 packaging gmt pygmt --yes
 
 ### git clone the code   #################
 git clone git@github.com:insarlab/MintPy.git tools/MintPy
