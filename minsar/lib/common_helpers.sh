@@ -1,4 +1,18 @@
-#####!/usr/bin/env bash
+###########################################
+cpus_per_node_skx_dev=48
+cpus_per_node_skx=48
+cpus_per_node_icx=80
+max_walltime_skx_dev="02:00:00"   # HH:MM:SS
+
+###########################################
+hms_to_sec() {
+  local t="$1"
+  awk -F: '{
+    if (NF==3) {print ($1*3600)+($2*60)+$3}
+    else if (NF==2) {print ($1*60)+$2}
+    else {print $1}
+  }' <<<"$t"
+}
 ###########################################
 function changequeuenormal() {
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
@@ -10,6 +24,8 @@ if [[ $PLATFORM_NAME == "frontera" ]] ; then
           sed -i "s|development|normal|g" "$@" ;
 elif [[ $PLATFORM_NAME == "stampede3" ]] ; then
           sed -i "s|skx-dev|skx|g" "$@" ;
+          sed -i "s|icx|skx|g" "$@" ;
+          sed -i "s/^#SBATCH -n \s*[0-9]\+/#SBATCH -n ${cpus_per_node_skx}/" "$f"
 fi
 }
 ###########################################
@@ -20,6 +36,7 @@ fi
 if [[ $PLATFORM_NAME == "stampede3" ]] ; then
           sed -i "s|skx-dev|icx|g" "$@" ;
           sed -i "s|skx|icx|g" "$@" ;
+          sed -i "s/^#SBATCH -n \s*[0-9]\+/#SBATCH -n ${cpus_per_node_icx}/" "$@"
 fi
 }
 ###########################################
@@ -43,18 +60,55 @@ scancel_jobs() {
 
 ###########################################
 function changequeuedev() {
-if [[ "$1" == "--help" || "$1" == "-h" ]]; then
-   echo "  Usage: changequeuedev run_10*.job"; return
-fi
-if [[ $PLATFORM_NAME == "frontera" ]] ; then
-          sed -i "s|flex|development|g" "$@" ;
-          sed -i "s|small|development|g" "$@" ;
-          sed -i "s|normal|development|g" "$@" ;
-elif [[ $PLATFORM_NAME == "stampede3" ]] ; then
-          sed -i "s|skx|skx-dev|g" "$@" ;
-fi
-sed -i "s|SBATCH -t .:..:|SBATCH -t 1:59:|g" "$@" ;
-sed -i "s|SBATCH -t ..:..:|SBATCH -t 01:59:|g" "$@" ;
+  if [[ "$1" == "--help" || "$1" == "-h" || "$#" -lt 1 ]]; then
+    echo "Usage: changequeuedev run_10*.job [more .job files]"
+    echo "  * frontera: set queue to development and ~2h walltime"
+    echo "  * stampede3: set partition to skx-dev, -n=${cpus_per_node_skx_dev},"
+    echo "               and cap walltime at ${max_walltime_skx_dev}"
+    return
+  fi
+
+  if [[ "${PLATFORM_NAME}" == "frontera" ]]; then
+
+    sed -i 's/^#SBATCH -p \s*flex/#SBATCH -p development/'   "$@"
+    sed -i 's/^#SBATCH -p \s*small/#SBATCH -p development/'  "$@"
+    sed -i 's/^#SBATCH -p \s*normal/#SBATCH -p development/' "$@"
+
+    sed -i 's/^#SBATCH -t \s*[0-9]\{1,2\}:[0-9]\{2\}:[0-9]\{2\}/#SBATCH -t 01:59:00/' "$@"
+
+  elif [[ "${PLATFORM_NAME}" == "stampede3" ]]; then
+    for f in "$@"; do
+
+      if grep -q '^#SBATCH -p icx' "$f"; then
+         sed -i 's/^#SBATCH -p \s*icx/#SBATCH -p skx-dev/' "$f"
+      elif grep -q '^#SBATCH -p skx ' "$f"; then
+         sed -i 's/^#SBATCH -p \s*skx/#SBATCH -p skx-dev/' "$f"
+      fi
+
+      sed -i "s/^#SBATCH -n \s*[0-9]\+/#SBATCH -n ${cpus_per_node_skx_dev}/" "$f"
+
+      # Cap walltime at max_walltime_skx_dev if current > max
+      if grep -q '^#SBATCH -t ' "$f"; then
+        current=$(grep '^#SBATCH -t ' "$f" | head -n1 | awk '{print $3}')
+        current_secs=$(hms_to_sec "$current")
+        max_secs=$(hms_to_sec "$max_walltime_skx_dev")
+        if (( current_secs > max_secs )); then
+          # replace only the first occurrence to be safe
+          awk -v newt="$max_walltime_skx_dev" '
+            BEGIN{done=0}
+            {
+              if (!done && $0 ~ /^#SBATCH -t /) {
+                sub(/^#SBATCH -t[ \t]+[0-9:]+/, "#SBATCH -t " newt)
+                done=1
+              }
+              print
+            }' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+        fi
+      fi
+    done
+  else
+    echo "PLATFORM_NAME='${PLATFORM_NAME}' not recognized. No changes made."
+  fi
 }
 
 ###########################################
