@@ -130,6 +130,9 @@ def main(iargs=None):
         suffixes.append("_PS")
         suffixes.append("_DS")
 
+    if not any(files):
+       raise ValueError(f"USER ERROR: no files {inps.dataset} found.")
+
     inps.num_data = 1
     job_obj = JOB_SUBMIT(inps)
 
