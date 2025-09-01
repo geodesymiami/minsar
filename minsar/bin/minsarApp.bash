@@ -574,7 +574,7 @@ if [[ $miaplpy_flag == "1" ]]; then
     run_command "create_save_hdfeos5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME --walltime 0:30"
 
     # run save_hdfeos5_radar jobfile
-    #run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 10"
+    run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 10"
 
     # create index.html with all images
     run_command "create_html.py ${network_dir}/pic"
@@ -604,6 +604,8 @@ if [[ $finishup_flag == "1" ]]; then
         miaplpy_opt="--miaplpyDir $miaplpy_dir_name"
     else
         miaplpy_opt=""
+    fi
+    run_command "summarize_job_run_times.py $template_file $copy_to_tmp $miaplpy_opt"
     ## insarmaps
     if [[ $insarmaps_flag == "1" ]]; then
         run_command "create_insarmaps_jobfile.py $network_dir --dataset $insarmaps_dataset"
