@@ -35,6 +35,9 @@ function run_command() {
     if [[ -n "$TE" ]]; then
         log_cmd="${log_cmd//$TE/\$TE}"
     fi
+    if [[ -n "$SAMPLESDIR" ]]; then
+        log_cmd="${log_cmd//$SAMPLESDIR/\$SAMPLESDIR}"
+    fi
 
     echo "Running.... $cmd"
     echo "$(date +"%Y%m%d:%H-%M") * $log_cmd" | tee -a log

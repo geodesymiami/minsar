@@ -44,13 +44,15 @@ helptext="                                                                      
    --no-orbit-download   don't download orbits prior to jobfile creation         \n\
                                                                                  \n\
    --sleep SECS           sleep seconds before running                           \n\
-   --chunks         process in form of multiple chunks.                          \n\
-   --debug
+   --chunks               process in form of multiple chunks.                    \n\
+                                                                                 \n\
+Debug options:                                                                   \n\
+   --debug           sets set -x                                                 \n\
+   --skip-mintpy     skip mintpy processing (but runs everything else)           \n\
+   --skip-miaplpy    skip miaplpy processing (but runs everything else)          \n\
                                                                                  \n\
    Coding To Do:                                                                 \n\
        - clean up run_workflow (remove smallbaseline.job insarmaps.job)          \n\
-       - move bash functions into minsarApp_functions.bash                       \n\
-       - change flags from 0/1 to False/True for reading from template file      \n\
        - create a command execution function (cmd_exec)                          \n\
        - create .minsarrc for defaults                                           \n
      "
@@ -108,6 +110,9 @@ miaplpy_flag=0
 finishup_flag=1
 
 download_method="asf-burst"
+
+skip_mintpy_flag=0
+skip_miaplpy_flag=0
 
 srun_cmd="srun -n1 -N1 -A $JOBSHEDULER_PROJECTNAME -p $QUEUENAME  -t 00:25:00 "
 ##################################
@@ -178,6 +183,14 @@ do
             debug_flag=1
             shift
             ;;
+        --skip-mintpy)
+            skip_mintpy_flag=1
+            shift
+            ;;
+        --skip-miaplpy)
+            skip_miaplpy_flag=1
+            shift
+            ;;
         --download-method)
             download_method=$2
             shift 2
@@ -196,11 +209,11 @@ if [[ ${#POSITIONAL[@]} -gt 1 ]]; then
     exit 1;
 fi
 
+create_template_array $template_file
+
 if [[ $debug_flag == "1" ]]; then
    set -x
 fi
-
-create_template_array $template_file
 
 # FA 8/2025: this should go into a function that adjusts defaults
 if [[ -v template[minsar.upload_option] && "${template[minsar.upload_option]}" == "None" ]]; then
@@ -271,21 +284,6 @@ elif [[ $startstep == "miaplpy" ]]; then
     ifgram_flag=0
     mintpy_flag=0
     miaplpy_flag=1
-elif [[ $startstep == "upload" ]]; then
-    download_flag=0
-    dem_flag=0
-    jobfiles_flag=0
-    ifgram_flag=0
-    mintpy_flag=0
-    miaplpy_flag=0
-elif [[ $startstep == "insarmaps" ]]; then
-    download_flag=0
-    dem_flag=0
-    jobfiles_flag=0
-    ifgram_flag=0
-    mintpy_flag=0
-    miaplpy_flag=0
-    upload_flag=0
 elif [[ $startstep == "finishup" ]]; then
     download_flag=0
     dem_flag=0
@@ -293,7 +291,6 @@ elif [[ $startstep == "finishup" ]]; then
     ifgram_flag=0
     mintpy_flag=0
     miaplpy_flag=0
-    upload_flag=0
     insarmaps_flag=0
 elif [[ $startstep != "" ]]; then
     echo "USER ERROR: startstep received value of "${startstep}". Exiting."
@@ -305,44 +302,27 @@ if [[ $stopstep == "download" ]]; then
     jobfiles_flag=0
     ifgram_flag=0
     mintpy_flag=0
-    minooy_flag=0
-    upload_flag=0
-    insarmaps_flag=0
+    miaplpy_flag=0
     finishup_flag=0
 elif [[ $stopstep == "dem" ]]; then
     jobfiles_flag=0
     ifgram_flag=0
     mintpy_flag=0
     miaplpy_flag=0
-    upload_flag=0
-    insarmaps_flag=0
     finishup_flag=0
 elif [[ $stopstep == "jobfiles" ]]; then
     ifgram_flag=0
     mintpy_flag=0
     miaplpy_flag=0
-    upload_flag=0
-    insarmaps_flag=0
     finishup_flag=0
 elif [[ $stopstep == "ifgram" ]]; then
     mintpy_flag=0
     miaplpy_flag=0
-    upload_flag=0
-    insarmaps_flag=0
     finishup_flag=0
 elif [[ $stopstep == "mintpy" ]]; then
     miaplpy_flag=0
-    upload_flag=0
-    insarmaps_flag=0
     finishup_flag=0
 elif [[ $stopstep == "miaplpy" ]]; then
-    upload_flag=0
-    insarmaps_flag=0
-    finishup_flag=0
-elif [[ $stopstep == "upload" ]]; then
-    insarmaps_flag=0
-    finishup_flag=0
-elif [[ $stopstep == "insarmaps" ]]; then
     finishup_flag=0
 elif [[ $stopstep != "" ]]; then
     echo "stopstep received value of "${stopstep}". Exiting."
@@ -359,7 +339,7 @@ echo "Flags for processing steps:"
 echo "download dem jobfiles ifgram mintpy miaplpy upload insarmaps finishup"
 echo "    $download_flag     $dem_flag      $jobfiles_flag       $ifgram_flag       $mintpy_flag      $miaplpy_flag      $upload_flag       $insarmaps_flag        $finishup_flag"
 
-sleep 2
+sleep 3
 
 #############################################################
 
@@ -527,16 +507,14 @@ fi
 ########################
 if [[ $mintpy_flag == "1" ]]; then
 
-    # run MintPy
-    run_command "run_workflow.bash $template_file --append --dostep mintpy"
+    if [[ $skip_mintpy_flag != "1" ]]; then
+        # run MintPy
+        run_command "run_workflow.bash $template_file --append --dostep mintpy"
+    fi
 
     # summarize profiling logs
     if [[ $PROFILE_FLAG == "True" ]]; then
         run_command "summarize_resource_usage.py $template_file run_files --outdir mintpy/pic"
-    fi
-    # upload mintpy directory
-    if [[ $upload_flag == "1" ]]; then
-        run_command "upload_data_products.py mintpy ${template[minsar.upload_option]}"
     fi
 
     ## insarmaps
@@ -546,6 +524,12 @@ if [[ $mintpy_flag == "1" ]]; then
         insarmaps_jobfile=$(ls -t insar*job | head -n 1)
         run_command "run_workflow.bash $template_file --jobfile $PWD/$insarmaps_jobfile"
     fi
+
+    # upload mintpy directory
+    if [[ $upload_flag == "1" ]]; then
+        run_command "upload_data_products.py mintpy ${template[minsar.upload_option]}"
+    fi
+
 fi
 
 ########################
@@ -563,17 +547,17 @@ if [[ $miaplpy_flag == "1" ]]; then
     network_type=$(get_network_type)
     network_dir=${miaplpy_dir_name}/network_${network_type}
 
-    # create miaplpy jobfiles and remove existing slcStack.h5  (FA 8/25: we may want to remove entire miaplpy folder)
-    rm -f ${miaplpy_dir_name}/inputs/slcStack.h5 ${miaplpy_dir_name}/inputs/geometryRadar.h5
-    run_command "$srun_cmd miaplpyApp.py $template_file --dir $miaplpy_dir_name --jobfiles --queue $QUEUENAME"
+    if [[ $skip_miaplpy_flag != "1" ]]; then
+       # create miaplpy jobfiles and remove existing slcStack.h5  (FA 8/25: we may want to remove entire miaplpy folder)
+       rm -f ${miaplpy_dir_name}/inputs/slcStack.h5 ${miaplpy_dir_name}/inputs/geometryRadar.h5
+       run_command "$srun_cmd miaplpyApp.py $template_file --dir $miaplpy_dir_name --jobfiles --queue $QUEUENAME"
 
-    # run miaplpy jobfiles ( after create_save_hdfeos5_jobfile.py to include run_10_save_hdfeos5_radar_0.job )
-    run_command "run_workflow.bash $template_file --append --dostep miaplpy --dir $miaplpy_dir_name"
+       # run miaplpy jobfiles
+       run_command "run_workflow.bash $template_file --append --dostep miaplpy --dir $miaplpy_dir_name"
+    fi
 
-    # create save_hdf5 jobfile
+    # create and run save_hdf5 jobfile
     run_command "create_save_hdfeos5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME --walltime 0:30"
-
-    # run save_hdfeos5_radar jobfile
     run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 10"
 
     # create index.html with all images
@@ -606,28 +590,6 @@ if [[ $finishup_flag == "1" ]]; then
         miaplpy_opt=""
     fi
     run_command "summarize_job_run_times.py $template_file $copy_to_tmp $miaplpy_opt"
-    ## insarmaps
-    if [[ $insarmaps_flag == "1" ]]; then
-        run_command "create_insarmaps_jobfile.py $network_dir --dataset $insarmaps_dataset"
-
-        # run jobfile
-        insarmaps_jobfile=$(ls -t insar*job | head -n 1)
-        run_command "run_workflow.bash $template_file --jobfile $PWD/$insarmaps_jobfile"
-
-    fi
-
-    # upload data products
-    run_command "upload_data_products.py $network_dir ${template[minsar.upload_option]}"
-
-fi
-
-if [[ $finishup_flag == "1" ]]; then
-    if [[ $miaplpy_flag == "1" ]]; then
-        miaplpy_opt="--miaplpyDir $miaplpy_dir_name"
-    else
-        miaplpy_opt=""
-    fi
-    run_command "summarize_job_run_times.py $template_file $miaplpy_opt"
 fi
 
 echo
