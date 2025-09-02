@@ -1,7 +1,8 @@
 georaster           # for view_scatterplot
 bypy                # Baidu cloud interface
-burst2safe          # SAR utility
-asf_search          # ASF API
-fuzzywuzzy          # string matching — consider switching to 'thefuzz'
-jupyter-ai          # experimental AI integration
-geocoder            # geolocation API client
+burst2safe          # minsar 
+asf_search          # minsar ASF API
+fuzzywuzzy          # string matching 
+jupyter-ai          # 
+geocoder            # insarmaps_sccripts
+requests>=2.20.0    # sardem
