@@ -9,7 +9,7 @@ source setup/environment.bash;
 
 mamba --verbose env create -f minsar_env.yml --yes
 source tools/miniforge3/etc/profile.d/conda.sh
-mamba activate minsar
+conda activate minsar
 pip install pip_requirements.txt
 
 
@@ -33,7 +33,6 @@ git clone git@github.com:scottstanie/sardem tools/sardem
 
 pip install -e tools/MintPy
 pip install -e tools/MiaplPy
-pip install -r tools/sardem/requirements.txt
 pip install -e tools/sardem
 
 ###  Reduce miniforge3 directory size #################
