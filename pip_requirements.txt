@@ -1,0 +1,7 @@
+georaster           # for view_scatterplot
+bypy                # Baidu cloud interface
+burst2safe          # SAR utility
+asf_search          # ASF API
+fuzzywuzzy          # string matching — consider switching to 'thefuzz'
+jupyter-ai          # experimental AI integration
+geocoder            # geolocation API client
