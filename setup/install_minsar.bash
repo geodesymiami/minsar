@@ -1,18 +1,6 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-### Source the environment  #################
-export MINSAR_HOME=$PWD
-
-source setup/platforms_defaults.bash;
-source setup/environment.bash;
-
-mamba --verbose env create python=3.10 -f minsar_env.yml --yes
-source tools/miniforge3/etc/profile.d/conda.sh
-conda activate minsar
-pip install pip_requirements.txt
-
-
 ### git clone the code   #################
 git clone git@github.com:insarlab/MintPy.git tools/MintPy
 git clone git@github.com:insarlab/MiaplPy.git tools/MiaplPy
@@ -30,6 +18,17 @@ git clone git@github.com:geodesymiami/precip_web tools/Precip_web
 git clone git@github.com:geodesymiami/precip_cron tools/Precip_cron
 git clone git@github.com:scottstanie/sardem tools/sardem
 #git clone git@github.com:geodesymiami/SourceInversion.git tools/SourceInversion
+
+### Source the environment variables  #################
+export MINSAR_HOME=$PWD
+source setup/platforms_defaults.bash;
+source setup/environment.bash;
+
+### Install code into minsar environment  #################
+mamba --verbose env create python=3.10 -f minsar_env.yml --yes
+source tools/miniforge3/etc/profile.d/conda.sh
+conda activate minsar
+pip install -r pip_requirements.txt
 
 pip install -e tools/MintPy
 pip install -e tools/MiaplPy
@@ -76,5 +75,5 @@ mkdir -p $SENTINEL_ORBITS $SENTINEL_AUX
 ls -d $SENTINEL_ORBITS $SENTINEL_AUX
 
 echo ""
-echo "Installation of install_code.bash DONE"
+echo "Installation of install_minsar.bash DONE"
 echo ""
