@@ -19,11 +19,10 @@ cd $WORK2/code
 ```
 * Create a bash virgin environmen, clone the repo and install the code (including miniforge3 python). Work as user circleci. On stampede3 on the development queue (`idevdev`):
 ```
-env -i HOME=$HOME PATH=/usr/bin:/bin:/sbin SHELL=/bin/bash SCRATCH=$SCRATCH USER=circleci bash --noprofile --norc
-set -eo pipefail
-export USER=circleci
 git clone git@github.com:geodesymiami/minsar.git ;
 cd minsar
+env -i HOME=$HOME PATH=/usr/bin:/bin:/sbin SHELL=/bin/bash SCRATCH=$SCRATCH USER=circleci bash --noprofile --norc
+set -eo pipefail
 ./setup/install_python.bash
 ./setup/install_code.bash
 ./setup/install_credential_files.bash
