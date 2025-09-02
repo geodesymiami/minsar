@@ -7,7 +7,7 @@ export MINSAR_HOME=$PWD
 source setup/platforms_defaults.bash;
 source setup/environment.bash;
 
-mamba --verbose env create -f minsar_env.yml --yes
+mamba --verbose env create python=3.10 -f minsar_env.yml --yes
 source tools/miniforge3/etc/profile.d/conda.sh
 conda activate minsar
 pip install pip_requirements.txt
