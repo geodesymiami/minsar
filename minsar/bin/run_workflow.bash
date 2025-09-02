@@ -376,12 +376,18 @@ echo "Started at: $(date +"%Y-%m-%d %H:%M:%S")"
 
 # 5/2024 hack to be able to run one jobfile
 if [[ $jobfile_flag == "true" ]]; then
-     globlist=("$jobfile")
-     #globlist=$jobfiles
-    if [[ ${globlist[0]} != *job ]]; then
-       globlist[0]="${globlist[0]}*.job"
+    if [[ -n $jobfile ]]; then
+        globlist=("$jobfile")
+        # if it’s not already a *.job file, append the pattern
+        if [[ ${globlist[0]} != *job ]]; then
+            globlist[0]="${globlist[0]}*.job"
+        fi
+        echo "--jobfile hack applies: replaced full list by jobfile $jobfile"
+    else
+        # explicitly empty array if jobfile is unset/empty
+        globlist=()
+        echo "--jobfile flag true but no jobfile provided → globlist is empty"
     fi
-     echo "--jobfile hack applies: replaced full list by jobfile $jobfile"
 fi
 
 #globlist=("${globlist[@]/%/}") # Remove potential trailing spaces
