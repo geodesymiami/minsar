@@ -24,7 +24,7 @@ cd minsar
 env -i HOME=$HOME PATH=/usr/bin:/bin:/sbin SHELL=/bin/bash SCRATCH=$SCRATCH USER=circleci bash --noprofile --norc
 set -eo pipefail
 ./setup/install_python.bash
-./setup/install_code.bash
+./setup/install_minsar.bash
 ./setup/install_credential_files.bash
 ./setup/install_sarvey.bash
 ./setup/install_vsm.bash
