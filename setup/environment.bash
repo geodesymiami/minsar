@@ -111,7 +111,6 @@ export PATH=${PATH}:${MINTPY_HOME}/src/mintpy/legacy         # for add_attribute
 export PATH=${PATH}:${MIAPLPY_HOME}/src/miaplpy
 export PATH=${PATH}:${PLOTDATA_HOME}/src/plotdata/cli
 export PATH=${PATH}:${PRECIP_HOME}/src/precip/cli
-export PATH=${PATH}:${PRECIP_CRON_HOME}
 export PATH=${PATH}:${MIMTPY_HOME}/mimtpy
 export PATH=${PATH}:${SARVEY_HOME}/sarvey
 export PATH=${PATH}:${MINSAR_HOME}/tools/snaphu-v2.0.5/bin
