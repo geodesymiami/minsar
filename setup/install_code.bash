@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -eox pipefail
+set -eo pipefail
 
 ### Source the environment  #################
 export MINSAR_HOME=$PWD
@@ -7,15 +7,11 @@ export MINSAR_HOME=$PWD
 source setup/platforms_defaults.bash;
 source setup/environment.bash;
 
-### Install basic code and c-dependencies (isce fails on Mac) ###
-mamba install python=3.10 wget git tree "numpy<2.0" --yes
-pip install bypy
+mamba --verbose env create -f minsar_env.yml --yes
+source tools/miniforge3/etc/profile.d/conda.sh
+mamba activate minsar
+pip install pip_requirements.txt
 
-if [[ "$(uname)" == "Linux" ]]; then
-  mamba install isce2 --yes
-fi
-
-mamba install pandas xarray netcdf4 packaging gmt pygmt --yes
 
 ### git clone the code   #################
 git clone git@github.com:insarlab/MintPy.git tools/MintPy
@@ -33,26 +29,12 @@ git clone git@github.com:geodesymiami/precip tools/Precip
 git clone git@github.com:geodesymiami/precip_web tools/Precip_web
 git clone git@github.com:geodesymiami/precip_cron tools/Precip_cron
 git clone git@github.com:scottstanie/sardem tools/sardem
-git clone git@github.com:falkamelung/MintPy.git tools/MintPy_falk
 #git clone git@github.com:geodesymiami/SourceInversion.git tools/SourceInversion
 
-### Install python code and dependencies  ########
-pip install -r tools/MintPy/requirements.txt
 pip install -e tools/MintPy
 pip install -e tools/MiaplPy
-pip install -r minsar/pip_requirements.txt
-pip install -r tools/PlotData/requirements.txt
-pip install -r tools/Precip/requirements.txt
 pip install -r tools/sardem/requirements.txt
 pip install -e tools/sardem
-
-[[ -d tools/insarmaps_scripts ]] || \
-  git clone git@github.com:geodesymiami/insarmaps_scripts.git tools/insarmaps_scripts
-# FA 6/2025: Installing using requirements did not work. json_2_hdf raised weried error
-# mamba install --file minsar/conda_requirements.txt --yes -c conda-forge
-# mamba install --file tools/insarmaps_scripts/conda_requirements.txt --yes -c conda-forge
-mamba install tippecanoe --yes -c conda-forge
-pip install psycopg2 pycurl geocoder
 
 ###  Reduce miniforge3 directory size #################
 rm -rf tools/miniforge3/pkgs
