@@ -75,5 +75,5 @@ mkdir -p $SENTINEL_ORBITS $SENTINEL_AUX
 ls -d $SENTINEL_ORBITS $SENTINEL_AUX
 
 echo ""
-echo "Installation of install_minsar.bash DONE"
+echo "Running of install_minsar.bash DONE"
 echo ""
