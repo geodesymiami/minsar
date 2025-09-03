@@ -25,7 +25,7 @@ source setup/platforms_defaults.bash;
 source setup/environment.bash;
 
 ### Install code into minsar environment  #################
-mamba --verbose env create python=3.10 -f minsar_env.yml --yes
+mamba --verbose env create -f minsar_env.yml --yes
 source tools/miniforge3/etc/profile.d/conda.sh
 conda activate minsar
 pip install -r pip_requirements.txt
