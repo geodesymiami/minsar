@@ -23,14 +23,15 @@ git clone git@github.com:scottstanie/sardem tools/sardem
 export MINSAR_HOME=$PWD
 source setup/platforms_defaults.bash;
 source setup/environment.bash;
-# Patch CircleCI env
-export ADDR2LINE=addr2line
 
 ### Install code into minsar environment  #################
 if [[ "$(uname)" == "Darwin" ]]; then sed -i '' '/isce/ s/^/# /' minsar_env.yml; else sed -i '/isce/ s/^/# /' minsar_env.yml; fi
 
 mamba --verbose env create -f minsar_env.yml --yes
 source tools/miniforge3/etc/profile.d/conda.sh
+
+# Patch CircleCI env
+export ADDR2LINE=addr2line
 conda activate minsar
 
 pip install -e tools/MintPy
