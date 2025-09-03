@@ -58,7 +58,7 @@ cp minsar/additions/miaplpy/utils.py tools/MiaplPy/src/miaplpy/objects
 
 ### Adding ISCE fixes and copying checked-out ISCE version (the latest) into miniforge directory ###
 if [[ "$(uname)" == "Linux" ]]; then
-cp -p minsar/additions/isce/logging.conf tools/miniforge3/envs/minsar/lib/python3.??/site-packages/isce/defaults/logging/logging.conf
+cp -p minsar/additions/isce/logging.conf tools/miniforge3/envs/minsar/lib/python3.10/site-packages/isce/defaults/logging
 cp -p minsar/additions/isce2/topsStack/FilterAndCoherence.py tools/isce2/contrib/stack/topsStack
 cp -p minsar/additions/isce2/stripmapStack/prepRawCSK.py tools/isce2/contrib/stack/stripmapStack
 cp -p minsar/additions/isce2/stripmapStack/unpackFrame_TSX.py tools/isce2/contrib/stack/stripmapStack
