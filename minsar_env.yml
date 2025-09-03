@@ -1,7 +1,6 @@
 name: minsar
 channels:
   - conda-forge
-  - defaults
 dependencies:
   - python=3.10
 #   - isce2     # [linux]
@@ -13,7 +12,6 @@ dependencies:
   - xarray
   - netcdf4
   - packaging
-  - binutils <2.40  # before activate.d was introduced
 # Mintpy
   - cartopy
   - cvxopt
