@@ -25,6 +25,8 @@ source setup/platforms_defaults.bash;
 source setup/environment.bash;
 
 ### Install code into minsar environment  #################
+if [[ "$(uname)" == "Darwin" ]]; then sed -i '' '/isce/ s/^/# /' minsar_env.yml; else sed -i '/isce/ s/^/# /' minsar_env.yml; fi
+
 mamba --verbose env create -f minsar_env.yml --yes
 source tools/miniforge3/etc/profile.d/conda.sh
 conda activate minsar
