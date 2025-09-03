@@ -4,51 +4,69 @@ channels:
   - defaults
 dependencies:
   - python=3.10
-  - pip
-  - isce2
+  - isce2     # [linux]
   - gdal
   - mintpy
-  - wget
-  - git
-  - tree
-  - "numpy<2.0"
+  - sardem
+  - numpy<2.0
   - pandas
   - xarray
   - netcdf4
   - packaging
+# Mintpy
+  - cartopy
+  - cvxopt
+  - dask>=1.0
+  - dask-jobqueue>=0.3
+  - h5py
+  - lxml
+  - matplotlib
+  - pyaps3>=0.3
+  - pykml>=0.2
+  - pyproj
+  - pyresample
+  - pysolid
+  - scikit-image
+  - scipy
+# Miaplpy
+  - c-compiler
+  - cython
+  - rasterio
+  - setuptools
+  - pulp
+  - opencv
+  - scikit-learn
+  - defusedxml
+  - simplekml
+# tools
+  - wget
+  - git
+  - tree
+# minsar
+  - jupyter
+  - natsort
+  - pdf2image  # create_html
+  - folium
+  - contextily
+# PlotData
   - gmt
   - pygmt
+  - geopandas
+# insarmaps_scripts
   - tippecanoe
   - libpq
   - postgresql
   - psycopg2
-  - cartopy
-  - cvxopt
-  - rasterio
-  - dask>=1.0
-  - dask-jobqueue>=0.3
-  - defusedxml
-  - h5py
-  - lxml
-  - matplotlib
-  - pyproj
-  - scikit-image
-  - scipy
-  - cython
-  - setuptools
-  - pulp
-  - pyaps3>=0.3
-  - pykml>=0.2
-  - pyresample
-  - pysolid
-  - opencv
-  - jupyter
-  - natsort
-  - contextily
-  - pdf2image
-  - folium
-  - scikit-learn
-  - simplekml
-  - geopandas
-  - paramiko
   - pycurl
+# Precip
+  - paramiko
+# Pip
+  - pip:
+      - georaster           # view_scatterplot
+      - bypy                # Baidu cloud interface
+      - burst2safe          # minsar
+      - asf_search          # minsar 
+      - fuzzywuzzy          # Precip 
+      - jupyter-ai          #
+      - geocoder            # insarmaps_sccripts
+#      - requests>=2.20.0    # sardem

@@ -28,7 +28,6 @@ source setup/environment.bash;
 mamba --verbose env create -f minsar_env.yml --yes
 source tools/miniforge3/etc/profile.d/conda.sh
 conda activate minsar
-pip install -r pip_requirements.txt
 
 pip install -e tools/MintPy
 pip install -e tools/MiaplPy
