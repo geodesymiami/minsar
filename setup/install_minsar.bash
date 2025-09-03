@@ -30,10 +30,6 @@ if [[ "$(uname)" == "Darwin" ]]; then sed -i '' '/isce/ s/^/# /' minsar_env.yml;
 mamba --verbose env create -f minsar_env.yml --yes
 source tools/miniforge3/etc/profile.d/conda.sh
 
-
-export ADDR2LINE=addr2line; export AR=ar; export CXXFILT=c++filt; export NM=nm; export OBJCOPY=objcopy; export OBJDUMP=objdump;
-export RANLIB=ranlib; export READELF=readelf; export SIZE=size; export STRINGS=strings; export STRIP=strip;
-
 conda activate minsar
 
 pip install -e tools/MintPy
