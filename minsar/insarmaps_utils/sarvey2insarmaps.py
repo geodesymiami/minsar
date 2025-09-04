@@ -627,11 +627,10 @@ def main():
         with open('insarmaps.log', 'a') as f:
             f.write(url + "\n")
         if os.path.isdir(f"{output_path}/pic"):
-           open(f"{output_path}/pic/insarmaps.log", 'a').write(url + "\n")
-
+            open(f"{output_path}/pic/insarmaps.log", 'a').write(url + "\n")
+        
         # Step 7: create pic/index.html
-        run_command(["create_html.py",f"{output_path}/pic"])
-
+        run_command(["create_html.py", f"{output_path}/pic"])
 
         # Step 8: upload to jetstream
         if inps.upload_flag:
