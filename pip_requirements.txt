@@ -1,0 +1,8 @@
+georaster           # for view_scatterplot
+bypy                # Baidu cloud interface
+burst2safe          # minsar 
+asf_search          # minsar ASF API
+fuzzywuzzy          # string matching 
+jupyter-ai          # 
+geocoder            # insarmaps_sccripts
+requests>=2.20.0    # sardem

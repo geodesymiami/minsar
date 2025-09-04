@@ -23,6 +23,7 @@ export WORKDIR="${WORKDIR:-$SCRATCHDIR}"
 export USER_PREFERRED="${USER_PREFERRED:-$USER}"
 export NOTIFICATIONEMAIL="${NOTIFICATIONEMAIL:-${USER_PREFERRED}@rsmas.miami.edu}"
 export JOBSCHEDULER_PROJECTNAME="${JOBSCHEDULER_PROJECTNAME:-insarlab}"
+export INSARMAPSHOST="${INSARMAPSHOST:-insarmaps.miami.edu}"
 
 export SENTINEL_ORBITS="${SENTINEL_ORBITS:-$WORKDIR/S1orbits}"
 export SENTINEL_AUX="${SENTINEL_AUX:-$WORKDIR/S1aux}"
@@ -32,16 +33,22 @@ export PRECIPPRODUCTS_DIR="${PRECIPPRODUCTS_DIR:-$SCRATCHDIR/precip_products}"
 export TESTDATA_ISCE="${TESTDATA_ISCE:-$WORKDIR/TESTDATA_ISCE}"
 
 ############ FOR PROCESSING  #########
-python_version=$(echo "python3.$(${MINSAR_HOME}/tools/miniforge3/bin/python --version | cut -d. -f2)")        # e.g. python3.10
+if [[ -x "${MINSAR_HOME}/tools/miniforge3/envs/minsar/bin/python" ]]; then
+    minor_version=$(${MINSAR_HOME}/tools/miniforge3/envs/minsar/bin/python --version | cut -d. -f2)
+    python_version="python3.${minor_version}"
+else
+    python_version="python3.10"
+fi
+
 export SSARAHOME=${MINSAR_HOME}/tools/SSARA
-export ISCE_HOME=${MINSAR_HOME}/tools/miniforge3/lib/$python_version/site-packages/isce
-export ISCE_STACK=${MINSAR_HOME}/tools/miniforge3/share/isce2
+export ISCE_HOME=${MINSAR_HOME}/tools/miniforge3/envs/minsar/lib/$python_version/site-packages/isce
+export ISCE_STACK=${MINSAR_HOME}/tools/miniforge3/envs/minsar/share/isce2
 export MINTPY_HOME=${MINSAR_HOME}/tools/MintPy
 export MIAPLPY_HOME=${MINSAR_HOME}/tools/MiaplPy
 export MIMTPY_HOME=${MINSAR_HOME}/tools/MimtPy
 export PLOTDATA_HOME=${MINSAR_HOME}/tools/PlotData
 export PRECIP_HOME=${MINSAR_HOME}/tools/Precip
-export PRECIP_CRON_HOME=${MINSAR_HOME}/tools/Precip_cron
+export PRECIP_WEB_HOME=${MINSAR_HOME}/tools/Precip_web/precip_web
 export SARVEY_HOME=${MINSAR_HOME}/tools/sarvey
 export VSM_HOME=${MINSAR_HOME}/tools/VSM
 export GBIS_HOME=${MINSAR_HOME}/tools/GBIS
@@ -105,11 +112,11 @@ export PATH=${PATH}:${MINSAR_HOME}/minsar/src/minsar/cli
 export PATH=${PATH}:${MINSAR_HOME}/minsar
 export PATH=${PATH}:${MINSAR_HOME}/minsar/insarmaps_utils
 export PATH=${PATH}:${MINSAR_HOME}/minsar/utils
+export PATH=${PATH}:${MINSAR_HOME}/minsar/scripts
 export PATH=${PATH}:${MINTPY_HOME}/src/mintpy/legacy         # for add_attribute.py
 export PATH=${PATH}:${MIAPLPY_HOME}/src/miaplpy
 export PATH=${PATH}:${PLOTDATA_HOME}/src/plotdata/cli
 export PATH=${PATH}:${PRECIP_HOME}/src/precip/cli
-export PATH=${PATH}:${PRECIP_CRON_HOME}
 export PATH=${PATH}:${MIMTPY_HOME}/mimtpy
 export PATH=${PATH}:${SARVEY_HOME}/sarvey
 export PATH=${PATH}:${MINSAR_HOME}/tools/snaphu-v2.0.5/bin

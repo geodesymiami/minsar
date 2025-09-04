@@ -124,7 +124,7 @@ elif [[ $template_file_dir == $SAMPLESDIR ]]; then
 else
     template_print_name="$template_file"
 fi
-echo "$(date +"%Y%m%d:%H-%M") * run_workflow.bash $template_print_name ${@:2}" >> "${WORKDIR}"/log
+echo "$(date +"%Y%m%d:%H-%M") + run_workflow.bash $template_print_name ${@:2}" >> "${WORKDIR}"/log
 
 jobfile_flag=0
 jobfiles=()
@@ -197,7 +197,7 @@ fi
 #    echo "Processing job file: $jobfile"
 #done
 echo "job from --jobfile: <${jobfile}>"
-sleep 3
+sleep 1
 
 # set startstep, stopstep if miaplpy options are given
 echo "startstep, stopstep:<$startstep> <$stopstep>"
@@ -359,6 +359,14 @@ for (( i=$startstep; i<=$stopstep; i++ )) do
     globlist+=("$fname")
 done
 
+# FA 9/2025: The above inserted empty elements wich are removed below. I think we can remove all reference to samllbaseline and insarmaos, i.e. remove the liens above
+tmp=()
+for g in "${globlist[@]}"; do
+    [[ -n $g ]] && tmp+=("$g")
+done
+globlist=("${tmp[@]}")
+echo "globlist length: "${#globlist[@]}""
+
 # If joblist contains run_0* files remove smallbaseline_wrapper.job and insarmaps.job 
 # 5/24 FA removing smallbaseline_wrapper.job and insarmaps.job above did not work
 if [[ "${globlist[*]}" == *"run_"* ]]; then
@@ -376,12 +384,18 @@ echo "Started at: $(date +"%Y-%m-%d %H:%M:%S")"
 
 # 5/2024 hack to be able to run one jobfile
 if [[ $jobfile_flag == "true" ]]; then
-     globlist=("$jobfile")
-     #globlist=$jobfiles
-    if [[ ${globlist[0]} != *job ]]; then
-       globlist[0]="${globlist[0]}*.job"
+    if [[ -n $jobfile ]]; then
+        globlist=("$jobfile")
+        # if it’s not already a *.job file, append the pattern
+        if [[ ${globlist[0]} != *job ]]; then
+            globlist[0]="${globlist[0]}*.job"
+        fi
+        echo "--jobfile hack applies: replaced full list by jobfile $jobfile"
+    else
+        # explicitly empty array if jobfile is unset/empty
+        globlist=()
+        echo "--jobfile flag true but no jobfile provided → globlist is empty"
     fi
-     echo "--jobfile hack applies: replaced full list by jobfile $jobfile"
 fi
 
 #globlist=("${globlist[@]/%/}") # Remove potential trailing spaces
@@ -394,9 +408,6 @@ for g in "${globlist[@]}"; do
     if [[ -n $g ]]; then
         files=($(ls -1v $g))
     fi
-    ##echo "QQ globlist: <${globlist[@]}>"
-    #echo "QQ globlist element: <$g>"
-    #echo "QQ files: <$files>"
 
     if $randomorder; then
         files=( $(echo "${files[@]}" | sed -r 's/(.[^;]*;)/ \1 /g' | tr " " "\n" | shuf | tr -d " " ) )
@@ -407,7 +418,6 @@ for g in "${globlist[@]}"; do
 
     jobnumbers=()
     file_pattern=$(echo "${files[0]}" | grep -oP "(.*)(?=_\d{1,}.job)|insarmaps|smallbaseline_wrapper")
-    #echo "QQ files[0], file_pattern: <${files[0]}> <$file_pattern>"
     
     sbc_command="submit_jobs.bash $file_pattern"
     
@@ -431,7 +441,6 @@ for g in "${globlist[@]}"; do
     echo "$sbc_command"
 
     jns=$($sbc_command)
-
     exit_status="$?"
     if [[ $exit_status -eq 0 ]]; then
         jobnumbers=($jns)

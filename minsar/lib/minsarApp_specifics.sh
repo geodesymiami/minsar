@@ -25,9 +25,22 @@ done
 
 ###########################################
 function run_command() {
-    local cmd="$1"
+    local cmd="$*"
+
+    # Replace long paths with shorter variable references for logging
+    local log_cmd="$cmd"
+    if [[ -n "$SCRATCHDIR" ]]; then
+        log_cmd="${log_cmd//$SCRATCHDIR/\$SCRATCHDIR}"
+    fi
+    if [[ -n "$TE" ]]; then
+        log_cmd="${log_cmd//$TE/\$TE}"
+    fi
+    if [[ -n "$SAMPLESDIR" ]]; then
+        log_cmd="${log_cmd//$SAMPLESDIR/\$SAMPLESDIR}"
+    fi
+
     echo "Running.... $cmd"
-    echo "$(date +"%Y%m%d:%H-%M") * $cmd" | tee -a log
+    echo "$(date +"%Y%m%d:%H-%M") * $log_cmd" | tee -a log
     eval "$cmd"
     local exit_status="$?"
     if [[ $exit_status -ne 0 ]]; then

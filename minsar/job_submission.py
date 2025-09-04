@@ -1235,7 +1235,7 @@ class JOB_SUBMIT:
                 date_string = putils.extract_date_string_from_config_file_name(config_file)
 
                 prepend_str=''
-                if os.getenv('PROFILE_FLAG', '0') in ['1', 'True']:
+                if os.getenv('PROFILE_FLAG', '0') in ['1', 'True'] and not 'wait' in line:
                     prepend_str = f"/usr/bin/time -v -o {os.path.abspath(batch_file)}_{date_string}_$LAUNCHER_JID.time_log "
                 tasks_with_output.append("{}{} > {} 2>{}\n".format(prepend_str, line.split('\n')[0],
                                                                  os.path.abspath(batch_file) + '_' + date_string + '_$LAUNCHER_JID.o',

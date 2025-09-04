@@ -1,21 +1,5 @@
 #!/usr/bin/env bash
-set -eox pipefail
-
-### Source the environment  #################
-export MINSAR_HOME=$PWD
-
-source setup/platforms_defaults.bash;
-source setup/environment.bash;
-
-### Install basic code and c-dependencies (isce fails on Mac) ###
-mamba install python=3.10 wget git tree numpy --yes
-pip install bypy
-
-if [[ "$(uname)" == "Linux" ]]; then
-  mamba install isce2 --yes
-fi
-
-mamba install numpy pandas xarray netcdf4 packaging gmt pygmt --yes
+set -eo pipefail
 
 ### git clone the code   #################
 git clone git@github.com:insarlab/MintPy.git tools/MintPy
@@ -33,26 +17,25 @@ git clone git@github.com:geodesymiami/precip tools/Precip
 git clone git@github.com:geodesymiami/precip_web tools/Precip_web
 git clone git@github.com:geodesymiami/precip_cron tools/Precip_cron
 git clone git@github.com:scottstanie/sardem tools/sardem
-git clone git@github.com:falkamelung/MintPy.git tools/MintPy_falk
 #git clone git@github.com:geodesymiami/SourceInversion.git tools/SourceInversion
 
-### Install python code and dependencies  ########
-pip install -r tools/MintPy/requirements.txt
+### Source the environment variables  #################
+export MINSAR_HOME=$PWD
+source setup/platforms_defaults.bash;
+source setup/environment.bash;
+
+### Install code into minsar environment  #################
+if [[ "$(uname)" == "Darwin" ]]; then sed -i '' '/isce/ s/^/# /' minsar_env.yml; else sed -i '/isce/ s/^/# /' minsar_env.yml; fi
+
+mamba --verbose env create -f minsar_env.yml --yes
+source tools/miniforge3/etc/profile.d/conda.sh
+
+set +u
+conda activate minsar
+
 pip install -e tools/MintPy
 pip install -e tools/MiaplPy
-pip install -r minsar/pip_requirements.txt
-pip install -r tools/PlotData/requirements.txt
-pip install -r tools/Precip/requirements.txt
-pip install -r tools/sardem/requirements.txt
 pip install -e tools/sardem
-
-[[ -d tools/insarmaps_scripts ]] || \
-  git clone git@github.com:geodesymiami/insarmaps_scripts.git tools/insarmaps_scripts
-# FA 6/2025: Installing using requirements did not work. json_2_hdf raised weried error
-# mamba install --file minsar/conda_requirements.txt --yes -c conda-forge
-# mamba install --file tools/insarmaps_scripts/conda_requirements.txt --yes -c conda-forge
-mamba install tippecanoe --yes -c conda-forge
-pip install psycopg2 pycurl geocoder
 
 ###  Reduce miniforge3 directory size #################
 rm -rf tools/miniforge3/pkgs
@@ -75,7 +58,7 @@ cp minsar/additions/miaplpy/utils.py tools/MiaplPy/src/miaplpy/objects
 
 ### Adding ISCE fixes and copying checked-out ISCE version (the latest) into miniforge directory ###
 if [[ "$(uname)" == "Linux" ]]; then
-cp -p minsar/additions/isce/logging.conf tools/miniforge3/lib/python3.?/site-packages/isce/defaults/logging/logging.conf
+cp -p minsar/additions/isce/logging.conf tools/miniforge3/envs/minsar/lib/python3.10/site-packages/isce/defaults/logging
 cp -p minsar/additions/isce2/topsStack/FilterAndCoherence.py tools/isce2/contrib/stack/topsStack
 cp -p minsar/additions/isce2/stripmapStack/prepRawCSK.py tools/isce2/contrib/stack/stripmapStack
 cp -p minsar/additions/isce2/stripmapStack/unpackFrame_TSX.py tools/isce2/contrib/stack/stripmapStack
@@ -83,10 +66,10 @@ cp -p minsar/additions/isce2/DemStitcher.py tools/isce2/contrib/demUtils/demstit
 cp -p minsar/additions/isce2/Sentinel1.py tools/isce2/components/isceobj/Sensor/TOPS
 
 ### Copying ISCE fixes into miniforge directory ###
-cp -r tools/isce2/contrib/stack/* tools/miniforge3/share/isce2
-cp -r tools/isce2/components/isceobj/Sensor/TOPS tools/miniforge3/share/isce2
-cp tools/isce2/components/isceobj/Sensor/TOPS/TOPSSwathSLCProduct.py tools/miniforge3/lib/python3.?/site-packages/isce/components/isceobj/Sensor/TOPS
-cp tools/isce2/contrib/demUtils/demstitcher/DemStitcher.py  tools/miniforge3/lib/python3.??/site-packages/isce/components/contrib/demUtils
+cp -r tools/isce2/contrib/stack/* tools/miniforge3/envs/minsar/share/isce2
+cp -r tools/isce2/components/isceobj/Sensor/TOPS tools/miniforge3/envs/minsar/share/isce2
+cp tools/isce2/components/isceobj/Sensor/TOPS/TOPSSwathSLCProduct.py tools/miniforge3/envs/minsar/lib/python3.?/site-packages/isce/components/isceobj/Sensor/TOPS
+cp tools/isce2/contrib/demUtils/demstitcher/DemStitcher.py  tools/miniforge3/envs/minsar/lib/python3.??/site-packages/isce/components/contrib/demUtils
 fi
 
 ### Create orbits and aux directories
@@ -95,5 +78,5 @@ mkdir -p $SENTINEL_ORBITS $SENTINEL_AUX
 ls -d $SENTINEL_ORBITS $SENTINEL_AUX
 
 echo ""
-echo "Installation of install_code.bash DONE"
+echo "Running of install_minsar.bash DONE"
 echo ""
