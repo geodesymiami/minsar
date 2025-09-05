@@ -17,7 +17,7 @@ git clone git@github.com:geodesymiami/accounts.git ~/accounts ;
 ```
 cd $WORK2/code
 ```
-* Create a bash virgin environmen, clone the repo and install the code (including miniforge3 python). Work as user circleci. On stampede3 on the development queue (`idevdev`):
+* Clone the repo, goto the minsar dirrectory and run the install scripts (including miniforge3 python). Work as user circleci. It will install into a `minsar` environment.  On stampede3 work on the development queue (`idevdev`):
 ```
 git clone git@github.com:geodesymiami/minsar.git ;
 cd minsar
