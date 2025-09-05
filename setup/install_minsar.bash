@@ -19,18 +19,13 @@ git clone git@github.com:geodesymiami/precip_cron tools/Precip_cron
 git clone git@github.com:scottstanie/sardem tools/sardem
 #git clone git@github.com:geodesymiami/SourceInversion.git tools/SourceInversion
 
-### Source the environment variables  #################
-#export MINSAR_HOME=$PWD
-#source setup/platforms_defaults.bash;
-#source setup/environment.bash;
-
 ### Install code into minsar environment  #################
 if [[ "$(uname)" == "Darwin" ]]; then sed -i '' '/isce/ s/^/# /' minsar_env.yml; fi
 
 tools/miniforge3/bin/mamba --verbose env create -f minsar_env.yml --yes
-source tools/miniforge3/etc/profile.d/conda.sh
 
-set +u
+source tools/miniforge3/etc/profile.d/conda.sh
+set +u         # needed for circleCI
 conda activate minsar
 
 pip install -e tools/MintPy
@@ -72,11 +67,6 @@ if [[ "$(uname)" == "Linux" ]]; then
 #cp tools/isce2/components/isceobj/Sensor/TOPS/TOPSSwathSLCProduct.py tools/miniforge3/envs/minsar/lib/python3.??/site-packages/isce/components/isceobj/Sensor/TOPS
 #cp tools/isce2/contrib/demUtils/demstitcher/DemStitcher.py  tools/miniforge3/envs/minsar/lib/python3.??/site-packages/isce/components/contrib/demUtils
 fi
-
-### Create orbits and aux directories
-echo "mkdir -p $SENTINEL_ORBITS $SENTINEL_AUX"
-mkdir -p $SENTINEL_ORBITS $SENTINEL_AUX
-ls -d $SENTINEL_ORBITS $SENTINEL_AUX
 
 echo ""
 echo "Running of install_minsar.bash DONE"

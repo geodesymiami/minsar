@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-### Source the environment  #################
-export MINSAR_HOME="$PWD"
-source setup/platforms_defaults.bash
-source setup/environment.bash
-
 git clone git@github.com:EliTras/VSM.git tools/VSM
 
 ### Install dependencies into vsm environment #########################
-conda create --name vsm python=3.10 pip -y
+tools/miniforge3/bin/conda create --name vsm python=3.10 pip -y
+
 source tools/miniforge3/etc/profile.d/conda.sh
+set +u   # for circleCI
 conda activate vsm
 
 pip install -r tools/VSM/VSM/requirements.txt
