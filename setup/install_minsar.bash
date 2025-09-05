@@ -25,7 +25,7 @@ source setup/platforms_defaults.bash;
 source setup/environment.bash;
 
 ### Install code into minsar environment  #################
-if [[ "$(uname)" == "Darwin" ]]; then sed -i '' '/isce/ s/^/# /' minsar_env.yml; else sed -i '/isce/ s/^/# /' minsar_env.yml; fi
+if [[ "$(uname)" == "Darwin" ]]; then sed -i '' '/isce/ s/^/# /' minsar_env.yml; fi
 
 mamba --verbose env create -f minsar_env.yml --yes
 source tools/miniforge3/etc/profile.d/conda.sh
@@ -58,18 +58,18 @@ cp minsar/additions/miaplpy/utils.py tools/MiaplPy/src/miaplpy/objects
 
 ### Adding ISCE fixes and copying checked-out ISCE version (the latest) into miniforge directory ###
 if [[ "$(uname)" == "Linux" ]]; then
-cp -p minsar/additions/isce/logging.conf tools/miniforge3/envs/minsar/lib/python3.10/site-packages/isce/defaults/logging
+#cp -p minsar/additions/isce/logging.conf tools/miniforge3/envs/minsar/lib/python3.10/site-packages/isce/defaults/logging
 cp -p minsar/additions/isce2/topsStack/FilterAndCoherence.py tools/isce2/contrib/stack/topsStack
 cp -p minsar/additions/isce2/stripmapStack/prepRawCSK.py tools/isce2/contrib/stack/stripmapStack
-cp -p minsar/additions/isce2/stripmapStack/unpackFrame_TSX.py tools/isce2/contrib/stack/stripmapStack
+cp  -p minsar/additions/isce2/stripmapStack/unpackFrame_TSX.py tools/isce2/contrib/stack/stripmapStack
 cp -p minsar/additions/isce2/DemStitcher.py tools/isce2/contrib/demUtils/demstitcher
 cp -p minsar/additions/isce2/Sentinel1.py tools/isce2/components/isceobj/Sensor/TOPS
 
 ### Copying ISCE fixes into miniforge directory ###
-cp -r tools/isce2/contrib/stack/* tools/miniforge3/envs/minsar/share/isce2
-cp -r tools/isce2/components/isceobj/Sensor/TOPS tools/miniforge3/envs/minsar/share/isce2
-cp tools/isce2/components/isceobj/Sensor/TOPS/TOPSSwathSLCProduct.py tools/miniforge3/envs/minsar/lib/python3.?/site-packages/isce/components/isceobj/Sensor/TOPS
-cp tools/isce2/contrib/demUtils/demstitcher/DemStitcher.py  tools/miniforge3/envs/minsar/lib/python3.??/site-packages/isce/components/contrib/demUtils
+#cp -r tools/isce2/contrib/stack/* tools/miniforge3/envs/minsar/share/isce2
+#cp -r tools/isce2/components/isceobj/Sensor/TOPS tools/miniforge3/envs/minsar/share/isce2
+#cp tools/isce2/components/isceobj/Sensor/TOPS/TOPSSwathSLCProduct.py tools/miniforge3/envs/minsar/lib/python3.?/site-packages/isce/components/isceobj/Sensor/TOPS
+#cp tools/isce2/contrib/demUtils/demstitcher/DemStitcher.py  tools/miniforge3/envs/minsar/lib/python3.??/site-packages/isce/components/contrib/demUtils
 fi
 
 ### Create orbits and aux directories

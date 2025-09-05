@@ -3,7 +3,7 @@ channels:
   - conda-forge
 dependencies:
   - python=3.10
-#   - isce2     # [linux]
+  - isce2     # [linux]
   - gdal
   - mintpy
   - sardem
