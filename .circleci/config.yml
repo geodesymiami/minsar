@@ -26,6 +26,10 @@ jobs:
             export MINSAR_HOME=${CIRCLE_WORKING_DIRECTORY}
             source setup/platforms_defaults.bash;
             source setup/environment.bash
+            
+            set +u   # needed for circleCI
+            source tools/miniforge3/etc/profile.d/conda.sh
+            conda activate minsar
 
             wget -O- http://149.165.154.65/data/circleci/ci_small_unittestGalapagosSenDT128.tar | tar -xvf - -C ${SCRATCHDIR}
             wget -O- http://149.165.154.65/data/circleci/S1orbits_unittestGalapagosSenDT128.tar | tar -xvf - -C "$(dirname ${SENTINEL_ORBITS})"
