@@ -95,6 +95,7 @@ then
   export QUEUE_NORMAL=skx
   export QUEUE_DEV=skx-dev
   export QUEUENAME=$QUEUE_NORMAL
+  : "${CONDA_PREFIX:=$MINSAR_HOME/tools/miniforge3}"
 fi
 ###############################################
 if [ "$(uname)" == "Darwin" ]
