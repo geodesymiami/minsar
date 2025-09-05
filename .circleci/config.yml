@@ -27,6 +27,7 @@ jobs:
             source setup/platforms_defaults.bash;
             source setup/environment.bash
             
+            set +u   # needed for circleCI
             source tools/miniforge3/etc/profile.d/conda.sh
             conda activate minsar
 
