@@ -43,10 +43,11 @@ fi
 if [[ ${HOSTNAME} == *stampede* ]] || [[ ${TACC_SYSTEM:-} == *stampede* ]]
 then
   export PLATFORM_NAME=stampede3
+  : "${CONDA_PREFIX:=$MINSAR_HOME/tools/miniforge3}"
   # export PLATFORM_NAME=circleci         # for testing
   export JOBSCHEDULER=SLURM
   export JOBSHEDULER_PROJECTNAME=TG-EAR200012
-  export WORKDIR=$(dirname -- "$WORK2")/stampede2/insarlab
+  export WORKDIR=$(dirname -- "${WORK2:-/work2/05861/$USER}")/stampede2/insarlab
   export SCRATCHDIR=${SCRATCH}
   export QUEUE_NORMAL=skx
   export QUEUE_DEV=skx-dev
@@ -94,6 +95,7 @@ then
   export QUEUE_NORMAL=skx
   export QUEUE_DEV=skx-dev
   export QUEUENAME=$QUEUE_NORMAL
+  : "${CONDA_PREFIX:=$MINSAR_HOME/tools/miniforge3}"
 fi
 ###############################################
 if [ "$(uname)" == "Darwin" ]

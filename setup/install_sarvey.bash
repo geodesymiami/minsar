@@ -10,8 +10,10 @@ source setup/environment.bash;
   git clone git@github.com:luhipi/sarvey tools/sarvey
 
 ### Install GDAL into sarvey environment #########################
-conda create --name sarvey python=3.10 pip -y
+tools/miniforge3/bin/conda create --name sarvey python=3.10 pip -y
+
 source tools/miniforge3/etc/profile.d/conda.sh
+set +u         # for circleCI
 conda activate sarvey
 
 mamba install --yes -c conda-forge libpq postgresql pysolid gdal psycopg2
