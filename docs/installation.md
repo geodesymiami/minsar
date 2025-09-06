@@ -75,5 +75,4 @@ drwxrws-w-+ 2 famelung insarlab       4096 Jan 17 16:58 test
 ```
 * For possible problems, check [here](https://github.com/geodesymiami/minsar/blob/master/setup/installation_issues.md).
 
-
 ### *. [Set-up in Miami](./set_up_miami.md) ###
