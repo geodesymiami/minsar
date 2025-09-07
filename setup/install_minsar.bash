@@ -21,6 +21,7 @@ git clone git@github.com:scottstanie/sardem tools/sardem
 
 ### Install code into minsar environment  #################
 if [[ "$(uname)" == "Darwin" ]]; then sed -i '' '/isce/ s/^/# /' minsar_env.yml; fi
+if [[ "$(uname)" == "Darwin" ]]; then sed -i '' '/gdal$/ s/gdal$/gdal=3.6\*/' minsar_env.yml; fi
 
 tools/miniforge3/bin/mamba --verbose env create -f minsar_env.yml --yes
 
