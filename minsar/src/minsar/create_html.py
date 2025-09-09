@@ -5,6 +5,7 @@
 import os, shutil
 import glob
 import re
+import pathlib
 import fnmatch
 from mintpy.utils import readfile
 from minsar.objects import message_rsmas
@@ -133,8 +134,15 @@ def build_sarvey_html(directory_path):
     png_file_paths = [file for file in os.listdir(directory_path) if file.lower().endswith(('.png'))]
     json_file_path = [file for file in os.listdir(directory_path) if file.lower().endswith(('.json'))]
 
-    logfile_path = max( (f for f in glob.iglob(os.path.join(logfiles_dir, "*.log"))
-                        if "export" not in os.path.basename(f)), key=os.path.getmtime, default=None )
+    #logfile_path = max( (f for f in glob.iglob(os.path.join(logfiles_dir, "*.log"))
+    #                    if "export" not in os.path.basename(f)), key=os.path.getmtime, default=None )
+    logfiles_dir = pathlib.Path(logfiles_dir)
+    logs = list(logfiles_dir.glob("*.log"))
+    if logs:
+        logfile_path = max(logs, key=lambda f: f.stat().st_mtime)
+        logfile_path = str(logfile_path)   # optional: convert to string
+    else:
+        logfile_path = None
 
     insarmaps_log_path = [file for file in os.listdir(directory_path) if file.lower().endswith(('insarmaps.log'))]
     subset_log_path = [file for file in os.listdir(os.path.dirname(os.path.dirname(directory_path)))
@@ -150,7 +158,11 @@ def build_sarvey_html(directory_path):
 
     # keep copy of directory name for later display
     orig_dir = os.path.relpath(directory_path, os.getcwd())
-    logfiles_path_rel = os.path.relpath(logfile_path, os.getcwd())
+
+    if logfile_path:
+       logfiles_path_rel = os.path.relpath(logfile_path, os.getcwd())
+    else:
+       logfiles_path_rel=os.getcwd()
 
     project_name = os.path.basename(os.getcwd())
     os.chdir(directory_path)
@@ -208,9 +220,10 @@ def build_sarvey_html(directory_path):
                 '  </div>\n'
             )
             # add log file
-    header_tag = f'  <h2>{os.path.basename(logfile_path)}</h2>\n'
-    with open(logfile_path, 'r') as file:
-        html_content += header_tag + '<pre>\n' + file.read() + '</pre>\n'
+    if logfile_path:
+        header_tag = f'  <h2>{os.path.basename(logfile_path)}</h2>\n'
+        with open(logfile_path, 'r') as file:
+           html_content += header_tag + '<pre>\n' + file.read() + '</pre>\n'
 
     # Close the HTML tags
     html_content += "</body></html>" + "\n"
