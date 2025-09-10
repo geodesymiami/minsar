@@ -88,7 +88,7 @@ def load_config_and_input_path(inps):
             print(f"Output path set from config.json: {output_path}")
         except (KeyError, TypeError):
             raise ValueError("`output_path` must be specified in config.json under general.")
-        
+
     elif inps.input_file:
         input_file_path = Path(inps.input_file).resolve()
         sarvey_inputs_dir_path = input_file_path.parents[1] / "inputs"
@@ -338,7 +338,7 @@ def update_and_save_final_metadata(json_dir, outdir, dataset_name, metadata, out
 
     return metadata
 
-def get_data_footprint(metadata):
+def get_data_footprint_center(metadata):
     """
     Compute center of WKT-style POLYGON string in 'data_footprint'.
     Falls back to REF_LAT and REF_LON if needed.
@@ -363,7 +363,7 @@ def generate_insarmaps_url(host, dataset_name, metadata, geocorr=False):
     """
     Generate an Insarmaps viewer URL using center of data footprint if available.
     """
-    lat, lon = get_data_footprint(metadata)
+    lat, lon = get_data_footprint_center(metadata)
     protocol = "https" if host.startswith("insarmaps.miami.edu") else "http"
     suffix = "_geocorr" if geocorr else ""
     return f"{protocol}://{host}/start/{lat:.4f}/{lon:.4f}/11.0?flyToDatasetCenter=true&startDataset={dataset_name}{suffix}"
@@ -547,7 +547,7 @@ def main():
     if inps.make_jobfile:
             print("[INFO] Creating jobfile only, skipping execution.")
             create_jobfile(inps, data_path, (cmd_sarvey_export, cmd_ogr2ogr, cmd_correctgeo, cmd_hdfeos5, cmd_jsonmbtiles), json_dir, output_path, mbtiles_path, dataset_name, metadata)
-    
+
     else:
         # Step 1: run sarvey_export to  create *.shp file
         if data_path.suffix == ".h5":
@@ -587,7 +587,7 @@ def main():
         _, _, cmd_hdfeos5, cmd_jsonmbtiles = build_commands(
             shp_file_path, csv_file_path, geocorr_csv_path, json_dir, mbtiles_path, input_csv, inps
         )
-    
+
         # Step 4: run hdfeos5_2_mbtiles.pt to convert csv-file into mbptile.
         run_command(cmd_hdfeos5, conda_env=insarmaps_script_env)
         metadata, _ = extract_metadata_from_inputs(sarvey_inputs_dir_path)
@@ -628,7 +628,7 @@ def main():
             f.write(url + "\n")
         if os.path.isdir(f"{output_path}/pic"):
             open(f"{output_path}/pic/insarmaps.log", 'a').write(url + "\n")
-        
+
         # Step 7: create pic/index.html
         run_command(["create_html.py", f"{output_path}/pic"])
 
