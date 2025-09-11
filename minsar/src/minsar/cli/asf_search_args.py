@@ -87,7 +87,7 @@ def create_parser(iargs=None, namespace=None):
     else:
         inps.polarization = ['VV', 'VV+VH']
 
-    if inps.platform in ['SENTINEL1', 'SENTINEL-1', 'S1', 'S-1']:
+    if inps.platform in ['SENTINEL1', 'SENTINEL-1', 'S1', 'S-1', 'SENTINEL-1A', 'SENTINEL-1B']:
         inps.platform = asf.PLATFORM.SENTINEL1
         if hasattr(inps, 'dataset'):
             inps.dataset.append(asf.DATASET.SENTINEL1)
