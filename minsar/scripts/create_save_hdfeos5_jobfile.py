@@ -25,9 +25,9 @@ EXAMPLE = """example:
 
 ###########################################################################################
 def create_parser():
-    
+
     default_queuename = os.environ.get("QUEUENAME")
-    
+
     parser = argparse.ArgumentParser(description=DESCRIPTION, epilog=EXAMPLE, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('custom_template_file', help='template file\n')
     parser.add_argument('processing_dir', default=None, help='miaplpy network_* directory with data for hdf5 file\n')
@@ -46,36 +46,36 @@ def get_network_prefix(network_dir):
     if 'delaunay_4' in network_name:
         prefix='Del4'
     elif 'single_reference' in network_name:
-        prefix='Sing'  
+        prefix='Sing'
     elif 'sequential_1' in network_name:
-        prefix='Seq1'  
+        prefix='Seq1'
     elif 'sequential_2' in network_name:
-        prefix='Seq2' 
+        prefix='Seq2'
     elif 'sequential_3' in network_name:
-        prefix='Seq3'   
+        prefix='Seq3'
     elif 'sequential_4' in network_name:
-        prefix='Seq4'  
+        prefix='Seq4'
     elif 'sequential_5' in network_name:
-        prefix='Seq5'  
+        prefix='Seq5'
     elif 'sequential_6' in network_name:
-        prefix='Seq6' 
+        prefix='Seq6'
     elif 'sequential_8' in network_name:
-        prefix='Seq8' 
+        prefix='Seq8'
     elif 'mini_stacks' in network_name:
-        prefix='Mini'  
+        prefix='Mini'
     else:
         raise Exception("USER ERROR: network name not recognized")
-    
+
     return prefix
 
 
 def main(iargs=None):
-    
+
     if not iargs is None:
         input_arguments = iargs
     else:
         input_arguments = sys.argv[1::]
-    
+
     inps = create_parser()
     inps.work_dir = os.getcwd()
 
@@ -96,7 +96,7 @@ def main(iargs=None):
 
     processing_dir = inps.work_dir +  '/' + inps.processing_dir
     processing_dir = processing_dir.rstrip(os.path.sep)
-    
+
     job_name = f'{inps.outdir}/{inps.outfile}'
     job_file_name = job_name
 
@@ -117,9 +117,9 @@ def main(iargs=None):
     command.append( f'wait' )
 
     command.append( 'source ' + os.path.dirname(os.path.abspath(__file__)) + '/../lib/common_helpers.sh' )
-    command.append( f'h5file=`ls *_??????_??????_???????_???????*_{prefix}PS.he5` ; add_ref_lalo_to_file $h5file' )
-    command.append( f'h5file=`ls *_??????_??????_???????_???????*_{prefix}DS.he5` ; add_ref_lalo_to_file $h5file' )
-    command.append( f'h5file=`ls *_??????_??????_???????_???????*_filt{prefix}DS.he5` ; add_ref_lalo_to_file $h5file' )
+    command.append( f'h5file=`ls *_???????????_???????????_???????????_???????????*_{prefix}PS.he5` ; add_ref_lalo_to_file $h5file' )
+    command.append( f'h5file=`ls *_???????????_???????????_???????????_???????????*_{prefix}DS.he5` ; add_ref_lalo_to_file $h5file' )
+    command.append( f'h5file=`ls *_???????????_???????????_???????????_???????????*_filt{prefix}DS.he5` ; add_ref_lalo_to_file $h5file' )
 
     command.append( f'view.py --dpi 150 --noverbose --nodisplay --update --memory 4.0 temporalCoherence_lowpass_gaussian.h5 -c gray -v 0 1 &')
     command.append( f'view.py --dpi 150 --noverbose --nodisplay --update --memory 4.0 maskTempCoh_lowpass_gaussian.h5 -c gray -v 0 1 &')
@@ -129,7 +129,7 @@ def main(iargs=None):
     command.append( f'view.py --dpi 150 --noverbose --nodisplay --update --memory 4.0 geo/geo_maskPS.h5 -c gray -v 0 1 &')
     command.append( f'wait' )
     command.append( f'mv *png pic')
-    
+
     # Join the list into a string with linefeeds
     final_command =[ '\n'.join(command) ]
 
@@ -140,7 +140,7 @@ def main(iargs=None):
     job_obj.submit_script(job_name, job_file_name, final_command, writeOnly='True')
     print('jobfile created: ',job_file_name + '.job')
 
-    return 
+    return
 
 ###########################################################################################
 
