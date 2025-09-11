@@ -17,13 +17,25 @@ git clone git@github.com:geodesymiami/precip tools/Precip
 git clone git@github.com:geodesymiami/precip_web tools/Precip_web
 git clone git@github.com:geodesymiami/precip_cron tools/Precip_cron
 git clone git@github.com:scottstanie/sardem tools/sardem
+git clone git@github.com:luhipi/sarvey tools/sarvey
+git clone git@github.com:falkamelung/sarplotter-main.git tools/sarplotter-main
 #git clone git@github.com:geodesymiami/SourceInversion.git tools/SourceInversion
 
 ### Install code into minsar environment  #################
-if [[ "$(uname)" == "Darwin" ]]; then sed -i '' '/isce/ s/^/# /' minsar_env.yml; fi
-if [[ "$(uname)" == "Darwin" ]]; then sed -i '' '/gdal$/ s/gdal$/gdal=3.6\*/' minsar_env.yml; fi
+if [[ "$(uname)" == "Darwin" ]]; then
+    cp minsar_env.yml minsar_env_macOS.yml
+    sed -i '' '/- isce/ s/^/# /' minsar_env_macOS.yml
+    sed -i '' '/gdal$/ s/gdal$/gdal=3.6\*/' minsar_env_macOS.yml
+    sed -i '' '/- pymaxflow/ s/^/# /' minsar_env_macOS.yml                        # out-comment conda pymaxflow installation
+    sed -i '' '/#- pymaxflow/ s/#- pymaxflow/- pymaxflow/' minsar_env_macOS.yml   # activate pip pymaxflow installation
+fi
 
-tools/miniforge3/bin/mamba --verbose env create -f minsar_env.yml --yes
+
+if [[ "$(uname)" == "Linux" ]]; then
+  tools/miniforge3/bin/mamba --verbose env create -f minsar_env.yml --yes
+elif [[ "$(uname)" == "Darwin" ]]; then
+  tools/miniforge3/bin/mamba --verbose env create -f minsar_env_macOS.yml --yes
+fi
 
 source tools/miniforge3/etc/profile.d/conda.sh
 set +u         # needed for circleCI
@@ -32,6 +44,7 @@ conda activate minsar
 pip install -e tools/MintPy
 pip install -e tools/MiaplPy
 pip install -e tools/sardem
+pip install -e tools/sarvey[dev] --no-deps
 
 ###  Reduce miniforge3 directory size #################
 rm -rf tools/miniforge3/pkgs
