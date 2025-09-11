@@ -10,6 +10,7 @@ import os
 
 import h5py
 import numpy as np
+from shapely import wkt as _wkt
 
 from mintpy import info
 from mintpy.objects import geometry, sensor, timeseries
@@ -74,7 +75,45 @@ def prep_metadata(ts_file, geom_file, template=None, print_msg=True):
 
     return meta
 
+################################################################
+def corners_to_wkt_polygon(footprint_corners):
+    """Convert a list of (lat, lon) tuples to a WKT-formatted POLYGON string
 
+    Parameters: footprint_corners - list of (lat, lon) tuples, must be ordered and closed (first == last)
+    Returns:    polygon           - str, WKT format POLYGON
+    """
+    # Ensure the polygon is closed
+    if footprint_corners[0] != footprint_corners[-1]:
+        footprint_corners = footprint_corners + [footprint_corners[0]]
+    polygon = "POLYGON((" + ",".join([f"{lon} {lat}" for lat, lon in footprint_corners]) + "))"
+    return polygon
+
+###############################################
+def polygon_corners_string(polygon_str: str) -> str:
+    """
+    Return corners from the polygon as S0081W09112_S0081W09130_S0100W09130_S0100W09112
+    """
+
+    def fmt_lat(lat: float) -> str:
+        val = int(round(abs(lat) * 100))              # keep 2 decimals
+        return f"{'N' if lat >= 0 else 'S'}{val:04d}" # 2 deg digits + 2 decimals
+
+    def fmt_lon(lon: float) -> str:
+        val = int(round(abs(lon) * 100))
+        return f"{'E' if lon >= 0 else 'W'}{val:05d}" # 3 deg digits + 2 decimals
+
+    poly = _wkt.loads(polygon_str)
+
+    # polygon vertices in counter-clockwise order starting SW, drop duplicate last point
+    coords = list(poly.exterior.coords)[:-1]
+    corners = [(lat, lon) for lon, lat in coords]
+    parts = [f"{fmt_lat(lat)}{fmt_lon(lon)}" for (lat, lon) in corners]
+
+    corners_str = "_".join(parts)
+
+    return  corners_str
+
+###############################################
 def metadata_mintpy2unavco(meta_in, dateList, geom_file):
     """Convert metadata from mintpy format into unavco format."""
     # Extract UNAVCO format metadata from MintPy attributes dictionary and dateList
@@ -193,9 +232,20 @@ def metadata_mintpy2unavco(meta_in, dateList, geom_file):
             lat_data[lat_data == 0] = np.nan
             lon_data[lon_data == 0] = np.nan
 
-            S, N = np.nanmin(lat_data), np.nanmax(lat_data)
-            W, E = np.nanmin(lon_data), np.nanmax(lon_data)
-            unavco_meta['data_footprint'] = ut.snwe_to_wkt_polygon([S, N, W, E])
+            # S, N = np.nanmin(lat_data), np.nanmax(lat_data)
+            # W, E = np.nanmin(lon_data), np.nanmax(lon_data)
+            # unavco_meta['data_footprint'] = ut.snwe_to_wkt_polygon([S, N, W, E])
+
+            # Get the four corners of the latitude and longitude arrays
+            footprint_corners = [
+                (lat_data[0, 0], lon_data[0, 0]),           # top-left
+                (lat_data[0, -1], lon_data[0, -1]),         # top-right
+                (lat_data[-1, -1], lon_data[-1, -1]),       # bottom-right
+                (lat_data[-1, 0], lon_data[-1, 0]),         # bottom-left
+                (lat_data[0, 0], lon_data[0, 0])            # close the polygon
+            ]
+            unavco_meta['data_footprint'] = corners_to_wkt_polygon(footprint_corners)
+            unavco_meta['scene_footprint'] = corners_to_wkt_polygon(footprint_corners)
 
         elif os.path.isfile(geo_geom_file):
             # geometry in geo-coordinates (roipac/gamma)
@@ -223,13 +273,6 @@ def get_output_filename(metadata, template, suffix=None, update_mode=False, subs
         SW += str(metadata['beam_swath'])
     RELORB = "{:03d}".format(int(metadata['relative_orbit']))
 
-    # Frist and/or Last Frame
-    frame1 = metadata['first_frame']
-    frame2 = metadata['last_frame']
-    FRAME = f"{int(frame1):04d}"
-    if frame2 != frame1:
-        FRAME += f"_{frame2:04d}"
-
     DATE1 = dt.datetime.strptime(metadata['first_date'], '%Y-%m-%d').strftime('%Y%m%d')
     DATE2 = dt.datetime.strptime(metadata['last_date'], '%Y-%m-%d').strftime('%Y%m%d')
     if update_mode:
@@ -237,9 +280,9 @@ def get_output_filename(metadata, template, suffix=None, update_mode=False, subs
         DATE2 = 'XXXXXXXX'
 
     if suffix:
-        outName = f'{SAT}_{SW}_{RELORB}_{FRAME}_{DATE1}_{DATE2}_{suffix}.he5'
+        outName = f'{SAT}_{SW}_{RELORB}_{DATE1}_{DATE2}_{suffix}.he5'
     else:
-        outName = f'{SAT}_{SW}_{RELORB}_{FRAME}_{DATE1}_{DATE2}.he5'
+        outName = f'{SAT}_{SW}_{RELORB}_{DATE1}_{DATE2}.he5'
 
     if subset_mode:
         print('Subset mode is enabled, put subset range info in output filename.')
@@ -248,25 +291,23 @@ def get_output_filename(metadata, template, suffix=None, update_mode=False, subs
             lon0 = float(metadata['X_FIRST'])
             lat0 = lat1 + float(metadata['Y_STEP']) * int(metadata['LENGTH'])
             lon1 = lon0 + float(metadata['X_STEP']) * int(metadata['WIDTH'])
-        elif 'mintpy.subset.lalo' in template.keys():
-            # for MiaplPy it would be preferrd to use miaplpy.subset.lalo but that is not available
-            lat1 = float(template['mintpy.subset.lalo'].split(',')[0].split(':')[1])
-            lon0 = float(template['mintpy.subset.lalo'].split(',')[1].split(':')[0])
-            lat0 = float(template['mintpy.subset.lalo'].split(',')[0].split(':')[0])
-            lon1 = float(template['mintpy.subset.lalo'].split(',')[1].split(':')[1])
+
+            lat0Str = f'N{round(lat0*1e3):05d}'
+            lat1Str = f'N{round(lat1*1e3):05d}'
+            lon0Str = f'E{round(lon0*1e3):06d}'
+            lon1Str = f'E{round(lon1*1e3):06d}'
+
+            if lat0 < 0.0: lat0Str = f'S{round(abs(lat0)*1e3):05d}'
+            if lat1 < 0.0: lat1Str = f'S{round(abs(lat1)*1e3):05d}'
+            if lon0 < 0.0: lon0Str = f'W{round(abs(lon0)*1e3):06d}'
+            if lon1 < 0.0: lon1Str = f'W{round(abs(lon1)*1e3):06d}'
+
+            SUB = f'_{lat0Str}_{lat1Str}_{lon0Str}_{lon1Str}'
+
         else:
-            raise SystemExit('ERROR: --subset mode for time-series in radar-coordinates requires mintpy.subset.lalo')
+            polygon_str =  metadata.get('data_footprint')
+            SUB = polygon_corners_string(polygon_str)
 
-        lat0Str = f'N{round(lat0*1e3):05d}'
-        lat1Str = f'N{round(lat1*1e3):05d}'
-        lon0Str = f'E{round(lon0*1e3):06d}'
-        lon1Str = f'E{round(lon1*1e3):06d}'
-        if lat0 < 0.0: lat0Str = f'S{round(abs(lat0)*1e3):05d}'
-        if lat1 < 0.0: lat1Str = f'S{round(abs(lat1)*1e3):05d}'
-        if lon0 < 0.0: lon0Str = f'W{round(abs(lon0)*1e3):06d}'
-        if lon1 < 0.0: lon1Str = f'W{round(abs(lon1)*1e3):06d}'
-
-        SUB = f'_{lat0Str}_{lat1Str}_{lon0Str}_{lon1Str}'
         fbase, fext = os.path.splitext(outName)
 
         if suffix:
