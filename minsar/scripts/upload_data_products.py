@@ -225,8 +225,8 @@ def main(iargs=None):
                create_html_if_needed(data_dir + '/pic')
             scp_list.extend([ '/'+ data_dir +'/pic', ])
             scp_list.extend([ '/'+ data_dir +'/../maskfiles/*', ])
-            scp_list.extend([ '/'+ data_dir +'/shp', ])
-            scp_list.extend([ '/'+ data_dir +'/outputs/output_csv/*.csv', ])
+            #scp_list.extend([ '/'+ data_dir +'/shp', ])
+            #scp_list.extend([ '/'+ data_dir +'/outputs/output_csv/*.csv', ])
     print('################')
     print('Data to upload: ')
     for element in scp_list:

@@ -21,8 +21,10 @@ from pathlib import Path
 from natsort import natsorted
 import xml.etree.ElementTree as ET
 import shutil
+from shapely import wkt as _wkt
 from minsar.objects.dataset_template import Template
 from minsar.objects.auto_defaults import PathFind
+from mintpy.utils import readfile
 import time, datetime
 
 pathObj = PathFind()
@@ -245,7 +247,7 @@ def split_project_name(project_name):
     """ splits project name into location name, satellite and direction, and track number. """
 
     location_name, sat_track = re.split('SenAT|SenDT',project_name)
-    
+
     if 'SenAT' in project_name:
        sat_direction = 'SenAT'
     elif 'SenDT' in project_name:
@@ -253,7 +255,7 @@ def split_project_name(project_name):
     else:
        raise Exception('ERROR project name must contain SenDT or SenAT')
 
-    return location_name, sat_direction, sat_track 
+    return location_name, sat_direction, sat_track
 
 ##########################################################################
 
@@ -354,12 +356,12 @@ def create_default_template(temp_inps):
     # if not os.path.exists(inps.template_file):
     #     shutil.copyfile(inps.custom_template_file, inps.template_file)
     # else:
-    #     # FA 12/22  I wonder why updating the template file here. This causes an error in `download_data.py if a *template file exist 
+    #     # FA 12/22  I wonder why updating the template file here. This causes an error in `download_data.py if a *template file exist
     #     update_template_file(inps.template_file, custom_tempObj)
     # FA 2/2024:  Gives trouble in create_runfiles.py and create_html.py if corrupt *template in project_dir
     # FA 2/2024:  Try always copying and then updating. ATTENTION: Is that OK?
     # FA 7/2024:  I don't understand why update_template_file is called immeadiately after copying, as there can't be any changes?!?
-    # FA 7/2024   I think the update_template_file command can be removed (inps.template_file is in project_dir).     
+    # FA 7/2024   I think the update_template_file command can be removed (inps.template_file is in project_dir).
     shutil.copyfile(inps.custom_template_file, inps.template_file)
     update_template_file(inps.template_file, custom_tempObj)
 
@@ -369,7 +371,7 @@ def create_default_template(temp_inps):
     # build ssaraopt string from ssara options
     custom_tempObj.options.update(pathObj.correct_for_ssara_date_format(custom_tempObj.options))
     inps.ssaraopt = custom_tempObj.generate_ssaraopt_string()
-     
+
     return inps
 
 
@@ -442,7 +444,7 @@ def beautify_template_file(TEMP_FILE):
     i = 0
     i_last_insert = 0
     for item in delimiter_list:
-   
+
         i = i_last_insert
 
         while (i  < len(lines)):
@@ -637,7 +639,7 @@ def extract_queuename_from_job_file(file):
                 queue_name = queue_name.strip()
                 return queue_name
 ##########################################################################
- 
+
 def extract_step_name_from_stdout_name(job_name):
     """ Extracts the step name from a stdout name """
     job_name = os.path.basename(job_name).split('.o')[0]
@@ -652,22 +654,22 @@ def extract_step_name_from_stdout_name(job_name):
     return step_name
 
 ##########################################################################
- 
+
 def extract_config_file_from_task_string(task):
     """ Extracts the config filename from a task string """
-   
+
     try:
        config_file = task.split('configs/')[1].split('\n')[0]
     except:
        config_file =''
 
     return config_file
-       
+
 ##########################################################################
- 
+
 def extract_date_string_from_config_file_name(config_file_name):
     """ Extracts the date string from config_file_name (last string if it does not contain date) """
-   
+
     date_or_string1 = config_file_name.split('_')[-1]
     try:
        date_or_string0 = config_file_name.split('_')[-2]
@@ -677,7 +679,7 @@ def extract_date_string_from_config_file_name(config_file_name):
     date_string = ''
     if date_or_string0.isdigit():
        date_string = date_or_string0 + '_'
-    
+
     date_string = date_string + date_or_string1
 
     return date_string
@@ -760,7 +762,7 @@ def concatenate_error_files(run_file, work_dir):
         os.remove(out_file)
 
     out_name = os.path.dirname(run_file) + '/out_' + run_file.split('/')[-1] + '.e'
-    
+
     error_files = glob.glob(run_file + '*.e*')
     error_files = natsorted(error_files)
 
@@ -922,7 +924,7 @@ def remove_dask_error_lines_from_error_files(run_file):
                else:
                    #print("NotSkip Line{}: {}".format(count, line.strip()))
                    new_lines.append(line)
-               
+
         f = open(item, 'w')
         for line in new_lines:
             f.writelines(line)
@@ -1258,7 +1260,7 @@ def replace_walltime_in_job_file(file, new_wall_time):
 def run_remove_date_from_run_files(run_files_dir, date, start_run_file):
     """ removes dates from run_files """
     run_files=[]
-    run_files = glob.glob(run_files_dir + '/run_*_*[0-9]') 
+    run_files = glob.glob(run_files_dir + '/run_*_*[0-9]')
     run_files = natsorted(run_files)
 
     # remove run_files with index < start_run_file
@@ -1343,7 +1345,7 @@ def set_permission_dask_files(directory):
 ###############################################
 def generate_intersects_string(dataset_template, delta_lat=0.0, delta_lon=0.0):
     """generates intersectsWith polygon string from miaplpy.subset.lalo, mintpy.subset.lalo or *Stack.boundingBox"""
-    
+
     if not 'acquisition_mode' in dataset_template.get_options():
         print('WARNING: "acquisition_mode" is not given --> default: tops  (available options: tops, stripmap)')
         prefix = 'tops'
@@ -1369,8 +1371,8 @@ def convert_subset_lalo_to_intersects_string(subset_lalo, delta_lat=0.0, delta_l
    if delta_lon is None:
        delta_lon = delta_lat / 2
 
-   lat_string = subset_lalo.split(',')[0] 
-   lon_string = subset_lalo.split(',')[1] 
+   lat_string = subset_lalo.split(',')[0]
+   lon_string = subset_lalo.split(',')[1]
 
    min_lat = float(lat_string.split(':')[0]) - delta_lat
    max_lat = float(lat_string.split(':')[1]) + delta_lat
@@ -1423,14 +1425,14 @@ def point_str_to_bbox(point_str, delta=0.001):
     lon_str, lat_str = point_str.strip().split()
     lon = float(lon_str)
     lat = float(lat_str)
-    
+
     # Compute bounding box coordinates: Lower-left,  lower-right, upper-left, frst point
     p1 = f"{lon - delta} {lat - delta}"
     p2 = f"{lon + delta} {lat - delta}"
     p3 = f"{lon + delta} {lat + delta}"
     p4 = f"{lon - delta} {lat + delta}"
     p5 = p1
-    
+
     return [p1, p2, p3, p4, p5]
 
 ###############################################
@@ -1449,7 +1451,7 @@ def convert_intersects_string_to_extent_string(intersects_string):
         bbox_list = point_str_to_bbox(point_str, delta=0.001)
     else:
         polygon_str = None
-    
+
     lon_list = []
     lat_list = []
     for bbox in bbox_list:
@@ -1463,3 +1465,72 @@ def convert_intersects_string_to_extent_string(intersects_string):
     extent_str = ' '.join(map(str, extent_list))
 
     return extent_str, extent_list
+
+###############################################
+def get_data_footprint_from_geom_file(geom_file):
+    """ extracts data_footprint from lat/lon in geometry file
+        Parameters: footprint_corners - list of (lat, lon) tuples, must be ordered and closed (first == last)
+        Returns:    polygon_str        - str, WKT format POLYGON
+                    corners_str        - str for file name S0081W09112_S0081W09130_S0100W09130_S0100W09112
+     """
+
+    lat_data = readfile.read(geom_file, datasetName='latitude')[0]
+    lon_data = readfile.read(geom_file, datasetName='longitude')[0]
+
+    # set pixels with invalid value or zero to nan
+    lat_data[np.abs(lat_data) == 90] = np.nan
+    lat_data[lat_data == 0] = np.nan
+    lon_data[lon_data == 0] = np.nan
+
+    # Get the four corners of the latitude and longitude arrays
+    footprint_corners = [
+        (lat_data[0, 0], lon_data[0, 0]),           # top-left
+        (lat_data[0, -1], lon_data[0, -1]),         # top-right
+        (lat_data[-1, -1], lon_data[-1, -1]),       # bottom-right
+        (lat_data[-1, 0], lon_data[-1, 0]),         # bottom-left
+        (lat_data[0, 0], lon_data[0, 0])            # close the polygon
+    ]
+    polygon_str = corners_to_wkt_polygon(footprint_corners)
+    corners_str = polygon_corners_string(polygon_str)
+
+    return polygon_str, corners_str
+
+###############################################
+def corners_to_wkt_polygon(footprint_corners):
+    """Convert a list of (lat, lon) tuples to a WKT-formatted POLYGON string
+
+    Parameters: footprint_corners - list of (lat, lon) tuples, must be ordered and closed (first == last)
+    Returns:    polygon           - str, WKT format POLYGON
+    """
+    # Ensure the polygon is closed
+    if footprint_corners[0] != footprint_corners[-1]:
+        footprint_corners = footprint_corners + [footprint_corners[0]]
+    polygon = "POLYGON((" + ",".join([f"{lon} {lat}" for lat, lon in footprint_corners]) + "))"
+    return polygon
+
+###############################################
+def polygon_corners_string(polygon_str: str) -> str:
+    """
+    Return corners from the polygon as S0081W09112_S0081W09130_S0100W09130_S0100W09112
+    """
+
+    def fmt_lat(lat: float) -> str:
+        val = int(round(abs(lat) * 100))              # keep 2 decimals
+        return f"{'N' if lat >= 0 else 'S'}{val:04d}" # 2 deg digits + 2 decimals
+
+    def fmt_lon(lon: float) -> str:
+        val = int(round(abs(lon) * 100))
+        return f"{'E' if lon >= 0 else 'W'}{val:05d}" # 3 deg digits + 2 decimals
+
+    poly = _wkt.loads(polygon_str)
+
+    # polygon vertices in counter-clockwise order starting SW, drop duplicate last point
+    coords = list(poly.exterior.coords)[:-1]
+    corners = [(lat, lon) for lon, lat in coords]
+    parts = [f"{fmt_lat(lat)}{fmt_lon(lon)}" for (lat, lon) in corners]
+
+    corners_str = "_".join(parts)
+
+    return  corners_str
+
+
