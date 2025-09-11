@@ -4,7 +4,7 @@ channels:
 dependencies:
   - python=3.10
   - isce2     # [linux]
-  - gdal
+  - gdal=3.6*
   - mintpy
   - sardem
   - numpy<2.0
@@ -57,6 +57,15 @@ dependencies:
   - postgresql
   - psycopg2
   - pycurl
+# Sarvey
+  - PySide6
+  - cmcrameri
+  - gstools
+  - numba
+  - pymaxflow              # for sarvey: Linux only, insert '#' on Mac
+# VSM
+  - corner
+  - emcee
 # Precip
   - paramiko
 # Pip
@@ -68,4 +77,6 @@ dependencies:
       - fuzzywuzzy          # Precip
       - jupyter-ai          #
       - geocoder            # insarmaps_sccripts
+      - kamui               #
+      #- pymaxflow          # for sarvey: Mac only,  '#' will be removed on Mac
 #      - requests>=2.20.0    # sardem
