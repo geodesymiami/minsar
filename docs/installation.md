@@ -26,13 +26,9 @@ set -eo pipefail
 ./setup/install_python.bash
 ./setup/install_minsar.bash
 ./setup/install_credential_files.bash
-./setup/install_sarvey.bash
-./setup/install_vsm.bash
 ./setup/setup_orbit_dirs.bash
-[[ "$(uname)" == "Darwin" ]] && ./setup/install_insarmaps_scripts.bash
 ```
-The `install_python.bash` command is [here](https://github.com/geodesymiami/minsar/blob/master/setup/install_python.bash) and `install_minsar.bash`  is  [here](https://github.com/geodesymiami/minsar/blob/master/setup/install_minsar.bash) and `install_sarvey.bash`  is
-[here](https://github.com/geodesymiami/minsar/blob/master/setup/install_sarvey.bash) and  `install_credential_files.bash`  is  [here](https://github.com/geodesymiami/minsar/blob/master/setup/install_credential_files.bash), and install_insarmaps_scripts.bash is [here](https://github.com/geodesymiami/minsar/blob/master/setup/install_insarmaps_scripts.bash)
+The `install_python.bash` command is [here](https://github.com/geodesymiami/minsar/blob/master/setup/install_python.bash) and `install_minsar.bash`  is  [here](https://github.com/geodesymiami/minsar/blob/master/setup/install_minsar.bash)  and  `install_credential_files.bash`  is  [here](https://github.com/geodesymiami/minsar/blob/master/setup/install_credential_files.bash).
 
 ---
 ### Test your installation
