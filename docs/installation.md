@@ -28,7 +28,7 @@ set -eo pipefail
 ./setup/install_credential_files.bash
 ./setup/setup_orbit_dirs.bash
 ```
-The `install_python.bash` command is [here](https://github.com/geodesymiami/minsar/blob/master/setup/install_python.bash) and `install_minsar.bash`  is  [here](https://github.com/geodesymiami/minsar/blob/master/setup/install_minsar.bash)  and  `install_credential_files.bash`  is  [here](https://github.com/geodesymiami/minsar/blob/master/setup/install_credential_files.bash).
+The `install_python.bash` command is [here](https://github.com/geodesymiami/minsar/blob/master/setup/install_python.bash) and `install_minsar.bash`  is  [here](https://github.com/geodesymiami/minsar/blob/master/setup/install_minsar.bash)  and  `install_credential_files.bash`  is  [here](https://github.com/geodesymiami/minsar/blob/master/setup/install_credential_files.bash).    On Mac, as some packages are not available from conda-forge (isce2, pymaxflow) a   minsar_env_MacOS.yml is created and used.
 
 ---
 ### Test your installation
