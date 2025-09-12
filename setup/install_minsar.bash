@@ -24,17 +24,17 @@ git clone git@github.com:falkamelung/sarplotter-main.git tools/sarplotter-main
 ### Install code into minsar environment  #################
 if [[ "$(uname)" == "Darwin" ]]; then
     cp minsar_env.yml minsar_env_macOS.yml
-    sed -i '' '/- isce/ s/^/# /' minsar_env_macOS.yml
-    sed -i '' '/gdal$/ s/gdal$/gdal=3.6\*/' minsar_env_macOS.yml
-    sed -i '' '/- pymaxflow/ s/^/# /' minsar_env_macOS.yml                        # out-comment conda pymaxflow installation
-    sed -i '' '/#- pymaxflow/ s/#- pymaxflow/- pymaxflow/' minsar_env_macOS.yml   # activate pip pymaxflow installation
+    sed -i '' '/- isce/ s/^/# /' minsar_env_MacOS.yml
+    sed -i '' '/gdal$/ s/gdal$/gdal=3.6\*/' minsar_env_MacOS.yml
+    sed -i '' '/- pymaxflow/ s/^/# /' minsar_env_MacOS.yml                        # out-comment conda pymaxflow installation
+    sed -i '' '/#- pymaxflow/ s/#- pymaxflow/- pymaxflow/' minsar_env_MacOS.yml   # activate pip pymaxflow installation
 fi
 
 
 if [[ "$(uname)" == "Linux" ]]; then
   tools/miniforge3/bin/mamba --verbose env create -f minsar_env.yml --yes
 elif [[ "$(uname)" == "Darwin" ]]; then
-  tools/miniforge3/bin/mamba --verbose env create -f minsar_env_macOS.yml --yes
+  tools/miniforge3/bin/mamba --verbose env create -f minsar_env_MacOS.yml --yes
 fi
 
 source tools/miniforge3/etc/profile.d/conda.sh
