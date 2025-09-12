@@ -9,13 +9,13 @@ import pickle
 import h5py
 from pathlib import Path
 from datetime import date
+from mintpy.utils import readfile
+import minsar.utils.process_utilities as putils
 import pandas as pd
 import webbrowser
 import sys
 import shlex
 import shutil
-from mintpy.utils import readfile
-import minsar.utils.process_utilities as putils
 
 sys.path.insert(0, os.getenv("SSARAHOME"))
 import password_config as password
@@ -43,8 +43,8 @@ def create_parser():
     parser.add_argument("input_file", nargs="?", help="Optional input .h5 or .shp file (uses config.json if omitted)")
     parser.add_argument("--config-json", help="Path to config.json (overrides default detection)")
     parser.add_argument("--insarmaps-host",
-        default=os.environ.get("INSARMAPS_HOST", os.getenv("INSARMAPSHOST")),
-        help="Insarmaps server host (default: environment variable INSARMAPS_HOST)"
+        default=os.environ.get("INSARMAPSHOST", os.getenv("INSARMAPS_HOST")),
+        help="Insarmaps server host (default: environment variable INSARMAPSHOST)"
     )
     # parser.add_argument("--upload", dest='upload_flag', action="store_true", help="Upload to jetstream (Default: no)")
     parser.add_argument("--no-upload",dest='upload_flag',action="store_false", help="Do not upload to jetstream (Default: upload)")
@@ -143,7 +143,17 @@ def generate_dataset_name_from_csv(csv_file_path, sarvey_inputs_dir_path=None):
     lon1 = f"W{abs(int(max_lon * 10000)):06d}"
     lon2 = f"W{abs(int(min_lon * 10000)):06d}"
 
-    #get platform and orbit info from inputs_path if available
+    # Get the four corners of the data. We use a rectangular box and lat/lon min/max until we have figures out coordinates of the subset.
+    footprint_corners = [
+        (max_lat, min_lon),         # top-left
+        (min_lat, min_lon),         # top-right
+        (min_lat, max_lon),         # bottom-right
+        (max_lat, max_lon),         # bottom-left
+        (max_lat, min_lon)          # close the polygon
+    ]
+    polygon_str = putils.corners_to_wkt_polygon(footprint_corners)
+    corners_str = putils.polygon_corners_string(polygon_str)
+
     mission, rel_orbit = "S1", "000"
     if sarvey_inputs_dir_path:
         attributes, _ = extract_metadata_from_inputs(sarvey_inputs_dir_path)
@@ -156,17 +166,6 @@ def generate_dataset_name_from_csv(csv_file_path, sarvey_inputs_dir_path=None):
 
         rel_orbit_raw = attributes.get("relative_orbit", "")
         rel_orbit = f"{int(rel_orbit_raw):03d}" if str(rel_orbit_raw).isdigit() else "000"
-
-    # Get the four corners of the data. We use a rectangular box and lat/lon min/max until we have figures out coordinates of the subset.
-    footprint_corners = [
-        (max_lat, min_lon),         # top-left
-        (min_lat, min_lon),         # top-right
-        (min_lat, max_lon),         # bottom-right
-        (max_lat, max_lon),         # bottom-left
-        (max_lat, min_lon)          # close the polygon
-    ]
-    polygon_str = putils.corners_to_wkt_polygon(footprint_corners)
-    corners_str = putils.polygon_corners_string(polygon_str)
 
     return f"{mission}_{rel_orbit}_{start_date}_{end_date}_{corners_str}"
 
@@ -216,7 +215,7 @@ def get_sarvey_export_path():
     #fallback: use conda run
     try:
         result = subprocess.check_output(
-            ["conda", "run", "-n", "sarvey", "which", "sarvey_export"],
+            ["conda", "run", "-n", "minsar", "which", "sarvey_export"],
             universal_newlines=True
         )
         return result.strip()
@@ -268,7 +267,7 @@ def extract_metadata_from_inputs(sarvey_inputs_dir_path):
         #normalize platform name
         platform_raw = (attributes.get("PLATFORM") or attributes.get("mission") or "").upper()
         platform_aliases = {
-            "TSX": "TSX", "TERRASAR-X": "TSX", "SENTINEL-1": "S1", "SEN": "S1", "Sen": "S1",
+            "TSX": "TSX", "TERRASAR-X": "TSX", "SENTINEL-1": "S1", "S1": "S1", "SEN": "S1", "Sen": "S1",
             "ERS": "ERS", "ENVISAT": "ENVISAT", "ALOS": "ALOS"
         }
         mission = platform_aliases.get(platform_raw, platform_raw or "S1")
@@ -343,7 +342,9 @@ def update_and_save_final_metadata(json_dir, outdir, dataset_name, metadata, out
         except Exception as e:
             print(f"[WARN] Failed to read final metadata from pickle: {e}")
 
-    final_meta_path = outdir / f"{dataset_name}_{output_suffix}_final_metadata.json"
+    final_meta_path = outdir / f"{dataset_name}_{output_suffix}"
+    final_meta_path = Path(str(final_meta_path).rstrip('_'))
+    final_meta_path = final_meta_path.with_name(f"{final_meta_path.name}_final_metadata.json")
     with open(final_meta_path, "w") as f:
         json.dump(metadata, f, indent=2)
     print(f"[INFO] Final metadata written to: {final_meta_path}")
@@ -512,9 +513,9 @@ def main():
 
     #use $RSMASINSAR_HOME as the root for now (temporarily)
     # FA if you really need an environment variable use variable name RSMASINSAR_HOME
-    rsmasinsar_home = os.environ.get("RSMASINSAR_HOME")
+    rsmasinsar_home = os.environ.get("MINSAR_HOME")
     if not rsmasinsar_home:
-        raise EnvironmentError("Environment variable RSMASINSAR_HOME is not set.")
+        raise EnvironmentError("Environment variable MINSAR_HOME is not set.")
 
     #input/output paths
     # FA: That this is not in build_commands is confusing. If you can't put it there create your own functions
@@ -545,13 +546,14 @@ def main():
     csv_file_path, geocorr_csv_path, json_dir, mbtiles_path, output_path = set_output_paths(output_path, base_filename, inps.do_geocorr)
     input_csv = geocorr_csv_path if inps.do_geocorr else csv_file_path
 
+
     cmd_ogr2ogr, cmd_correctgeo, cmd_hdfeos5, cmd_jsonmbtiles = build_commands(
         shp_file_path, csv_file_path, geocorr_csv_path, json_dir, mbtiles_path, input_csv, inps
     )
 
     #assign python environment for insarmaps_scripts
     if platform.system() == "Darwin":
-       insarmaps_script_env = "insarmaps_scripts"
+       insarmaps_script_env = None
     else:
        insarmaps_script_env = None
 
@@ -563,7 +565,7 @@ def main():
     else:
         # Step 1: run sarvey_export to  create *.shp file
         if data_path.suffix == ".h5":
-            run_command(cmd_sarvey_export, cwd=h5_path.parent.parent, conda_env="sarvey")
+            run_command(cmd_sarvey_export, cwd=h5_path.parent.parent, conda_env=None)
 
         # Step 2: run ogr2ogr to create csv file (FA: is this correct?)
         run_command(cmd_ogr2ogr, conda_env=None)
@@ -578,10 +580,13 @@ def main():
         output_suffix = Path(output_path).name.partition("outputs_")[2]
 
         #replace mbtiles path to reflect final name
-        mbtiles_path = json_dir / f"{dataset_name}_{output_suffix}.mbtiles"
+        mbtiles_path = json_dir / f"{dataset_name}_{output_suffix}"
+        mbtiles_path = Path(str(mbtiles_path).rstrip('_'))
+        mbtiles_path = f"{mbtiles_path}.mbtiles"
 
         #rename csv to match desired output format
         final_csv_name = f"{dataset_name}_{output_suffix}"
+        final_csv_name = final_csv_name.rstrip('_')                       # remove trailing "_" if there is
         final_csv_name += "_geocorr.csv" if inps.do_geocorr else ".csv"
         final_csv_path = output_path / final_csv_name
 
@@ -601,16 +606,18 @@ def main():
         )
 
         # Step 4: run hdfeos5_2_mbtiles.pt to convert csv-file into mbptile.
-        run_command(cmd_hdfeos5, conda_env=insarmaps_script_env)
+        run_command(cmd_hdfeos5, conda_env=None)
         metadata, _ = extract_metadata_from_inputs(sarvey_inputs_dir_path)
         metadata = update_and_save_final_metadata(json_dir, output_path, dataset_name, metadata, output_suffix)
 
         # Step 5: run json_mbtiles2insarmaps to ingest data into insarmaps
         if not inps.skip_upload:
-            run_command(cmd_jsonmbtiles, conda_env="insarmaps_scripts" if platform.system() == "Darwin" else None)
+            run_command(cmd_jsonmbtiles, conda_env=None if platform.system() == "Darwin" else None)
 
         #rename MBTiles to match dataset name
-        final_mbtiles_name = f"{dataset_name}_{output_suffix}.mbtiles"
+        final_mbtiles_name = f"{dataset_name}_{output_suffix}"
+        final_mbtiles_name = final_mbtiles_name.rstrip('_')
+        final_mbtiles_name = f"{final_mbtiles_name}.mbtiles"
         final_mbtiles_path = json_dir / final_mbtiles_name
 
         #update mbtiles_path only if the file exists
@@ -634,6 +641,7 @@ def main():
         # Step 6: create insarmaps.log with URL
         host = inps.insarmaps_host.split(",")[0]
         dataset_name_with_suffix = f"{dataset_name}_{output_suffix}"
+        dataset_name_with_suffix = dataset_name_with_suffix.rstrip('_')
         url = generate_insarmaps_url(host, dataset_name_with_suffix, metadata, geocorr=inps.do_geocorr)
 
         with open('insarmaps.log', 'a') as f:
