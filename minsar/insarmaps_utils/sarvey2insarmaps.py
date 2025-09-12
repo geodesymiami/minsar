@@ -9,13 +9,13 @@ import pickle
 import h5py
 from pathlib import Path
 from datetime import date
-from mintpy.utils import readfile
-import minsar.utils.process_utilities as putils
 import pandas as pd
 import webbrowser
 import sys
 import shlex
 import shutil
+from mintpy.utils import readfile
+import minsar.utils.process_utilities as putils
 
 sys.path.insert(0, os.getenv("SSARAHOME"))
 import password_config as password
@@ -143,6 +143,20 @@ def generate_dataset_name_from_csv(csv_file_path, sarvey_inputs_dir_path=None):
     lon1 = f"W{abs(int(max_lon * 10000)):06d}"
     lon2 = f"W{abs(int(min_lon * 10000)):06d}"
 
+    #get platform and orbit info from inputs_path if available
+    mission, rel_orbit = "S1", "000"
+    if sarvey_inputs_dir_path:
+        attributes, _ = extract_metadata_from_inputs(sarvey_inputs_dir_path)
+        platform_raw = (attributes.get("PLATFORM") or attributes.get("mission") or "").upper()
+        platform_aliases = {
+            "TSX": "TSX", "TERRASAR-X": "TSX", "SENTINEL-1": "S1", "S1": "S1", "SEN": "S1", "Sen": "S1",
+            "ERS": "ERS", "ENVISAT": "ENVISAT", "ALOS": "ALOS"
+        }
+        mission = platform_aliases.get(platform_raw, "S1")
+
+        rel_orbit_raw = attributes.get("relative_orbit", "")
+        rel_orbit = f"{int(rel_orbit_raw):03d}" if str(rel_orbit_raw).isdigit() else "000"
+
     # Get the four corners of the data. We use a rectangular box and lat/lon min/max until we have figures out coordinates of the subset.
     footprint_corners = [
         (max_lat, min_lon),         # top-left
@@ -153,19 +167,6 @@ def generate_dataset_name_from_csv(csv_file_path, sarvey_inputs_dir_path=None):
     ]
     polygon_str = putils.corners_to_wkt_polygon(footprint_corners)
     corners_str = putils.polygon_corners_string(polygon_str)
-
-    mission, rel_orbit = "S1", "000"
-    if sarvey_inputs_dir_path:
-        attributes, _ = extract_metadata_from_inputs(sarvey_inputs_dir_path)
-        platform_raw = (attributes.get("PLATFORM") or attributes.get("mission") or "").upper()
-        platform_aliases = {
-            "TSX": "TSX", "TERRASAR-X": "TSX", "SENTINEL-1": "S1", "S1": "S1",
-            "ERS": "ERS", "ENVISAT": "ENVISAT", "ALOS": "ALOS"
-        }
-        mission = platform_aliases.get(platform_raw, "S1")
-
-        rel_orbit_raw = attributes.get("relative_orbit", "")
-        rel_orbit = f"{int(rel_orbit_raw):03d}" if str(rel_orbit_raw).isdigit() else "000"
 
     return f"{mission}_{rel_orbit}_{start_date}_{end_date}_{corners_str}"
 
@@ -267,7 +268,7 @@ def extract_metadata_from_inputs(sarvey_inputs_dir_path):
         #normalize platform name
         platform_raw = (attributes.get("PLATFORM") or attributes.get("mission") or "").upper()
         platform_aliases = {
-            "TSX": "TSX", "TERRASAR-X": "TSX", "SENTINEL-1": "S1", "S1": "S1",
+            "TSX": "TSX", "TERRASAR-X": "TSX", "SENTINEL-1": "S1", "SEN": "S1", "Sen": "S1",
             "ERS": "ERS", "ENVISAT": "ENVISAT", "ALOS": "ALOS"
         }
         mission = platform_aliases.get(platform_raw, platform_raw or "S1")
@@ -342,9 +343,7 @@ def update_and_save_final_metadata(json_dir, outdir, dataset_name, metadata, out
         except Exception as e:
             print(f"[WARN] Failed to read final metadata from pickle: {e}")
 
-    final_meta_path = outdir / f"{dataset_name}_{output_suffix}"
-    final_meta_path = Path(str(final_meta_path).rstrip('_'))
-    final_meta_path = final_meta_path.with_name(f"{final_meta_path.name}_final_metadata.json")
+    final_meta_path = outdir / f"{dataset_name}_{output_suffix}_final_metadata.json"
     with open(final_meta_path, "w") as f:
         json.dump(metadata, f, indent=2)
     print(f"[INFO] Final metadata written to: {final_meta_path}")
@@ -583,7 +582,6 @@ def main():
 
         #rename csv to match desired output format
         final_csv_name = f"{dataset_name}_{output_suffix}"
-        final_csv_name = final_csv_name.rstrip('_')                       # remove trailing "_" if there is
         final_csv_name += "_geocorr.csv" if inps.do_geocorr else ".csv"
         final_csv_path = output_path / final_csv_name
 
@@ -612,9 +610,7 @@ def main():
             run_command(cmd_jsonmbtiles, conda_env="insarmaps_scripts" if platform.system() == "Darwin" else None)
 
         #rename MBTiles to match dataset name
-        final_mbtiles_name = f"{dataset_name}_{output_suffix}"
-        final_mbtiles_name = final_mbtiles_name.rstrip('_')
-        final_mbtiles_name = f"{final_mbtiles_name}.mbtiles"
+        final_mbtiles_name = f"{dataset_name}_{output_suffix}.mbtiles"
         final_mbtiles_path = json_dir / final_mbtiles_name
 
         #update mbtiles_path only if the file exists
@@ -638,7 +634,6 @@ def main():
         # Step 6: create insarmaps.log with URL
         host = inps.insarmaps_host.split(",")[0]
         dataset_name_with_suffix = f"{dataset_name}_{output_suffix}"
-        dataset_name_with_suffix = dataset_name_with_suffix.rstrip('_')
         url = generate_insarmaps_url(host, dataset_name_with_suffix, metadata, geocorr=inps.do_geocorr)
 
         with open('insarmaps.log', 'a') as f:

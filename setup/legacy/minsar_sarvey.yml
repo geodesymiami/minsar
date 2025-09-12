@@ -1,0 +1,79 @@
+name: minsar_sarvey
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - isce2     # [linux]
+  - gdal=3.6*
+  - mintpy
+  - sardem
+  - numpy>=1.26.2,<2.0
+  - pandas
+  - xarray
+  - netcdf4
+  - packaging
+# Mintpy
+  - cartopy
+  - cvxopt
+  - dask>=1.0
+  - dask-jobqueue>=0.3
+  - h5py
+  - lxml
+  - matplotlib
+  - pyaps3>=0.3
+  - pykml>=0.2
+  - pyproj
+  - pyresample
+  - pysolid
+  - scikit-image
+  - scipy
+# Miaplpy
+  - c-compiler
+  - cython
+  - rasterio
+  - setuptools
+  - pulp
+  - opencv
+  - scikit-learn
+  - defusedxml
+  - simplekml
+# tools
+  - wget
+  - git
+  - tree
+# minsar
+  - jupyter
+  - natsort
+  - pdf2image  # create_html
+  - folium
+  - contextily
+# PlotData
+  - gmt
+  - pygmt
+  - geopandas
+# insarmaps_scripts
+  - tippecanoe
+  - libpq
+  - postgresql
+  - psycopg2
+  - pycurl
+# Precip
+  - paramiko
+# Sarvey
+  - PySide6
+  - cmcrameri
+  - gstools
+  - numba
+  - pymaxflow              # for sarvey: Linux only, comment out on Mac
+
+# Pip
+  - pip:
+      - georaster           # view_scatterplot
+      - bypy                # Baidu cloud interface
+      - burst2safe          # minsar
+      - asf_search          # minsar
+      - fuzzywuzzy          # Precip
+      - jupyter-ai          #
+      - geocoder            # insarmaps_sccripts
+      - kamui               #
+      #- pymaxflow          # for sarvey: Mac only,  remove # on Mac
