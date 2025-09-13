@@ -34,11 +34,15 @@ fi
 if [[ "$(uname)" == "Linux" ]]; then
     if [[ -f conda-lock.yml ]]; then
        tools/miniforge3/bin/mamba create --prefix tools/miniforge3/envs/minsar --file conda-lock.yml --yes
-  else
+    else
        tools/miniforge3/bin/mamba --verbose env create -f minsar_env.yml --yes
-  fi
+    fi
 elif [[ "$(uname)" == "Darwin" ]]; then
-  tools/miniforge3/bin/mamba --verbose env create -f minsar_env_MacOS.yml --yes
+    if [[ -f conda-osx-arm64.lock ]]; then
+        tools/miniforge3/bin/mamba create --name minsar --file conda-osx-arm64.lock --yes
+    else
+       tools/miniforge3/bin/mamba --verbose env create -f minsar_env_MacOS.yml --yes
+    fi
 fi
 
 source tools/miniforge3/etc/profile.d/conda.sh
