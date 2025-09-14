@@ -22,6 +22,19 @@ export JOB_SUBMISSION_SCHEME=launcher_multiTask_multiNode
 export JOB_SUBMISSION_SCHEME=launcher_multiTask_singleNode
 
 ###############################################
+if [[ ${USER} == *circleci* ]]
+then
+  export PLATFORM_NAME=circleci
+  export JOBSCHEDULER=SLURM
+  export JOBSHEDULER_PROJECTNAME=TG-EAR200012
+  export WORKDIR=${HOME}
+  export SCRATCHDIR=${HOME}
+  export QUEUE_NORMAL=skx
+  export QUEUE_DEV=skx-dev
+  export QUEUENAME=$QUEUE_NORMAL
+  : "${CONDA_PREFIX:=$MINSAR_HOME/tools/miniforge3}"
+fi
+###############################################
 if [[ ${HOSTNAME} == eos ]]
 then
   export PLATFORM_NAME=eos_sanghoon
@@ -31,13 +44,22 @@ then
   export JOB_SUBMISSION_SCHEME=singleTask
 fi
 ###############################################
-if [[ ${HOSTNAME} == perfectly-elegant-tapir ]]
+if [[ ${HOSTNAME} == perfectly-elegant-tapir ]] 
 then
   export PLATFORM_NAME=jetstream
   export JOBSCHEDULER=NONE
   export QUEUENAME=NONE
   export WORKDIR=~/insarlab
   export SCRATCHDIR=/data/HDF5EOS
+fi
+###############################################
+if  [[ ${HOSTNAME}} == *preceipvm* ]]
+then
+  export PLATFORM_NAME=precipvm
+  export JOBSCHEDULER=NONE
+  export QUEUENAME=NONE
+  export WORKDIR=~/insarlab
+  export SCRATCHDIR=/data
 fi
 ###############################################
 if [[ ${HOSTNAME} == *stampede* ]] || [[ ${TACC_SYSTEM:-} == *stampede* ]]
@@ -83,19 +105,6 @@ then
   export JOBSHEDULER_PROJECTNAME=TG-EAR180012
   export WORKDIR=${HOME}/insarlab
   export SCRATCHDIR=/oasis/scratch/comet/$USER/temp_project
-fi
-###############################################
-if [[ ${USER} == *circleci* ]]
-then
-  export PLATFORM_NAME=circleci
-  export JOBSCHEDULER=SLURM
-  export JOBSHEDULER_PROJECTNAME=TG-EAR200012
-  export WORKDIR=${HOME}
-  export SCRATCHDIR=${HOME}
-  export QUEUE_NORMAL=skx
-  export QUEUE_DEV=skx-dev
-  export QUEUENAME=$QUEUE_NORMAL
-  : "${CONDA_PREFIX:=$MINSAR_HOME/tools/miniforge3}"
 fi
 ###############################################
 if [ "$(uname)" == "Darwin" ]
