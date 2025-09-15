@@ -14,9 +14,8 @@ jobs:
           command: |
             echo "Working directory: ${PWD}"
             ./setup/install_python.bash
-            ./setup/install_minsar.bash
-            ./setup/install_sarvey.bash
-            ./setup/install_vsm.bash
+            ./setup/install_minsar_env.bash
+            ./setup/install_code.bash
             minsar/bin/minsarApp.bash --help
             echo "alias s.bw2m='export MINSAR_HOME=${CIRCLE_WORKING_DIRECTORY}; source project/setup/environment.bash'" >> ~/.bashrc
 
