@@ -8,20 +8,17 @@ export JOBSCHEDULER=NONE
 export WORKDIR=~/insarlab
 export SCRATCHDIR=${WORKDIR}/scratch
 
-#############################################
-########### known platforms ##################
-#############################################
 export NUMBER_OF_CORES_PER_NODE=16
 export NUMBER_OF_THREADS_PER_CORE=1
 export MAX_MEMORY_PER_NODE=16000
 
-export JOB_SUBMISSION_SCHEME=singleTask
-export JOB_SUBMISSION_SCHEME=multiTask_multiNode
-export JOB_SUBMISSION_SCHEME=multiTask_singleNode
-export JOB_SUBMISSION_SCHEME=launcher_multiTask_multiNode
+###############################################
+# options: singleTask, multiTask_multiNode, multiTask_singleNode, launcher_multiTask_multiNode, launcher_multiTask_singleNode
 export JOB_SUBMISSION_SCHEME=launcher_multiTask_singleNode
 
-###############################################
+#############################################
+########### known platforms ##################
+#############################################
 if [[ ${USER} == *circleci* ]]
 then
   export PLATFORM_NAME=circleci
@@ -44,7 +41,7 @@ then
   export JOB_SUBMISSION_SCHEME=singleTask
 fi
 ###############################################
-if [[ ${HOSTNAME} == perfectly-elegant-tapir ]] 
+if [[ ${HOSTNAME} == perfectly-elegant-tapir ]]
 then
   export PLATFORM_NAME=jetstream
   export JOBSCHEDULER=NONE
@@ -97,7 +94,6 @@ if [[ ${HOSTNAME} == *comet* ]]
 then
   export PLATFORM_NAME=comet
   export JOBSCHEDULER=SLURM
-  #export QUEUENAME=compute
   export QUEUENAME=gpu
   export MAX_MEMORY_PER_NODE=20000
   export NUMBER_OF_CORES_PER_NODE=24
