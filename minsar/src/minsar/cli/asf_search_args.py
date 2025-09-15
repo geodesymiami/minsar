@@ -56,6 +56,9 @@ def create_parser(iargs=None, namespace=None):
 
     inps = parser.parse_args()
 
+    # Normalize inps.platform to handle whitespace and case sensitivity
+    inps.platform = inps.platform.split(',')
+
     if "BURST" in inps.processing_level:
         inps.processing_level = asf.PRODUCT_TYPE.BURST
     elif "CSLC" in inps.processing_level:
@@ -79,6 +82,22 @@ def create_parser(iargs=None, namespace=None):
     else:
         inps.end_date = datetime.datetime.now().date()
 
+    if any(platform in inps.platform for platform in ['SENTINEL1', 'SENTINEL-1', 'S1', 'S-1', 'SENTINEL-1A', 'SENTINEL-1B']):
+        print('here')
+        inps.platform = asf.PLATFORM.SENTINEL1
+        if hasattr(inps, 'dataset'):
+            inps.dataset.append(asf.DATASET.SENTINEL1)
+        else:
+            inps.dataset = [asf.DATASET.SENTINEL1]
+        inps.beam_swath = 'IW'
+
+    elif inps.platform in ['ALOS-2', 'ALOS2'] or inps.processing_level==asf.PRODUCT_TYPE.L1_1:
+        # platform = asf.PLATFORM.ALOS-2
+        inps.platform = asf.PLATFORM.ALOS
+        inps.processing_level=asf.PRODUCT_TYPE.L1_1
+        inps.dataset = [asf.DATASET.ALOS_2]
+        inps.polarization=['HH', 'HV']
+
     if inps.processing_level==asf.PRODUCT_TYPE.SLC:
         inps.polarization = ['VV','VV+VH'] 
     elif inps.processing_level==asf.PRODUCT_TYPE.BURST:
@@ -87,19 +106,6 @@ def create_parser(iargs=None, namespace=None):
     else:
         inps.polarization = ['VV', 'VV+VH']
 
-    if inps.platform in ['SENTINEL1', 'SENTINEL-1', 'S1', 'S-1', 'SENTINEL-1A', 'SENTINEL-1B']:
-        inps.platform = asf.PLATFORM.SENTINEL1
-        if hasattr(inps, 'dataset'):
-            inps.dataset.append(asf.DATASET.SENTINEL1)
-        else:
-            inps.dataset = [asf.DATASET.SENTINEL1]
-        inps.beam_swath = 'IW'
-    elif inps.platform in ['ALOS-2', 'ALOS2'] or inps.processing_level==asf.PRODUCT_TYPE.L1_1:
-        # platform = asf.PLATFORM.ALOS-2
-        inps.platform = asf.PLATFORM.ALOS
-        inps.processing_level=asf.PRODUCT_TYPE.L1_1
-        inps.dataset = [asf.DATASET.ALOS_2]
-        inps.polarization=['HH', 'HV']
 
     if inps.flightDirection:
         if inps.flightDirection in ['ASCENDING', 'ASC']:
