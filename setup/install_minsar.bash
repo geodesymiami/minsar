@@ -25,7 +25,7 @@ git clone git@github.com:falkamelung/sarplotter-main.git tools/sarplotter-main
 if [[ "$(uname)" == "Darwin" ]]; then
     cp minsar_env.yml minsar_env_macOS.yml
     sed -i '' '/- isce/ s/^/# /' minsar_env_MacOS.yml
-    sed -i '' '/gdal$/ s/gdal$/gdal=3.6\*/' minsar_env_MacOS.yml
+    sed -i '' '/gdal$/ s/gdal$/gdal=3.6\*/' minsar_env_MacOS.yml                  # only gdal=3.6 ships with the built-in postgresQL
     sed -i '' '/- pymaxflow/ s/^/# /' minsar_env_MacOS.yml                        # out-comment conda pymaxflow installation
     sed -i '' '/#- pymaxflow/ s/#- pymaxflow/- pymaxflow/' minsar_env_MacOS.yml   # activate pip pymaxflow installation
 fi
@@ -33,16 +33,13 @@ fi
 
 if [[ "$(uname)" == "Linux" ]]; then
     if [[ -f conda-lock.yml ]]; then
+       echo "Lock file conda-lock.yml found. Using it for installation"
        tools/miniforge3/bin/mamba create --prefix tools/miniforge3/envs/minsar --file conda-lock.yml --yes
     else
        tools/miniforge3/bin/mamba --verbose env create -f minsar_env.yml --yes
     fi
-elif [[ "$(uname)" == "Darwin" ]]; then
-    if [[ -f conda-osx-arm64.lock ]]; then
-        tools/miniforge3/bin/mamba create --name minsar --file conda-osx-arm64.lock --yes
-    else
-       tools/miniforge3/bin/mamba --verbose env create -f minsar_env_MacOS.yml --yes
-    fi
+elif [[ "$(uname)" == "Darwin" ]]; then    # FA 9/2025 lockfile for macOS did not work as pip failed to build wheels (need to try pixi)
+    tools/miniforge3/bin/mamba --verbose env create -f minsar_env_MacOS.yml --yes
 fi
 
 source tools/miniforge3/etc/profile.d/conda.sh
