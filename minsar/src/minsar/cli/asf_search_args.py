@@ -83,7 +83,6 @@ def create_parser(iargs=None, namespace=None):
         inps.end_date = datetime.datetime.now().date()
 
     if any(platform in inps.platform for platform in ['SENTINEL1', 'SENTINEL-1', 'S1', 'S-1', 'SENTINEL-1A', 'SENTINEL-1B']):
-        print('here')
         inps.platform = asf.PLATFORM.SENTINEL1
         if hasattr(inps, 'dataset'):
             inps.dataset.append(asf.DATASET.SENTINEL1)
