@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
 import asf_search as asf
+from asf_search.constants import INTERNAL
 import datetime
 import argparse
 import os
 
+INTERNAL.CMR_TIMEOUT = 90
 workDir = 'SCRATCHDIR'
 
 # Define the description and epilog of the script
