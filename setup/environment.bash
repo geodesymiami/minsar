@@ -41,7 +41,7 @@ export MINTPY_HOME=${MINSAR_HOME}/tools/MintPy
 export MIAPLPY_HOME=${MINSAR_HOME}/tools/MiaplPy
 export MIMTPY_HOME=${MINSAR_HOME}/tools/MimtPy
 export PLOTDATA_HOME=${MINSAR_HOME}/tools/PlotData
-export SOURCEINVERSION_HOME==${MINSAR_HOME}/tools/SourceInversion
+export SOURCEINVERSION_HOME=${MINSAR_HOME}/tools/SourceInversion
 export PRECIP_HOME=${MINSAR_HOME}/tools/Precip
 export PRECIP_WEB_HOME=${MINSAR_HOME}/tools/Precip_web/precip_web
 export SARVEY_HOME=${MINSAR_HOME}/tools/sarvey
