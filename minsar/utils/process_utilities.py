@@ -1353,12 +1353,13 @@ def generate_intersects_string(dataset_template, delta_lat=0.0, delta_lon=0.0):
         prefix = dataset_template.get_options()['acquisition_mode']
 
 
-    if 'miaplpy.subset.lalo' in dataset_template.get_options():
-       print("Creating intersectsWith string using miaplpy.subset.lalo: ", dataset_template.get_options()['miaplpy.subset.lalo'])
-       intersects_string = convert_subset_lalo_to_intersects_string(dataset_template.get_options()['miaplpy.subset.lalo'], delta_lat, delta_lon)
-    elif 'mintpy.subset.lalo' in dataset_template.get_options():
-       print("Creating intersectsWith string using mintpy.subset.lalo: dataset_template.get_options()['mintpy.subset.lalo']")
+    # FA 9/25: I think the priority should be intersectsString, mintpy.subset, miaplpy.subset
+    if 'mintpy.subset.lalo' in dataset_template.get_options():
+       print("Creating intersectsWith string using  mintpy.subset.lalo: ", dataset_template.get_options()['mintpy.subset.lalo'])
        intersects_string = convert_subset_lalo_to_intersects_string(dataset_template.get_options()['mintpy.subset.lalo'], delta_lat, delta_lon)
+    elif 'miaplpyy.subset.lalo' in dataset_template.get_options():
+       print("Creating intersectsWith string using miaplpyy.subset.lalo: dataset_template.get_options()['miaplpyy.subset.lalo']")
+       intersects_string = convert_subset_lalo_to_intersects_string(dataset_template.get_options()['miaplpyy.subset.lalo'], delta_lat, delta_lon)
     else:
        print("Creating intersectsWith string using *Stack.boundingBox: ", dataset_template.get_options()[prefix + 'Stack.boundingBox'])
        intersects_string = convert_bounding_box_to_intersects_string(dataset_template.get_options()[prefix + 'Stack.boundingBox'], delta_lat, delta_lon)
