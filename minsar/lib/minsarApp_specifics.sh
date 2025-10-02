@@ -44,7 +44,7 @@ function run_command() {
     eval "$cmd"
     local exit_status="$?"
     if [[ $exit_status -ne 0 ]]; then
-        echo "$cmd exited with a non-zero exit code ($exit_status). Exiting."
+        echo "$cmd exited with a non-zero exit code (exit code: $exit_status). Exiting."
         exit 1;
     fi
 }
