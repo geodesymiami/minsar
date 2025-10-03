@@ -29,7 +29,7 @@ NOMINAL_BURST_SIZE_SAMPLES = 23811 * 1505
 
 ##########################################################
 def create_parser():
-    DESCRIPTION = "Summarize memory usage and walltimes from multiple *.time_log files."
+    DESCRIPTION = "Summarize memory usage and walltimes from multiple *.time_log files in walltimes_memory.log."
     EXAMPLE = """
 Examples:
   summarize_resource_usage.py $TE/GalapagosSenD128.template run_files
@@ -148,7 +148,8 @@ def get_miaplpy_data_size_from_data(dir):
 def get_number_of_bursts_from_out_create_jobfiles(file_path='out_create_jobfiles.o'):
     """Extracts and returns the number of bursts from the output file."""
     if not os.path.isfile(file_path):
-        raise FileNotFoundError(f"{file_path} does not exist.")
+        print(f"WARNING: {file_path} not found, exiting without creating walltimes_memory.log.")
+        sys.exit(0)   # exit with success code 0
 
     number_of_bursts = None
 
