@@ -403,8 +403,13 @@ fi
 
 echo "globlist (shown with declare -p):"
 declare -p globlist
+globlist=($(printf "%s\n" "${globlist[@]}" | sed '/^$/d'))   # strip off empty elements (10/25)
+echo "Same after stripping off empty elements (FA 10/25):"   # FA: 10/25: Simplift to one echo command if there no problems
+declare -p globlist
 
+#echo "QQQQ0 length_of_globlist: <${#globlist[@]}>, length_of_files: <"${#files[@]}"> files: $files"
 for g in "${globlist[@]}"; do
+    #echo "QQQ globlist element submitted: <${g}>"
     if [[ -n $g ]]; then
         files=($(ls -1v $g))
     fi
@@ -420,7 +425,7 @@ for g in "${globlist[@]}"; do
     file_pattern=$(echo "${files[0]}" | grep -oP "(.*)(?=_\d{1,}.job)|insarmaps|smallbaseline_wrapper")
     
     sbc_command="submit_jobs.bash $file_pattern"
-    
+
     if [[ $jobfile_flag == "true" ]]; then
         sbc_command="submit_jobs.bash $jobfile"
     fi
@@ -445,8 +450,7 @@ for g in "${globlist[@]}"; do
     if [[ $exit_status -eq 0 ]]; then
         jobnumbers=($jns)
     fi
-
-    #echo "Jobs submitted: ${jobnumbers[@]}"      #       FA 8/23 : switch to print comma-separated
+    
     echo "Jobs submitted: $(convert_array_to_comma_separated_string "${jobnumbers[@]}")"
     sleep 5
 
@@ -458,6 +462,7 @@ for g in "${globlist[@]}"; do
     num_timeout=0
     num_waiting=0
 
+    #echo "QQQQ Number of jobs submitted: <$num_jobs>"
     while [[ $num_complete -lt $num_jobs ]]; do
         num_complete=0
         num_running=0
@@ -465,6 +470,7 @@ for g in "${globlist[@]}"; do
         num_waiting=0
         sleep $wait_time
 
+        # loop over job numbers to check whetehr jobs are completed
         for (( j=0; j < "${#jobnumbers[@]}"; j++)); do
             file=${files[$j]}
             file_pattern="${file%.*}"
@@ -521,7 +527,7 @@ for g in "${globlist[@]}"; do
                 continue;
             fi
 
-        done
+        done    # Done checking status of all submitted jobs
 
         num_waiting=$(($num_jobs-$num_complete-$num_running-$num_pending))
 
