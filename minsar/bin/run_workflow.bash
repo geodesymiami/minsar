@@ -48,6 +48,31 @@ function remove_from_list {
     echo "${list[@]}"
 }
 
+function clean_array() {
+# cleans array in-place by removing empty elements and white space elements
+# Usage:
+# clean_array globlist
+    local arr_name="$1"
+    local original=()
+    local cleaned=()
+
+    # copy array into 'original'
+    eval "original=(\"\${${arr_name}[@]}\")"
+
+    # iterate and keep only non-empty, non-whitespace entries
+    for item in "${original[@]}"; do
+        # Trim whitespace
+        local trimmed="$(echo "$item" | xargs)"
+        if [[ -n "$trimmed" ]]; then
+            cleaned+=("$item")
+        fi
+    done
+
+    # overwrite original array with cleaned one
+    eval "$arr_name=(\"\${cleaned[@]}\")"
+}
+###########################################
+
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
 helptext="                                                                         \n\
 Job submission script
@@ -398,18 +423,20 @@ if [[ $jobfile_flag == "true" ]]; then
     fi
 fi
 
-#globlist=("${globlist[@]/%/}") # Remove potential trailing spaces
-#globlist=($(printf "%s\n" "${globlist[@]}" | grep -v '^$'))
-
-echo "globlist (shown with declare -p):"
-declare -p globlist
-globlist=($(printf "%s\n" "${globlist[@]}" | sed '/^$/d'))   # strip off empty elements (10/25)
-echo "Same after stripping off empty elements (FA 10/25):"   # FA: 10/25: Simplift to one echo command if there no problems
+#echo "QQQ globlist (shown with declare -p):"
+#declare -p globlist
+clean_array globlist
+#echo "QQQ globlist after stripping off empty elements (FA 10/25):"   # FA: 10/25: Simplift to one echo command if there no problems
 declare -p globlist
 
-#echo "QQQQ0 length_of_globlist: <${#globlist[@]}>, length_of_files: <"${#files[@]}"> files: $files"
+#FA 10/25: This also worked
+#original_globlist=("${globlist[@]}")
+#globlist=()
+#for item in "${original_globlist[@]}"; do
+#    [[ -n $item ]] && globlist+=("$item")
+#done
+
 for g in "${globlist[@]}"; do
-    #echo "QQQ globlist element submitted: <${g}>"
     if [[ -n $g ]]; then
         files=($(ls -1v $g))
     fi
@@ -425,7 +452,7 @@ for g in "${globlist[@]}"; do
     file_pattern=$(echo "${files[0]}" | grep -oP "(.*)(?=_\d{1,}.job)|insarmaps|smallbaseline_wrapper")
     
     sbc_command="submit_jobs.bash $file_pattern"
-
+    
     if [[ $jobfile_flag == "true" ]]; then
         sbc_command="submit_jobs.bash $jobfile"
     fi
@@ -450,7 +477,8 @@ for g in "${globlist[@]}"; do
     if [[ $exit_status -eq 0 ]]; then
         jobnumbers=($jns)
     fi
-    
+
+    #echo "Jobs submitted: ${jobnumbers[@]}"      #       FA 8/23 : switch to print comma-separated
     echo "Jobs submitted: $(convert_array_to_comma_separated_string "${jobnumbers[@]}")"
     sleep 5
 
@@ -462,15 +490,14 @@ for g in "${globlist[@]}"; do
     num_timeout=0
     num_waiting=0
 
-    #echo "QQQQ Number of jobs submitted: <$num_jobs>"
     while [[ $num_complete -lt $num_jobs ]]; do
         num_complete=0
         num_running=0
         num_pending=0
         num_waiting=0
+        
         sleep $wait_time
 
-        # loop over job numbers to check whetehr jobs are completed
         for (( j=0; j < "${#jobnumbers[@]}"; j++)); do
             file=${files[$j]}
             file_pattern="${file%.*}"
@@ -490,7 +517,7 @@ for g in "${globlist[@]}"; do
         
                 if [[ $state == *"TIMEOUT"* ]]; then
                     init_walltime=$(grep -oP '(?<=#SBATCH -t )[0-9]+:[0-9]+:[0-9]+' $file)
-                    echo "${file} timedout with walltime of ${init_walltime}."
+                    echo "Job file ${file} timed out with walltime of ${init_walltime}."
                                     
                     # Compute a new walltime and update the job file
                     update_walltime.py "$file" &> /dev/null
@@ -527,7 +554,7 @@ for g in "${globlist[@]}"; do
                 continue;
             fi
 
-        done    # Done checking status of all submitted jobs
+        done
 
         num_waiting=$(($num_jobs-$num_complete-$num_running-$num_pending))
 
