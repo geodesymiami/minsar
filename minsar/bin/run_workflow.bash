@@ -520,7 +520,7 @@ for g in "${globlist[@]}"; do
                     echo "Job file ${file} timed out with walltime of ${init_walltime}."
                                     
                     # Compute a new walltime and update the job file
-                    update_walltime.py "$file" &> /dev/null
+                    update_walltime_queuename.py "$file" &> /dev/null
                     updated_walltime=$(grep -oP '(?<=#SBATCH -t )[0-9]+:[0-9]+:[0-9]+' $file)
 
                     datetime=$(date +"%Y-%m-%d:%H-%M")
