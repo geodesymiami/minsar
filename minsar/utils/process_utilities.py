@@ -1236,7 +1236,6 @@ def multiply_walltime(wall_time, factor):
     return new_wall_time
 
 ##########################################################################
-
 def replace_walltime_in_job_file(file, new_wall_time):
     """ replaces the walltime from a SLURM job file """
     new_lines=[]
@@ -1255,6 +1254,24 @@ def replace_walltime_in_job_file(file, new_wall_time):
 
     return
 
+##########################################################################
+def replace_queuename_in_job_file(file, new_queue_name):
+    """ replaces the queuename in a SLURM job file """
+    new_lines=[]
+    with open(file) as fr:
+        lines = fr.readlines()
+        for line in lines:
+            if '#SBATCH -p' in line:
+                queue_name = line.split('-p')[1]
+                queue_name = queue_name.strip()
+                line = line.replace(queue_name,new_queue_name)
+            new_lines.append(line)
+    fr.close()
+
+    with open(file, 'w') as job_file:
+            job_file.writelines(new_lines)
+
+    return
 ##########################################################################
 
 def run_remove_date_from_run_files(run_files_dir, date, start_run_file):
@@ -1357,9 +1374,9 @@ def generate_intersects_string(dataset_template, delta_lat=0.0, delta_lon=0.0):
     if 'mintpy.subset.lalo' in dataset_template.get_options():
        print("Creating intersectsWith string using  mintpy.subset.lalo: ", dataset_template.get_options()['mintpy.subset.lalo'])
        intersects_string = convert_subset_lalo_to_intersects_string(dataset_template.get_options()['mintpy.subset.lalo'], delta_lat, delta_lon)
-    elif 'miaplpyy.subset.lalo' in dataset_template.get_options():
-       print("Creating intersectsWith string using miaplpyy.subset.lalo: dataset_template.get_options()['miaplpyy.subset.lalo']")
-       intersects_string = convert_subset_lalo_to_intersects_string(dataset_template.get_options()['miaplpyy.subset.lalo'], delta_lat, delta_lon)
+    elif 'miaplpy.subset.lalo' in dataset_template.get_options():
+       print("Creating intersectsWith string using miaplpy.subset.lalo: dataset_template.get_options()['miaplpy.subset.lalo']")
+       intersects_string = convert_subset_lalo_to_intersects_string(dataset_template.get_options()['miaplpy.subset.lalo'], delta_lat, delta_lon)
     else:
        print("Creating intersectsWith string using *Stack.boundingBox: ", dataset_template.get_options()[prefix + 'Stack.boundingBox'])
        intersects_string = convert_bounding_box_to_intersects_string(dataset_template.get_options()[prefix + 'Stack.boundingBox'], delta_lat, delta_lon)
