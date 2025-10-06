@@ -550,7 +550,9 @@ if [[ $miaplpy_flag == "1" ]]; then
     if [[ $skip_miaplpy_flag != "1" ]]; then
        # create miaplpy jobfiles and remove existing slcStack.h5  (FA 8/25: we may want to remove entire miaplpy folder)
        rm -f ${miaplpy_dir_name}/inputs/slcStack.h5 ${miaplpy_dir_name}/inputs/geometryRadar.h5
-       run_command "$srun_cmd miaplpyApp.py $template_file --dir $miaplpy_dir_name --jobfiles --queue $QUEUENAME"
+       #run_command "$srun_cmd miaplpyApp.py $template_file --dir $miaplpy_dir_name --jobfiles --queue $QUEUENAME"
+       run_command "create_miaplpyApp_jobfile.py $template_file $miaplpy_dir_name" 
+       run_command "run_workflow.bash $template_file --jobfile $PWD/miaplpyApp.job"
 
        # run miaplpy jobfiles
        run_command "run_workflow.bash $template_file --append --dostep miaplpy --dir $miaplpy_dir_name"
