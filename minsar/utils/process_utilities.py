@@ -685,7 +685,14 @@ def extract_date_string_from_config_file_name(config_file_name):
     return date_string
 
 ##########################################################################
+def extract_date_string_from_burst2safe_command(line):
+    """gets the date from the line burst2safe S1_092585_IW2_20160506T165619_VV_5BD0-BURST  --keep-files --output-dir SLC"""
+    burst_file = line.split(' ')[1]
+    date_string_long = burst_file.split('_')[3]
+    date_string = date_string_long[0:8]
+    return date_string
 
+##########################################################################
 def get_line_before_last(file):
     """get the line before last from a file"""
 

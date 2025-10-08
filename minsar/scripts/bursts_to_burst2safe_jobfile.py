@@ -81,6 +81,12 @@ def main(iargs=None):
 
     filtered_bursts_by_date = { date: bursts for date, bursts in bursts_by_date.items() if len(bursts) == len(bursts_by_date[max_date]) }
 
+    first_key = next(iter(filtered_bursts_by_date))
+    number_of_bursts = len(filtered_bursts_by_date[first_key])
+    if number_of_bursts <= 1:
+        raise RuntimeError("USER ERROR: need more than 1 burst for ISCE processing (in run_07_merge* step). For {first_key} there is only 1 burst")
+        sys.exit(1)
+
     with open(run_01_burst2safe_path, "w") as f:
         for date, bursts in sorted(filtered_bursts_by_date.items()):
             output_dir = str(Path(inps.work_dir) / inps.burst_dir_path)

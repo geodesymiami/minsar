@@ -1234,6 +1234,9 @@ class JOB_SUBMIT:
                 config_file = putils.extract_config_file_from_task_string(line)
                 date_string = putils.extract_date_string_from_config_file_name(config_file)
 
+                if 'burst2safe' in job_file_name:
+                    date_string = putils.extract_date_string_from_burst2safe_command(line)
+                    
                 prepend_str=''
                 if os.getenv('PROFILE_FLAG', '0') in ['1', 'True'] and not 'wait' in line:
                     prepend_str = f"/usr/bin/time -v -o {os.path.abspath(batch_file)}_{date_string}_$LAUNCHER_JID.time_log "
