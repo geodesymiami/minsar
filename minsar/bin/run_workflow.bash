@@ -48,6 +48,31 @@ function remove_from_list {
     echo "${list[@]}"
 }
 
+function clean_array() {
+# cleans array in-place by removing empty elements and white space elements
+# Usage:
+# clean_array globlist
+    local arr_name="$1"
+    local original=()
+    local cleaned=()
+
+    # copy array into 'original'
+    eval "original=(\"\${${arr_name}[@]}\")"
+
+    # iterate and keep only non-empty, non-whitespace entries
+    for item in "${original[@]}"; do
+        # Trim whitespace
+        local trimmed="$(echo "$item" | xargs)"
+        if [[ -n "$trimmed" ]]; then
+            cleaned+=("$item")
+        fi
+    done
+
+    # overwrite original array with cleaned one
+    eval "$arr_name=(\"\${cleaned[@]}\")"
+}
+###########################################
+
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
 helptext="                                                                         \n\
 Job submission script
@@ -398,11 +423,18 @@ if [[ $jobfile_flag == "true" ]]; then
     fi
 fi
 
-#globlist=("${globlist[@]/%/}") # Remove potential trailing spaces
-#globlist=($(printf "%s\n" "${globlist[@]}" | grep -v '^$'))
-
-echo "globlist (shown with declare -p):"
+#echo "QQQ globlist (shown with declare -p):"
+#declare -p globlist
+clean_array globlist
+#echo "QQQ globlist after stripping off empty elements (FA 10/25):"   # FA: 10/25: Simplift to one echo command if there no problems
 declare -p globlist
+
+#FA 10/25: This also worked
+#original_globlist=("${globlist[@]}")
+#globlist=()
+#for item in "${original_globlist[@]}"; do
+#    [[ -n $item ]] && globlist+=("$item")
+#done
 
 for g in "${globlist[@]}"; do
     if [[ -n $g ]]; then
@@ -463,6 +495,7 @@ for g in "${globlist[@]}"; do
         num_running=0
         num_pending=0
         num_waiting=0
+        
         sleep $wait_time
 
         for (( j=0; j < "${#jobnumbers[@]}"; j++)); do
@@ -484,10 +517,10 @@ for g in "${globlist[@]}"; do
         
                 if [[ $state == *"TIMEOUT"* ]]; then
                     init_walltime=$(grep -oP '(?<=#SBATCH -t )[0-9]+:[0-9]+:[0-9]+' $file)
-                    echo "${file} timedout with walltime of ${init_walltime}."
+                    echo "Job file ${file} timed out with walltime of ${init_walltime}."
                                     
                     # Compute a new walltime and update the job file
-                    update_walltime.py "$file" &> /dev/null
+                    update_walltime_queuename.py "$file" &> /dev/null
                     updated_walltime=$(grep -oP '(?<=#SBATCH -t )[0-9]+:[0-9]+:[0-9]+' $file)
 
                     datetime=$(date +"%Y-%m-%d:%H-%M")

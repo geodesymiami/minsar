@@ -33,18 +33,19 @@ export PRECIPPRODUCTS_DIR="${PRECIPPRODUCTS_DIR:-$SCRATCHDIR/precip_products}"
 export TESTDATA_ISCE="${TESTDATA_ISCE:-$WORKDIR/TESTDATA_ISCE}"
 
 ############ FOR PROCESSING  #########
-python_version=python3.10 
+python_version=$(echo "python3.$(${MINSAR_HOME}/tools/miniforge3/bin/python --version | cut -d. -f2)")        # e.g. python3.10
+python_version=python3.10
 export SSARAHOME=${MINSAR_HOME}/tools/SSARA
-export ISCE_HOME=${CONDA_PREFIX}/lib/$python_version/site-packages/isce
-export ISCE_STACK=${CONDA_PREFIX}/share/isce2
+export ISCE_HOME=${MINSAR_HOME}/tools/miniforge3/envs/minsar/lib/$python_version/site-packages/isce
+export ISCE_STACK=${MINSAR_HOME}/tools/miniforge3/envs/minsar/share/isce2
 export MINTPY_HOME=${MINSAR_HOME}/tools/MintPy
 export MIAPLPY_HOME=${MINSAR_HOME}/tools/MiaplPy
 export MIMTPY_HOME=${MINSAR_HOME}/tools/MimtPy
 export PLOTDATA_HOME=${MINSAR_HOME}/tools/PlotData
-export SOURCEINVERSION_HOME==${MINSAR_HOME}/tools/SourceInversion
 export PRECIP_HOME=${MINSAR_HOME}/tools/Precip
 export PRECIP_WEB_HOME=${MINSAR_HOME}/tools/Precip_web/precip_web
 export SARVEY_HOME=${MINSAR_HOME}/tools/sarvey
+export VSM_HOME=${MINSAR_HOME}/tools/VSM
 export GBIS_HOME=${MINSAR_HOME}/tools/GBIS
 export JOBDIR=${WORKDIR}/JOBS
 ############ FOR MODELLING  ###########
@@ -72,22 +73,25 @@ export LAUNCHER_RMI=${JOBSCHEDULER}
 export LAUNCHER_SCHED=block   ## could be one of: dynamic, interleaved, block
 
 ##############  PYTHON  ##############
-export PROJ_LIB=${CONDA_PREFIX}/share/proj:${CONDA_PREFIX}/lib/python3.10/site-packages/pyproj/proj_dir/share/proj
-export GDAL_DATA=${CONDA_PREFIX}/share/gdal
+export PYTHON3DIR=${MINSAR_HOME}/tools/miniforge3/envs/minsar
+export CONDA_ENVS_PATH=${PYTHON3DIR}/envs
+export CONDA_PREFIX=${PYTHON3DIR}
+export PROJ_LIB=${PYTHON3DIR}/share/proj:${PYTHON3DIR}/lib/python3.??/site-packages/pyproj/proj_dir/share/proj
+export GDAL_DATA=${PYTHON3DIR}/share/gdal
 
-export PYTHONPATH=${MINTPY_HOME}/mintpy:${PYTHONPATH:-}       # ensures that pip -e installed MintPy is used
+export PYTHONPATH=${PYTHONPATH-""}
+export PYTHONPATH=${MINTPY_HOME}/mintpy:${PYTHONPATH}       # ensures that pip -e installed MintPy is used
 export PYTHONPATH=${PYTHONPATH}:${MIMTPY_HOME}
 export PYTHONPATH=${PYTHONPATH}:${ISCE_HOME}:${ISCE_HOME}/components
-export PYTHONPATH=$ISCE_STACK:$PYTHONPATH
 export PYTHONPATH=${PYTHONPATH}:${ISCE_STACK}
 export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}
 export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools/PyAPS
 export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools/PySolid
 export PYTHONPATH=${PYTHONPATH}:${PLOTDATA_HOME}/src
-export PYTHONPATH=${SOURCEINVERSION_HOME}/src:${SOURCEINVERSION_HOME}/src/VSM/VSM:$PYTHONPATH
 export PYTHONPATH=${PYTHONPATH}:${PRECIP_HOME}/src
 export PYTHONPATH=${PYTHONPATH}:${SARVEY_HOME}
 export PYTHONPATH=${PYTHONPATH}:${SARVEY_HOME}/sarvey
+export PYTHONPATH=${PYTHONPATH}:${VSM_HOME}/VSM
 export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools/sarplotter-main
 export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools/MakeTemplate/src
 #export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools      # needed for mimt. Need to talk to Sara on how to do this smarter
@@ -107,8 +111,8 @@ export PATH=${PATH}:${MINSAR_HOME}/minsar/scripts
 export PATH=${PATH}:${MINTPY_HOME}/src/mintpy/legacy         # for add_attribute.py
 export PATH=${PATH}:${MIAPLPY_HOME}/src/miaplpy
 export PATH=${PATH}:${PLOTDATA_HOME}/src/plotdata/cli
-export PATH=${PATH}:${SOURCEINVERSION_HOME}/src/cli
 export PATH=${PATH}:${PRECIP_HOME}/src/precip/cli
+export PATH=${PATH}:${PRECIP_CRON_HOME}
 export PATH=${PATH}:${MIMTPY_HOME}/mimtpy
 export PATH=${PATH}:${SARVEY_HOME}/sarvey
 export PATH=${PATH}:${MINSAR_HOME}/tools/snaphu-v2.0.5/bin
@@ -118,16 +122,16 @@ export PATH=${PATH}:${MINSAR_HOME}/tools/MakeTemplate/src/maketemplate/cli
 export PATH=${PATH}:${PROJ_LIB}
 export PATH=${PATH}:${MINSAR_HOME}/tools/S4I/viewer4falk
 export PATH=${ISCE_HOME}/applications:${ISCE_HOME}/bin:${ISCE_STACK}:${ISCE_STACK}/topsStack:${PATH};
-export PATH=${CONDA_PREFIX}/bin:${PATH}
+export PATH=${PYTHON3DIR}/bin:${PATH}
 export PATH="${MINSAR_HOME}/tools/sarvey/sarvey:$PATH"
 export PATH="${MINSAR_HOME}/tools/sarplotter-main/app:$PATH"
 
 export PATH="${PATH}${MATLAB_HOME:+:${MATLAB_HOME}/bin}"
 
 #export LD_LIBRARY_PATH=${LD_LIBRARY_PATH-""}
-#export LD_LIBRARY_PATH=${CONDA_PREFIX}/lib
+#export LD_LIBRARY_PATH=${PYTHON3DIR}/lib
 unset LD_LIBRARY_PATH
-export LD_RUN_PATH=${CONDA_PREFIX}/lib
+export LD_RUN_PATH=${PYTHON3DIR}/lib
 
 ########## bash functions #########
 source $MINSAR_HOME/minsar/lib/minsarApp_specifics.sh
@@ -135,7 +139,7 @@ source $MINSAR_HOME/minsar/lib/common_helpers.sh
 
 if [ -n "${prompt:-}" ]; then
     echo "MINSAR_HOME:" ${MINSAR_HOME}
-    echo "CONDA_PREFIX:   " ${CONDA_PREFIX}
+    echo "PYTHON3DIR:     " ${PYTHON3DIR}
     echo "SSARAHOME:      " ${SSARAHOME}
 fi
 ########## Your personal aliasses/functions #########

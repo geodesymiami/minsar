@@ -30,7 +30,7 @@ def convert_subset_lalo_to_boundingBox_string(subset_lalo, delta_lat, delta_lon)
     min_lon = float(lon_string.split(':')[0]) - delta_lon
     max_lon = float(lon_string.split(':')[1]) + delta_lon
 
-    boundingBox_string = '{:.1f} {:.1f} {:.1f} {:.1f}'.format(min_lat, max_lat, min_lon, max_lon)
+    boundingBox_string = '{:.2f} {:.2f} {:.2f} {:.2f}'.format(min_lat, max_lat, min_lon, max_lon)
 
     return boundingBox_string
 
