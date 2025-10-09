@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -e
 
 # Custom replacement for echo command that also
 # appends to a logfile when --verbose is on.
@@ -186,6 +187,7 @@ fi
 
 # Update SJOBS_STEP_MAX_TASKS based on io_load for step
 SJOBS_STEP_MAX_TASKS=$(echo "$SJOBS_STEP_MAX_TASKS/$step_io_load" | bc | awk '{print int($1)}')
+SJOBS_STEP_MAX_TASKS=$(echo "$SJOBS_STEP_MAX_TASKS/$step_io_load" | bc | awk '{printf "%d", $1}')    #FA 10/25  suggested clean by chat
 
 ################ Set up lockfile
 lockfile="$SCRATCHDIR/sbatch_minsar.lock"
