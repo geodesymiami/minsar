@@ -121,7 +121,7 @@ def main(iargs=None):
                 except Exception as e:
                     print(f"Could not remove {f}: {e}")
         
-    if clean_flag:
+    if inps.clean_flag:
         for file in stderr_files:
             if os.path.exists(file):
                 os.remove(file)
