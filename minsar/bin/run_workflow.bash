@@ -357,7 +357,7 @@ jobfile_arr=(ls $RUNFILES_DIR/run_*_*.job)    # FA 8/2025   (not
 last_jobfile=${jobfile_arr[-1]}
 last_jobfile=${last_jobfile##*/}
 last_jobfile_number=${last_jobfile:4:2}
-last_jobfile_number=$(echo $((10#${last_jobfile_number})))
+last_jobfile_number=$(echo $((10#${last_jobfile_number})))        # FA 10/2025. This probably related to leading zeros (01, 02) etc, but chat suggests to change to last_jobfile_number=$((10#${last_jobfile_number})). That may remove the error
 echo "last jobfile number: <$last_jobfile_number>"
 
 if [[ $startstep == "ifgram" || $startstep == "miaplpy" ]]; then
