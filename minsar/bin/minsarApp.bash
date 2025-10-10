@@ -514,7 +514,7 @@ if [[ $mintpy_flag == "1" ]]; then
 
     # summarize profiling logs
     if [[ $PROFILE_FLAG == "True" ]]; then
-        run_command "summarize_resource_usage.py $template_file run_files --outdir mintpy/pic"
+        run_command "summarize_resource_usage.py $template_file SLC run_files --outdir mintpy/pic"
     fi
 
     ## insarmaps
@@ -567,7 +567,7 @@ if [[ $miaplpy_flag == "1" ]]; then
 
     # summarize profiling logs
     if [[ $PROFILE_FLAG == "True" ]]; then
-        run_command "summarize_resource_usage.py $template_file run_files ${network_dir}/run_files --outdir ${network_dir}/pic"
+        run_command "summarize_resource_usage.py $template_file SLC run_files ${network_dir}/run_files --outdir ${network_dir}/pic"
     fi
 
     ## insarmaps
@@ -591,7 +591,7 @@ if [[ $finishup_flag == "1" ]]; then
     else
         miaplpy_opt=""
     fi
-    run_command "summarize_job_run_times.py $template_file $copy_to_tmp $miaplpy_opt"
+    #run_command "summarize_job_run_times.py $template_file $copy_to_tmp $miaplpy_opt"
 fi
 
 echo
