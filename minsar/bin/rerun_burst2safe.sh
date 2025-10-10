@@ -35,6 +35,18 @@ export template_file
 WORK_DIR=${SCRATCHDIR}/${PROJECT_NAME}
 cd $WORK_DIR
 
+# write command to log file. First create concise name for template file
+template_file_dir=$(dirname "$template_file")          # create name including $TE for concise log file
+if   [[ $template_file_dir == $TEMPLATES ]]; then
+    template_print_name="\$TE/$(basename $template_file)"
+elif [[ $template_file_dir == $SAMPLESDIR ]]; then
+    template_print_name="\$SAMPLESDIR/$(basename $template_file)"
+else
+    template_print_name="$template_file"
+fi
+echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $template_print_name ${@:2}" | tee -a "${WORK_DIR}"/log
+
+
 max_runtime_seconds=$((24 * 3600))  # 24 hours
 wait_time=10
 start_time=$(date +%s)
