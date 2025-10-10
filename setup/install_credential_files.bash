@@ -6,15 +6,14 @@ SCRIPT_DIR=$(dirname "$(realpath "${BASH_SOURCE[0]}")")
 echo SCRIPT_DIR "$SCRIPT_DIR"
 
 # for ssara
-SSARA_FILE="$SCRIPT_DIR/../tools/SSARA/password_config.py"
+SSARA_FILE="$SCRIPT_DIR/../tools/ssara_client/password_config.py"
 characterCount=$(wc -m < "$SSARA_FILE" | xargs)
 
-if [[ $characterCount == 75 ]]; then
-  echo "Use default password_config.py for SSARA (because existing file lacks passwords)"
-  echo "Copying password_config.py into $SCRIPT_DIR/../tools/SSARA"
-  cp ~/accounts/password_config.py "$SCRIPT_DIR/../tools/SSARA"
+if [[ $characterCount == 141 ]]; then
+  echo "Copying ~/accounts/password_config.py into $SCRIPT_DIR/../tools/ssara_client"
+  cp ~/accounts/password_config.py "$SCRIPT_DIR/../tools/ssara_client"
 else
-  echo "File password_config.py not empty - kept unchanged"
+  echo "SSARA password_config.py has contents - kept unchanged"
 fi
 
 # for dem.py
