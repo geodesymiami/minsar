@@ -45,7 +45,7 @@ export PLOTDATA_HOME=${MINSAR_HOME}/tools/PlotData
 export PRECIP_HOME=${MINSAR_HOME}/tools/Precip
 export PRECIP_WEB_HOME=${MINSAR_HOME}/tools/Precip_web/precip_web
 export SARVEY_HOME=${MINSAR_HOME}/tools/sarvey
-export VSM_HOME=${MINSAR_HOME}/tools/VSM
+export SOURCEINVERSION_HOME=${MINSAR_HOME}/tools/SourceInversion
 export GBIS_HOME=${MINSAR_HOME}/tools/GBIS
 export JOBDIR=${WORKDIR}/JOBS
 ############ FOR MODELLING  ###########
@@ -91,7 +91,7 @@ export PYTHONPATH=${PYTHONPATH}:${PLOTDATA_HOME}/src
 export PYTHONPATH=${PYTHONPATH}:${PRECIP_HOME}/src
 export PYTHONPATH=${PYTHONPATH}:${SARVEY_HOME}
 export PYTHONPATH=${PYTHONPATH}:${SARVEY_HOME}/sarvey
-export PYTHONPATH=${PYTHONPATH}:${VSM_HOME}/VSM
+export PYTHONPATH=${SOURCEINVERSION_HOME}/src:${SOURCEINVERSION_HOME}/src/VSM/VSM:$PYTHONPATH
 export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools/sarplotter-main
 export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools/MakeTemplate/src
 #export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools      # needed for mimt. Need to talk to Sara on how to do this smarter
