@@ -7,6 +7,7 @@ import os
 import shutil
 import sys
 import minsar.utils.process_utilities as putils
+from minsar.objects import message_rsmas
 import numpy as np
 import shutil
 import glob
@@ -72,6 +73,13 @@ def main(iargs=None):
 
     inps = cmd_line_parser(iargs)
 
+    if not iargs is None:
+        input_arguments = iargs
+    else:
+        input_arguments = sys.argv[1::]
+
+    message_rsmas.log(os.getcwd(), os.path.basename(__file__) + ' ' + ' '.join(input_arguments))
+
     error_happened = False
     data_problem_strings_stdout = []     #FA 10/25: may not be needed
     timeout_strings = ["TimeoutError","asf_search.exceptions.ASFSearchError: Connection Error (Timeout): CMR took too long to respond"]
@@ -111,8 +119,17 @@ def main(iargs=None):
                 problem_dates.append(date)
                 print('Match:' + file)
 
+    log_index = 1
+    while os.path.exists(f"removed_dates_{log_index}.txt"):
+       log_index += 1
+    logfile = f"removed_dates_{log_index}.txt"
+
     for date in problem_dates:
-        print  ('Removed problem date: ' + str(date)) 
+        msg = f"Removed problem date: {date}"
+        print(msg)  
+        with open(logfile, "a") as f:
+             f.write(msg + "\n")
+
         matching_files = glob.glob(os.path.join(dirname, "*" + date + "*"))
         for f in matching_files:
              if os.path.exists(f):
