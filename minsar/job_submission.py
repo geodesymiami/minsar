@@ -602,8 +602,8 @@ class JOB_SUBMIT:
         self.default_wall_time = putils.scale_walltime(number_of_memory_units, self.wall_time_factor,
                                                        c_walltime, s_walltime, extra_seconds, self.scheduler)
 
-        if "dev" in self.queue_name:
-            self.default_wall_time = "2:00:00"
+       # if "dev" in self.queue_name:
+       #     self.default_wall_time = "2:00:00"
 
         if step_name in config:
             self.default_num_threads = config[step_name]['num_threads']
