@@ -48,6 +48,31 @@ function remove_from_list {
     echo "${list[@]}"
 }
 
+function clean_array() {
+# cleans array in-place by removing empty elements and white space elements
+# Usage:
+# clean_array globlist
+    local arr_name="$1"
+    local original=()
+    local cleaned=()
+
+    # copy array into 'original'
+    eval "original=(\"\${${arr_name}[@]}\")"
+
+    # iterate and keep only non-empty, non-whitespace entries
+    for item in "${original[@]}"; do
+        # Trim whitespace
+        local trimmed="$(echo "$item" | xargs)"
+        if [[ -n "$trimmed" ]]; then
+            cleaned+=("$item")
+        fi
+    done
+
+    # overwrite original array with cleaned one
+    eval "$arr_name=(\"\${cleaned[@]}\")"
+}
+###########################################
+
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
 helptext="                                                                         \n\
 Job submission script
@@ -89,8 +114,8 @@ usage: run_workflow.bash custom_template_file [--start] [--stop] [--dostep] [--h
    --miaplpy --start --end options:                                               \n\
               'load_data', 'phase_linking', 'concatenate_patches', 'generate_ifgram', 'unwrap_ifgram'       \n\
               'load_ifgram', 'ifgram_correction', 'invert_network', 'timeseries_correction'  [1-9] \n\
-                                                                                 \n\
    --jobfile filename.job: run individual job and wait for completion            \n
+   --no-check-job-outputs skip running check_job_outputs.py after completion       \n
    "
     printf "$helptext"
     exit 0;
@@ -127,6 +152,7 @@ fi
 echo "$(date +"%Y%m%d:%H-%M") + run_workflow.bash $template_print_name ${@:2}" >> "${WORKDIR}"/log
 
 jobfile_flag=0
+check_job_outputs_flag=true
 jobfiles=()
 
 while [[ $# -gt 0 ]]
@@ -165,6 +191,10 @@ do
             ;;
         --miaplpy)
             miaplpy_flag=true
+            shift
+            ;;
+        --no-check-job-outputs)
+            check_job_outputs_flag=false
             shift
             ;;
         --jobfile)
@@ -327,7 +357,7 @@ jobfile_arr=(ls $RUNFILES_DIR/run_*_*.job)    # FA 8/2025   (not
 last_jobfile=${jobfile_arr[-1]}
 last_jobfile=${last_jobfile##*/}
 last_jobfile_number=${last_jobfile:4:2}
-last_jobfile_number=$(echo $((10#${last_jobfile_number})))
+last_jobfile_number=$(echo $((10#${last_jobfile_number})))        # FA 10/2025. This probably related to leading zeros (01, 02) etc, but chat suggests to change to last_jobfile_number=$((10#${last_jobfile_number})). That may remove the error
 echo "last jobfile number: <$last_jobfile_number>"
 
 if [[ $startstep == "ifgram" || $startstep == "miaplpy" ]]; then
@@ -398,11 +428,18 @@ if [[ $jobfile_flag == "true" ]]; then
     fi
 fi
 
-#globlist=("${globlist[@]/%/}") # Remove potential trailing spaces
-#globlist=($(printf "%s\n" "${globlist[@]}" | grep -v '^$'))
-
-echo "globlist (shown with declare -p):"
+#echo "QQQ globlist (shown with declare -p):"
+#declare -p globlist
+clean_array globlist
+#echo "QQQ globlist after stripping off empty elements (FA 10/25):"   # FA: 10/25: Simplift to one echo command if there no problems
 declare -p globlist
+
+#FA 10/25: This also worked
+#original_globlist=("${globlist[@]}")
+#globlist=()
+#for item in "${original_globlist[@]}"; do
+#    [[ -n $item ]] && globlist+=("$item")
+#done
 
 for g in "${globlist[@]}"; do
     if [[ -n $g ]]; then
@@ -463,6 +500,7 @@ for g in "${globlist[@]}"; do
         num_running=0
         num_pending=0
         num_waiting=0
+        
         sleep $wait_time
 
         for (( j=0; j < "${#jobnumbers[@]}"; j++)); do
@@ -484,10 +522,10 @@ for g in "${globlist[@]}"; do
         
                 if [[ $state == *"TIMEOUT"* ]]; then
                     init_walltime=$(grep -oP '(?<=#SBATCH -t )[0-9]+:[0-9]+:[0-9]+' $file)
-                    echo "${file} timedout with walltime of ${init_walltime}."
+                    echo "Job file ${file} timed out with walltime of ${init_walltime}."
                                     
                     # Compute a new walltime and update the job file
-                    update_walltime.py "$file" &> /dev/null
+                    update_walltime_queuename.py "$file" &> /dev/null
                     updated_walltime=$(grep -oP '(?<=#SBATCH -t )[0-9]+:[0-9]+:[0-9]+' $file)
 
                     datetime=$(date +"%Y-%m-%d:%H-%M")
@@ -528,15 +566,17 @@ for g in "${globlist[@]}"; do
         printf "%s, %s, %-7s: %-12s, %-10s, %-10s, %-12s.\n" "$PROJECT_NAME" "$step_name_long" "$num_jobs jobs" "$num_complete COMPLETED" "$num_running RUNNING" "$num_pending PENDING" "$num_waiting WAITING"
     done
 
-    # Run check_job_output.py on all files
-    cmd="check_job_outputs.py  ${files[@]}"
-    echo "$cmd"
-    $cmd
-    exit_status="$?"
-    if [[ $exit_status -ne 0 ]]; then
-        echo "Error in run_workflow.bash: check_job_outputs.py exited with code ($exit_status)."
-        exit 1
+    if [[ "$check_job_outputs_flag" == "true" ]]; then
+       # Run check_job_outputs.py on all files
+       cmd="check_job_outputs.py  ${files[@]}"
+       echo "$cmd"
+       $cmd
+       exit_status="$?"
+       if [[ $exit_status -ne 0 ]]; then
+           echo "Error in run_workflow.bash: check_job_outputs.py exited with code ($exit_status)."
+           exit 1
+       fi
+       echo
     fi
-    echo
 done
 

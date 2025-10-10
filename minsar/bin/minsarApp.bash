@@ -514,7 +514,7 @@ if [[ $mintpy_flag == "1" ]]; then
 
     # summarize profiling logs
     if [[ $PROFILE_FLAG == "True" ]]; then
-        run_command "summarize_resource_usage.py $template_file run_files --outdir mintpy/pic"
+        run_command "summarize_resource_usage.py $template_file SLC run_files --outdir mintpy/pic"
     fi
 
     ## insarmaps
@@ -550,7 +550,9 @@ if [[ $miaplpy_flag == "1" ]]; then
     if [[ $skip_miaplpy_flag != "1" ]]; then
        # create miaplpy jobfiles and remove existing slcStack.h5  (FA 8/25: we may want to remove entire miaplpy folder)
        rm -f ${miaplpy_dir_name}/inputs/slcStack.h5 ${miaplpy_dir_name}/inputs/geometryRadar.h5
-       run_command "$srun_cmd miaplpyApp.py $template_file --dir $miaplpy_dir_name --jobfiles --queue $QUEUENAME"
+       #run_command "$srun_cmd miaplpyApp.py $template_file --dir $miaplpy_dir_name --jobfiles --queue $QUEUENAME"
+       run_command "create_miaplpyApp_jobfile.py $template_file $miaplpy_dir_name" 
+       run_command "run_workflow.bash $template_file --jobfile $PWD/miaplpyApp.job"
 
        # run miaplpy jobfiles
        run_command "run_workflow.bash $template_file --append --dostep miaplpy --dir $miaplpy_dir_name"
@@ -565,7 +567,7 @@ if [[ $miaplpy_flag == "1" ]]; then
 
     # summarize profiling logs
     if [[ $PROFILE_FLAG == "True" ]]; then
-        run_command "summarize_resource_usage.py $template_file run_files ${network_dir}/run_files --outdir ${network_dir}/pic"
+        run_command "summarize_resource_usage.py $template_file SLC run_files ${network_dir}/run_files --outdir ${network_dir}/pic"
     fi
 
     ## insarmaps
@@ -589,7 +591,7 @@ if [[ $finishup_flag == "1" ]]; then
     else
         miaplpy_opt=""
     fi
-    run_command "summarize_job_run_times.py $template_file $copy_to_tmp $miaplpy_opt"
+    #run_command "summarize_job_run_times.py $template_file $copy_to_tmp $miaplpy_opt"
 fi
 
 echo

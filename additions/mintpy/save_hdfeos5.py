@@ -311,9 +311,10 @@ def get_output_filename(metadata, template, suffix=None, update_mode=False, subs
         fbase, fext = os.path.splitext(outName)
 
         if suffix:
-            outName = fbase.removesuffix('_' + suffix) + SUB + '_' + suffix + fext
+            outName = fbase.removesuffix('_' + suffix) + '_' + SUB + '_' + suffix + fext
         else:
             outName = fbase + SUB + fext
+            outName = fbase + '_' + SUB + fext       # FA 9/25 I am not sure whetehr '_' needs to be inserted. Not sure when used
 
     return outName
 

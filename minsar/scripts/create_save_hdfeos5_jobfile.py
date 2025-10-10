@@ -81,9 +81,10 @@ def main(iargs=None):
 
     message_rsmas.log(inps.work_dir, os.path.basename(__file__) + ' ' + ' '.join(input_arguments))
 
+    dataset_template = Template(inps.custom_template_file)
+
     try:
-       #min_temp_coh =  inps.template['miaplpy.timeseries.minTempCoh']
-       min_temp_coh =  inps.template['mintpy.networkInversion.minTempCoh']
+       min_temp_coh =  dataset_template.get_options()['mintpy.networkInversion.minTempCoh']
     except:
        min_temp_coh = 0.7
 

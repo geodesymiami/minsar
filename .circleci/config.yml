@@ -14,10 +14,9 @@ jobs:
           command: |
             echo "Working directory: ${PWD}"
             ./setup/install_python.bash
-            ./setup/install_minsar_env.bash
-            ./setup/install_code.bash
+            ./setup/install_minsar.bash
             minsar/bin/minsarApp.bash --help
-            echo "alias s.bw2m='export MINSAR_HOME=${CIRCLE_WORKING_DIRECTORY}; source project/setup/environment.bash'" >> ~/.bashrc
+            echo "alias s.bw2='export MINSAR_HOME=${CIRCLE_WORKING_DIRECTORY}; source project/setup/environment.bash'" >> ~/.bashrc
 
       - run:
           name: Prepare test data (Sentinel-1)

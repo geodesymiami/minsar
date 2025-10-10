@@ -603,8 +603,16 @@ class Sentinel1(Component):
                 burst.trackNumber = (orbitnumber-73)%175 + 1
             elif mission == 'S1B':
                 burst.trackNumber = (orbitnumber-27)%175 + 1
+            elif mission == "S1C":
+                burst.trackNumber = (orbitnumber+3)%175 + 1
             else:
                 raise ValueError('Encountered unknown mission id {0}'.format(mission))
+
+# https://github.com/isce-framework/isce2/issues/947
+#                burst.trackNumber = (orbitnumber+3)%175 + 1
+# https://github.com/isce-framework/s1-reader/pull/144/filesO
+#        elif self.platform_id == "S1C":
+#            orbit_number_offset = 172
 
             burst.orbitNumber = orbitnumber 
             burst.frameNumber = 1  #S1A doesnt appear to have a frame system
