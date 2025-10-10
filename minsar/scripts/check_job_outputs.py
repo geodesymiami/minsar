@@ -254,10 +254,15 @@ def skip_error(file, error_string):
     """ prior to https://github.com/isce-framework/isce2/pull/195 it did not raise exception  """
 
     skip = False
+
     if 'merge_reference_secondary_slc' in file or 'merge_burst_igram' in file:
        with open(file) as f:
         lines=f.read()
         if 'has different number of bursts' in lines and 'than the reference' in lines:
+           skip = True
+
+    if 'smallbaseline_wrapper' in file:
+        if error_match_is_http_error_warning(file):
            skip = True
 
     with open(file) as f:
@@ -267,6 +272,17 @@ def skip_error(file, error_string):
 
     return skip
 
+###########################################################################################
+def error_match_is_http_error_warning(errfile):
+
+    string = "WARNING - Recovering from HTTP error [500 Internal Server Error]"
+
+    if check_words_in_file(errfile, string):
+        return True
+    else:
+        return False
+
+###########################################################################################
 if __name__ == "__main__":
     main()
 
