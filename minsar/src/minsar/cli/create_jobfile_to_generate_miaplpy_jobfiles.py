@@ -16,9 +16,9 @@ import minsar.utils.process_utilities as putils
 
 pathObj = PathFind()
 
-DESCRIPTION = ("""Creates miaplpyApp jobfile (which creates the miaply jobfiles in run_files dir )""")
+DESCRIPTION = ("""Creates jobfile that runs miaplpyApp.py to create the miaply jobfiles in run_files dir""")
 EXAMPLE = """example:
-    create_miaplpyApp_jobfile.py $SAMPLESDIR/unittestGalapagosSenDT128.template miaplpy_SN_201606_201608 
+    create_jobfile_to_generate_miaplpy_jobfiles.py $SAMPLESDIR/unittestGalapagosSenDT128.template miaplpy_SN_201606_201608 
 """
 
 ###########################################################################################
@@ -55,12 +55,12 @@ def main(iargs=None):
     final_command =[ '\n'.join(command) ]
 
     # create job file
-    job_name = 'miaplpyApp'
+    job_name = 'create_miaplpy_jobfiles'
     job_file_name = job_name
     
     inps.num_data = 1
     job_obj= JOB_SUBMIT(inps)
-    job_obj.get_memory_walltime(job_name="miaplpyApp", job_type='script')
+    job_obj.get_memory_walltime(job_name, job_type='script')
     job_obj.submit_script(job_name, job_file_name, final_command, writeOnly='True')
     print('jobfile created: ',job_file_name + '.job')
 

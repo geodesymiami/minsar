@@ -16,7 +16,10 @@ helptext="                                                                      
       minsarApp.bash  $TE/GalapagosSenDT128.template --dostep dem                \n\
       minsarApp.bash  $TE/GalapagosSenDT128.template --start  ifgram            \n\
       minsarApp.bash  $TE/GalapagosSenDT128.template --start jobfiles --mintpy --miaplpy\n\
-      minsarApp.bash  $TE/GalapagosSenDT128.template --no-insarmaps                             \n\
+      minsarApp.bash  $TE/GalapagosSenDT128.template --no-insarmaps              \n\
+      minsarApp.bash  $TE/GalapagosSenDT128.template --start miaplpy --miaplpy-start 6         \n\
+      minsarApp.bash  $TE/GalapagosSenDT128.template --start miaplpy --miaplpy-start 6 --miaplpy-stop 6 \n\
+      minsarApp.bash  $TE/GalapagosSenDT128.template --start miaplpy --miaplpy-step 6     \n\
                                                                                  \n\
   Processing steps (start/end/dostep): \n\
    Command line options for steps processing with names are chosen from the following list: \n\
@@ -50,6 +53,7 @@ Debug options:                                                                  
    --debug           sets set -x                                                 \n\
    --skip-mintpy     skip mintpy processing (but runs everything else)           \n\
    --skip-miaplpy    skip miaplpy processing (but runs everything else)          \n\
+   --start miaplpy --miaplpy-step 5
                                                                                  \n\
    Coding To Do:                                                                 \n\
        - clean up run_workflow (remove smallbaseline.job insarmaps.job)          \n\
@@ -110,6 +114,8 @@ miaplpy_flag=0
 finishup_flag=1
 
 download_method="asf-burst"
+miaplpy_startstep=1
+miaplpy_stopstep=9
 
 skip_mintpy_flag=0
 skip_miaplpy_flag=0
@@ -148,6 +154,22 @@ do
             ;;
         --miaplpy)
             miaplpy_flag=1
+            shift
+            ;;
+        --miaplpy-start)
+            miaplpy_startstep="$2"
+            shift
+            shift
+            ;;
+        --miaplpy-stop)
+            miaplpy_stopstep="$2"
+            shift
+            shift
+            ;;
+        --miaplpy-step)
+            miaplpy_startstep="$2"
+            miaplpy_stopstep="$2"
+            shift
             shift
             ;;
         --insarmaps)
@@ -548,14 +570,14 @@ if [[ $miaplpy_flag == "1" ]]; then
     network_dir=${miaplpy_dir_name}/network_${network_type}
 
     if [[ $skip_miaplpy_flag != "1" ]]; then
-       # create miaplpy jobfiles and remove existing slcStack.h5  (FA 8/25: we may want to remove entire miaplpy folder)
-       rm -f ${miaplpy_dir_name}/inputs/slcStack.h5 ${miaplpy_dir_name}/inputs/geometryRadar.h5
-       #run_command "$srun_cmd miaplpyApp.py $template_file --dir $miaplpy_dir_name --jobfiles --queue $QUEUENAME"
-       run_command "create_miaplpyApp_jobfile.py $template_file $miaplpy_dir_name" 
-       run_command "run_workflow.bash $template_file --jobfile $PWD/miaplpyApp.job"
+       # remove slcStack.h5 if exist and create miaplpy jobfiles  (FA 8/25: we may want to remove entire miaplpy folder)
+       
+       [[ "$miaplpy_startstep" == 1 ]] &&  rm -f ${miaplpy_dir_name}/inputs/slcStack.h5 ${miaplpy_dir_name}/inputs/geometryRadar.h5
+       run_command "create_jobfile_to_generate_miaplpy_jobfiles.py $template_file $miaplpy_dir_name" 
+       run_command "run_workflow.bash $template_file --jobfile $PWD/create_miaplpy_jobfiles.job"
 
        # run miaplpy jobfiles
-       run_command "run_workflow.bash $template_file --append --dostep miaplpy --dir $miaplpy_dir_name"
+       run_command "run_workflow.bash $template_file --append --dir $miaplpy_dir_name --start $miaplpy_startstep --stop $miaplpy_stopstep"
     fi
 
     # create and run save_hdf5 jobfile
