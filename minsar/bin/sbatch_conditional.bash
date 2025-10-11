@@ -244,6 +244,13 @@ echot -e "\n"
 if  [[ $resource_check == "OK" ]] && 
     [[ $sbatch_message != *"FAILED"* ]];  then
 
+    ## Clean up old SLURM .o/.e files from previous run of this sjob
+    job_file_basename=$(basename "$job_file" .job)
+    run_files_dir=$(dirname "$job_file")
+    prefix_base=$(echo "$job_file_basename" | sed -E 's/_[0-9]+$//')
+    rm -f "${run_files_dir}/${prefix_base}"*.e "${run_files_dir}/${prefix_base}"*.o "${run_files_dir}/${prefix_base}"*.time_log 2>/dev/null
+    # rm -f "${prefix}"*.e "${prefix}"*.o "${prefix}"*.time_log 2>/dev/null
+
     sbatch_submit=$(sbatch --parsable $job_file)
     exit_status="$?"
 
