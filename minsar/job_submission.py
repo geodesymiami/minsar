@@ -153,7 +153,11 @@ class JOB_SUBMIT:
             dem_file = glob.glob(self.work_dir + '/DEM/*.dem')[0]
             inps.template[inps.prefix + 'Stack.demDir'] = os.path.dirname(dem_file)
         except:
-            print('DEM does not exist in {}'.format(self.work_dir + '/DEM'))
+            if hasattr(inps, "template") and inps.template:         # FA 10/25: hack to silence error message "DEM does not exist" in create_insarmaps_jobfile.py
+                print('DEM does not exist in {}'.format(self.work_dir + '/DEM'))
+            else:
+                pass
+
 
         self.inps = inps
 
