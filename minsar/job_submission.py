@@ -1234,6 +1234,12 @@ class JOB_SUBMIT:
 
         tasks_with_output = []
         if 'launcher' in self.submission_scheme or do_launcher:
+            # Remove trailing empty lines and then the last task if it is 'wait'
+            while tasks and not tasks[-1].strip():
+                tasks.pop()
+            if tasks and tasks[-1].strip().startswith('wait'):
+                tasks = tasks[:-1]
+
             for line in tasks:
                 config_file = putils.extract_config_file_from_task_string(line)
                 date_string = putils.extract_date_string_from_config_file_name(config_file)
@@ -1242,7 +1248,7 @@ class JOB_SUBMIT:
                     date_string = putils.extract_date_string_from_burst2safe_command(line)
                     
                 prepend_str=''
-                if os.getenv('PROFILE_FLAG', '0') in ['1', 'True'] and not 'wait' in line:
+                if os.getenv('PROFILE_FLAG', '0') in ['1', 'True']:
                     prepend_str = f"/usr/bin/time -v -o {os.path.abspath(batch_file)}_{date_string}_$LAUNCHER_JID.time_log "
                 tasks_with_output.append("{}{} > {} 2>{}\n".format(prepend_str, line.split('\n')[0],
                                                                  os.path.abspath(batch_file) + '_' + date_string + '_$LAUNCHER_JID.o',
