@@ -25,10 +25,14 @@ def main(iargs=None):
      new_wall_time = putils.multiply_walltime(wall_time, factor=1.2)
      queue_name = putils.extract_queuename_from_job_file(inps.job_file_name)
      
+     
      #  dev queue: switch to QUEUE_NORMAL if wall_time longer than 2 hours (limit on Stamepede3)
      if queue_name == os.getenv('QUEUE_DEV') and walltime_is_longer_than_2_hours(new_wall_time):
-         if ("smallbaseline" in inps.job_file_name) or ("mintpy_timeseries_correction" in inps.job_file_name):
-            new_wall_time = "02:00:00"
+
+         update_walltime_exceptions = ['smallbaseline', 'mintpy_timeseries_correction']
+         update_walltime_exceptions = ['smallbaseline', 'mintpy_timeseries_correction','miaplpy_invert_network']   #FA 10/2025  I think restarting of miaplpy_invert_network is OK. But I am not certain
+         if any(exc in inps.job_file_name for exc in update_walltime_exceptions):
+             new_wall_time = "02:00:00"
          else:
             putils.replace_queuename_in_job_file(inps.job_file_name, os.getenv('QUEUE_NORMAL'))
 

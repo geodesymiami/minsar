@@ -66,6 +66,38 @@ function compute_num_tasks {
     return 0
 }
 
+rename_stderr_stdout_file() {
+    local job_file="$1"
+    local job_file_basename run_files_dir prefix_base file ext base i newname
+
+    job_file_basename=$(basename "$job_file" .job)
+    run_files_dir=$(dirname "$job_file")
+    prefix_base=$(echo "$job_file_basename" | sed -E 's/_[0-9]+$//')
+
+    # Handle both .e and .o files
+    for ext in e o; do
+        for file in "${run_files_dir}/${prefix_base}"*.${ext}; do
+            [[ -e "$file" ]] || continue
+
+            base="${file%.$ext}"  # e.g. /path/to/run_11_unwrap_3
+
+            # Find highest existing .e.Ntry or .o.Ntry
+            i=1
+            while [[ -e "${file}.${i}try" && $i -lt 10 ]]; do
+                ((i++))
+            done
+
+            if (( i < 10 )); then
+                newname="${file}.${i}try"
+                mv "$file" "$newname"
+                echo "Renamed $file -> $newname"
+            else
+                echo "Warning: Could not find available slot for $file (up to 10)"
+            fi
+        done
+    done
+}
+
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     helptext="
     Custom sbatch job submission wrapper. Conditionally submits jobs to the sbatch scheduler                     
@@ -249,6 +281,7 @@ if  [[ $resource_check == "OK" ]] &&
     run_files_dir=$(dirname "$job_file")
     prefix_base=$(echo "$job_file_basename" | sed -E 's/_[0-9]+$//')
     #rm -f "${run_files_dir}/${prefix_base}"*.e "${run_files_dir}/${prefix_base}"*.o 2>/dev/null
+    rename_stderr_stdout_file $job_file 
     rm -f "${run_files_dir}/${prefix_base}"*.e  2>/dev/null
 
     sbatch_submit=$(sbatch --parsable $job_file)
