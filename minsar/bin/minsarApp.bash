@@ -501,6 +501,7 @@ if [[ $jobfiles_flag == "1" ]]; then
     run_command "run_clean_dir.bash $PWD --runfiles --ifgram --mintpy --miaplpy"
 
     if [[ $template_file == *"Tsx"*  ]] || [[ $template_file == *"Csk"*  ]]; then
+       export PATH=$ISCE_STACK/stripmapStack:$PATH             # needed for stripmapStack
        BUFFOPT="PYTHONUNBUFFERED=1"
     fi
     ( run_command "$BUFFOPT create_runfiles.py $template_file --jobfiles --queue $QUEUENAME" ) 2>out_create_jobfiles.e | tee out_create_jobfiles.o
