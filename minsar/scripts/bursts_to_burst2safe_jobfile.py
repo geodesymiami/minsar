@@ -87,6 +87,9 @@ def main(iargs=None):
         raise RuntimeError("USER ERROR: need more than 1 burst for ISCE processing (in run_07_merge* step). For {first_key} there is only 1 burst")
         sys.exit(1)
 
+    date_to_remove = [ '20250429', '20250430', '20250501', '20250313']
+    filtered_bursts_by_date = {date: bursts for date, bursts in filtered_bursts_by_date.items() if date not in date_to_remove}
+
     with open(run_01_burst2safe_path, "w") as f:
         for date, bursts in sorted(filtered_bursts_by_date.items()):
             output_dir = str(Path(inps.work_dir) / inps.burst_dir_path)
