@@ -10,6 +10,8 @@ import glob
 import time
 import shutil
 import argparse
+import shlex
+from datetime import datetime
 from pathlib import Path
 from minsar.objects.rsmas_logging import loglevel
 from minsar.objects import message_rsmas
@@ -76,6 +78,41 @@ def create_html_if_needed(dir):
         create_html(inps)
 
 ##############################################################################
+
+def add_log_remote_hdfeos5(scp_list, work_dir):
+    # add uploaded he5 files to remote log file
+
+    REMOTEHOST_DATA = os.getenv('REMOTEHOST_DATA')
+    REMOTEUSER = os.getenv('REMOTEUSER')
+    REMOTELOGFILE = os.getenv('REMOTELOGFILE')
+
+    try:
+        he5_pattern = [item for item in scp_list if item.endswith('.he5')][0]
+    except:
+        return  # No .he5 pattern found in scp_list
+
+    he5_files = glob.glob(work_dir + he5_pattern)
+    relative_he5_files = [os.path.relpath(item, start=os.path.dirname(work_dir)) for item in he5_files]
+    current_date = datetime.now().strftime('%Y%m%d')
+
+    file_path = he5_files[0]
+
+    from mintpy.utils import readfile
+    metadata = readfile.read_attribute(file_path)
+    if 'data_footprint' not in metadata:
+        raise Exception('ERROR: data_footprint not found in metadata')
+    data_footprint = metadata['data_footprint']
+
+    for relative_file in relative_he5_files:
+        # command = f"echo {current_date} {relative_file} | ssh {REMOTEUSER}@{REMOTEHOST_DATA} 'cat >> {REMOTELOGFILE}'"
+        escaped_data_footprint = shlex.quote(data_footprint)
+
+        command = f"""ssh {REMOTEUSER}@{REMOTEHOST_DATA} "echo {current_date} {relative_file} {escaped_data_footprint} >> {REMOTELOGFILE}" """
+
+        status = subprocess.Popen(command, shell=True).wait()
+        if status != 0:
+            raise Exception('ERROR appending to remote log file in upload_data_products.py')
+
 
 def main(iargs=None):
 
@@ -274,6 +311,9 @@ def main(iargs=None):
         raise Exception('ERROR adjusting permissions in upload_data_products.py')
 
 ##########################################
+    add_log_remote_hdfeos5(scp_list, inps.work_dir)
+##########################################
+
     remote_url = 'http://' + REMOTEHOST_DATA + REMOTE_DIR + project_name + '/' + data_dir + '/pic'
     print('Data at:')
     print(remote_url)
