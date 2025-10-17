@@ -36,7 +36,7 @@ helptext="                                                                      
    --start STEP          start processing at the named step [default: download]. \n\
    --end STEP, --stop STEP                                                       \n\
    --dostep STEP         run processing at the named step only                   \n\
-   --download-method {asf-slc, asf-burst ssara-slc, ssara} download method       \n\
+   --download-method {asf-slc, asf-burst ssara-slc, ssara-bash, ssara-python} download method \n\
           (default: asf-burst)                                                     \n\
                                                                                  \n\
    --mintpy              use smallbaselineApp.py for time series [default]       \n\
@@ -374,11 +374,11 @@ if [[ -z $platform_str ]]; then
 fi
 
 if [[ $platform_str == *"COSMO-SKYMED"* ]]; then
-    download_method="ssara"
     download_dir="$WORK_DIR/RAW_data"
+    if [[ $download_method == *"asf-burst"* ]]; then download_method="ssara-bash"; fi
 elif [[ $platform_str == *"TERRASAR-X"* ]]; then
-    download_method="ssara"
     download_dir="$WORK_DIR/SLC_ORIG"
+    if [[ $download_method == *"asf-burst"* ]]; then download_method="ssara-bash"; fi
 else
     download_dir="$WORK_DIR/SLC"
 fi
@@ -398,7 +398,12 @@ if [[ $download_flag == "1" ]]; then
         run_command "./download_asf_burst.sh  2>out_download_asf_burst.e 1>out_download_asf_burst.o"
     elif [[ "$download_method" == "asf-slc" ]]; then
         run_command "./download_asf.sh 2>out_download_asf.e 1>out_download_asf.o"
-    elif [[ $download_method == "ssara-slc" || $download_method == "ssara" ]]; then
+    elif [[ $download_method == "ssara-python" ]]; then
+        cd $download_dir
+        cmd=$(cat ../download_ssara_python.cmd)
+        run_command "$cmd"
+        cd ..
+    elif [[ $download_method == "ssara-bash" || $download_method == "ssara" ]]; then
         cd $download_dir
         cmd=$(cat ../download_ssara_bash.cmd)
         run_command "$cmd"

@@ -104,7 +104,7 @@ fi
 if [[ $cmd == *SENTINEL* ]]; then
    user=`grep asfuser $SSARAHOME/password_config.py | sed 's/\"//g''' | cut -d '=' -f 2`
    passwd=`grep asfpass $SSARAHOME/password_config.py | sed 's/\"//g''' | cut -d '=' -f 2`
-elif [[ $cmd == *COSMO-SKYMED* ]] || [[ $cmd == *ALOS-2* ]] || [[ $cmd == *TSX* ]]; then
+elif [[ $cmd == *COSMO-SKYMED* ]] || [[ $cmd == *ALOS-2* ]] || [[ $cmd == *TSX* ]] || [[ $cmd == *TERRASAR-X* ]]; then
    user=`grep unavuser $SSARAHOME/password_config.py | sed 's/\"//g''' | cut -d '=' -f 2`
    passwd=`grep unavpass $SSARAHOME/password_config.py | sed 's/\"//g''' | cut -d '=' -f 2`
    regex="https:\/\/imaging\.unavco\.\.org\/[a-zA-Z\/0-9\_]+\.tar\.gz"
