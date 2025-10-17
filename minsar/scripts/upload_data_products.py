@@ -61,8 +61,6 @@ def cmd_line_parse(iargs=None):
             inps.mintpy_flag = True
         elif 'miaplpy' in inps.data_dirs[0]:
             inps.miaplpy_flag = True
-        else:
-            raise Exception("USER ERROR: requires mintpy or miaplpy directory")
 
     print('inps: ',inps)
     return inps
