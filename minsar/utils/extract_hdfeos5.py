@@ -5,7 +5,7 @@ import sys
 import os
 import shutil
 import h5py
-import numpy as np  
+import numpy as np
 from pathlib import Path
 from mintpy.utils import readfile, writefile
 from mintpy.objects import HDFEOS
@@ -69,6 +69,15 @@ def extract_temporalCoherence(file_path, coords):
 
     return out_file
 
+def extract_shadowMask(file_path, coords):
+    data, attr = readfile.read(file_path, datasetName='HDFEOS/GRIDS/timeseries/geometry/shadowMask')
+    attr['FILE_TYPE'] = 'shadowMask'
+    out_file = "geo_shadowMask.h5" if coords=="GEO" else "shadowMask.h5"
+    writefile.write(data, out_file=out_file, metadata=attr)
+    print(f"Extracted shadowMask -> {out_file}")
+
+    return out_file
+
 def extract_geometry(file_path, coords):
     group_path = 'HDFEOS/GRIDS/timeseries/geometry'
     slices = ['azimuthAngle', 'height', 'incidenceAngle', 'latitude', 'longitude', 'shadowMask', 'slantRangeDistance']
@@ -117,12 +126,8 @@ def extract_timeseries(file_path, coords):
 
     data, attr  = readfile.read(file_path, datasetName=dataset_name_list)
 
-    with h5py.File(file_path, 'r') as f:
-        original_file_path = f.attrs.get('FILE_PATH')
-        basename = Path(original_file_path).name
-
     attr['FILE_TYPE'] = 'timeseries'
-    out_file = f"geo_{basename}" if coords=="GEO" else basename
+    out_file = f"geo_timeseries.h5" if coords=="GEO" else "timeseries.h5"
 
     dates = np.array(date_list, dtype='S8')
 
@@ -131,7 +136,7 @@ def extract_timeseries(file_path, coords):
     with h5py.File(file_path, 'r') as f:
         bperp = f["HDFEOS/GRIDS/timeseries/observation/bperp"][()]
 
-    pbase = bperp 
+    pbase = bperp
     ds_name_dict = {
         "date"       : [dates.dtype, (num_date,), dates],
         "bperp"      : [np.float32,  (num_date,), pbase],
@@ -168,6 +173,7 @@ def main():
     extract_avgSpatialCoherence(file_path, coords)
     extract_temporalCoherence(file_path, coords)
     extract_geometry(file_path, coords)
+    extract_shadowMask(file_path, coords)
 
     if args.all:
         extract_timeseries(file_path, coords)
