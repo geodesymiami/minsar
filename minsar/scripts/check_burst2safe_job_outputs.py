@@ -84,7 +84,8 @@ def main(iargs=None):
     data_problem_strings_stdout = []     #FA 10/25: may not be needed
     timeout_strings = ["TimeoutError","asf_search.exceptions.ASFSearchError: Connection Error (Timeout): CMR took too long to respond"]
     data_problem_strings_stderr = [
-                    "AttributeError: 'NoneType' object has no attribute 'tag'"
+                    "AttributeError: 'NoneType' object has no attribute 'tag'",
+                    "ValueError: min() arg is an empty sequence"
                     ]
 
     files = glob.glob(os.path.join(inps.slc_dir, 'run_01*'))
