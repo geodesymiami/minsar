@@ -103,6 +103,7 @@ for ((j=0; j < "${#files[@]}"; j++)); do
 
         # Submit job using sbatch_conditional.bash, performing all necesarry resource checks.
         # Grep sbatch_conditional output for current resource statuses for logging.
+        
         sbatch_conditional=$(sbatch_conditional.bash $job_file)
         sbatch_exit_status="$?"
 

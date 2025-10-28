@@ -281,8 +281,9 @@ if  [[ $resource_check == "OK" ]] &&
     run_files_dir=$(dirname "$job_file")
     prefix_base=$(echo "$job_file_basename" | sed -E 's/_[0-9]+$//')
     #rm -f "${run_files_dir}/${prefix_base}"*.e "${run_files_dir}/${prefix_base}"*.o 2>/dev/null
-    rename_stderr_stdout_file $job_file 
-    rm -f "${run_files_dir}/${prefix_base}"*.e  2>/dev/null
+    #rename_stderr_stdout_file $job_file 
+    #rm -f "${run_files_dir}/${prefix_base}"*.e  2>/dev/null
+    rm -f "${run_files_dir}/${job_file_basename}"*.e  2>/dev/null
 
     sbatch_submit=$(sbatch --parsable $job_file)
     exit_status="$?"

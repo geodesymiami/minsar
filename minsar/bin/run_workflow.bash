@@ -570,7 +570,7 @@ for g in "${globlist[@]}"; do
        # Run check_job_outputs.py on all files
        cmd="check_job_outputs.py  ${files[@]}"
        echo "$cmd"
-       $cmd
+       echo "$cmd" > q.cmd
        exit_status="$?"
        if [[ $exit_status -ne 0 ]]; then
            echo "Error in run_workflow.bash: check_job_outputs.py exited with code ($exit_status)."
