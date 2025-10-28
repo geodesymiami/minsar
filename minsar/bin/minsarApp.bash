@@ -17,6 +17,9 @@ helptext="                                                                      
       minsarApp.bash  $TE/GalapagosSenDT128.template --start  ifgram            \n\
       minsarApp.bash  $TE/GalapagosSenDT128.template --start jobfiles --mintpy --miaplpy\n\
       minsarApp.bash  $TE/GalapagosSenDT128.template --no-insarmaps              \n\
+      minsarApp.bash  $TE/GalapagosSenDT128.template --start ifgram --isce-start 5  \n\
+      minsarApp.bash  $TE/GalapagosSenDT128.template --start ifgram --isce-start 5 --isce-stop 6  \n\
+      minsarApp.bash  $TE/GalapagosSenDT128.template --start ifgram --isce-step 5 \n\
       minsarApp.bash  $TE/GalapagosSenDT128.template --start miaplpy --miaplpy-start 6         \n\
       minsarApp.bash  $TE/GalapagosSenDT128.template --start miaplpy --miaplpy-start 6 --miaplpy-stop 6 \n\
       minsarApp.bash  $TE/GalapagosSenDT128.template --start miaplpy --miaplpy-step 6     \n\
@@ -116,6 +119,8 @@ finishup_flag=1
 download_method="asf-burst"
 miaplpy_startstep=1
 miaplpy_stopstep=9
+isce_startstep=1
+isce_stopstep=11
 
 skip_mintpy_flag=0
 skip_miaplpy_flag=0
@@ -150,6 +155,22 @@ do
             ;;
         --no-mintpy)
             mintpy_flag=0
+            shift
+            ;;
+        --isce-start)
+            isce_startstep="$2"
+            shift
+            shift
+            ;;
+        --isce-stop)
+            isce_stopstep="$2"
+            shift
+            shift
+            ;;
+        --isce-step)
+            isce_startstep="$2"
+            isce_stopstep="$2"
+            shift
             shift
             ;;
         --miaplpy)
@@ -518,12 +539,11 @@ if [[ $ifgram_flag == "1" ]]; then
        run_command "run_workflow.bash $template_file --dostep ifgram"
     else
        echo "topsStack.workflow: <${template[topsStack.workflow]}>"
-       ifgram_stopstep=11              # default for interferogram workflow
        if [[ ${template[topsStack.workflow]} == "slc" ]] || [[ $mintpy_flag == 0 ]]; then
-          ifgram_stopstep=7
+          isce_stopstep=7
        fi
 
-       run_command "run_workflow.bash $template_file --start 1 --stop $ifgram_stopstep"
+       run_command "run_workflow.bash $template_file --start $isce_startstep --stop $isce_stopstep"
     fi
 
     reference_date=$(get_reference_date)
