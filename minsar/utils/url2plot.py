@@ -159,9 +159,8 @@ def build_commands(params):
         plot_data_cmd_parts.extend(["--period", f"{start_date}:{end_date}"])
 
     plot_data_cmd_parts.extend([
-        "--plot-type=timeseries",
         "--resolution", "01s",
-        "--isolines", "3",
+        "--contour", "3",
         "--lalo", f"{fmt.format(params['point_lat'])}", f"{fmt.format(params['point_lon'])}",
     ])
     if ref_lat is not None and ref_lon is not None:
