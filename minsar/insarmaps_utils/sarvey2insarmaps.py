@@ -20,6 +20,67 @@ import shutil
 sys.path.insert(0, os.getenv("SSARAHOME"))
 import password_config as password
 
+def merge_into_metadata_pickle(json_dir, attrs):
+    """Ensure Insarmaps' JSON/metadata.pickle has every direction key/value the title might read."""
+
+    p = Path(json_dir) / "metadata.pickle"
+    if not p.exists():
+        print("[WARN] metadata.pickle not found; cannot set orbit_direction/mission")
+        return
+
+    with open(p, "rb") as f:
+        meta = pickle.load(f)
+
+    a = meta.get("attributes", {})
+
+    # Normalize mission for title (e.g., "S1")
+    mission_raw = (attrs.get("PLATFORM") or attrs.get("mission") or a.get("mission") or "").upper()
+    aliases = {"SENTINEL-1": "S1", "SEN": "S1", "S1": "S1",
+               "TERRASAR-X": "TSX", "TSX": "TSX"}
+    a["mission"] = aliases.get(mission_raw, mission_raw or "S1")
+
+    # Derive orbit/flight direction in both long and short forms
+    raw_dir = (
+        attrs.get("ORBIT_DIRECTION")
+        or attrs.get("flight_direction")
+        or a.get("orbit_direction")
+        or a.get("flight_direction")
+        or ""
+    )
+    raw_dir = str(raw_dir).strip().upper()
+
+    if raw_dir in ("A", "ASCENDING"):
+        long_dir, short_dir = "ASCENDING", "A"
+    elif raw_dir in ("D", "DESCENDING"):
+        long_dir, short_dir = "DESCENDING", "D"
+    else:
+        # Fallback: try to infer from SAR track if available (no-op here); otherwise bail.
+        long_dir, short_dir = None, None
+
+    if long_dir:
+        # Make every likely-read key the short letter so the title shows A/D
+        a["orbit_direction"]  = short_dir   # "A"/"D"
+        a["flight_direction"] = short_dir   # force letter
+        a["direction"]        = short_dir   # force letter
+        a["ORBIT_DIRECTION"]  = short_dir   # force letter
+
+
+    # Pass through other handy fields if missing
+    for k in ("relative_orbit", "beam_mode", "look_direction", "first_frame", "last_frame"):
+        if k in attrs and k not in a:
+            a[k] = attrs[k]
+
+    meta["attributes"] = a
+    with open(p, "wb") as f:
+        pickle.dump(meta, f)
+
+    # Debug: show which keys ended up in the pickle
+    print("[INFO] metadata.pickle keys:", sorted(a.keys()))
+    if long_dir:
+        print(f"[INFO] Set direction keys -> long='{long_dir}', short='{short_dir}'")
+    else:
+        print("[WARN] Could not determine orbit/flight direction to set")
+
 
 def create_parser():
     parser = argparse.ArgumentParser(
@@ -242,11 +303,24 @@ def extract_metadata_from_inputs(sarvey_inputs_dir_path):
             "mission", "PLATFORM", "beam_mode", "flight_direction", "relative_orbit",
             "processing_method", "REF_LAT", "REF_LON", "areaName", "DATE",
             "LAT_REF1", "LAT_REF2", "LAT_REF3", "LAT_REF4",
-            "LON_REF1", "LON_REF2", "LON_REF3", "LON_REF4"
+            "LON_REF1", "LON_REF2", "LON_REF3", "LON_REF4",
+            "ORBIT_DIRECTION"
         ]
         for key in keys_to_extract:
             if key in slc_attr:
                 attributes[key] = slc_attr[key]
+
+        # Normalize orbit direction expected by Insarmaps title: A/D
+        dir_src = (
+            attributes.get("ORBIT_DIRECTION") or
+            attributes.get("flight_direction") or
+            ""
+        )
+        dir_src = str(dir_src).strip().upper()
+        if dir_src in ("ASCENDING", "A"):
+            attributes["orbit_direction"] = "A"
+        elif dir_src in ("DESCENDING", "D"):
+            attributes["orbit_direction"] = "D"
 
     #load geometryRadar.h5 attributes
     if geom_path.exists():
@@ -608,6 +682,7 @@ def main():
         # Step 4: run hdfeos5_2_mbtiles.pt to convert csv-file into mbptile.
         run_command(cmd_hdfeos5, conda_env=None)
         metadata, _ = extract_metadata_from_inputs(sarvey_inputs_dir_path)
+        merge_into_metadata_pickle(json_dir, metadata)
         metadata = update_and_save_final_metadata(json_dir, output_path, dataset_name, metadata, output_suffix)
 
         # Step 5: run json_mbtiles2insarmaps to ingest data into insarmaps
