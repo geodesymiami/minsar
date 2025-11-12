@@ -90,7 +90,6 @@ def main(iargs=None):
 
     files = glob.glob(os.path.join(inps.slc_dir, 'run_01*'))
     stderr_files = [f for f in files if f.endswith(".e")]
-    dirname = os.path.dirname(stderr_files[0])
 
     # identify dates with download/connection timeout
     timeout_dates= []
@@ -102,9 +101,10 @@ def main(iargs=None):
                 date = file.split("_")[-2]
                 timeout_dates.append(date)
                 print('Timeout detected:' + file)
+                print ('QQQQ FA 10/2025:','Timed out burst downloads (need script to re-download):') 
 
-    print ('QQQQ FA 10/2025:','Timed out burst downloads (need script to re-download):') 
     if timeout_dates:
+       dirname = os.path.dirname(stderr_files[0])
        write_burst2safe_file_for_timeouts(dirname + "/run_01_burst2safe_0", timeout_dates)
        copy_burst2safe_jobfile(dirname + "/run_01_burst2safe_0.job", new_tag="burst2safe_timeouts")
         
