@@ -32,6 +32,8 @@ def read_template2inps(template_file, inps):
 
     print('read options from template file: '+os.path.basename(template_file))
     template = readfile.read_template(template_file)
+    # keep a record of the source file so it can be written to attributes later
+    template['_template_file'] = os.path.abspath(template_file)
 
     # Coherence-based network modification
     prefix = 'mintpy.save.hdfEos5.'
@@ -60,6 +62,17 @@ def prep_metadata(ts_file, geom_file, template=None, print_msg=True):
         for key, value in template.items():
             if not key.startswith(('mintpy', 'isce')):
                 meta[key] = value
+
+        # persist the full template contents into metadata with a distinct prefix
+        meta['cfg.template_file'] = template.get('_template_file', '')
+        for key, value in template.items():
+            if key.startswith('_'):
+                continue
+            # skip entries that are auto-generated/auto-set
+            val_str = value.lower() if isinstance(value, str) else ''
+            if 'auto' in key.lower() or 'auto' in val_str:
+                continue
+            meta[f'cfg.{key}'] = value
 
     # grab unavco metadata
     unavco_meta = metadata_mintpy2unavco(meta, ts_obj.dateList, geom_file)
@@ -311,10 +324,9 @@ def get_output_filename(metadata, template, suffix=None, update_mode=False, subs
         fbase, fext = os.path.splitext(outName)
 
         if suffix:
-            outName = fbase.removesuffix('_' + suffix) + '_' + SUB + '_' + suffix + fext
+            outName = fbase.removesuffix('_' + suffix) + SUB + '_' + suffix + fext
         else:
             outName = fbase + SUB + fext
-            outName = fbase + '_' + SUB + fext       # FA 9/25 I am not sure whetehr '_' needs to be inserted. Not sure when used
 
     return outName
 
