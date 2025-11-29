@@ -63,12 +63,12 @@ def prep_metadata(ts_file, geom_file, template=None, print_msg=True):
             if not key.startswith(('mintpy', 'isce')):
                 meta[key] = value
 
-        # persist the full template contents into metadata with a distinct prefix
+        # add full template contents into metadata with prefix cfg
         meta['cfg.template_file'] = template.get('_template_file', '')
         for key, value in template.items():
             if key.startswith('_'):
                 continue
-            # skip entries that are auto-generated/auto-set
+            # skip entries set to auto
             val_str = value.lower() if isinstance(value, str) else ''
             if 'auto' in key.lower() or 'auto' in val_str:
                 continue
@@ -324,9 +324,9 @@ def get_output_filename(metadata, template, suffix=None, update_mode=False, subs
         fbase, fext = os.path.splitext(outName)
 
         if suffix:
-            outName = fbase.removesuffix('_' + suffix) + SUB + '_' + suffix + fext
+            outName = fbase.removesuffix('_' + suffix) + '_' + SUB + '_' + suffix + fext
         else:
-            outName = fbase + SUB + fext
+            outName = fbase + '_' + SUB + fext
 
     return outName
 
