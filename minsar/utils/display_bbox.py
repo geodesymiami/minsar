@@ -4,7 +4,10 @@ import os
 import sys
 import folium
 import argparse
+import matplotlib.pyplot as plt
 from shapely import wkt
+import contextily as ctx
+
 import webbrowser
 
 ##############################################################################
@@ -34,6 +37,7 @@ def create_parser():
     parser.add_argument("subset", nargs="?", help="Bounding box 'lat_min:lat_max,lon_min:lon_max' or WKT POLYGON")
     parser.add_argument("--lat", nargs=2, type=float, help="Latitude range: min max")
     parser.add_argument("--lon", nargs=2, type=float, help="Longitude range: min max")
+    parser.add_argument("--satellite", action="store_true", help="Overlay satellite basemap (Esri World Imagery)")
     return parser
 
 def draw_rectangle(subset):
@@ -83,7 +87,7 @@ def main():
     else:
         parser = create_parser()
         inps = parser.parse_args(args=sys.argv[1:])
-        
+
         arg = f"{inps.lat[0]}:{inps.lat[1]},{inps.lon[0]}:{inps.lon[1]}"
 
     try:
