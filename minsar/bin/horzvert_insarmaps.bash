@@ -8,15 +8,19 @@ set -eo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
 
-# Show help if requested
+echo "sourcing ${SCRIPT_DIR}/../lib/minsarApp_specifics.sh ..."
+source ${SCRIPT_DIR}/../lib/minsarApp_specifics.sh
+echo "sourcing ${SCRIPT_DIR}/../lib/utils.sh ..."
+source ${SCRIPT_DIR}/../lib/utils.sh
+
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     helptext="
   Examples:
       $SCRIPT_NAME file1/mintpy file2/mintpy --ref-lalo 19.462,-154.870
       $SCRIPT_NAME file1/mintpy file2/mintpy --ref-lalo 19.462 -154.870 --intervals 4
       $SCRIPT_NAME file1/mintpy file2/mintpy --ref-lalo 0.84969 -77.86430 --start-date 20250101 --end-date 20251031
-      $SCRIPT_NAME file1/mintpy file2/mintpy --ref-lalo 0.84969 -77.86430 --period 20250101:20251031
-      $SCRIPT_NAME file1/miaplpy/network_delaunay_4 file2/miaplpy/network_delaunay_4 --ref-lalo 0.84969 -77.86430 --mask-thresh 0.6
+      $SCRIPT_NAME ChilesSenAT120/mintpy ChilesSenDT142/mintpy --ref-lalo 0.84969 -77.86430 --intervals 6
+      $SCRIPT_NAME hvGalapagosSenA106/miaplpy_SN_201803_201805/network_single_reference hvGalapagosSenD128/miaplpy_SN_201803_201806/network_single_reference --ref-lalo -0.81 -91.190
       $SCRIPT_NAME hvGalapagosSenA106/mintpy hvGalapagosSenD128/mintpy -ref-lalo -0.81,-91.190
       $SCRIPT_NAME hvGalapagosSenA106/miaplpy/network_single_reference hvGalapagosSenD128/miaplpy/network_single_reference --ref-lalo -0.81 -91.190
 
@@ -162,6 +166,84 @@ CMD="horzvert_timeseries.py \"$FILE1\" \"$FILE2\""
 [[ -n "$stop_date" ]] && CMD="$CMD --end-date $stop_date"
 [[ -n "$period" ]] && CMD="$CMD --period $period"
 
-# Execute the command
+# Execute horzvert_timeseries.py command
 echo "Running: $CMD"
 eval $CMD
+
+echo "####################################"
+echo "Done running horzvert_timeseries.py."
+echo "####################################"
+
+# Find the latest (youngest) *vert*.he5 and *horz*.he5 files
+PROJECT_DIR=$(get_base_projectname "$FILE1")
+
+VERT_FILE=$(ls -t "$PROJECT_DIR"/*vert*.he5 2>/dev/null | head -1)
+HORZ_FILE=$(ls -t "$PROJECT_DIR"/*horz*.he5 2>/dev/null | head -1)
+
+echo "Found vert file: $VERT_FILE"
+echo "Found horz file: $HORZ_FILE"
+
+# Get insarmaps hosts and credentials
+INSARMAPS_HOSTS=${INSARMAPSHOST:-insarmaps.miami.edu}
+IFS=',' read -ra HOSTS <<< "$INSARMAPS_HOSTS"
+
+# Get credentials from password_config (Python)
+SSARAHOME=${SSARAHOME:-""}
+if [[ -n "$SSARAHOME" ]]; then
+    INSARMAPS_USER=$(python3 -c "import sys; sys.path.insert(0, '$SSARAHOME'); import password_config; print(password_config.docker_insaruser)" 2>/dev/null || echo "")
+    INSARMAPS_PASS=$(python3 -c "import sys; sys.path.insert(0, '$SSARAHOME'); import password_config; print(password_config.docker_insarpass)" 2>/dev/null || echo "")
+    DB_USER=$(python3 -c "import sys; sys.path.insert(0, '$SSARAHOME'); import password_config; print(password_config.docker_databaseuser)" 2>/dev/null || echo "")
+    DB_PASS=$(python3 -c "import sys; sys.path.insert(0, '$SSARAHOME'); import password_config; print(password_config.docker_databasepass)" 2>/dev/null || echo "")
+fi
+
+HDFEOS_NUM_WORKERS=6
+MBTILES_NUM_WORKERS=6
+
+# Process both files (vert and horz)
+for he5_file in "$VERT_FILE" "$HORZ_FILE"; do
+
+    echo "Processing: $he5_file"    
+    
+    JSON_DIR=$PROJECT_DIR/JSON
+    MBTILES_FILE="$JSON_DIR/$(basename "${he5_file%.he5}.mbtiles")"
+
+    rm -rf "$JSON_DIR"
+    cmd="hdfeos5_2json_mbtiles.py \"$he5_file\" \"$JSON_DIR\" --num-workers $HDFEOS_NUM_WORKERS"
+    run_command "$cmd"
+
+    echo "####################################"
+    echo "Done running hdfeos5_2json_mbtiles.py."
+    echo "####################################"
+    
+    for insarmaps_host in "${HOSTS[@]}"; do
+        echo "Running json_mbtiles2insarmaps.py..."
+        cmd="json_mbtiles2insarmaps.py --num-workers $MBTILES_NUM_WORKERS -u \"$INSARMAPS_USER\" -p \"$INSARMAPS_PASS\" --host \"$insarmaps_host\" -P \"$DB_PASS\" -U \"$DB_USER\" --json_folder \"$JSON_DIR\" --mbtiles_file \"$MBTILES_FILE\""
+
+        # json_mbtiles2insarmaps.py --num-workers $MBTILES_NUM_WORKERS -u "$INSARMAPS_USER" -p "$INSARMAPS_PASS" --host "$insarmaps_host" \
+        #     -P "$DB_PASS" -U "$DB_USER" --json_folder "$JSON_DIR" --mbtiles_file "$MBTILES_FILE" &
+        run_command "$cmd"
+
+        echo "####################################"
+        echo "Done running json_mbtiles2insarmaps.py ."
+        echo "####################################"
+    done
+done
+
+wait   # Wait for all ingests to complete (parallel uinsg & is not implemented)
+
+# Generate insarmaps.log with URLs
+for he5_file in "$VERT_FILE" "$HORZ_FILE"; do
+    # Extract ref_lat/ref_lon from .he5 file
+    REF_COORDS=$(python3 -c "import h5py; f=h5py.File('$he5_file', 'r'); print(f'{f.attrs.get(\"REF_LAT\", 0.0)} {f.attrs.get(\"REF_LON\", 0.0)}')" 2>/dev/null || echo "0.0 0.0")
+    REF_LAT=$(echo $REF_COORDS | cut -d' ' -f1)
+    REF_LON=$(echo $REF_COORDS | cut -d' ' -f2)
+    
+    DATASET_NAME=$(basename "${he5_file%.he5}")
+    
+    for insarmaps_host in "${HOSTS[@]}"; do
+        echo "http://${insarmaps_host}/start/${REF_LAT}/${REF_LON}/11.0?flyToDatasetCenter=true&startDataset=${DATASET_NAME}"
+        echo "http://${insarmaps_host}/start/${REF_LAT}/${REF_LON}/11.0?flyToDatasetCenter=true&startDataset=${DATASET_NAME}" >> ${PROJECT_DIR}/insarmaps.log
+    done
+done
+
+echo "Insarmaps URLs written to ${PROJECT_DIR}/insarmaps.log"

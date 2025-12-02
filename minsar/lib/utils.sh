@@ -1,4 +1,18 @@
 echo "sourcing ${BASH_SOURCE[0]#$MINSAR_HOME/} ..."
+
+# Ensure MINSAR_HOME is set and environment is sourced
+if [[ -z "$MINSAR_HOME" || ! -d "$MINSAR_HOME" ]]; then
+    # Determine MINSAR_HOME from utils.sh location (go up 3 levels: lib -> minsar -> root)
+    _utils_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    export MINSAR_HOME="$(dirname "$(dirname "$_utils_dir")")"
+    cd $MINSAR_HOME
+    unset PYTHONPATH
+    source setup/platforms_defaults.bash
+    source setup/environment.bash
+    export PATH=$ISCE_STACK/topsStack:$PATH
+    cd - > /dev/null || true
+fi
+
 #############################################################################
 # Function: run_command: executes a command and generates stdout and stderr files
 # Usage: run_command <command>
@@ -497,3 +511,48 @@ function countbursts(){
                        echo "$date #of_bursts: `ls $date/IW*/burst*xml | wc -l`   ${array[@]}"
                    done;
                    }
+
+# Function to exttract hvGalapagos from hvGalapagosSenA106/mintpy
+get_base_projectname() {
+    local file_path="$1"
+    local dir_name
+    
+    # Get the directory name (first part of path before /)
+    dir_name=$(echo "$file_path" | cut -d'/' -f1)
+    
+    # Patterns to match (order matters - check longer patterns first)
+    local patterns=("Alos2A" "Alos2D" "SenA" "SenD" "CskA" "CskD" "TsxA" "TsxD" "AlosA" "AlosD")
+    
+    for pattern in "${patterns[@]}"; do
+        if [[ "$dir_name" == *"$pattern"* ]]; then
+            # Extract everything before the pattern
+            echo "${dir_name%%$pattern*}"
+            return 0
+        fi
+    done
+    
+    # If no pattern found, return the original directory name
+    echo "$dir_name"
+}
+#####################################################################
+# Function: ensure_minsar_environment
+# Usage: ensure_minsar_environment [SCRIPT_DIR]
+# Description: Ensures MINSAR_HOME and environment are set up
+#              If SCRIPT_DIR is not provided, attempts to determine it from BASH_SOURCE
+function ensure_minsar_environment() {
+    # If MINSAR_HOME is already set and valid, do nothing
+    if [[ -n "$MINSAR_HOME" && -d "$MINSAR_HOME" ]]; then
+        return 0
+    fi
+    
+    # Determine script directory if not provided
+    local script_dir="${1:-}"
+    minsar_home="$(dirname "$(dirname "$script_dir")")"
+    export MINSAR_HOME="$minsar_home"
+    cd $MINSAR_HOME 
+    unset PYTHONPATH 
+    source setup/platforms_defaults.bash 
+    source setup/environment.bash 
+    export PATH=$ISCE_STACK/topsStack:$PATH
+    cd - 
+}
