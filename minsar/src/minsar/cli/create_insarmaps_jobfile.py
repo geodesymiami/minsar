@@ -34,7 +34,7 @@ def create_parser():
     epilog = EXAMPLE
     parser = argparse.ArgumentParser(description=synopsis, epilog=epilog, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('data_dir', nargs=1, help='Directory with hdf5eos file.\n')
-    parser.add_argument('--dataset', dest='dataset', choices=['PS', 'DS', 'PSDS', 'filtDS','DSfiltDS','filt*DS','DSfilt*DS','geo','all'], default='geo', help='Dataset to upload (default: %(default)).')
+    parser.add_argument('--dataset', dest='dataset', choices=['PS', 'DS', 'PSDS', 'filtDS','DSfiltDS','filt*DS','DSfilt*DS','geo','all'], default='geo', help='Dataset to upload (default: %(default)s).')
     parser.add_argument("--queue", dest="queue", metavar="QUEUE", default=os.getenv('QUEUENAME'), help="Name of queue to submit job to")
     parser.add_argument('--walltime', dest='wall_time', metavar="WALLTIME (HH:MM)", default='1:00', help='job walltime (default=1:00)')
    
