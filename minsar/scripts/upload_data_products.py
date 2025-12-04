@@ -88,7 +88,13 @@ def add_log_remote_hdfeos5(scp_list, work_dir):
     except:
         return  # No .he5 pattern found in scp_list
 
+    # Check if any .he5 files were actually found
     he5_files = glob.glob(work_dir + he5_pattern)
+
+    if not he5_files:
+        print(f"No .he5 files found: {work_dir + he5_pattern}, skipping remote log update")
+        return
+
     relative_he5_files = [os.path.relpath(item, start=os.path.dirname(work_dir)) for item in he5_files]
     current_date = datetime.now().strftime('%Y%m%d')
 
