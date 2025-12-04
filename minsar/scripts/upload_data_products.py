@@ -145,6 +145,13 @@ def main(iargs=None):
     scp_list = []
     for data_dir in inps.data_dirs:
         data_dir = data_dir.rstrip('/')
+        
+        if 'mintpy' in data_dir and data_dir.endswith('inputs'):
+            if os.path.isdir(data_dir):
+                print(f"Uploading contents of inputs directory: {data_dir}")
+                scp_list.extend(['/' + data_dir + '/*'])
+                continue  # Skip the normal mintpy processing below
+
         if 'mintpy' in data_dir:
             if os.path.isdir(data_dir + '/pic'):
                create_html_if_needed(data_dir + '/pic')
