@@ -556,3 +556,44 @@ function ensure_minsar_environment() {
     export PATH=$ISCE_STACK/topsStack:$PATH
     cd - 
 }
+
+#####################################################################
+# Function: write_insarmaps_iframe
+# Usage: write_insarmaps_iframe <url> <file_path>
+# Description: Creates an iframe.html file at the specified file path with the provided insarmaps URL
+# Example: write_insarmaps_iframe "http://..." "/path/to/pic/iframe.html"
+function write_insarmaps_iframe() {
+    local url="$1"
+    local file_path="$2"
+    
+    if [[ -z "$url" || -z "$file_path" ]]; then
+        echo "Error: write_insarmaps_iframe requires both url and file_path arguments" >&2
+        return 1
+    fi
+    
+    # Create directory if it doesn't exist
+    local dir_path
+    dir_path="$(dirname "$file_path")"
+    mkdir -p "$dir_path"
+    
+    # Create iframe.html file
+    cat > "${file_path}" << EOF
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>InSAR Map Viewer</title>
+</head>
+<body>
+    <iframe
+        src="${url}"
+        width="100%"
+        height="600"
+        style="border: none;">
+    </iframe>
+</body>
+</html>
+EOF
+    
+    echo "Created iframe.html at ${file_path}"
+}

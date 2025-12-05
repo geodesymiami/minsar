@@ -231,7 +231,8 @@ done
 
 wait   # Wait for all ingests to complete (parallel uinsg & is not implemented)
 
-# Generate insarmaps.log with URLs
+# Generate insarmaps URLs and store in array
+INSARMAPS_URLS=()
 for he5_file in "$VERT_FILE" "$HORZ_FILE"; do
     # Extract ref_lat/ref_lon from .he5 file
     REF_COORDS=$(python3 -c "import h5py; f=h5py.File('$he5_file', 'r'); print(f'{f.attrs.get(\"REF_LAT\", 0.0)} {f.attrs.get(\"REF_LON\", 0.0)}')" 2>/dev/null || echo "0.0 0.0")
@@ -241,9 +242,32 @@ for he5_file in "$VERT_FILE" "$HORZ_FILE"; do
     DATASET_NAME=$(basename "${he5_file%.he5}")
 
     for insarmaps_host in "${HOSTS[@]}"; do
-        echo "http://${insarmaps_host}/start/${REF_LAT}/${REF_LON}/11.0?flyToDatasetCenter=true&startDataset=${DATASET_NAME}"
-        echo "http://${insarmaps_host}/start/${REF_LAT}/${REF_LON}/11.0?flyToDatasetCenter=true&startDataset=${DATASET_NAME}" >> ${PROJECT_DIR}/insarmaps.log
+        url="http://${insarmaps_host}/start/${REF_LAT}/${REF_LON}/11.0?flyToDatasetCenter=true&startDataset=${DATASET_NAME}"
+        INSARMAPS_URLS+=("$url")
     done
 done
 
+# Write URLs to log file
+echo "Creating insarmaps.log file"
+rm -f "$WORK_DIR/${PROJECT_DIR}/insarmaps.log"
+for url in "${INSARMAPS_URLS[@]}"; do
+    echo "$url"
+    echo "$url" >> "$WORK_DIR/${PROJECT_DIR}/insarmaps.log"
+done
+
+# Select URLs for iframe: prefer ones containing REMOTEHOST_INSARMAPS1 (insarmaps.miami.edu), otherwise use first
+vert_url=$(printf '%s\n' "${INSARMAPS_URLS[@]}" | grep "vert" | grep -m1 "${REMOTEHOST_INSARMAPS1:-.}" || printf '%s\n' "${INSARMAPS_URLS[@]}" | grep "vert" | head -1)
+horz_url=$(printf '%s\n' "${INSARMAPS_URLS[@]}" | grep "horz" | grep -m1 "${REMOTEHOST_INSARMAPS1:-.}" || printf '%s\n' "${INSARMAPS_URLS[@]}" | grep "horz" | head -1)
+
+# Create iframe.html with both vert and horz using write_insarmaps_iframe pattern
+rm -f $WORK_DIR/${PROJECT_DIR}/iframe_vert.html"
+rm -f $WORK_DIR/${PROJECT_DIR}/iframe_horz.html"
+write_insarmaps_iframe "$vert_url" "$WORK_DIR/${PROJECT_DIR}/iframe_vert.html"
+write_insarmaps_iframe "$horz_url" "$WORK_DIR/${PROJECT_DIR}/iframe_horz.html"
+
 echo "Insarmaps URLs written to ${PROJECT_DIR}/insarmaps.log"
+echo "Created iframe.html at ${PROJECT_DIR}/iframe_vert.html"
+echo "Created iframe.html at ${PROJECT_DIR}/iframe_horz.html"
+
+
+

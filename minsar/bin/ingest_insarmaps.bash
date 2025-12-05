@@ -166,3 +166,7 @@ for url in "${INSARMAPS_URLS[@]}"; do
     echo "$url" >> "$WORK_DIR/insarmaps.log"
     echo "$url" >> "$WORK_DIR/${DATA_DIR}/pic/insarmaps.log"
 done
+
+# Select URL for iframe: prefer one containing REMOTEHOST_INSARMAPS1 (insarmaps.miami.edu), otherwise use first
+url=$(printf '%s\n' "${INSARMAPS_URLS[@]}" | grep -m1 "${REMOTEHOST_INSARMAPS1:-.}" || echo "${INSARMAPS_URLS[0]}")
+write_insarmaps_iframe "$url" "$WORK_DIR/${DATA_DIR}/pic/iframe.html"
