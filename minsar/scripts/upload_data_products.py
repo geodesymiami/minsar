@@ -282,7 +282,19 @@ def main(iargs=None):
         f.write(remote_url + "\n")
     with open(data_dir + '/pic/upload.log', 'w') as f:
         f.write(remote_url + "\n")
+    
+    print('\n################')
+    print('Deleting remote directories...')
+    for data_dir in inps.data_dirs:
+        data_dir = data_dir.rstrip('/')
+        remote_path = f'{REMOTE_DIR}{project_name}/{data_dir}'
+        cleanup_cmd = f'ssh {REMOTE_CONNECTION} "rm -rf {remote_path}"'
+        print(f'Deleting: {cleanup_cmd}')
+        status = subprocess.Popen(cleanup_cmd, shell=True).wait()
+        if status != 0:
+            print(f'Warning: Could not delete {remote_path} (may not exist yet)')
 
+    print('################\n')
     for pattern in scp_list:
         if ( len(glob.glob(inps.work_dir + '/' + pattern)) >= 1 ):
             #files=glob.glob(inps.work_dir + '/' + pattern)
@@ -307,11 +319,11 @@ def main(iargs=None):
 
             # upload data
             print ('\nUploading data:')
-            command = 'scp -r ' + inps.work_dir + pattern + ' ' + REMOTE_CONNECTION_DIR + '/' + project_name + '/'.join(pattern.split('/')[0:-1])
+            command = f'rsync -avz --progress {inps.work_dir}{pattern} {REMOTE_CONNECTION_DIR}/{project_name}/{"/".join(pattern.split("/")[0:-1])}'
             print (command)
             status = subprocess.Popen(command, shell=True).wait()
             if status is not 0:
-                raise Exception('ERROR uploading using scp -r  in upload_data_products.py')
+                raise Exception('ERROR uploading using rsync in upload_data_products.py')
 
     # adjust permissions
     print ('\nAdjusting permissions:')
