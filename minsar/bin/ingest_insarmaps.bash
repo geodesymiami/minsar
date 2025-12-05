@@ -144,7 +144,6 @@ done
 
 wait   # Wait for all ingests to complete (parallel uinsg & is not implemented)
 
-# Generate insarmaps.log with URLs
 # Extract ref_lat/ref_lon from .he5 file
 REF_COORDS=$(python3 -c "import h5py; f=h5py.File('$he5_file', 'r'); print(f'{f.attrs.get(\"REF_LAT\", 0.0)} {f.attrs.get(\"REF_LON\", 0.0)}')" 2>/dev/null || echo "0.0 0.0")
 REF_LAT=$(echo $REF_COORDS | cut -d' ' -f1)
@@ -152,9 +151,18 @@ REF_LON=$(echo $REF_COORDS | cut -d' ' -f2)
 
 DATASET_NAME=$(basename "${he5_file%.he5}")
 
+# Generate insarmaps URLs and store in array
+INSARMAPS_URLS=()
 for insarmaps_host in "${HOSTS[@]}"; do
-    echo "http://${insarmaps_host}/start/${REF_LAT}/${REF_LON}/11.0?flyToDatasetCenter=true&startDataset=${DATASET_NAME}"
-    echo "http://${insarmaps_host}/start/${REF_LAT}/${REF_LON}/11.0?flyToDatasetCenter=true&startDataset=${DATASET_NAME}" >> ${DATA_DIR}/pic/insarmaps.log
+    url="http://${insarmaps_host}/start/${REF_LAT}/${REF_LON}/11.0?flyToDatasetCenter=true&startDataset=${DATASET_NAME}"
+    INSARMAPS_URLS+=("$url")
 done
 
-echo "Insarmaps URLs written to ${DATA_DIR}/pic/insarmaps.log"
+# Write URLs to log files
+echo "Creating insarmaps.log files"
+rm -f "$WORK_DIR/${DATA_DIR}/pic/insarmaps.log"
+for url in "${INSARMAPS_URLS[@]}"; do
+    echo "$url"
+    echo "$url" >> "$WORK_DIR/insarmaps.log"
+    echo "$url" >> "$WORK_DIR/${DATA_DIR}/pic/insarmaps.log"
+done
