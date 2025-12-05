@@ -17,14 +17,14 @@ if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     helptext="
   Examples:
       $SCRIPT_NAME file1/mintpy file2/mintpy --ref-lalo 19.462,-154.870
-      $SCRIPT_NAME file1/mintpy file2/mintpy --ref-lalo 19.462 -154.870 --intervals 4
       $SCRIPT_NAME file1/mintpy file2/mintpy --ref-lalo 0.84969 -77.86430 --start-date 20250101 --end-date 20251031
       $SCRIPT_NAME ChilesSenAT120/mintpy ChilesSenDT142/mintpy --ref-lalo 0.84969 -77.86430 --intervals 6
-      $SCRIPT_NAME hvGalapagosSenA106/miaplpy_SN_201803_201805/network_single_reference hvGalapagosSenD128/miaplpy_SN_201803_201806/network_single_reference --ref-lalo -0.81 -91.190
       $SCRIPT_NAME hvGalapagosSenA106/mintpy hvGalapagosSenD128/mintpy -ref-lalo -0.81,-91.190
+      $SCRIPT_NAME hvGalapagosSenA106/mintpy hvGalapagosSenD128/mintpy -ref-lalo -0.81,-91.190 --intervals 4
+      $SCRIPT_NAME hvGalapagosSenA106/miaplpy_SN_201803_201805/network_single_reference hvGalapagosSenD128/miaplpy_SN_201803_201806/network_single_reference --ref-lalo -0.81 -91.190
       $SCRIPT_NAME hvGalapagosSenA106/miaplpy/network_single_reference hvGalapagosSenD128/miaplpy/network_single_reference --ref-lalo -0.81 -91.190
+      $SCRIPT_NAME MaunaLoaSenDT87/mintpy MaunaLoaSenAT124/mintpy --period 20181001:20191031 --ref-lalo 19.50068 -155.55856 --ref-lalo -0.81 -91.190
 
-  
   Options:
       --mask-thresh FLOAT             Coherence threshold for masking (default: 0.55)
       --ref-lalo LAT,LON or LAT LON   Reference point (lat,lon or lat lon)
@@ -202,8 +202,8 @@ MBTILES_NUM_WORKERS=6
 # Process both files (vert and horz)
 for he5_file in "$VERT_FILE" "$HORZ_FILE"; do
 
-    echo "Processing: $he5_file"    
-    
+    echo "Processing: $he5_file"
+
     JSON_DIR=$PROJECT_DIR/JSON
     MBTILES_FILE="$JSON_DIR/$(basename "${he5_file%.he5}.mbtiles")"
 
@@ -214,7 +214,7 @@ for he5_file in "$VERT_FILE" "$HORZ_FILE"; do
     echo "####################################"
     echo "Done running hdfeos5_2json_mbtiles.py."
     echo "####################################"
-    
+
     for insarmaps_host in "${HOSTS[@]}"; do
         echo "Running json_mbtiles2insarmaps.py..."
         cmd="json_mbtiles2insarmaps.py --num-workers $MBTILES_NUM_WORKERS -u \"$INSARMAPS_USER\" -p \"$INSARMAPS_PASS\" --host \"$insarmaps_host\" -P \"$DB_PASS\" -U \"$DB_USER\" --json_folder \"$JSON_DIR\" --mbtiles_file \"$MBTILES_FILE\""
@@ -237,9 +237,9 @@ for he5_file in "$VERT_FILE" "$HORZ_FILE"; do
     REF_COORDS=$(python3 -c "import h5py; f=h5py.File('$he5_file', 'r'); print(f'{f.attrs.get(\"REF_LAT\", 0.0)} {f.attrs.get(\"REF_LON\", 0.0)}')" 2>/dev/null || echo "0.0 0.0")
     REF_LAT=$(echo $REF_COORDS | cut -d' ' -f1)
     REF_LON=$(echo $REF_COORDS | cut -d' ' -f2)
-    
+
     DATASET_NAME=$(basename "${he5_file%.he5}")
-    
+
     for insarmaps_host in "${HOSTS[@]}"; do
         echo "http://${insarmaps_host}/start/${REF_LAT}/${REF_LON}/11.0?flyToDatasetCenter=true&startDataset=${DATASET_NAME}"
         echo "http://${insarmaps_host}/start/${REF_LAT}/${REF_LON}/11.0?flyToDatasetCenter=true&startDataset=${DATASET_NAME}" >> ${PROJECT_DIR}/insarmaps.log
