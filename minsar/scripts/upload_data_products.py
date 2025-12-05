@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import glob
+import shutil
 import shlex
 from datetime import datetime
 import argparse
@@ -276,6 +277,12 @@ def main(iargs=None):
     import time
     time.sleep(2)
 
+    remote_url = 'http://' + REMOTEHOST_DATA + REMOTE_DIR + project_name + '/' + data_dir + '/pic'
+    with open('upload.log', 'a') as f:
+        f.write(remote_url + "\n")
+    with open(data_dir + '/pic/upload.log', 'w') as f:
+        f.write(remote_url + "\n")
+
     for pattern in scp_list:
         if ( len(glob.glob(inps.work_dir + '/' + pattern)) >= 1 ):
             #files=glob.glob(inps.work_dir + '/' + pattern)
@@ -317,13 +324,9 @@ def main(iargs=None):
 ##########################################
     add_log_remote_hdfeos5(scp_list, inps.work_dir)
 ##########################################
-
-    remote_url = 'http://' + REMOTEHOST_DATA + REMOTE_DIR + project_name + '/' + data_dir + '/pic'
     print('Data at:')
     print(remote_url)
-    with open('upload.log', 'a') as f:
-        f.write(remote_url + "\n")
-
+    
     return None
 
 if __name__ == "__main__":
