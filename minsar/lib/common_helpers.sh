@@ -202,19 +202,60 @@ function add_ref_lalo_to_file() {
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
 helptext="                                       \n\
   Examples:                                      \n\
-      add_ref_lalo_to_file  S1_IW1_128_0596_0597_20160605_XXXXXXXX_S00860_S00810_W091190_W091130_Del4PS.he5                \n\
+      add_ref_lalo_to_file  S1_IW1_128_0596_0597_20160605_XXXXXXXX_S00860_S00810_W091190_W091130_Del4PS.he5                            \n\
+      add_ref_lalo_to_file  S1_IW1_128_0596_0597_20160605_XXXXXXXX_S00860_S00810_W091190_W091130_Del4PS.he5  --ref-lalo -0.81 -91.190  \n\
                                                  \n\
-  adds REF_LAT, REF_LON to file (read from geo_velocity.h5)  \n
+  adds REF_LAT, REF_LON to file. If --ref-lalo is provided, uses those values;  \n\
+  otherwise reads from geo_velocity.h5  \n
     "
     printf "$helptext"
     return
 fi
 
-file=$1
+# Parse arguments
+ref_lat=""
+ref_lon=""
+file=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --ref-lalo)
+            if [[ $# -lt 3 ]]; then
+                echo "Error: --ref-lalo requires two arguments (LAT LON)"
+                return 1
+            fi
+            ref_lat="$2"
+            ref_lon="$3"
+            shift 3
+            ;;
+        *)
+            if [[ -z "$file" ]]; then
+                file="$1"
+            else
+                echo "Error: Multiple files specified or unknown argument: $1"
+                return 1
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Check if file was provided
+if [[ -z "$file" ]]; then
+    echo "Error: File argument is required"
+    return 1
+fi
 
 echo adding to $file
-REF_LAT=$(info.py geo/geo_velocity.h5 | grep REF_LAT | awk '{print $2}')
-REF_LON=$(info.py geo/geo_velocity.h5 | grep REF_LON | awk '{print $2}')
+
+# If ref_lat and ref_lon were not provided, extract from geo_velocity.h5
+if [[ -z "$ref_lat" ]] || [[ -z "$ref_lon" ]]; then
+    REF_LAT=$(info.py geo/geo_velocity.h5 | grep REF_LAT | awk '{print $2}')
+    REF_LON=$(info.py geo/geo_velocity.h5 | grep REF_LON | awk '{print $2}')
+else
+    REF_LAT="$ref_lat"
+    REF_LON="$ref_lon"
+fi
 
 $MINTPY_HOME/src/mintpy/legacy/add_attribute.py $file REF_LAT=${REF_LAT}
 $MINTPY_HOME/src/mintpy/legacy/add_attribute.py $file REF_LON=${REF_LON}
