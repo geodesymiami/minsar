@@ -35,7 +35,7 @@ WORK_DIR="$PWD"
 LOG_FILE="$WORK_DIR/log"
 
 # Log the command line as early as possible (before parsing)
-echo "#############################################################################################" | tee -a "$LOG_FILE"
+echo "####################################" | tee -a "$LOG_FILE"
 echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $*" | tee -a "$LOG_FILE"
 
 # Initialize option parsing variables (lowercase)
@@ -140,23 +140,18 @@ echo "Processing: $he5_file"
 JSON_DIR=$DATA_DIR/JSON
 MBTILES_FILE="$JSON_DIR/$(basename "${he5_file%.he5}.mbtiles")"
 
+echo "####################################"
 rm -rf "$JSON_DIR"
 cmd="hdfeos5_2json_mbtiles.py \"$he5_file\" \"$JSON_DIR\" --num-workers $HDFEOS_NUM_WORKERS"
 run_command "$cmd"
 
-echo "####################################"
-echo "Done running hdfeos5_2json_mbtiles.py."
-echo "####################################"
-
 for insarmaps_host in "${HOSTS[@]}"; do
+    echo "####################################"
     echo "Running json_mbtiles2insarmaps.py..."
     cmd="json_mbtiles2insarmaps.py --num-workers $MBTILES_NUM_WORKERS -u \"$INSARMAPS_USER\" -p \"$INSARMAPS_PASS\" --host \"$insarmaps_host\" -P \"$DB_PASS\" -U \"$DB_USER\" --json_folder \"$JSON_DIR\" --mbtiles_file \"$MBTILES_FILE\""
 
     run_command "$cmd"
 
-    echo "####################################"
-    echo "Done running json_mbtiles2insarmaps.py ."
-    echo "####################################"
 done
 
 wait   # Wait for all ingests to complete (parallel uinsg & is not implemented)

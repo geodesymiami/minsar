@@ -20,7 +20,7 @@ Examples:
     $SCRIPT_NAME ChilesSenD142/mintpy ChilesSenA120/mintpy --ref-lalo 0.84969 -77.86430 --dry-run
     $SCRIPT_NAME ChilesSenD142/mintpy ChilesSenA120/mintpy --ref-lalo 0.84969 -77.86430 --intervals 6
     $SCRIPT_NAME hvGalapagosSenD128/mintpy hvGalapagosSenA106/mintpy --ref-lalo -0.81 -91.190
-    $SCRIPT_NAME hvGalapagosSenD128/miaplpy/network_single_reference hvGalapagosSenA106/miaplpy/network_single_reference--ref-lalo -0.81 -91.190
+    $SCRIPT_NAME hvGalapagosSenD128/miaplpy/network_single_reference hvGalapagosSenA106/miaplpy/network_single_reference --ref-lalo -0.81 -91.190
     $SCRIPT_NAME FernandinaSenD128/mintpy/ FernandinaSenA106/mintpy/ --ref-lalo -0.453 -91.390
     $SCRIPT_NAME FernandinaSenD128/miaplpy/network_delaunay_4 FernandinaSenA106/miaplpy/network_delaunay_4 --ref-lalo -0.453 -91.390
     $SCRIPT_NAME MaunaLoaSenDT87/mintpy MaunaLoaSenAT124/mintpy --period 20181001:20191031 --ref-lalo 19.50068 -155.55856 --ref-lalo -0.81 -91.190
@@ -46,7 +46,7 @@ WORK_DIR="$PWD"
 LOG_FILE="$WORK_DIR/log"
 
 # Log the command line as early as possible (before parsing)
-echo "#############################################################################################" | tee -a "$LOG_FILE"
+echo "##############################################" | tee -a "$LOG_FILE"
 echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $*" | tee -a "$LOG_FILE"
 
 # Initialize option parsing variables (lowercase)
@@ -167,12 +167,9 @@ CMD="horzvert_timeseries.py \"$FILE1\" \"$FILE2\""
 [[ -n "$period" ]] && CMD="$CMD --period $period"
 
 # Execute horzvert_timeseries.py command
+echo "##############################################"
 echo "Running: $CMD"
 eval $CMD
-
-echo "####################################"
-echo "Done running horzvert_timeseries.py."
-echo "####################################"
 
 # Find the latest (youngest) *vert*.he5 and *horz*.he5 files
 PROJECT_DIR=$(get_base_projectname "$FILE1")
@@ -183,9 +180,11 @@ HORZ_FILE=$(ls -t "$PROJECT_DIR"/*horz*.he5 2>/dev/null | head -1)
 echo "Found vert file: $VERT_FILE"
 echo "Found horz file: $HORZ_FILE"
 
+echo "##############################################"
 ingest_insarmaps.bash "$VERT_FILE"
 mv -v $PROJECT_DIR/iframe.html $PROJECT_DIR/iframe_vert.html
 
+echo "##############################################"
 ingest_insarmaps.bash "$HORZ_FILE"
 mv -v $PROJECT_DIR/iframe.html $PROJECT_DIR/iframe_horz.html
 
