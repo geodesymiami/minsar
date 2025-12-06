@@ -17,10 +17,10 @@ if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     helptext="
 Examples:
     $SCRIPT_NAME mintpy
-    $SCRIPT_NAME miaplpy_SN_201803_201806/network_single_reference
+    $SCRIPT_NAME miaplpy/network_single_reference
     $SCRIPT_NAME S1_IW1_128_20180303_XXXXXXXX__S00878_S00791_W091201_W091113.he5
-    $SCRIPT_NAME hvGalapagosSenD128/mintpy -ref-lalo -0.81,-91.190 
-    $SCRIPT_NAME hvGalapagosSenD128/miaplpy_SN_201803_201806/network_single_reference
+    $SCRIPT_NAME hvGalapagosSenD128/mintpy -ref-lalo -0.81,-91.190
+    $SCRIPT_NAME hvGalapagosSenD128/miaplpy/network_single_reference
   Options:
       --mask-thresh FLOAT             Coherence threshold for masking (default: 0.55)
       --ref-lalo LAT,LON or LAT LON   Reference point (lat,lon or lat lon)
@@ -177,13 +177,20 @@ done
 
 # Write URLs to log files
 echo "Creating insarmaps.log files"
-rm -f "$WORK_DIR/${DATA_DIR}/pic/insarmaps.log"
+# Determine the log directory: use pic/ if it exists, otherwise use DATA_DIR directly
+if [[ -d "$WORK_DIR/${DATA_DIR}/pic" ]]; then
+    LOG_DIR="$WORK_DIR/${DATA_DIR}/pic"
+else
+    LOG_DIR="$WORK_DIR/${DATA_DIR}"
+fi
+
+rm -f "$LOG_DIR/insarmaps.log"
 for url in "${INSARMAPS_URLS[@]}"; do
     echo "$url"
     echo "$url" >> "$WORK_DIR/insarmaps.log"
-    echo "$url" >> "$WORK_DIR/${DATA_DIR}/pic/insarmaps.log"
+    echo "$url" >> "$LOG_DIR/insarmaps.log"
 done
 
 # Select URL for iframe: prefer one containing REMOTEHOST_INSARMAPS1 (insarmaps.miami.edu), otherwise use first
 url=$(printf '%s\n' "${INSARMAPS_URLS[@]}" | grep -m1 "${REMOTEHOST_INSARMAPS1:-.}" || echo "${INSARMAPS_URLS[0]}")
-write_insarmaps_iframe "$url" "$WORK_DIR/${DATA_DIR}/pic/iframe.html"
+write_insarmaps_iframe "$url" "$LOG_DIR/iframe.html"
