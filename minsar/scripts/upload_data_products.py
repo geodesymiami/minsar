@@ -79,11 +79,11 @@ def create_html_if_needed(dir):
 
 def add_log_remote_hdfeos5(scp_list, work_dir):
     # add uploaded he5 files to remote log file
-    
+
     REMOTEHOST_DATA = os.getenv('REMOTEHOST_DATA')
     REMOTEUSER = os.getenv('REMOTEUSER')
     REMOTELOGFILE = os.getenv('REMOTELOGFILE')
-    
+
     try:
         he5_pattern = [item for item in scp_list if item.endswith('.he5')][0]
     except:
@@ -146,7 +146,7 @@ def main(iargs=None):
     scp_list = []
     for data_dir in inps.data_dirs:
         data_dir = data_dir.rstrip('/')
-        
+
         if 'mintpy' in data_dir and data_dir.endswith('inputs'):
             if os.path.isdir(data_dir):
                 print(f"Uploading contents of inputs directory: {data_dir}")
@@ -162,7 +162,6 @@ def main(iargs=None):
             if not inps.piconly_flag:
                scp_list.extend([
                '/'+ data_dir +'/*.he5',
-               '/'+ data_dir +'/timeseries*demErr.h5',
                '/'+ data_dir +'/inputs/geometryRadar.h5',
                '/'+ data_dir +'/inputs/smallbaselineApp.cfg',
                '/'+ data_dir +'/inputs/*.template',
@@ -182,8 +181,8 @@ def main(iargs=None):
                   '/'+ data_dir +'/geo/geo_*.shx',
                   ])
         elif 'miaplpy' in data_dir and 'inputs' in data_dir:
-            #scp_list.extend(['/' + data_dir])  
-            scp_list.extend(['/' + data_dir + '/*'])  
+            #scp_list.extend(['/' + data_dir])
+            scp_list.extend(['/' + data_dir + '/*'])
 
         elif 'miaplpy' in data_dir and not 'inputs' in data_dir:
             if 'network_' in data_dir:
@@ -219,7 +218,7 @@ def main(iargs=None):
                        '/'+ network_dir +'/geo/geo_*.shp',
                        '/'+ network_dir +'/geo/geo_*.shx'
                        ])
-                
+
                     timeseries_path = 'timeseries_demErr.h5'
                     if  os.path.exists(network_dir + '/' + 'timeseries_ERA5_demErr.h5'):
                         timeseries_path = 'timeseries_ERA5_demErr.h5'
@@ -247,7 +246,7 @@ def main(iargs=None):
                         '/'+ network_dir +'/inputs/*template',
                         '/'+ network_dir +'/*.cfg',
                         '/'+ network_dir +'/*.txt',
-                        '/'+ network_dir +'/geo', 
+                        '/'+ network_dir +'/geo',
                         ])
 
                     # After completion of network_* loops
@@ -255,10 +254,10 @@ def main(iargs=None):
                     '/'+ os.path.dirname(data_dir) +'/maskPS.h5',
                     '/'+ os.path.dirname(data_dir) +'/miaplpyApp.cfg',
                     '/'+ os.path.dirname(data_dir) +'/inputs/geometryRadar.h5',
-                    '/'+ os.path.dirname(data_dir) +'/inputs/baselines', 
-                    '/'+ os.path.dirname(data_dir) +'/inputs/*.template', 
-                    '/'+ os.path.dirname(data_dir) +'/inverted/tempCoh_average*', 
-                    '/'+ os.path.dirname(data_dir) +'/inverted/tempCoh_full*' 
+                    '/'+ os.path.dirname(data_dir) +'/inputs/baselines',
+                    '/'+ os.path.dirname(data_dir) +'/inputs/*.template',
+                    '/'+ os.path.dirname(data_dir) +'/inverted/tempCoh_average*',
+                    '/'+ os.path.dirname(data_dir) +'/inverted/tempCoh_full*'
                     ])
         else:
             # sarvey. May work for other directories containing images
@@ -282,7 +281,7 @@ def main(iargs=None):
         f.write(remote_url + "\n")
     with open(data_dir + '/pic/upload.log', 'w') as f:
         f.write(remote_url + "\n")
-    
+
     print('\n################')
     print('Deleting remote directories...')
     for data_dir in inps.data_dirs:
@@ -308,7 +307,7 @@ def main(iargs=None):
                 raise Exception('ERROR finding directory in pattern in upload_data_products.py')
 
             dir_name = full_dir_name.removeprefix(inps.work_dir +'/')
-               
+
             # create remote directory
             print ('\nCreating remote directory:',dir_name)
             command = 'ssh ' + REMOTE_CONNECTION + ' mkdir -p ' + REMOTE_DIR + project_name + '/' + dir_name
@@ -338,7 +337,7 @@ def main(iargs=None):
 ##########################################
     print('Data at:')
     print(remote_url)
-    
+
     return None
 
 if __name__ == "__main__":
