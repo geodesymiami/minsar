@@ -18,6 +18,7 @@ if [[ "$1" == "--help" || "$1" == "-h" ]]; then
 Examples:
     $SCRIPT_NAME mintpy
     $SCRIPT_NAME miaplpy_SN_201803_201806/network_single_reference
+    $SCRIPT_NAME S1_IW1_128_20180303_XXXXXXXX__S00878_S00791_W091201_W091113.he5
     $SCRIPT_NAME hvGalapagosSenD128/mintpy -ref-lalo -0.81,-91.190 
     $SCRIPT_NAME hvGalapagosSenD128/miaplpy_SN_201803_201806/network_single_reference
   Options:
@@ -89,8 +90,8 @@ set -- "${positional[@]}"
 
 # Check for required positional arguments
 if [[ ${#positional[@]} -lt 1 ]]; then
-    echo "Error: One input files is required"
-    echo "Usage: $SCRIPT_NAME <file1> [options]"
+    echo "Error: One input file or directory is required"
+    echo "Usage: $SCRIPT_NAME <directory_or_file.he5> [options]"
     echo "Use --help for more information"
     exit 1
 fi
@@ -99,10 +100,26 @@ fi
 [[ $debug_flag == "1" ]] && set -x
 
 # Important workflow variables (UPPERCASE)
-DATA_DIR="${positional[0]}"
+INPUT_PATH="${positional[0]}"
 
-# Find the latest (youngest) .he5 file in DATA_DIR
-he5_file=$(ls -t "$DATA_DIR"/*.he5 2>/dev/null | head -n 1)
+# Check if input is a file or directory
+if [[ -f "$INPUT_PATH" ]]; then
+    # Input is a file - use it directly
+    he5_file="$INPUT_PATH"
+    # DATA_DIR is the directory containing the file
+    DATA_DIR=$(dirname "$INPUT_PATH")
+elif [[ -d "$INPUT_PATH" ]]; then
+    # Input is a directory - find the latest .he5 file
+    DATA_DIR="$INPUT_PATH"
+    he5_file=$(ls -t "$DATA_DIR"/*.he5 2>/dev/null | head -n 1)
+    if [[ -z "$he5_file" ]]; then
+        echo "Error: No .he5 files found in directory: $DATA_DIR"
+        exit 1
+    fi
+else
+    echo "Error: Input path does not exist or is not a file or directory: $INPUT_PATH"
+    exit 1
+fi
 
 INSARMAPS_HOSTS=${INSARMAPSHOST:-insarmaps.miami.edu}
 IFS=',' read -ra HOSTS <<< "$INSARMAPS_HOSTS"
