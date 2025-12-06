@@ -180,11 +180,11 @@ echo "Creating insarmaps.log files"
 # Determine the log directory: use pic/ if it exists, otherwise use DATA_DIR directly
 if [[ -d "$WORK_DIR/${DATA_DIR}/pic" ]]; then
     LOG_DIR="$WORK_DIR/${DATA_DIR}/pic"
+    rm -f "$LOG_DIR/insarmaps.log"
 else
     LOG_DIR="$WORK_DIR/${DATA_DIR}"
 fi
 
-rm -f "$LOG_DIR/insarmaps.log"
 for url in "${INSARMAPS_URLS[@]}"; do
     echo "$url"
     echo "$url" >> "$WORK_DIR/insarmaps.log"
