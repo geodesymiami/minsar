@@ -35,6 +35,7 @@ Examples:
       --start-date YYYYMMDD           Start date of limited period
       --end-date YYYYMMDD             End date of limited period
       --period YYYYMMDD:YYYYMMDD      Period of the search
+      --ingest-los                    Ingest both input files (FILE1 and FILE2) with --ref-lalo
       --debug                         Enable debug mode (set -x)
     "
     printf "$helptext"
@@ -51,6 +52,7 @@ echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $*" | tee -a "$LOG_FILE"
 
 # Initialize option parsing variables (lowercase)
 debug_flag=0
+ingest_los_flag=0
 positional=()
 
 # Default values for options (lowercase - local/temporary variables)
@@ -117,6 +119,10 @@ do
         --period)
             period="$2"
             shift 2
+            ;;
+        --ingest-los)
+            ingest_los_flag=1
+            shift
             ;;
         --debug)
             debug_flag=1
@@ -187,6 +193,16 @@ mv -v $PROJECT_DIR/iframe.html $PROJECT_DIR/iframe_vert.html
 echo "##############################################"
 ingest_insarmaps.bash "$HORZ_FILE"
 mv -v $PROJECT_DIR/iframe.html $PROJECT_DIR/iframe_horz.html
+
+# Ingest original input files if --ingest-los flag is set
+if [[ $ingest_los_flag == "1" ]]; then
+    echo "##############################################"
+    ingest_insarmaps.bash "$FILE1" --ref-lalo "${ref_lalo[@]}"
+    cp -v $FILE1/pic/iframe.html $PROJECT_DIR/iframe_FILE1.html
+    echo "##############################################"
+    ingest_insarmaps.bash "$FILE2" --ref-lalo "${ref_lalo[@]}"
+    cp -v $FILE2/pic/iframe.html $PROJECT_DIR/iframe_FILE2.html
+fi
 
 
 

@@ -172,7 +172,7 @@ if [[ -f "geo_timeseries.h5" ]]; then
     MASK_FILE="geo_mask.h5"
     TCOH_FILE="geo_temporalCoherence.h5"
     SCOH_FILE="geo_avgSpatialCoherence.h5"
-    GEOM_FILE="geo_geometryRr.h5"
+    GEOM_FILE="geo_geometryRadar.h5"
     SHADOW_FILE="geo_shadowMask.h5"
 elif [[ -f "timeseries.h5" ]]; then
     COORDS="RADAR"
@@ -209,7 +209,7 @@ if [[ "$COORDS" == "RADAR" ]]; then
     REF_CMD="reference_point.py timeseries.h5 --lookup inputs/geometryRadar.h5 --lat $REF_LAT --lon $REF_LON ; add_ref_lalo_to_file timeseries.h5 --ref-lalo $REF_LAT $REF_LON"
 
 else
-    REF_CMD="reference_point.py timeseries.h5 -l $REF_LAT -L $REF_LON"
+    REF_CMD="reference_point.py geo_timeseries.h5 --lat $REF_LAT --lon $REF_LON"
 fi
 
 echo "Running: $REF_CMD" | tee -a "$LOG_FILE"

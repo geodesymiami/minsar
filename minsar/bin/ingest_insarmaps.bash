@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# horzvert_2_insarmaps.bash
-# Wrapper script for horzvert_timeseries.py
-# Parses options similar to minsarApp.bash style
+# ingest_insarmaps.bash
 
 set -eo pipefail
 
@@ -22,7 +20,6 @@ Examples:
     $SCRIPT_NAME hvGalapagosSenD128/mintpy -ref-lalo -0.81,-91.190
     $SCRIPT_NAME hvGalapagosSenD128/miaplpy/network_single_reference
   Options:
-      --mask-thresh FLOAT             Coherence threshold for masking (default: 0.55)
       --ref-lalo LAT,LON or LAT LON   Reference point (lat,lon or lat lon)
       --debug                         Enable debug mode (set -x)
     "
@@ -134,6 +131,28 @@ fi
 
 HDFEOS_NUM_WORKERS=6
 MBTILES_NUM_WORKERS=6
+
+# If --ref-lalo was provided, update the reference point in the he5 file
+if [[ ${#ref_lalo[@]} -gt 0 ]]; then
+    echo "####################################"
+    echo "Updating reference point in HDFEOS5 file"
+    echo "####################################"
+    
+    # Parse reference point coordinates
+    if [[ ${#ref_lalo[@]} -eq 1 ]]; then
+        # Comma-separated format
+        IFS=',' read -ra COORDS <<< "${ref_lalo[0]}"
+        REF_LAT="${COORDS[0]}"
+        REF_LON="${COORDS[1]}"
+    else
+        # Space-separated format
+        REF_LAT="${ref_lalo[0]}"
+        REF_LON="${ref_lalo[1]}"
+    fi
+    
+    echo "Running: reference_point_hdfeos5.bash $he5_file --ref-lalo $REF_LAT $REF_LON"
+    reference_point_hdfeos5.bash "$he5_file" --ref-lalo "$REF_LAT" "$REF_LON"
+fi
 
 echo "Processing: $he5_file"
 
