@@ -14,7 +14,7 @@ import argparse
 from pathlib import Path
 
 
-def extract_iframe_src(html_file_or_url, add_cache_bust=True):
+def extract_iframe_src(html_file_or_url, add_cache_bust=True, zoom_factor=None):
     """Extract the src URL from an iframe HTML file, or return the URL if it's already a URL."""
     from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
     import time
@@ -42,6 +42,20 @@ def extract_iframe_src(html_file_or_url, add_cache_bust=True):
             else:
                 raise ValueError(f"Could not find iframe src in {html_file_or_url}")
     
+    # Parse URL to modify zoom factor if provided
+    parsed = urlparse(url)
+    path_parts = parsed.path.strip('/').split('/')
+    
+    # Check if URL has the format /start/{lat}/{lon}/{zoom}
+    if len(path_parts) >= 4 and path_parts[0] == 'start' and zoom_factor is not None:
+        try:
+            # Replace the zoom value (4th element, index 3)
+            path_parts[3] = str(zoom_factor)
+            parsed = parsed._replace(path='/' + '/'.join(path_parts))
+            url = urlunparse(parsed)
+        except (IndexError, ValueError) as e:
+            print(f"Warning: Could not modify zoom in URL {url}: {e}")
+    
     # Add cache-busting parameter to force fresh loads (prevents Safari caching issue)
     if add_cache_bust:
         parsed = urlparse(url)
@@ -54,17 +68,19 @@ def extract_iframe_src(html_file_or_url, add_cache_bust=True):
     return url
 
 
-def create_webpage(file1_path, file2_path, vert_path, horz_path, output_path='page.html'):
+def create_webpage(file1_path, file2_path, vert_path, horz_path, output_path='page.html', zoom_factor=None):
     """Create a webpage with 4 iframes in a 2x2 grid."""
     
     # Extract iframe sources
     try:
-        src_file1 = extract_iframe_src(file1_path)
-        src_file2 = extract_iframe_src(file2_path)
-        src_vert = extract_iframe_src(vert_path)
-        src_horz = extract_iframe_src(horz_path)
+        src_file1 = extract_iframe_src(file1_path, zoom_factor=zoom_factor)
+        src_file2 = extract_iframe_src(file2_path, zoom_factor=zoom_factor)
+        src_vert = extract_iframe_src(vert_path, zoom_factor=zoom_factor)
+        src_horz = extract_iframe_src(horz_path, zoom_factor=zoom_factor)
     except Exception as e:
-        print(f"Error: {e}")
+        import traceback
+        print(f"Error extracting iframe sources: {e}")
+        traceback.print_exc()
         return None
     
     # Create HTML content with JavaScript to ensure iframes are fully loaded and interactive
@@ -142,9 +158,56 @@ def create_webpage(file1_path, file2_path, vert_path, horz_path, output_path='pa
             color: #666;
             font-size: 14px;
         }}
+        .zoom-control {{
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background-color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }}
+        .zoom-control label {{
+            font-weight: bold;
+            color: #333;
+            font-size: 14px;
+        }}
+        .zoom-control input {{
+            width: 80px;
+            padding: 6px 10px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }}
+        .zoom-control input:focus {{
+            outline: none;
+            border-color: #4a90e2;
+        }}
+        .zoom-control button {{
+            padding: 6px 15px;
+            background-color: #4a90e2;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+        }}
+        .zoom-control button:hover {{
+            background-color: #357abd;
+        }}
     </style>
 </head>
 <body>
+    <div class="zoom-control">
+        <label for="zoom-input">Zoom:</label>
+        <input type="number" id="zoom-input" step="0.1" min="1" max="20" placeholder="11.0">
+        <button id="zoom-apply-btn">Apply</button>
+    </div>
     <div class="container">
         <div class="panel panel-top-left" id="panel1">
             <div class="panel-header">FILE1</div>
@@ -311,11 +374,38 @@ def create_webpage(file1_path, file2_path, vert_path, horz_path, output_path='pa
             const state = iframeStates[iframeId];
             
             function onIframeLoad() {{
-                if (state.loaded) return; // Already processed
-                
+                // Reset state for reloads (e.g., after zoom change)
+                const wasLoaded = state.loaded;
                 state.loaded = true;
-                console.log(`Iframe loaded: ${{iframeId}}`);
+                console.log(`Iframe loaded: ${{iframeId}} (reload: ${{wasLoaded}})`);
                 
+                // If this is a reload (was already loaded), just focus it for colorscale adjustment
+                if (wasLoaded) {{
+                    // This is a reload after zoom change - focus it to trigger colorscale adjustment
+                    setTimeout(() => {{
+                        const iframe = document.getElementById(iframeId);
+                        const panel = document.getElementById(panelId);
+                        if (iframe && panel) {{
+                            iframe.focus();
+                            try {{
+                                iframe.contentWindow.focus();
+                            }} catch (e) {{
+                                // Cross-origin
+                            }}
+                            // Try to minimize attributes
+                            setTimeout(() => {{
+                                try {{
+                                    iframe.contentWindow.postMessage({{type: 'minimizeAttributes'}}, '*');
+                                }} catch (e) {{
+                                    // Cross-origin
+                                }}
+                            }}, 500);
+                        }}
+                    }}, 500);
+                    return;
+                }}
+                
+                // Original load logic for initial page load
                 // Find which iframe this is in the queue
                 const queueIndex = iframeQueue.findIndex(item => item.id === iframeId);
                 
@@ -429,13 +519,118 @@ def create_webpage(file1_path, file2_path, vert_path, horz_path, output_path='pa
             }});
         }}
         
-        // Store iframe URLs for sequential loading
-        const iframeUrls = {{
+        // Store original iframe URLs for sequential loading
+        const originalIframeUrls = {{
             'iframe1': '{src_file1}',
             'iframe2': '{src_file2}',
             'iframe3': '{src_vert}',
             'iframe4': '{src_horz}'
         }};
+        
+        // Store current iframe URLs (will be modified by zoom)
+        const iframeUrls = {{...originalIframeUrls}};
+        
+        // Function to update zoom in a URL
+        function updateZoomInUrl(url, newZoom) {{
+            try {{
+                const urlObj = new URL(url);
+                const pathParts = urlObj.pathname.split('/').filter(p => p);
+                
+                // Check if URL has format /start/{{lat}}/{{lon}}/{{zoom}}
+                if (pathParts.length >= 4 && pathParts[0] === 'start') {{
+                    // Replace zoom (index 3)
+                    pathParts[3] = newZoom.toString();
+                    urlObj.pathname = '/' + pathParts.join('/');
+                    
+                    // Preserve existing query parameters (except cache-busting ones)
+                    const params = new URLSearchParams(urlObj.search);
+                    params.delete('_nocache');
+                    params.delete('_t');
+                    params.set('hideAttributes', 'true');
+                    urlObj.search = params.toString();
+                    
+                    return urlObj.toString();
+                }}
+            }} catch (e) {{
+                console.error('Error updating zoom in URL:', e, url);
+            }}
+            return url; // Return original if can't parse
+        }}
+        
+        // Function to apply zoom to all iframes
+        function applyZoomToAllFrames(zoomValue) {{
+            if (!zoomValue || isNaN(zoomValue) || zoomValue < 1 || zoomValue > 20) {{
+                alert('Please enter a valid zoom value between 1 and 20');
+                return;
+            }}
+            
+            console.log(`Applying zoom ${{zoomValue}} to all iframes`);
+            
+            // Update URLs for all iframes
+            const iframeIds = ['iframe1', 'iframe2', 'iframe3', 'iframe4'];
+            
+            iframeIds.forEach((iframeId, index) => {{
+                const iframe = document.getElementById(iframeId);
+                if (iframe) {{
+                    // Get original URL
+                    const originalUrl = originalIframeUrls[iframeId];
+                    
+                    // Update zoom in URL (this preserves query params and adds hideAttributes)
+                    let newUrl = updateZoomInUrl(originalUrl, zoomValue);
+                    
+                    // Add cache-busting to force reload
+                    const separator = newUrl.includes('?') ? '&' : '?';
+                    newUrl = newUrl + separator + '_nocache=' + Date.now() + '_' + index;
+                    
+                    console.log(`Updating ${{iframeId}}: ${{newUrl}}`);
+                    
+                    // Update original URL so future zoom changes work correctly
+                    // Remove cache-busting to store clean URL
+                    const cleanNewUrl = newUrl.split('&_nocache')[0].split('?_nocache')[0];
+                    originalIframeUrls[iframeId] = cleanNewUrl;
+                    
+                    // Update iframe src - this will trigger a reload
+                    iframe.src = newUrl;
+                    
+                    // Reset load state so it can reload properly
+                    const state = iframeStates[iframeId];
+                    if (state) {{
+                        state.loaded = false;
+                        state.processed = false;
+                    }}
+                }}
+            }});
+        }}
+        
+        // Set up zoom control
+        const zoomInput = document.getElementById('zoom-input');
+        const zoomApplyBtn = document.getElementById('zoom-apply-btn');
+        
+        // Extract initial zoom from first iframe URL to populate input
+        try {{
+            const firstUrl = originalIframeUrls['iframe1'];
+            const urlObj = new URL(firstUrl);
+            const pathParts = urlObj.pathname.split('/').filter(p => p);
+            if (pathParts.length >= 4 && pathParts[0] === 'start') {{
+                zoomInput.value = pathParts[3];
+            }}
+        }} catch (e) {{
+            // Ignore if can't parse
+        }}
+        
+        // Apply zoom on button click
+        zoomApplyBtn.addEventListener('click', () => {{
+            const zoomValue = parseFloat(zoomInput.value);
+            applyZoomToAllFrames(zoomValue);
+        }});
+        
+        // Apply zoom on Enter key
+        zoomInput.addEventListener('keypress', (e) => {{
+            if (e.key === 'Enter') {{
+                const zoomValue = parseFloat(zoomInput.value);
+                applyZoomToAllFrames(zoomValue);
+            }}
+        }});
         
         let currentLoadIndex = 0;
         const loadOrder = ['iframe1', 'iframe2', 'iframe3', 'iframe4'];
@@ -458,7 +653,8 @@ def create_webpage(file1_path, file2_path, vert_path, horz_path, output_path='pa
             setupIframe(iframeId, panelId);
             
             // Add cache-busting parameter and hideAttributes parameter
-            const url = iframeUrls[iframeId];
+            // Use original URL to avoid zoom modifications during initial load
+            const url = originalIframeUrls[iframeId];
             const separator = url.includes('?') ? '&' : '?';
             const cacheBustUrl = url + separator + 'hideAttributes=true&_nocache=' + Date.now() + '_' + currentLoadIndex + '_' + Math.random().toString(36).substr(2, 9);
             
@@ -556,6 +752,8 @@ Examples:
     create_webpage.py
     create_webpage.py --file1 iframe_FILE1.html --file2 iframe_FILE2.html --vert iframe_vert.html --horz iframe_horz.html
     create_webpage.py --dir /path/to/directory --output combined.html
+    create_webpage.py --zoom 12.5
+    create_webpage.py --file1 iframe_FILE1.html --zoom 11.0 --output page.html
         """
     )
     
@@ -571,6 +769,8 @@ Examples:
                        help='Directory containing the iframe files (default: current directory)')
     parser.add_argument('--output', '-o', default='page.html',
                        help='Output HTML file name (default: page.html)')
+    parser.add_argument('--zoom', '-z', type=float, default=None,
+                       help='Zoom factor to apply to all iframe URLs (e.g., 11.0, 12.5). Only works with URLs in format /start/lat/lon/zoom')
     
     args = parser.parse_args()
     
@@ -594,7 +794,7 @@ Examples:
     
     # Create the webpage
     try:
-        create_webpage(file1_path, file2_path, vert_path, horz_path, output_path)
+        create_webpage(file1_path, file2_path, vert_path, horz_path, output_path, zoom_factor=args.zoom)
     except Exception as e:
         print(f"Error creating webpage: {e}")
         return 1
