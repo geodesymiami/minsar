@@ -199,14 +199,11 @@ else
     LOG_DIR="$WORK_DIR/${DATA_DIR}"
 fi
 
-# Normalize paths to compare them (handle relative paths like ".")
-WORK_DIR_NORM=$(cd "$WORK_DIR" && pwd)
-LOG_DIR_NORM=$(cd "$LOG_DIR" && pwd)
-
 for url in "${INSARMAPS_URLS[@]}"; do
     echo "$url"
     # Only write to WORK_DIR/insarmaps.log if it's different from LOG_DIR/insarmaps.log
-    if [[ "$WORK_DIR_NORM" != "$LOG_DIR_NORM" ]]; then
+    # Normalize paths to compare them (handle relative paths like ".")
+    if [[ "$(cd "$WORK_DIR" && pwd)" != "$(cd "$LOG_DIR" && pwd)" ]]; then
         echo "$url" >> "$WORK_DIR/insarmaps.log"
     fi
     echo "$url" >> "$LOG_DIR/insarmaps.log"
