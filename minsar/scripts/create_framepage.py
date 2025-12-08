@@ -12,6 +12,91 @@ import os
 import re
 import argparse
 from pathlib import Path
+from urllib.parse import urlparse, parse_qs
+
+
+def read_insarmaps_log(log_path):
+    """Read URLs from insarmaps.log file and return them sorted by startDataset."""
+    if not os.path.exists(log_path):
+        raise FileNotFoundError(f"insarmaps.log file not found: {log_path}")
+    
+    urls = []
+    with open(log_path, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line and (line.startswith('http://') or line.startswith('https://')):
+                urls.append(line)
+    
+    if not urls:
+        raise ValueError(f"No valid URLs found in {log_path}")
+    
+    # Extract startDataset from each URL and sort
+    def get_sort_key(url):
+        try:
+            parsed = urlparse(url)
+            query_params = parse_qs(parsed.query)
+            start_dataset = query_params.get('startDataset', [''])[0].lower()
+            
+            # Priority: desc (0), asc (1), vert (2), horz (3), others (4)
+            if 'desc' in start_dataset:
+                return (0, start_dataset)
+            elif 'asc' in start_dataset:
+                return (1, start_dataset)
+            elif 'vert' in start_dataset:
+                return (2, start_dataset)
+            elif 'horz' in start_dataset:
+                return (3, start_dataset)
+            else:
+                return (4, start_dataset)
+        except Exception:
+            return (5, '')  # Put unparseable URLs last
+    
+    urls.sort(key=get_sort_key)
+    return urls
+
+
+def get_label_from_url(url):
+    """Extract label from URL based on startDataset parameter."""
+    try:
+        parsed = urlparse(url)
+        query_params = parse_qs(parsed.query)
+        start_dataset = query_params.get('startDataset', [''])[0].lower()
+        
+        if 'desc' in start_dataset:
+            return 'Descending'
+        elif 'asc' in start_dataset:
+            return 'Ascending'
+        elif 'vert' in start_dataset:
+            return 'Vertical'
+        elif 'horz' in start_dataset:
+            return 'Horizontal'
+        else:
+            # Fallback: use the dataset name or a generic label
+            return start_dataset if start_dataset else 'Dataset'
+    except Exception:
+        return 'Dataset'
+
+
+def apply_zoom_factor(url, zoom_factor):
+    """Apply zoom factor to URL if provided."""
+    if zoom_factor is None:
+        return url
+    
+    from urllib.parse import urlunparse
+    try:
+        parsed = urlparse(url)
+        path_parts = parsed.path.strip('/').split('/')
+        
+        # Check if URL has the format /start/{lat}/{lon}/{zoom}
+        if len(path_parts) >= 4 and path_parts[0] == 'start':
+            # Replace the zoom value (4th element, index 3)
+            path_parts[3] = str(zoom_factor)
+            parsed = parsed._replace(path='/' + '/'.join(path_parts))
+            url = urlunparse(parsed)
+    except (IndexError, ValueError) as e:
+        print(f"Warning: Could not modify zoom in URL {url}: {e}")
+    
+    return url
 
 
 def extract_iframe_src(html_file_or_url, add_cache_bust=True, zoom_factor=None):
@@ -68,20 +153,22 @@ def extract_iframe_src(html_file_or_url, add_cache_bust=True, zoom_factor=None):
     return url
 
 
-def create_webpage(file1_path, file2_path, vert_path, horz_path, output_path='page.html', zoom_factor=None):
+def create_webpage(urls, labels, output_path='page.html', zoom_factor=None):
     """Create a webpage with 4 iframes in a 2x2 grid."""
     
-    # Extract iframe sources
-    try:
-        src_file1 = extract_iframe_src(file1_path, zoom_factor=zoom_factor)
-        src_file2 = extract_iframe_src(file2_path, zoom_factor=zoom_factor)
-        src_vert = extract_iframe_src(vert_path, zoom_factor=zoom_factor)
-        src_horz = extract_iframe_src(horz_path, zoom_factor=zoom_factor)
-    except Exception as e:
-        import traceback
-        print(f"Error extracting iframe sources: {e}")
-        traceback.print_exc()
-        return None
+    if len(urls) < 4:
+        raise ValueError(f"Need at least 4 URLs, got {len(urls)}")
+    
+    # Use first 4 URLs and apply zoom factor if provided
+    src_file1 = apply_zoom_factor(urls[0], zoom_factor)
+    src_file2 = apply_zoom_factor(urls[1], zoom_factor)
+    src_vert = apply_zoom_factor(urls[2], zoom_factor)
+    src_horz = apply_zoom_factor(urls[3], zoom_factor)
+    
+    label1 = labels[0] if len(labels) > 0 else 'FILE1'
+    label2 = labels[1] if len(labels) > 1 else 'FILE2'
+    label3 = labels[2] if len(labels) > 2 else 'Vertical'
+    label4 = labels[3] if len(labels) > 3 else 'Horizontal'
     
     # Create HTML content with JavaScript to ensure iframes are fully loaded and interactive
     html_content = f"""<!DOCTYPE html>
@@ -138,6 +225,14 @@ def create_webpage(file1_path, file2_path, vert_path, horz_path, output_path='pa
             border: none;
             display: block;
         }}
+        .panel-top-left iframe {{
+            height: calc(100% - 36px - 50px);
+            margin-top: 50px;
+            pointer-events: auto;
+        }}
+        .panel-top-left .url-control * {{
+            pointer-events: auto;
+        }}
         .panel-top-left .panel-header {{
             background-color: #4a90e2;
         }}
@@ -159,8 +254,9 @@ def create_webpage(file1_path, file2_path, vert_path, horz_path, output_path='pa
             font-size: 14px;
         }}
         .url-control {{
-            position: fixed;
-            top: 10px;
+            position: absolute;
+            top: 40px;
+            left: 10px;
             right: 10px;
             background-color: white;
             padding: 8px 12px;
@@ -171,7 +267,9 @@ def create_webpage(file1_path, file2_path, vert_path, horz_path, output_path='pa
             flex-direction: row;
             align-items: center;
             gap: 8px;
-            max-width: 600px;
+            max-width: calc(100% - 20px);
+            pointer-events: auto;
+            cursor: default;
         }}
         .url-control label {{
             font-weight: bold;
@@ -187,6 +285,9 @@ def create_webpage(file1_path, file2_path, vert_path, horz_path, output_path='pa
             border-radius: 4px;
             font-size: 12px;
             font-family: monospace;
+            pointer-events: auto;
+            background-color: white;
+            cursor: text;
         }}
         .url-control input:focus {{
             outline: none;
@@ -213,27 +314,27 @@ def create_webpage(file1_path, file2_path, vert_path, horz_path, output_path='pa
     </style>
 </head>
 <body>
-    <div class="url-control">
-        <label for="url-input">URL:</label>
-        <input type="text" id="url-input" placeholder="Paste full URL here">
-        <button id="url-apply-btn">Apply</button>
-    </div>
     <div class="container">
         <div class="panel panel-top-left" id="panel1">
-            <div class="panel-header">FILE1</div>
-            <iframe id="iframe1" title="FILE1" allowfullscreen></iframe>
+            <div class="panel-header">{label1}</div>
+            <div class="url-control">
+                <label for="url-input">URL:</label>
+                <input type="text" id="url-input" placeholder="Paste full URL here">
+                <button id="url-apply-btn">Apply</button>
+            </div>
+            <iframe id="iframe1" title="{label1}" allowfullscreen></iframe>
         </div>
         <div class="panel panel-top-right" id="panel2">
-            <div class="panel-header">FILE2</div>
-            <iframe id="iframe2" title="FILE2" allowfullscreen></iframe>
+            <div class="panel-header">{label2}</div>
+            <iframe id="iframe2" title="{label2}" allowfullscreen></iframe>
         </div>
         <div class="panel panel-bottom-left" id="panel3">
-            <div class="panel-header">Vertical</div>
-            <iframe id="iframe3" title="Vertical" allowfullscreen></iframe>
+            <div class="panel-header">{label3}</div>
+            <iframe id="iframe3" title="{label3}" allowfullscreen></iframe>
         </div>
         <div class="panel panel-bottom-right" id="panel4">
-            <div class="panel-header">Horizontal</div>
-            <iframe id="iframe4" title="Horizontal" allowfullscreen></iframe>
+            <div class="panel-header">{label4}</div>
+            <iframe id="iframe4" title="{label4}" allowfullscreen></iframe>
         </div>
     </div>
     
@@ -248,10 +349,10 @@ def create_webpage(file1_path, file2_path, vert_path, horz_path, output_path='pa
         
         // Queue for processing iframes sequentially
         const iframeQueue = [
-            {{ id: 'iframe1', panelId: 'panel1', name: 'FILE1' }},
-            {{ id: 'iframe2', panelId: 'panel2', name: 'FILE2' }},
-            {{ id: 'iframe3', panelId: 'panel3', name: 'Vertical' }},
-            {{ id: 'iframe4', panelId: 'panel4', name: 'Horizontal' }}
+            {{ id: 'iframe1', panelId: 'panel1', name: '{label1}' }},
+            {{ id: 'iframe2', panelId: 'panel2', name: '{label2}' }},
+            {{ id: 'iframe3', panelId: 'panel3', name: '{label3}' }},
+            {{ id: 'iframe4', panelId: 'panel4', name: '{label4}' }}
         ];
         
         let currentProcessingIndex = 0;
@@ -518,6 +619,10 @@ def create_webpage(file1_path, file2_path, vert_path, horz_path, output_path='pa
             
             // Make panel clickable for manual interaction
             panel.addEventListener('click', (e) => {{
+                // Don't interfere with URL control clicks
+                if (e.target.closest('.url-control')) {{
+                    return;
+                }}
                 document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
                 panel.classList.add('active');
                 iframe.focus();
@@ -690,27 +795,79 @@ def create_webpage(file1_path, file2_path, vert_path, horz_path, output_path='pa
         // Set up URL control
         const urlInput = document.getElementById('url-input');
         const urlApplyBtn = document.getElementById('url-apply-btn');
+        const urlControl = document.querySelector('.url-control');
+        
+        // Ensure input is editable and stop all event propagation
+        if (urlInput) {{
+            urlInput.readOnly = false;
+            urlInput.disabled = false;
+            
+            // Stop all events from bubbling to panel
+            ['click', 'mousedown', 'mouseup', 'focus', 'select'].forEach(eventType => {{
+                urlInput.addEventListener(eventType, (e) => {{
+                    e.stopPropagation();
+                }}, true);
+            }});
+        }}
+        
+        // Stop events on the entire URL control from bubbling
+        if (urlControl) {{
+            ['click', 'mousedown', 'mouseup'].forEach(eventType => {{
+                urlControl.addEventListener(eventType, (e) => {{
+                    e.stopPropagation();
+                }}, true);
+            }});
+        }}
         
         // Extract initial URL from first iframe to populate input
         try {{
-            urlInput.value = originalIframeUrls['iframe1'];
+            if (urlInput && originalIframeUrls['iframe1']) {{
+                urlInput.value = originalIframeUrls['iframe1'];
+            }}
         }} catch (e) {{
             // Ignore if can't parse
         }}
         
         // Apply URL on button click
-        urlApplyBtn.addEventListener('click', () => {{
-            const urlValue = urlInput.value.trim();
-            applyUrlToAllFrames(urlValue);
-        }});
+        if (urlApplyBtn) {{
+            urlApplyBtn.addEventListener('click', (e) => {{
+                e.preventDefault();
+                e.stopPropagation();
+                const urlValue = urlInput ? urlInput.value.trim() : '';
+                if (urlValue) {{
+                    applyUrlToAllFrames(urlValue);
+                }}
+            }}, true);
+        }}
         
         // Apply URL on Enter key
-        urlInput.addEventListener('keypress', (e) => {{
-            if (e.key === 'Enter' && !urlApplyBtn.disabled) {{
-                const urlValue = urlInput.value.trim();
-                applyUrlToAllFrames(urlValue);
-            }}
-        }});
+        if (urlInput) {{
+            urlInput.addEventListener('keypress', (e) => {{
+                e.stopPropagation();
+                if (e.key === 'Enter' && urlApplyBtn && !urlApplyBtn.disabled) {{
+                    e.preventDefault();
+                    const urlValue = urlInput.value.trim();
+                    if (urlValue) {{
+                        applyUrlToAllFrames(urlValue);
+                    }}
+                }}
+            }}, true);
+            
+            // Ensure paste works
+            urlInput.addEventListener('paste', (e) => {{
+                e.stopPropagation();
+                // Allow paste to work normally - browser will handle it
+            }}, true);
+            
+            // Ensure all keyboard events work
+            urlInput.addEventListener('keydown', (e) => {{
+                e.stopPropagation();
+            }}, true);
+            
+            urlInput.addEventListener('keyup', (e) => {{
+                e.stopPropagation();
+            }}, true);
+        }}
         
         let currentLoadIndex = 0;
         const loadOrder = ['iframe1', 'iframe2', 'iframe3', 'iframe4'];
@@ -825,28 +982,21 @@ def create_webpage(file1_path, file2_path, vert_path, horz_path, output_path='pa
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Create a webpage with 4 iframes in a 2x2 grid layout.',
+        description='Create a webpage with 4 iframes in a 2x2 grid layout from insarmaps.log.',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    create_webpage.py
-    create_webpage.py --file1 iframe_FILE1.html --file2 iframe_FILE2.html --vert iframe_vert.html --horz iframe_horz.html
-    create_webpage.py --dir /path/to/directory --output combined.html
-    create_webpage.py --zoom 12.5
-    create_webpage.py --file1 iframe_FILE1.html --zoom 11.0 --output page.html
+    create_framepage.py
+    create_framepage.py --log insarmaps.log
+    create_framepage.py --dir /path/to/directory --output combined.html
+    create_framepage.py --zoom 12.5
         """
     )
     
-    parser.add_argument('--file1', default='iframe_FILE1.html',
-                       help='Path to FILE1 iframe HTML file or direct URL (default: iframe_FILE1.html)')
-    parser.add_argument('--file2', default='iframe_FILE2.html',
-                       help='Path to FILE2 iframe HTML file or direct URL (default: iframe_FILE2.html)')
-    parser.add_argument('--vert', default='iframe_vert.html',
-                       help='Path to vertical iframe HTML file or direct URL (default: iframe_vert.html)')
-    parser.add_argument('--horz', default='iframe_horz.html',
-                       help='Path to horizontal iframe HTML file or direct URL (default: iframe_horz.html)')
+    parser.add_argument('--log', default='insarmaps.log',
+                       help='Path to insarmaps.log file (default: insarmaps.log)')
     parser.add_argument('--dir', default=None,
-                       help='Directory containing the iframe files (default: current directory)')
+                       help='Directory containing the insarmaps.log file (default: current directory)')
     parser.add_argument('--output', '-o', default='multi_frame_page.html',
                        help='Output HTML file name (default: multi_frame_page.html)')
     parser.add_argument('--zoom', '-z', type=float, default=None,
@@ -858,25 +1008,34 @@ Examples:
     base_dir = args.dir if args.dir else os.getcwd()
     base_dir = os.path.abspath(base_dir)
     
-    # Construct full paths (only if they're not URLs)
-    def get_path(arg_value):
-        if arg_value.startswith('http://') or arg_value.startswith('https://'):
-            return arg_value
-        if os.path.isabs(arg_value):
-            return arg_value
-        return os.path.join(base_dir, arg_value)
+    # Construct full path to log file
+    if os.path.isabs(args.log):
+        log_path = args.log
+    else:
+        log_path = os.path.join(base_dir, args.log)
     
-    file1_path = get_path(args.file1)
-    file2_path = get_path(args.file2)
-    vert_path = get_path(args.vert)
-    horz_path = get_path(args.horz)
     output_path = os.path.join(base_dir, args.output) if not os.path.isabs(args.output) else args.output
     
-    # Create the webpage
+    # Read URLs from insarmaps.log
     try:
-        create_webpage(file1_path, file2_path, vert_path, horz_path, output_path, zoom_factor=args.zoom)
+        urls = read_insarmaps_log(log_path)
+        print(f"Found {len(urls)} URLs in {log_path}")
+        
+        if len(urls) < 4:
+            print(f"Warning: Only {len(urls)} URLs found, need at least 4. Using available URLs.")
+            # Pad with empty strings if needed
+            while len(urls) < 4:
+                urls.append('')
+        
+        # Extract labels from URLs
+        labels = [get_label_from_url(url) for url in urls[:4]]
+        
+        # Create the webpage
+        create_webpage(urls[:4], labels, output_path, zoom_factor=args.zoom)
     except Exception as e:
+        import traceback
         print(f"Error creating webpage: {e}")
+        traceback.print_exc()
         return 1
     
     return 0
