@@ -288,6 +288,10 @@ def create_webpage(urls, labels, output_path='page.html', zoom_factor=None):
             pointer-events: auto;
             background-color: white;
             cursor: text;
+            user-select: text;
+            -webkit-user-select: text;
+            -moz-user-select: text;
+            -ms-user-select: text;
         }}
         .url-control input:focus {{
             outline: none;
@@ -634,8 +638,12 @@ def create_webpage(urls, labels, output_path='page.html', zoom_factor=None):
             
             // Make panel clickable for manual interaction
             panel.addEventListener('click', (e) => {{
-                // Don't interfere with URL control clicks
+                // Don't interfere with URL control clicks or input field
                 if (e.target.closest('.url-control')) {{
+                    return;
+                }}
+                // Don't interfere if clicking on input field
+                if (e.target.id === 'url-input' || e.target.closest('#url-input')) {{
                     return;
                 }}
                 document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
@@ -646,7 +654,7 @@ def create_webpage(urls, labels, output_path='page.html', zoom_factor=None):
                 }} catch (e) {{
                     // Cross-origin - ignore
                 }}
-            }});
+            }}, false);
         }}
         
         // Store original iframe URLs for sequential loading
@@ -827,32 +835,102 @@ def create_webpage(urls, labels, output_path='page.html', zoom_factor=None):
             urlInput.readOnly = false;
             urlInput.disabled = false;
             
-            // Stop all events from bubbling to panel
-            ['click', 'mousedown', 'mouseup', 'focus', 'select'].forEach(eventType => {{
-                urlInput.addEventListener(eventType, (e) => {{
-                    e.stopPropagation();
-                }}, true);
-            }});
+            // Track click count for triple-click detection
+            let clickCount = 0;
+            let clickTimer = null;
+            let lastClickTime = 0;
+            let isTripleClick = false;
+            
+            // Handle triple-click to select all
+            urlInput.addEventListener('mousedown', (e) => {{
+                // Only stop propagation, don't prevent default
+                e.stopPropagation();
+                
+                const now = Date.now();
+                // Reset counter if more than 500ms since last click
+                if (now - lastClickTime > 500) {{
+                    clickCount = 0;
+                    isTripleClick = false;
+                }}
+                lastClickTime = now;
+                clickCount++;
+                
+                // Reset counter after 500ms
+                if (clickTimer) {{
+                    clearTimeout(clickTimer);
+                }}
+                clickTimer = setTimeout(() => {{
+                    clickCount = 0;
+                    isTripleClick = false;
+                }}, 500);
+                
+                // On third click, mark as triple-click and select all
+                if (clickCount === 3) {{
+                    isTripleClick = true;
+                    // Don't prevent default - let browser handle the click normally first
+                    setTimeout(() => {{
+                        urlInput.select();
+                        clickCount = 0;
+                        isTripleClick = false;
+                    }}, 50);
+                }}
+            }}, false); // Use bubble phase, not capture
+            
+            // Don't auto-select on focus - allow normal cursor placement
+            urlInput.addEventListener('focus', (e) => {{
+                e.stopPropagation();
+                // Only select all if it was a triple-click
+                if (!isTripleClick) {{
+                    // Don't interfere - let browser handle focus normally
+                    // This allows user to place cursor anywhere
+                }}
+            }}, false);
+            
+            // Allow normal clicking to place cursor - don't interfere at all
+            urlInput.addEventListener('click', (e) => {{
+                e.stopPropagation();
+                // Don't do anything - let browser handle click normally
+                // This allows normal cursor placement
+            }}, false);
+            
+            // Stop other events from bubbling to panel, but don't interfere with normal behavior
+            urlInput.addEventListener('mouseup', (e) => {{
+                e.stopPropagation();
+            }}, false);
+            
+            // Don't interfere with select event - let it work normally
         }}
         
         // Stop events on the entire URL control from bubbling
+        // But only stop propagation, don't prevent default behavior
         if (urlControl) {{
             ['click', 'mousedown', 'mouseup'].forEach(eventType => {{
                 urlControl.addEventListener(eventType, (e) => {{
-                    e.stopPropagation();
-                }}, true);
+                    // Only stop if the target is the control itself, not the input
+                    if (e.target === urlControl || e.target === urlControl.querySelector('label')) {{
+                        e.stopPropagation();
+                    }}
+                    // Don't stop propagation for input or button - let them handle events normally
+                }}, false);
             }});
         }}
         
         // Extract initial URL from first iframe to populate input
         // This shows the original URL, but user can paste a different URL to use as template
-        try {{
-            if (urlInput && originalIframeUrls['iframe1']) {{
-                urlInput.value = originalIframeUrls['iframe1'];
+        // Set this after a small delay to ensure input is fully ready
+        setTimeout(() => {{
+            try {{
+                if (urlInput && originalIframeUrls['iframe1']) {{
+                    urlInput.value = originalIframeUrls['iframe1'];
+                    // Ensure input is fully interactive after setting value
+                    urlInput.readOnly = false;
+                    urlInput.disabled = false;
+                    // Don't focus or select - let user click where they want
+                }}
+            }} catch (e) {{
+                // Ignore if can't parse
             }}
-        }} catch (e) {{
-            // Ignore if can't parse
-        }}
+        }}, 100);
         
         // Function to calculate and display frame dimensions
         function getFrameDimensions() {{
@@ -934,25 +1012,84 @@ def create_webpage(urls, labels, output_path='page.html', zoom_factor=None):
             }});
         }}
         
+        // Common function to apply URL (used by both button and Enter key)
+        // Define this as a window function so it's accessible everywhere
+        // Make sure it's defined before the button handlers
+        function applyUrlFromInputFunction() {{
+            const urlInput = document.getElementById('url-input');
+            if (!urlInput) {{
+                console.error('URL input not found');
+                return;
+            }}
+            
+            const urlValue = urlInput.value.trim();
+            console.log('Applying URL from input:', urlValue);
+            
+            if (urlValue) {{
+                // Call the applyUrlToAllFrames function - it should be defined above
+                try {{
+                    if (typeof applyUrlToAllFrames === 'function') {{
+                        applyUrlToAllFrames(urlValue);
+                    }} else {{
+                        console.error('applyUrlToAllFrames is not a function');
+                        alert('Error: URL application function not available. Please refresh the page.');
+                    }}
+                }} catch (error) {{
+                    console.error('Error calling applyUrlToAllFrames:', error);
+                    alert('Error applying URL: ' + error.message);
+                }}
+            }} else {{
+                alert('Please enter a URL');
+            }}
+        }}
+        
+        // Also assign to window for global access
+        window.applyUrlFromInput = applyUrlFromInputFunction;
+        
         // Apply URL on button click
         if (urlApplyBtn) {{
+            console.log('Setting up Apply button handler');
+            
             // Stop propagation on button to prevent panel from handling it
             urlApplyBtn.addEventListener('mousedown', (e) => {{
                 e.stopPropagation();
+                e.stopImmediatePropagation();
             }}, true);
             
+            // Main click handler
             urlApplyBtn.addEventListener('click', (e) => {{
                 e.preventDefault();
                 e.stopPropagation();
                 e.stopImmediatePropagation();
-                const urlValue = urlInput ? urlInput.value.trim() : '';
-                console.log('Apply button clicked, URL value:', urlValue);
-                if (urlValue) {{
-                    applyUrlToAllFrames(urlValue);
+                console.log('Apply button clicked - calling applyUrlFromInputFunction');
+                
+                // Try multiple ways to call the function
+                if (typeof applyUrlFromInputFunction === 'function') {{
+                    applyUrlFromInputFunction();
+                }} else if (window.applyUrlFromInput) {{
+                    window.applyUrlFromInput();
                 }} else {{
-                    alert('Please enter a URL');
+                    console.error('applyUrlFromInput not available, trying direct call');
+                    // Last resort - try to get input and call applyUrlToAllFrames directly
+                    const urlInput = document.getElementById('url-input');
+                    if (urlInput && typeof applyUrlToAllFrames === 'function') {{
+                        const urlValue = urlInput.value.trim();
+                        if (urlValue) {{
+                            applyUrlToAllFrames(urlValue);
+                        }} else {{
+                            alert('Please enter a URL');
+                        }}
+                    }} else {{
+                        alert('Error: Unable to apply URL. Please refresh the page.');
+                    }}
                 }}
                 return false;
+            }}, false); // Use bubble phase instead of capture
+            
+            // Also try mouseup as backup
+            urlApplyBtn.addEventListener('mouseup', (e) => {{
+                e.stopPropagation();
+                e.stopImmediatePropagation();
             }}, true);
         }}
         
@@ -960,12 +1097,27 @@ def create_webpage(urls, labels, output_path='page.html', zoom_factor=None):
         if (urlInput) {{
             urlInput.addEventListener('keypress', (e) => {{
                 e.stopPropagation();
-                if (e.key === 'Enter' && urlApplyBtn && !urlApplyBtn.disabled) {{
+                if (e.key === 'Enter' || e.keyCode === 13) {{
                     e.preventDefault();
-                    const urlValue = urlInput.value.trim();
-                    if (urlValue) {{
-                        applyUrlToAllFrames(urlValue);
+                    // Only apply if button is not disabled (or doesn't exist)
+                    const canApply = !urlApplyBtn || !urlApplyBtn.disabled;
+                    if (canApply) {{
+                        if (typeof applyUrlFromInputFunction === 'function') {{
+                            applyUrlFromInputFunction();
+                        }} else if (window.applyUrlFromInput) {{
+                            window.applyUrlFromInput();
+                        }} else {{
+                            console.error("applyUrlFromInput not available");
+                        }}
                     }}
+                }}
+            }}, true);
+            
+            // Also handle keydown for better compatibility
+            urlInput.addEventListener('keydown', (e) => {{
+                if (e.key === 'Enter' || e.keyCode === 13) {{
+                    e.stopPropagation();
+                    // Let keypress handle it, but stop propagation here too
                 }}
             }}, true);
             
