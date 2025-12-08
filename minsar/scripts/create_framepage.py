@@ -218,20 +218,19 @@ def create_webpage(urls, labels, output_path='page.html', zoom_factor=None):
             font-size: 14px;
             font-weight: bold;
             margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: relative;
+        }}
+        .panel-header-title {{
+            flex: 1;
         }}
         .panel iframe {{
             width: 100%;
             height: calc(100% - 36px);
             border: none;
             display: block;
-        }}
-        .panel-top-left iframe {{
-            height: calc(100% - 36px - 50px);
-            margin-top: 50px;
-            pointer-events: auto;
-        }}
-        .panel-top-left .url-control * {{
-            pointer-events: auto;
         }}
         .panel-top-left .panel-header {{
             background-color: #4a90e2;
@@ -254,69 +253,72 @@ def create_webpage(urls, labels, output_path='page.html', zoom_factor=None):
             font-size: 14px;
         }}
         .url-control {{
-            position: absolute;
-            top: 40px;
-            left: 10px;
-            right: 10px;
-            background-color: white;
-            padding: 8px 12px;
-            border-radius: 6px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            z-index: 1000;
             display: flex;
             flex-direction: row;
             align-items: center;
-            gap: 8px;
-            max-width: calc(100% - 20px);
+            gap: 6px;
+            margin-left: auto;
+            background-color: rgba(255, 255, 255, 0.2);
+            padding: 4px 8px;
+            border-radius: 4px;
+            flex-shrink: 0;
             pointer-events: auto;
-            cursor: default;
+        }}
+        .url-control:hover {{
+            background-color: rgba(255, 255, 255, 0.3);
         }}
         .url-control label {{
             font-weight: bold;
-            color: #333;
-            font-size: 13px;
+            color: white;
+            font-size: 11px;
             white-space: nowrap;
         }}
         .url-control input {{
             flex: 1;
-            min-width: 0;
-            padding: 6px 10px;
-            border: 2px solid #ddd;
-            border-radius: 4px;
-            font-size: 12px;
+            min-width: 150px;
+            max-width: 300px;
+            padding: 4px 8px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 3px;
+            font-size: 11px;
             font-family: monospace;
-            pointer-events: auto !important;
-            background-color: white;
+            background-color: rgba(255, 255, 255, 0.9);
+            color: #333;
             cursor: text;
             user-select: text;
             -webkit-user-select: text;
             -moz-user-select: text;
             -ms-user-select: text;
-            position: relative;
-            z-index: 1001;
+            pointer-events: auto !important;
         }}
         .url-control input:focus {{
             outline: none;
-            border-color: #4a90e2;
+            border-color: rgba(255, 255, 255, 0.6);
+            background-color: white;
+        }}
+        .url-control input::placeholder {{
+            color: #999;
         }}
         .url-control button {{
-            padding: 6px 12px;
-            background-color: #4a90e2;
-            color: white;
-            border: none;
-            border-radius: 4px;
+            padding: 4px 10px;
+            background-color: rgba(255, 255, 255, 0.9);
+            color: #4a90e2;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 3px;
             cursor: pointer;
-            font-size: 13px;
+            font-size: 11px;
             font-weight: bold;
             white-space: nowrap;
             pointer-events: auto;
         }}
         .url-control button:hover {{
-            background-color: #357abd;
+            background-color: white;
+            border-color: rgba(255, 255, 255, 0.6);
         }}
         .url-control button:disabled {{
-            background-color: #ccc;
+            background-color: rgba(255, 255, 255, 0.5);
             cursor: not-allowed;
+            color: #999;
         }}
         .frame-dimensions-info {{
             position: fixed;
@@ -337,11 +339,13 @@ def create_webpage(urls, labels, output_path='page.html', zoom_factor=None):
     <div id="frame-dimensions-info" class="frame-dimensions-info"></div>
     <div class="container">
         <div class="panel panel-top-left" id="panel1">
-            <div class="panel-header">{label1}</div>
-            <div class="url-control">
-                <label for="url-input">URL:</label>
-                <input type="text" id="url-input" placeholder="Paste full URL here">
-                <button id="url-apply-btn">Apply</button>
+            <div class="panel-header">
+                <span class="panel-header-title">{label1}</span>
+                <div class="url-control">
+                    <label for="url-input">URL:</label>
+                    <input type="text" id="url-input" placeholder="Paste full URL here">
+                    <button id="url-apply-btn">Apply</button>
+                </div>
             </div>
             <iframe id="iframe1" title="{label1}" allowfullscreen></iframe>
         </div>
