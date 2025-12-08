@@ -199,10 +199,15 @@ mv -v $PROJECT_DIR/iframe.html $PROJECT_DIR/iframe_horz.html
 if [[ $ingest_los_flag == "1" ]]; then
     echo "##############################################"
     ingest_insarmaps.bash "$FILE1" --ref-lalo "${ref_lalo[@]}"
-    cp -v $FILE1/pic/iframe.html $PROJECT_DIR/iframe_FILE1.html
+    FILE1_HE5=$(ls -t "$FILE1"/*.he5 2>/dev/null | head -n 1) || FILE1_HE5="$FILE1"
+    flight_direction=$(get_flight_direction.py "$FILE1_HE5")
+    cp -v $FILE1/pic/iframe.html $PROJECT_DIR/iframe_${flight_direction}.html
+  
     echo "##############################################"
     ingest_insarmaps.bash "$FILE2" --ref-lalo "${ref_lalo[@]}"
-    cp -v $FILE2/pic/iframe.html $PROJECT_DIR/iframe_FILE2.html
+    FILE2_HE5=$(ls -t "$FILE2"/*.he5 2>/dev/null | head -n 1) || FILE2_HE5="$FILE2"
+    flight_direction=$(get_flight_direction.py "$FILE2_HE5")
+    cp -v $FILE2/pic/iframe.html $PROJECT_DIR/iframe_${flight_direction}.html
 fi
 
 
