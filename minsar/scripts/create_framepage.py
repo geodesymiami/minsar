@@ -303,6 +303,7 @@ def create_webpage(urls, labels, output_path='page.html', zoom_factor=None):
             font-size: 13px;
             font-weight: bold;
             white-space: nowrap;
+            pointer-events: auto;
         }}
         .url-control button:hover {{
             background-color: #357abd;
@@ -311,9 +312,23 @@ def create_webpage(urls, labels, output_path='page.html', zoom_factor=None):
             background-color: #ccc;
             cursor: not-allowed;
         }}
+        .frame-dimensions-info {{
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 6px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-family: monospace;
+            z-index: 999;
+            pointer-events: none;
+        }}
     </style>
 </head>
 <body>
+    <div id="frame-dimensions-info" class="frame-dimensions-info"></div>
     <div class="container">
         <div class="panel panel-top-left" id="panel1">
             <div class="panel-header">{label1}</div>
@@ -673,6 +688,7 @@ def create_webpage(urls, labels, output_path='page.html', zoom_factor=None):
         
         // Function to merge URL parameters from template URL into target URL
         // Preserves startDataset from target URL (keeps original data file)
+        // Uses template's zoom, lat, lon from path, and query parameters
         function mergeUrlParameters(templateUrl, targetUrl) {{
             try {{
                 const template = parseUrlParameters(templateUrl);
@@ -683,6 +699,7 @@ def create_webpage(urls, labels, output_path='page.html', zoom_factor=None):
                 }}
                 
                 // Use template's origin and path (includes zoom, lat, lon, etc. from path)
+                // This preserves the zoom level from the template URL
                 const newOrigin = template.origin;
                 const newPath = template.pathname;
                 
@@ -728,8 +745,10 @@ def create_webpage(urls, labels, output_path='page.html', zoom_factor=None):
             
             isApplyingUrl = true;
             const urlApplyBtn = document.getElementById('url-apply-btn');
-            urlApplyBtn.disabled = true;
-            urlApplyBtn.textContent = 'Applying...';
+            if (urlApplyBtn) {{
+                urlApplyBtn.disabled = true;
+                urlApplyBtn.textContent = 'Applying...';
+            }}
             
             console.log(`Applying URL template to all iframes: ${{templateUrlString}}`);
             
@@ -740,9 +759,15 @@ def create_webpage(urls, labels, output_path='page.html', zoom_factor=None):
                 if (currentIndex >= iframeIds.length) {{
                     // All done
                     isApplyingUrl = false;
-                    urlApplyBtn.disabled = false;
-                    urlApplyBtn.textContent = 'Apply';
+                    const urlApplyBtn = document.getElementById('url-apply-btn');
+                    if (urlApplyBtn) {{
+                        urlApplyBtn.disabled = false;
+                        urlApplyBtn.textContent = 'Apply';
+                    }}
+                    // Keep the template URL in the input box so user can see/copy what was applied
+                    // Don't modify the input - it should show the exact URL the user pasted
                     console.log('Finished applying URL to all iframes');
+                    console.log('Template URL that was applied:', templateUrlString);
                     return;
                 }}
                 
@@ -820,6 +845,7 @@ def create_webpage(urls, labels, output_path='page.html', zoom_factor=None):
         }}
         
         // Extract initial URL from first iframe to populate input
+        // This shows the original URL, but user can paste a different URL to use as template
         try {{
             if (urlInput && originalIframeUrls['iframe1']) {{
                 urlInput.value = originalIframeUrls['iframe1'];
@@ -828,15 +854,105 @@ def create_webpage(urls, labels, output_path='page.html', zoom_factor=None):
             // Ignore if can't parse
         }}
         
+        // Function to calculate and display frame dimensions
+        function getFrameDimensions() {{
+            const container = document.querySelector('.container');
+            const panel1 = document.getElementById('panel1');
+            const iframe1 = document.getElementById('iframe1');
+            const iframe2 = document.getElementById('iframe2');
+            
+            if (!container || !panel1 || !iframe1 || !iframe2) {{
+                return null;
+            }}
+            
+            const containerRect = container.getBoundingClientRect();
+            const panel1Rect = panel1.getBoundingClientRect();
+            const iframe1Rect = iframe1.getBoundingClientRect();
+            const iframe2Rect = iframe2.getBoundingClientRect();
+            
+            // Panel dimensions (all panels are the same size)
+            const panelWidth = Math.round(panel1Rect.width);
+            const panelHeight = Math.round(panel1Rect.height);
+            
+            // Iframe dimensions
+            // Panel 1 (top-left) has URL control, so iframe is smaller
+            const iframe1Width = Math.round(iframe1Rect.width);
+            const iframe1Height = Math.round(iframe1Rect.height);
+            
+            // Panels 2, 3, 4 have same iframe size (no URL control)
+            const iframe2Width = Math.round(iframe2Rect.width);
+            const iframe2Height = Math.round(iframe2Rect.height);
+            
+            return {{
+                panel: {{ width: panelWidth, height: panelHeight }},
+                iframe1: {{ width: iframe1Width, height: iframe1Height }}, // With URL control
+                iframe2_3_4: {{ width: iframe2Width, height: iframe2Height }} // Without URL control
+            }};
+        }}
+        
+        // Display frame dimensions in console and add to page
+        function displayFrameDimensions() {{
+            const dims = getFrameDimensions();
+            if (dims) {{
+                console.log('Frame Dimensions:');
+                console.log('  Panel size (all panels):', dims.panel.width + 'x' + dims.panel.height + ' pixels');
+                console.log('  Iframe 1 (top-left, with URL control):', dims.iframe1.width + 'x' + dims.iframe1.height + ' pixels');
+                console.log('  Iframes 2,3,4 (other panels):', dims.iframe2_3_4.width + 'x' + dims.iframe2_3_4.height + ' pixels');
+                console.log('  Recommended browser window size:', dims.iframe2_3_4.width + 'x' + dims.iframe2_3_4.height + ' pixels');
+                
+                // Also display in a small info box (optional - can be removed if not needed)
+                const infoBox = document.getElementById('frame-dimensions-info');
+                if (infoBox) {{
+                    infoBox.textContent = `Frame: ${{dims.iframe2_3_4.width}}x${{dims.iframe2_3_4.height}}px`;
+                }}
+            }}
+        }}
+        
+        // Calculate dimensions when page loads and on resize
+        window.addEventListener('load', () => {{
+            setTimeout(displayFrameDimensions, 500);
+        }});
+        
+        window.addEventListener('resize', () => {{
+            setTimeout(displayFrameDimensions, 100);
+        }});
+        
+        // Store the original template URL when user pastes/edits
+        let templateUrl = '';
+        if (urlInput) {{
+            urlInput.addEventListener('input', (e) => {{
+                // Store the current value as template when user types/pastes
+                templateUrl = urlInput.value.trim();
+            }});
+            
+            urlInput.addEventListener('paste', (e) => {{
+                // After paste, update template URL
+                setTimeout(() => {{
+                    templateUrl = urlInput.value.trim();
+                    console.log('Template URL updated after paste:', templateUrl);
+                }}, 0);
+            }});
+        }}
+        
         // Apply URL on button click
         if (urlApplyBtn) {{
+            // Stop propagation on button to prevent panel from handling it
+            urlApplyBtn.addEventListener('mousedown', (e) => {{
+                e.stopPropagation();
+            }}, true);
+            
             urlApplyBtn.addEventListener('click', (e) => {{
                 e.preventDefault();
                 e.stopPropagation();
+                e.stopImmediatePropagation();
                 const urlValue = urlInput ? urlInput.value.trim() : '';
+                console.log('Apply button clicked, URL value:', urlValue);
                 if (urlValue) {{
                     applyUrlToAllFrames(urlValue);
+                }} else {{
+                    alert('Please enter a URL');
                 }}
+                return false;
             }}, true);
         }}
         
