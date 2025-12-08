@@ -285,13 +285,15 @@ def create_webpage(urls, labels, output_path='page.html', zoom_factor=None):
             border-radius: 4px;
             font-size: 12px;
             font-family: monospace;
-            pointer-events: auto;
+            pointer-events: auto !important;
             background-color: white;
             cursor: text;
             user-select: text;
             -webkit-user-select: text;
             -moz-user-select: text;
             -ms-user-select: text;
+            position: relative;
+            z-index: 1001;
         }}
         .url-control input:focus {{
             outline: none;
@@ -835,22 +837,20 @@ def create_webpage(urls, labels, output_path='page.html', zoom_factor=None):
             urlInput.readOnly = false;
             urlInput.disabled = false;
             
-            // Track click count for triple-click detection
+            // Track click count for triple-click detection (only for triple-click)
             let clickCount = 0;
             let clickTimer = null;
             let lastClickTime = 0;
-            let isTripleClick = false;
             
-            // Handle triple-click to select all
+            // Handle triple-click to select all - minimal interference
             urlInput.addEventListener('mousedown', (e) => {{
-                // Only stop propagation, don't prevent default
+                // Only stop propagation to panel, don't prevent default
                 e.stopPropagation();
                 
                 const now = Date.now();
                 // Reset counter if more than 500ms since last click
                 if (now - lastClickTime > 500) {{
                     clickCount = 0;
-                    isTripleClick = false;
                 }}
                 lastClickTime = now;
                 clickCount++;
@@ -861,76 +861,90 @@ def create_webpage(urls, labels, output_path='page.html', zoom_factor=None):
                 }}
                 clickTimer = setTimeout(() => {{
                     clickCount = 0;
-                    isTripleClick = false;
                 }}, 500);
                 
-                // On third click, mark as triple-click and select all
+                // On third click, select all (but only after browser handles the click)
                 if (clickCount === 3) {{
-                    isTripleClick = true;
-                    // Don't prevent default - let browser handle the click normally first
+                    // Don't prevent default - let browser handle mousedown normally
+                    // This allows normal cursor placement for single/double clicks
                     setTimeout(() => {{
-                        urlInput.select();
+                        if (urlInput && document.activeElement === urlInput) {{
+                            urlInput.select();
+                        }}
                         clickCount = 0;
-                        isTripleClick = false;
-                    }}, 50);
+                    }}, 100); // Longer delay to ensure browser handled the click first
                 }}
-            }}, false); // Use bubble phase, not capture
+                // For single and double clicks, do nothing - let browser handle normally
+            }}, false); // Use bubble phase - browser handles first
             
-            // Don't auto-select on focus - allow normal cursor placement
+            // Don't interfere with focus at all - let browser handle it completely
             urlInput.addEventListener('focus', (e) => {{
+                // Only stop propagation to panel, don't do anything else
                 e.stopPropagation();
-                // Only select all if it was a triple-click
-                if (!isTripleClick) {{
-                    // Don't interfere - let browser handle focus normally
-                    // This allows user to place cursor anywhere
-                }}
+                // Don't select, don't move cursor - let user's click determine cursor position
             }}, false);
             
-            // Allow normal clicking to place cursor - don't interfere at all
+            // Don't interfere with click at all - let browser handle cursor placement
             urlInput.addEventListener('click', (e) => {{
+                // Only stop propagation to panel
                 e.stopPropagation();
-                // Don't do anything - let browser handle click normally
-                // This allows normal cursor placement
+                // Don't do anything else - browser will place cursor where user clicked
             }}, false);
             
-            // Stop other events from bubbling to panel, but don't interfere with normal behavior
+            // Stop mouseup from bubbling to panel, but don't interfere with selection
             urlInput.addEventListener('mouseup', (e) => {{
                 e.stopPropagation();
+                // Don't interfere - let browser handle text selection normally
             }}, false);
             
-            // Don't interfere with select event - let it work normally
+            // Don't interfere with any other events - let browser handle everything normally
         }}
         
-        // Stop events on the entire URL control from bubbling
-        // But only stop propagation, don't prevent default behavior
+        // Stop events on the entire URL control from bubbling to panel
+        // But only for the control container itself, not for input/button inside it
         if (urlControl) {{
             ['click', 'mousedown', 'mouseup'].forEach(eventType => {{
                 urlControl.addEventListener(eventType, (e) => {{
-                    // Only stop if the target is the control itself, not the input
-                    if (e.target === urlControl || e.target === urlControl.querySelector('label')) {{
+                    // Only stop propagation if clicking on the control container itself or label
+                    // Don't interfere with input or button events at all
+                    const target = e.target;
+                    if (target === urlControl || 
+                        target === urlControl.querySelector('label') ||
+                        (target.tagName && target.tagName.toLowerCase() === 'label')) {{
                         e.stopPropagation();
                     }}
-                    // Don't stop propagation for input or button - let them handle events normally
+                    // For input and button, don't stop propagation - let them work normally
                 }}, false);
             }});
         }}
         
         // Extract initial URL from first iframe to populate input
         // This shows the original URL, but user can paste a different URL to use as template
-        // Set this after a small delay to ensure input is fully ready
+        // Set this after a small delay to ensure input is fully ready and doesn't interfere
         setTimeout(() => {{
             try {{
                 if (urlInput && originalIframeUrls['iframe1']) {{
+                    // Store current selection/cursor position if any
+                    const hadFocus = document.activeElement === urlInput;
+                    const selectionStart = urlInput.selectionStart;
+                    const selectionEnd = urlInput.selectionEnd;
+                    
                     urlInput.value = originalIframeUrls['iframe1'];
+                    
                     // Ensure input is fully interactive after setting value
                     urlInput.readOnly = false;
                     urlInput.disabled = false;
-                    // Don't focus or select - let user click where they want
+                    
+                    // If it had focus, restore cursor position (or set to end if no position)
+                    if (hadFocus && selectionStart !== null && selectionEnd !== null) {{
+                        urlInput.setSelectionRange(selectionStart, selectionEnd);
+                    }}
+                    // Don't auto-focus or auto-select - let user click where they want
                 }}
             }} catch (e) {{
                 // Ignore if can't parse
             }}
-        }}, 100);
+        }}, 200); // Longer delay to ensure page is fully loaded
         
         // Function to calculate and display frame dimensions
         function getFrameDimensions() {{
