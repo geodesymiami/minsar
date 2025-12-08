@@ -181,34 +181,43 @@ eval $CMD
 # Find the latest (youngest) *vert*.he5 and *horz*.he5 files
 PROJECT_DIR=$(get_base_projectname "$FILE1")
 
-VERT_FILE=$(ls -t "$PROJECT_DIR"/*vert*.he5 2>/dev/null | head -1)
-HORZ_FILE=$(ls -t "$PROJECT_DIR"/*horz*.he5 2>/dev/null | head -1)
+# Store original directory before changing
+ORIGINAL_DIR="$PWD"
+cd $PROJECT_DIR
+rm -f insarmaps.log
+VERT_FILE=$(ls -t *vert*.he5 2>/dev/null | head -1)
+HORZ_FILE=$(ls -t *horz*.he5 2>/dev/null | head -1)
 
 echo "Found vert file: $VERT_FILE"
 echo "Found horz file: $HORZ_FILE"
 
 echo "##############################################"
 ingest_insarmaps.bash "$VERT_FILE"
-mv -v $PROJECT_DIR/iframe.html $PROJECT_DIR/iframe_vert.html
+mv -v iframe.html iframe_vert.html
 
 echo "##############################################"
 ingest_insarmaps.bash "$HORZ_FILE"
-mv -v $PROJECT_DIR/iframe.html $PROJECT_DIR/iframe_horz.html
+mv -v iframe.html iframe_horz.html
 
 # Ingest original input files if --ingest-los flag is set
+# Stay in PROJECT_DIR so all insarmaps.log entries go to the same file
 if [[ $ingest_los_flag == "1" ]]; then
+    # FILE1 and FILE2 are relative to ORIGINAL_DIR, so from PROJECT_DIR use ../FILE1 and ../FILE2
     echo "##############################################"
-    ingest_insarmaps.bash "$FILE1" --ref-lalo "${ref_lalo[@]}"
-    FILE1_HE5=$(ls -t "$FILE1"/*.he5 2>/dev/null | head -n 1) || FILE1_HE5="$FILE1"
+    ingest_insarmaps.bash "../$FILE1" --ref-lalo "${ref_lalo[@]}"
+    FILE1_HE5=$(ls -t "../$FILE1"/*.he5 2>/dev/null | head -n 1) || FILE1_HE5="../$FILE1"
     flight_direction=$(get_flight_direction.py "$FILE1_HE5")
-    cp -v $FILE1/pic/iframe.html $PROJECT_DIR/iframe_${flight_direction}.html
+    cp -v "../$FILE1/pic/iframe.html" "iframe_${flight_direction}.html"
   
     echo "##############################################"
-    ingest_insarmaps.bash "$FILE2" --ref-lalo "${ref_lalo[@]}"
-    FILE2_HE5=$(ls -t "$FILE2"/*.he5 2>/dev/null | head -n 1) || FILE2_HE5="$FILE2"
+    ingest_insarmaps.bash "../$FILE2" --ref-lalo "${ref_lalo[@]}"
+    FILE2_HE5=$(ls -t "../$FILE2"/*.he5 2>/dev/null | head -n 1) || FILE2_HE5="../$FILE2"
     flight_direction=$(get_flight_direction.py "$FILE2_HE5")
-    cp -v $FILE2/pic/iframe.html $PROJECT_DIR/iframe_${flight_direction}.html
+    cp -v "../$FILE2/pic/iframe.html" "iframe_${flight_direction}.html"
 fi
+
+# Change back to original directory
+cd "$ORIGINAL_DIR"
 
 
 
