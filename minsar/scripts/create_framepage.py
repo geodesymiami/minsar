@@ -158,55 +158,65 @@ def create_webpage(file1_path, file2_path, vert_path, horz_path, output_path='pa
             color: #666;
             font-size: 14px;
         }}
-        .zoom-control {{
+        .url-control {{
             position: fixed;
             top: 10px;
             right: 10px;
             background-color: white;
-            padding: 15px 20px;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            padding: 8px 12px;
+            border-radius: 6px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             z-index: 1000;
             display: flex;
+            flex-direction: row;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
+            max-width: 600px;
         }}
-        .zoom-control label {{
+        .url-control label {{
             font-weight: bold;
             color: #333;
-            font-size: 14px;
+            font-size: 13px;
+            white-space: nowrap;
         }}
-        .zoom-control input {{
-            width: 80px;
+        .url-control input {{
+            flex: 1;
+            min-width: 0;
             padding: 6px 10px;
             border: 2px solid #ddd;
             border-radius: 4px;
-            font-size: 14px;
+            font-size: 12px;
+            font-family: monospace;
         }}
-        .zoom-control input:focus {{
+        .url-control input:focus {{
             outline: none;
             border-color: #4a90e2;
         }}
-        .zoom-control button {{
-            padding: 6px 15px;
+        .url-control button {{
+            padding: 6px 12px;
             background-color: #4a90e2;
             color: white;
             border: none;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 13px;
             font-weight: bold;
+            white-space: nowrap;
         }}
-        .zoom-control button:hover {{
+        .url-control button:hover {{
             background-color: #357abd;
+        }}
+        .url-control button:disabled {{
+            background-color: #ccc;
+            cursor: not-allowed;
         }}
     </style>
 </head>
 <body>
-    <div class="zoom-control">
-        <label for="zoom-input">Zoom:</label>
-        <input type="number" id="zoom-input" step="0.1" min="1" max="20" placeholder="11.0">
-        <button id="zoom-apply-btn">Apply</button>
+    <div class="url-control">
+        <label for="url-input">URL:</label>
+        <input type="text" id="url-input" placeholder="Paste full URL here">
+        <button id="url-apply-btn">Apply</button>
     </div>
     <div class="container">
         <div class="panel panel-top-left" id="panel1">
@@ -527,70 +537,129 @@ def create_webpage(file1_path, file2_path, vert_path, horz_path, output_path='pa
             'iframe4': '{src_horz}'
         }};
         
-        // Store current iframe URLs (will be modified by zoom)
+        // Store current iframe URLs (will be modified by URL template)
         const iframeUrls = {{...originalIframeUrls}};
         
-        // Function to update zoom in a URL
-        function updateZoomInUrl(url, newZoom) {{
+        // Function to parse URL and extract parameters
+        function parseUrlParameters(urlString) {{
             try {{
-                const urlObj = new URL(url);
-                const pathParts = urlObj.pathname.split('/').filter(p => p);
+                const urlObj = new URL(urlString);
+                const result = {{
+                    // Path parameters
+                    pathname: urlObj.pathname,
+                    pathParts: urlObj.pathname.split('/').filter(p => p),
+                    // Query parameters
+                    queryParams: {{}},
+                    // Base URL (protocol + host)
+                    origin: urlObj.origin
+                }};
                 
-                // Check if URL has format /start/{{lat}}/{{lon}}/{{zoom}}
-                if (pathParts.length >= 4 && pathParts[0] === 'start') {{
-                    // Replace zoom (index 3)
-                    pathParts[3] = newZoom.toString();
-                    urlObj.pathname = '/' + pathParts.join('/');
-                    
-                    // Preserve existing query parameters (except cache-busting ones)
-                    const params = new URLSearchParams(urlObj.search);
-                    params.delete('_nocache');
-                    params.delete('_t');
-                    params.set('hideAttributes', 'true');
-                    urlObj.search = params.toString();
-                    
-                    return urlObj.toString();
-                }}
+                // Parse query parameters
+                urlObj.searchParams.forEach((value, key) => {{
+                    result.queryParams[key] = value;
+                }});
+                
+                return result;
             }} catch (e) {{
-                console.error('Error updating zoom in URL:', e, url);
+                console.error('Error parsing URL:', e);
+                return null;
             }}
-            return url; // Return original if can't parse
         }}
         
-        // Function to apply zoom to all iframes
-        function applyZoomToAllFrames(zoomValue) {{
-            if (!zoomValue || isNaN(zoomValue) || zoomValue < 1 || zoomValue > 20) {{
-                alert('Please enter a valid zoom value between 1 and 20');
+        // Function to merge URL parameters from template URL into target URL
+        // Preserves startDataset from target URL (keeps original data file)
+        function mergeUrlParameters(templateUrl, targetUrl) {{
+            try {{
+                const template = parseUrlParameters(templateUrl);
+                const target = parseUrlParameters(targetUrl);
+                
+                if (!template || !target) {{
+                    return targetUrl; // Return original if can't parse
+                }}
+                
+                // Use template's origin and path (includes zoom, lat, lon, etc. from path)
+                const newOrigin = template.origin;
+                const newPath = template.pathname;
+                
+                // Merge query parameters
+                const newParams = new URLSearchParams();
+                
+                // First, copy all parameters from template (zoom level, center coords, pointLon, startDate, pixel_size, etc.)
+                for (const [key, value] of Object.entries(template.queryParams)) {{
+                    newParams.set(key, value);
+                }}
+                
+                // Preserve startDataset from target URL (keep original data file)
+                if (target.queryParams.startDataset) {{
+                    newParams.set('startDataset', target.queryParams.startDataset);
+                }}
+                
+                // Always add hideAttributes
+                newParams.set('hideAttributes', 'true');
+                
+                // Build new URL using template's origin and path, but preserve target's startDataset
+                const newUrl = newOrigin + newPath + '?' + newParams.toString();
+                
+                return newUrl;
+            }} catch (e) {{
+                console.error('Error merging URL parameters:', e);
+                return targetUrl; // Return original if error
+            }}
+        }}
+        
+        // Function to apply URL template to all iframes sequentially
+        let isApplyingUrl = false;
+        
+        function applyUrlToAllFrames(templateUrlString) {{
+            if (!templateUrlString || templateUrlString.trim() === '') {{
+                alert('Please enter a valid URL');
                 return;
             }}
             
-            console.log(`Applying zoom ${{zoomValue}} to all iframes`);
+            if (isApplyingUrl) {{
+                console.log('Already applying URL changes, please wait...');
+                return;
+            }}
             
-            // Update URLs for all iframes
+            isApplyingUrl = true;
+            const urlApplyBtn = document.getElementById('url-apply-btn');
+            urlApplyBtn.disabled = true;
+            urlApplyBtn.textContent = 'Applying...';
+            
+            console.log(`Applying URL template to all iframes: ${{templateUrlString}}`);
+            
             const iframeIds = ['iframe1', 'iframe2', 'iframe3', 'iframe4'];
+            let currentIndex = 0;
             
-            iframeIds.forEach((iframeId, index) => {{
+            function applyToNextIframe() {{
+                if (currentIndex >= iframeIds.length) {{
+                    // All done
+                    isApplyingUrl = false;
+                    urlApplyBtn.disabled = false;
+                    urlApplyBtn.textContent = 'Apply';
+                    console.log('Finished applying URL to all iframes');
+                    return;
+                }}
+                
+                const iframeId = iframeIds[currentIndex];
                 const iframe = document.getElementById(iframeId);
+                
                 if (iframe) {{
-                    // Get original URL
+                    // Get original URL for this iframe
                     const originalUrl = originalIframeUrls[iframeId];
                     
-                    // Update zoom in URL (this preserves query params and adds hideAttributes)
-                    let newUrl = updateZoomInUrl(originalUrl, zoomValue);
+                    // Merge template URL with original URL (preserving startDataset)
+                    let newUrl = mergeUrlParameters(templateUrlString, originalUrl);
                     
                     // Add cache-busting to force reload
                     const separator = newUrl.includes('?') ? '&' : '?';
-                    newUrl = newUrl + separator + '_nocache=' + Date.now() + '_' + index;
+                    newUrl = newUrl + separator + '_nocache=' + Date.now() + '_' + currentIndex;
                     
-                    console.log(`Updating ${{iframeId}}: ${{newUrl}}`);
+                    console.log(`Updating ${{iframeId}} ({{currentIndex + 1}}/4): ${{newUrl}}`);
                     
-                    // Update original URL so future zoom changes work correctly
-                    // Remove cache-busting to store clean URL
+                    // Update original URL (without cache-busting) for future changes
                     const cleanNewUrl = newUrl.split('&_nocache')[0].split('?_nocache')[0];
                     originalIframeUrls[iframeId] = cleanNewUrl;
-                    
-                    // Update iframe src - this will trigger a reload
-                    iframe.src = newUrl;
                     
                     // Reset load state so it can reload properly
                     const state = iframeStates[iframeId];
@@ -598,37 +667,48 @@ def create_webpage(file1_path, file2_path, vert_path, horz_path, output_path='pa
                         state.loaded = false;
                         state.processed = false;
                     }}
+                    
+                    // Update iframe src - this will trigger a reload
+                    iframe.src = newUrl;
+                    
+                    // Wait 1 second before applying to next iframe
+                    currentIndex++;
+                    setTimeout(() => {{
+                        applyToNextIframe();
+                    }}, 1000);
+                }} else {{
+                    // Iframe not found, skip it
+                    currentIndex++;
+                    applyToNextIframe();
                 }}
-            }});
+            }}
+            
+            // Start applying to first iframe
+            applyToNextIframe();
         }}
         
-        // Set up zoom control
-        const zoomInput = document.getElementById('zoom-input');
-        const zoomApplyBtn = document.getElementById('zoom-apply-btn');
+        // Set up URL control
+        const urlInput = document.getElementById('url-input');
+        const urlApplyBtn = document.getElementById('url-apply-btn');
         
-        // Extract initial zoom from first iframe URL to populate input
+        // Extract initial URL from first iframe to populate input
         try {{
-            const firstUrl = originalIframeUrls['iframe1'];
-            const urlObj = new URL(firstUrl);
-            const pathParts = urlObj.pathname.split('/').filter(p => p);
-            if (pathParts.length >= 4 && pathParts[0] === 'start') {{
-                zoomInput.value = pathParts[3];
-            }}
+            urlInput.value = originalIframeUrls['iframe1'];
         }} catch (e) {{
             // Ignore if can't parse
         }}
         
-        // Apply zoom on button click
-        zoomApplyBtn.addEventListener('click', () => {{
-            const zoomValue = parseFloat(zoomInput.value);
-            applyZoomToAllFrames(zoomValue);
+        // Apply URL on button click
+        urlApplyBtn.addEventListener('click', () => {{
+            const urlValue = urlInput.value.trim();
+            applyUrlToAllFrames(urlValue);
         }});
         
-        // Apply zoom on Enter key
-        zoomInput.addEventListener('keypress', (e) => {{
-            if (e.key === 'Enter') {{
-                const zoomValue = parseFloat(zoomInput.value);
-                applyZoomToAllFrames(zoomValue);
+        // Apply URL on Enter key
+        urlInput.addEventListener('keypress', (e) => {{
+            if (e.key === 'Enter' && !urlApplyBtn.disabled) {{
+                const urlValue = urlInput.value.trim();
+                applyUrlToAllFrames(urlValue);
             }}
         }});
         
@@ -767,8 +847,8 @@ Examples:
                        help='Path to horizontal iframe HTML file or direct URL (default: iframe_horz.html)')
     parser.add_argument('--dir', default=None,
                        help='Directory containing the iframe files (default: current directory)')
-    parser.add_argument('--output', '-o', default='page.html',
-                       help='Output HTML file name (default: page.html)')
+    parser.add_argument('--output', '-o', default='multi_frame_page.html',
+                       help='Output HTML file name (default: multi_frame_page.html)')
     parser.add_argument('--zoom', '-z', type=float, default=None,
                        help='Zoom factor to apply to all iframe URLs (e.g., 11.0, 12.5). Only works with URLs in format /start/lat/lon/zoom')
     
