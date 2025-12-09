@@ -3391,7 +3391,8 @@ def create_overlay_html(urls, labels, output_path='overlay.html', zoom_factor=No
     return output_path
 
 
-def main():
+def create_parser():
+    """Create argument parser."""
     parser = argparse.ArgumentParser(
         description='Create a webpage with 2 or 4 iframes from a log file containing URLs.',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -3403,7 +3404,7 @@ Examples:
     create_insarmaps_framepage.py hvGalapagos/insarmaps.log
     create_insarmaps_framepage.py hvGalapagos --outdir hvGalapagos
     create_insarmaps_framepage.py insarmaps.log --zoom 12.5
-    create_insarmaps_framepage.py insarmaps.log --outdir /path/to/output
+    create_insarmaps_framepage.py insarmaps.log --outdir hvGalapagos
         """
     )
     
@@ -3412,29 +3413,35 @@ Examples:
     parser.add_argument('--outfile', default='multi_frame_page.html', help='Output HTML file name (default: multi_frame_page.html)')
     parser.add_argument('--zoom', '-z', type=float, default=None, help='Zoom factor to apply to all iframe URLs (e.g., 11.0, 12.5). Only works with URLs in format /start/lat/lon/zoom')
     
-    args = parser.parse_args()
+    return parser
+
+
+def cmd_line_parse(iargs=None):
+    """Parse command line arguments and process them."""
+    parser = create_parser()
+    inps = parser.parse_args(args=iargs)
     
     # Determine log file path and output directory based on input
     cwd = os.getcwd()
     
-    if args.input is None:
+    if inps.input is None:
         # No input provided: use insarmaps.log in current directory
         log_path = os.path.join(cwd, 'insarmaps.log')
-        out_dir = args.outdir if args.outdir else cwd
+        out_dir = inps.outdir if inps.outdir else cwd
     else:
         # Input provided: determine if it's a directory or file
-        input_path = args.input
+        input_path = inps.input
         
         # Check if input exists and what it is
         if os.path.isdir(input_path):
             # Input is an existing directory: use {dir}/insarmaps.log and {dir} as outdir
             log_path = os.path.join(input_path, 'insarmaps.log')
-            out_dir = args.outdir if args.outdir else input_path
+            out_dir = inps.outdir if inps.outdir else input_path
         elif os.path.isfile(input_path):
             # Input is an existing file: use that file and its directory as outdir
             log_path = input_path
             file_dir = os.path.dirname(input_path)
-            out_dir = args.outdir if args.outdir else (file_dir if file_dir else cwd)
+            out_dir = inps.outdir if inps.outdir else (file_dir if file_dir else cwd)
         else:
             # Input doesn't exist: need to determine if it's meant to be a directory or file
             # Check if it has a file extension
@@ -3448,7 +3455,7 @@ Examples:
                     log_path = input_path
                 # Get directory from the resolved path
                 file_dir = os.path.dirname(log_path)
-                out_dir = args.outdir if args.outdir else (file_dir if file_dir else cwd)
+                out_dir = inps.outdir if inps.outdir else (file_dir if file_dir else cwd)
             else:
                 # No extension: treat as directory name
                 # Resolve to absolute path
@@ -3457,63 +3464,73 @@ Examples:
                 else:
                     dir_path = input_path
                 log_path = os.path.join(dir_path, 'insarmaps.log')
-                out_dir = args.outdir if args.outdir else dir_path
+                out_dir = inps.outdir if inps.outdir else dir_path
     
     # Normalize paths to absolute paths
     log_path = os.path.abspath(log_path)
     out_dir = os.path.abspath(out_dir)
     
+    # Add processed paths to inps object
+    inps.log_path = log_path
+    inps.out_dir = out_dir
+    
     # Ensure output directory exists
     os.makedirs(out_dir, exist_ok=True)
     
+    return inps
+
+
+def main(iargs=None):
+    inps = cmd_line_parse(iargs)
+    
     # Read URLs from insarmaps.log
     try:
-        urls = read_insarmaps_log(log_path)
+        urls = read_insarmaps_log(inps.log_path)
         num_urls = len(urls)
-        print(f"Reading URLs from: {log_path}")
-        print(f"Output directory: {out_dir}")
+        print(f"Reading URLs from: {inps.log_path}")
+        print(f"Output directory: {inps.out_dir}")
         print(f"Found {num_urls} URLs")
         
         # Extract labels from all URLs
         labels = [get_label_from_url(url) for url in urls]
         
         # Create overlay.html with all frames (works for any number of URLs)
-        overlay_path = os.path.join(out_dir, 'overlay.html')
+        overlay_path = os.path.join(inps.out_dir, 'overlay.html')
         try:
-            create_overlay_html(urls, labels, overlay_path, zoom_factor=args.zoom)
+            create_overlay_html(urls, labels, overlay_path, zoom_factor=inps.zoom)
         except Exception as e:
             print(f"Warning: Could not create overlay.html: {e}")
         
         # Count entries and call appropriate function
         if num_urls == 2:
             # Create multiple layout files for 2 frames
-            base_path = os.path.splitext(args.outfile)[0] if args.outfile else 'multi_frame_page'
+            base_path = os.path.splitext(inps.outfile)[0] if inps.outfile else 'multi_frame_page'
             
             # Create matrix.html (2 columns)
-            matrix_path = os.path.join(out_dir, 'matrix.html')
-            create_webpage_2frames(urls[:2], labels[:2], matrix_path, zoom_factor=args.zoom, layout='matrix')
+            matrix_path = os.path.join(inps.out_dir, 'matrix.html')
+            create_webpage_2frames(urls[:2], labels[:2], matrix_path, zoom_factor=inps.zoom, layout='matrix')
             
             # Create column.html (2 rows)
-            column_path = os.path.join(out_dir, 'column.html')
-            create_webpage_2frames(urls[:2], labels[:2], column_path, zoom_factor=args.zoom, layout='column')
+            column_path = os.path.join(inps.out_dir, 'column.html')
+            create_webpage_2frames(urls[:2], labels[:2], column_path, zoom_factor=inps.zoom, layout='column')
             
             # Create row.html (same as matrix - 2 columns)
-            row_path = os.path.join(out_dir, 'row.html')
-            create_webpage_2frames(urls[:2], labels[:2], row_path, zoom_factor=args.zoom, layout='row')
+            row_path = os.path.join(inps.out_dir, 'row.html')
+            create_webpage_2frames(urls[:2], labels[:2], row_path, zoom_factor=inps.zoom, layout='row')
             
             print(f"Created layout files: overlay.html, matrix.html, column.html, row.html")
             
         elif num_urls >= 4:
             # Create multiple layout files for 4 frames
-            base_path = os.path.splitext(args.outfile)[0] if args.outfile else 'multi_frame_page'
+            base_path = os.path.splitext(inps.outfile)[0] if inps.outfile else 'multi_frame_page'
             
             # Create matrix.html (2x2 grid)
-            matrix_path = os.path.join(out_dir, 'matrix.html')
-            create_webpage_4frames(urls[:4], labels[:4], matrix_path, zoom_factor=args.zoom, layout='matrix')
+            matrix_path = os.path.join(inps.out_dir, 'matrix.html')
+            create_webpage_4frames(urls[:4], labels[:4], matrix_path, zoom_factor=inps.zoom, layout='matrix')
             
             # Create column.html (4 rows)
-            column_path = os.path.join(out_dir, 'column.html')
-            create_webpage_4frames(urls[:4], labels[:4], column_path, zoom_factor=args.zoom, layout='column')
+            column_path = os.path.join(inps.out_dir, 'column.html')
+            create_webpage_4frames(urls[:4], labels[:4], column_path, zoom_factor=inps.zoom, layout='column')
             
             print(f"Created layout files: overlay.html, matrix.html, column.html")
         else:
