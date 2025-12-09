@@ -246,13 +246,13 @@ echo "Writing $PROJECT_DIR/$DATA_FILES_TXT with all *he5 files used..."
 } > "$DATA_FILES_TXT"
 echo "Created $PROJECT_DIR/$DATA_FILES_TXT with $(wc -l < "$DATA_FILES_TXT" | tr -d ' ') file(s)"
 
-# Change back to original directory as early as possible
 cd "$ORIGINAL_DIR"
 
 # Create insarmaps framepage (using absolute paths since we're back in ORIGINAL_DIR)
 echo "##############################################"
 create_insarmaps_framepages.py" "$PROJECT_DIR/insarmaps.log" --outdir "$PROJECT_DIR"
 write_insarmaps_framepage_urls.py" "$PROJECT_DIR/insarmaps.log" --outdir "$PROJECT_DIR"
+create_data_download_commands.py hvGalapagos/data_files.txt
 
 
 
