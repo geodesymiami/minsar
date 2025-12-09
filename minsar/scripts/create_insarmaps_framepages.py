@@ -3400,13 +3400,13 @@ def create_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    create_insarmaps_framepage.py
-    create_insarmaps_framepage.py insarmaps.log
-    create_insarmaps_framepage.py hvGalapagos
-    create_insarmaps_framepage.py hvGalapagos/insarmaps.log
-    create_insarmaps_framepage.py hvGalapagos --outdir hvGalapagos
-    create_insarmaps_framepage.py insarmaps.log --zoom 12.5
-    create_insarmaps_framepage.py insarmaps.log --outdir hvGalapagos
+    create_insarmaps_framepages.py
+    create_insarmaps_framepages.py insarmaps.log
+    create_insarmaps_framepages.py hvGalapagos
+    create_insarmaps_framepages.py hvGalapagos/insarmaps.log
+    create_insarmaps_framepages.py hvGalapagos --outdir hvGalapagos
+    create_insarmaps_framepages.py insarmaps.log --zoom 12.5
+    create_insarmaps_framepages.py insarmaps.log --outdir hvGalapagos
         """
     )
     
