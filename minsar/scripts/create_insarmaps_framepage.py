@@ -3399,38 +3399,80 @@ def main():
 Examples:
     create_insarmaps_framepage.py
     create_insarmaps_framepage.py insarmaps.log
-    create_insarmaps_framepage.py /path/to/insarmaps.log --outfile combined.html
+    create_insarmaps_framepage.py hvGalapagos
+    create_insarmaps_framepage.py hvGalapagos/insarmaps.log
+    create_insarmaps_framepage.py hvGalapagos --outdir hvGalapagos
     create_insarmaps_framepage.py insarmaps.log --zoom 12.5
-    create_insarmaps_framepage.py insarmaps.log --outdir /path/to/output --outfile combined.html
+    create_insarmaps_framepage.py insarmaps.log --outdir /path/to/output
         """
     )
     
-    parser.add_argument('log_file', nargs='?', default='insarmaps.log',
-                       help='Path to file containing URLs (default: insarmaps.log)')
-    parser.add_argument('--outdir', default=None,
-                       help='Output directory (default: current directory)')
-    parser.add_argument('--outfile', default='multi_frame_page.html',
-                       help='Output HTML file name (default: multi_frame_page.html)')
-    parser.add_argument('--zoom', '-z', type=float, default=None,
-                       help='Zoom factor to apply to all iframe URLs (e.g., 11.0, 12.5). Only works with URLs in format /start/lat/lon/zoom')
+    parser.add_argument('input', nargs='?', default=None, help='Directory name, log file path, or log file name (default: insarmaps.log in current directory)')
+    parser.add_argument('--outdir', default=None,help='Output directory (default: inferred from input or current directory)')
+    parser.add_argument('--outfile', default='multi_frame_page.html', help='Output HTML file name (default: multi_frame_page.html)')
+    parser.add_argument('--zoom', '-z', type=float, default=None, help='Zoom factor to apply to all iframe URLs (e.g., 11.0, 12.5). Only works with URLs in format /start/lat/lon/zoom')
     
     args = parser.parse_args()
     
-    # Determine output directory
-    out_dir = args.outdir if args.outdir else os.getcwd()
+    # Determine log file path and output directory based on input
+    cwd = os.getcwd()
+    
+    if args.input is None:
+        # No input provided: use insarmaps.log in current directory
+        log_path = os.path.join(cwd, 'insarmaps.log')
+        out_dir = args.outdir if args.outdir else cwd
+    else:
+        # Input provided: determine if it's a directory or file
+        input_path = args.input
+        
+        # Check if input exists and what it is
+        if os.path.isdir(input_path):
+            # Input is an existing directory: use {dir}/insarmaps.log and {dir} as outdir
+            log_path = os.path.join(input_path, 'insarmaps.log')
+            out_dir = args.outdir if args.outdir else input_path
+        elif os.path.isfile(input_path):
+            # Input is an existing file: use that file and its directory as outdir
+            log_path = input_path
+            file_dir = os.path.dirname(input_path)
+            out_dir = args.outdir if args.outdir else (file_dir if file_dir else cwd)
+        else:
+            # Input doesn't exist: need to determine if it's meant to be a directory or file
+            # Check if it has a file extension
+            _, ext = os.path.splitext(input_path)
+            if ext:
+                # Has extension: treat as file path
+                # Resolve to absolute path
+                if not os.path.isabs(input_path):
+                    log_path = os.path.join(cwd, input_path)
+                else:
+                    log_path = input_path
+                # Get directory from the resolved path
+                file_dir = os.path.dirname(log_path)
+                out_dir = args.outdir if args.outdir else (file_dir if file_dir else cwd)
+            else:
+                # No extension: treat as directory name
+                # Resolve to absolute path
+                if not os.path.isabs(input_path):
+                    dir_path = os.path.join(cwd, input_path)
+                else:
+                    dir_path = input_path
+                log_path = os.path.join(dir_path, 'insarmaps.log')
+                out_dir = args.outdir if args.outdir else dir_path
+    
+    # Normalize paths to absolute paths
+    log_path = os.path.abspath(log_path)
     out_dir = os.path.abspath(out_dir)
     
-    # Construct full path to log file (use current directory or absolute path)
-    if os.path.isabs(args.log_file):
-        log_path = args.log_file
-    else:
-        log_path = os.path.join(os.getcwd(), args.log_file)
+    # Ensure output directory exists
+    os.makedirs(out_dir, exist_ok=True)
     
     # Read URLs from insarmaps.log
     try:
         urls = read_insarmaps_log(log_path)
         num_urls = len(urls)
-        print(f"Found {num_urls} URLs in {log_path}")
+        print(f"Reading URLs from: {log_path}")
+        print(f"Output directory: {out_dir}")
+        print(f"Found {num_urls} URLs")
         
         # Extract labels from all URLs
         labels = [get_label_from_url(url) for url in urls]
