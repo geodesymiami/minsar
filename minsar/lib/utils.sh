@@ -597,3 +597,51 @@ EOF
     
     echo "Created iframe.html at ${file_path}"
 }
+
+#####################################################################
+# Function: write_framepage_url
+# Usage: write_framepage_url <dir>
+# Description: Creates URLs for *html files
+# Example: write_framepage_url hvGalapagago
+function write_framepage_url() {
+    if [[ "$1" == "--help" || "$1" == "-h" ]]; then
+        helptext="            \n\
+  write_framepage_url:  Creates URLs for *html files in the specified directory, writes to upload_urls.log \n\
+                                                 \n\
+  Examples:                                      \n\
+     write_framepage_url hvGalapagos             \n\
+"
+        printf "$helptext"
+        return
+    fi
+    local project_dir="$1"
+    
+    local REMOTE_DIR=/data/HDF5EOS/
+    # Find all *html files in the directory
+    local html_files=()
+    shopt -s nullglob
+    html_files=( ${project_dir}/*.html )
+
+    if [[ ${#html_files[@]} -eq 0 ]]; then
+        echo "Warning: No HTML files found in directory '$dir'" >&2
+        return 0
+    fi
+    
+    # Create output file path
+    local output_file="${project_dir}/upload_urls.log"
+    rm -f $output_file
+    
+    # Create array of URLs
+    local frame_urls=()
+    for html_file in "${html_files[@]}"; do
+        local url="http://${REMOTEHOST_DATA}${REMOTE_DIR}/${html_file}"
+        frame_urls+=("$url")
+    done
+    
+    # Write URLs to upload_urls.log
+    printf '%s\n' "${frame_urls[@]}" > "$output_file"
+    echo "QQQ $frame_urls"
+    echo "QQQ ${frame_urls[@]}"
+
+    echo "Wrote ${#frame_urls[@]} URL(s) to ${output_file}"
+}

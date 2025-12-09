@@ -20,10 +20,9 @@ Examples:
     $SCRIPT_NAME ChilesSenD142/mintpy ChilesSenA120/mintpy --ref-lalo 0.84969 -77.86430 --dry-run
     $SCRIPT_NAME ChilesSenD142/mintpy ChilesSenA120/mintpy --ref-lalo 0.84969 -77.86430 --intervals 6
     $SCRIPT_NAME hvGalapagosSenD128/mintpy hvGalapagosSenA106/mintpy --ref-lalo -0.81 -91.190
-    $SCRIPT_NAME hvGalapagosSenD128/mintpy hvGalapagosSenA106/mintpy --ref-lalo -0.81 -91.190 --ingest-los
-    $SCRIPT_NAME hvGalapagosSenD128/miaplpy/network_single_reference hvGalapagosSenA106/miaplpy/network_single_reference --ref-lalo -0.81 -91.190
+    $SCRIPT_NAME hvGalapagosSenD128/miaplpy/network_single_reference hvGalapagosSenA106/miaplpy/network_single_reference --ref-lalo -0.81 -91.190 --no-ingest-los
     $SCRIPT_NAME FernandinaSenD128/mintpy/ FernandinaSenA106/mintpy/ --ref-lalo -0.453 -91.390
-    $SCRIPT_NAME FernandinaSenD128/miaplpy/network_delaunay_4 FernandinaSenA106/miaplpy/network_delaunay_4 --ref-lalo -0.415 -91.543 --ingest-los
+    $SCRIPT_NAME FernandinaSenD128/miaplpy/network_delaunay_4 FernandinaSenA106/miaplpy/network_delaunay_4 --ref-lalo -0.415 -91.543
     $SCRIPT_NAME MaunaLoaSenDT87/mintpy MaunaLoaSenAT124/mintpy --period 20181001:20191031 --ref-lalo 19.50068 -155.55856 --ref-lalo -0.81 -91.190
 
   Options:
@@ -36,7 +35,7 @@ Examples:
       --start-date YYYYMMDD           Start date of limited period
       --end-date YYYYMMDD             End date of limited period
       --period YYYYMMDD:YYYYMMDD      Period of the search
-      --ingest-los                    Ingest both input files (FILE1 and FILE2) with --ref-lalo
+      --no-ingest-los                 Skip ingesting both input files (FILE1 and FILE2) with --ref-lalo (default: ingest-los is enabled)
       --debug                         Enable debug mode (set -x)
     "
     printf "$helptext"
@@ -53,7 +52,7 @@ echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $*" | tee -a "$LOG_FILE"
 
 # Initialize option parsing variables (lowercase)
 debug_flag=0
-ingest_los_flag=0
+ingest_los_flag=1  # Default: ingest-los is enabled
 positional=()
 
 # Default values for options (lowercase - local/temporary variables)
@@ -121,8 +120,8 @@ do
             period="$2"
             shift 2
             ;;
-        --ingest-los)
-            ingest_los_flag=1
+        --no-ingest-los)
+            ingest_los_flag=0
             shift
             ;;
         --debug)
@@ -199,7 +198,7 @@ echo "##############################################"
 ingest_insarmaps.bash "$HORZ_FILE"
 mv -v iframe.html iframe_horz.html
 
-# Ingest original input files if --ingest-los flag is set
+# Ingest original input files (default behavior, skip if --no-ingest-los is set)
 # Stay in PROJECT_DIR so all insarmaps.log entries go to the same file
 if [[ $ingest_los_flag == "1" ]]; then
     # FILE1 and FILE2 are relative to ORIGINAL_DIR, so from PROJECT_DIR use ../FILE1 and ../FILE2
@@ -215,6 +214,10 @@ if [[ $ingest_los_flag == "1" ]]; then
     flight_direction=$(get_flight_direction.py "$FILE2_HE5")
     cp -v "../$FILE2/pic/iframe.html" "iframe_${flight_direction}.html"
 fi
+
+# Create insarmaps framepage
+echo "##############################################"
+"${SCRIPT_DIR}/../scripts/create_insarmaps_framepage.py" "$PROJECT_DIR/insarmaps.log" --outdir "$PROJECT_DIR"
 
 # Change back to original directory
 cd "$ORIGINAL_DIR"
