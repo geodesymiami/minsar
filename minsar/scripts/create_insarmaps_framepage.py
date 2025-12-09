@@ -2693,10 +2693,103 @@ def create_overlay_html(urls, labels, output_path='overlay.html', zoom_factor=No
             font-size: 14px;
             font-weight: bold;
             margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: relative;
+            height: 38px;
+            box-sizing: border-box;
+        }}
+        .panel-header-title {{
+            flex: 1;
+        }}
+        .url-control {{
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            gap: 6px;
+            margin-left: auto;
+            background-color: rgba(255, 255, 255, 0.2);
+            padding: 1px 8px;
+            border-radius: 4px;
+            flex-shrink: 0;
+            pointer-events: auto;
+            height: 22px;
+            box-sizing: border-box;
+        }}
+        .url-control:hover {{
+            background-color: rgba(255, 255, 255, 0.3);
+        }}
+        .url-control label {{
+            font-weight: bold;
+            color: white;
+            font-size: 11px;
+            white-space: nowrap;
+        }}
+        .url-control input {{
+            flex: 1;
+            min-width: 150px;
+            max-width: 300px;
+            padding: 1px 8px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 3px;
+            font-size: 11px;
+            font-family: monospace;
+            background-color: rgba(255, 255, 255, 0.9);
+            color: #333;
+            cursor: text;
+            user-select: text;
+            -webkit-user-select: text;
+            -moz-user-select: text;
+            -ms-user-select: text;
+            pointer-events: auto !important;
+            height: 18px;
+            box-sizing: border-box;
+            line-height: 16px;
+        }}
+        .url-control input:focus {{
+            outline: none;
+            border-color: rgba(255, 255, 255, 0.6);
+            background-color: white;
+        }}
+        .url-control input::placeholder {{
+            color: #999;
+        }}
+        .url-control button {{
+            padding: 1px 10px;
+            background-color: rgba(255, 255, 255, 0.9);
+            color: #4a90e2;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: bold;
+            white-space: nowrap;
+            pointer-events: auto;
+            height: 18px;
+            box-sizing: border-box;
+        }}
+        .url-control button:hover {{
+            background-color: white;
+        }}
+        .url-control button:disabled {{
+            opacity: 0.5;
+            cursor: not-allowed;
+        }}
+        .url-control #url-open-btn {{
+            background-color: #4a90e2;
+            color: white;
+            border: 1px solid #4a90e2;
+            padding: 1px 8px;
+            min-width: 20px;
+        }}
+        .url-control #url-open-btn:hover {{
+            background-color: #357abd;
+            border-color: #357abd;
         }}
         .panel iframe {{
             width: 100%;
-            height: calc(100% - 36px);
+            height: calc(100% - 38px);
             border: none;
             display: block;
         }}
@@ -2734,7 +2827,41 @@ def create_overlay_html(urls, labels, output_path='overlay.html', zoom_factor=No
             
             const header = document.createElement('div');
             header.className = 'panel-header';
-            header.textContent = frame.label;
+            
+            const title = document.createElement('span');
+            title.className = 'panel-header-title';
+            title.textContent = frame.label;
+            header.appendChild(title);
+            
+            // Add URL control (only to first panel)
+            if (index === 0) {{
+                const urlControl = document.createElement('div');
+                urlControl.className = 'url-control';
+                
+                const urlLabel = document.createElement('label');
+                urlLabel.setAttribute('for', 'url-input');
+                urlLabel.textContent = 'URL:';
+                
+                const urlInput = document.createElement('input');
+                urlInput.type = 'text';
+                urlInput.id = 'url-input';
+                urlInput.placeholder = 'Paste full URL here';
+                
+                const urlApplyBtn = document.createElement('button');
+                urlApplyBtn.id = 'url-apply-btn';
+                urlApplyBtn.textContent = 'Apply';
+                
+                const urlOpenBtn = document.createElement('button');
+                urlOpenBtn.id = 'url-open-btn';
+                urlOpenBtn.textContent = 'O';
+                urlOpenBtn.title = 'Open URL in new window';
+                
+                urlControl.appendChild(urlLabel);
+                urlControl.appendChild(urlInput);
+                urlControl.appendChild(urlApplyBtn);
+                urlControl.appendChild(urlOpenBtn);
+                header.appendChild(urlControl);
+            }}
             
             const iframe = document.createElement('iframe');
             iframe.id = `iframe${{index}}`;
@@ -2750,6 +2877,9 @@ def create_overlay_html(urls, labels, output_path='overlay.html', zoom_factor=No
             container.appendChild(panel);
             panels.push(panel);
         }});
+        
+        // Store original iframe URLs
+        const originalIframeUrls = {{}};
         
         // Sequential loading function
         function loadNextIframe() {{
@@ -2778,6 +2908,9 @@ def create_overlay_html(urls, labels, output_path='overlay.html', zoom_factor=No
             
             // Set iframe source
             iframe.src = frame.url;
+            
+            // Store original URL
+            originalIframeUrls[iframe.id] = frame.url;
             
             // Use load event to detect when iframe is loaded
             const onIframeLoad = () => {{
@@ -2835,6 +2968,301 @@ def create_overlay_html(urls, labels, output_path='overlay.html', zoom_factor=No
                 frameSelect.value = '0';
             }}
         }}
+        
+        // Function to apply URL template to all iframes sequentially
+        let isApplyingUrl = false;
+        
+        function applyUrlToAllFrames(templateUrlString) {{
+            if (!templateUrlString || templateUrlString.trim() === '') {{
+                console.warn('Empty URL provided');
+                return;
+            }}
+            
+            if (isApplyingUrl) {{
+                console.log('Already applying URL changes, please wait...');
+                return;
+            }}
+            
+            isApplyingUrl = true;
+            const urlApplyBtn = document.getElementById('url-apply-btn');
+            if (urlApplyBtn) {{
+                urlApplyBtn.disabled = true;
+                urlApplyBtn.textContent = 'Applying...';
+            }}
+            
+            console.log(`Applying URL template to all iframes: ${{templateUrlString}}`);
+            
+            let applyIndex = 0;
+            
+            function applyToNextIframe() {{
+                if (applyIndex >= frames.length) {{
+                    isApplyingUrl = false;
+                    const urlApplyBtn = document.getElementById('url-apply-btn');
+                    if (urlApplyBtn) {{
+                        urlApplyBtn.disabled = false;
+                        urlApplyBtn.textContent = 'Apply';
+                    }}
+                    console.log('Finished applying URL to all iframes');
+                    return;
+                }}
+                
+                const iframe = document.getElementById(`iframe${{applyIndex}}`);
+                const panel = panels[applyIndex];
+                
+                if (iframe && panel) {{
+                    // Make panel active
+                    panels.forEach(p => p.classList.remove('active'));
+                    panel.classList.add('active');
+                    
+                    // Merge URL parameters (preserve startDataset from target, use template for others)
+                    try {{
+                        const targetUrl = originalIframeUrls[iframe.id] || frames[applyIndex].url;
+                        const mergedUrl = mergeUrlParameters(templateUrlString, targetUrl);
+                        iframe.src = mergedUrl;
+                        
+                        console.log(`Applied URL to iframe ${{applyIndex + 1}}/${{frames.length}}`);
+                        
+                        // Wait 1 second before applying to next iframe
+                        setTimeout(() => {{
+                            applyIndex++;
+                            applyToNextIframe();
+                        }}, 1000);
+                    }} catch (error) {{
+                        console.error(`Error applying URL to iframe ${{applyIndex + 1}}:`, error);
+                        applyIndex++;
+                        applyToNextIframe();
+                    }}
+                }} else {{
+                    applyIndex++;
+                    applyToNextIframe();
+                }}
+            }}
+            
+            // Start applying to first iframe
+            applyToNextIframe();
+        }}
+        
+        // Function to merge URL parameters from template URL into target URL
+        function mergeUrlParameters(templateUrl, targetUrl) {{
+            try {{
+                const template = parseUrlParameters(templateUrl);
+                const target = parseUrlParameters(targetUrl);
+                
+                if (!template || !target) {{
+                    return templateUrl; // Fallback to template
+                }}
+                
+                // Use template's origin and path (includes zoom, lat, lon, etc. from path)
+                const newOrigin = template.origin;
+                const newPath = template.pathname;
+                
+                // Merge query parameters
+                const mergedParams = {{}};
+                
+                // First, copy all parameters from template (zoom level, center coords, pointLon, startDate, pixel_size, etc.)
+                for (const [key, value] of Object.entries(template.queryParams)) {{
+                    mergedParams[key] = value;
+                }}
+                
+                // Preserve startDataset from target URL (keep original data file)
+                if (target.queryParams.startDataset) {{
+                    mergedParams.startDataset = target.queryParams.startDataset;
+                }}
+                
+                // Build new URL
+                const queryString = Object.entries(mergedParams)
+                    .map(([key, value]) => `${{key}}=${{encodeURIComponent(value)}}`)
+                    .join('&');
+                
+                return `${{newOrigin}}${{newPath}}?${{queryString}}`;
+            }} catch (error) {{
+                console.error('Error merging URLs:', error);
+                return templateUrl;
+            }}
+        }}
+        
+        // Function to parse URL parameters
+        function parseUrlParameters(url) {{
+            try {{
+                const urlObj = new URL(url);
+                const params = {{}};
+                urlObj.searchParams.forEach((value, key) => {{
+                    params[key] = value;
+                }});
+                
+                return {{
+                    origin: urlObj.origin,
+                    pathname: urlObj.pathname,
+                    queryParams: params
+                }};
+            }} catch (error) {{
+                console.error('Error parsing URL:', error);
+                return null;
+            }}
+        }}
+        
+        // URL input and button handlers
+        const urlInput = document.getElementById('url-input');
+        const urlApplyBtn = document.getElementById('url-apply-btn');
+        const urlOpenBtn = document.getElementById('url-open-btn');
+        const urlControl = document.querySelector('.url-control');
+        
+        // Common function to apply URL (used by both button and Enter key)
+        function applyUrlFromInputFunction() {{
+            const urlInput = document.getElementById('url-input');
+            if (!urlInput) return;
+            
+            const urlValue = urlInput.value.trim();
+            if (!urlValue) {{
+                alert('Please enter a URL');
+                return;
+            }}
+            
+            console.log('Applying URL from input:', urlValue);
+            
+            try {{
+                // Call the applyUrlToAllFrames function
+                if (typeof applyUrlToAllFrames === 'function') {{
+                    applyUrlToAllFrames(urlValue);
+                }} else {{
+                    console.error('applyUrlToAllFrames is not a function');
+                    alert('Error: Unable to apply URL. Please refresh the page.');
+                }}
+            }} catch (error) {{
+                console.error('Error calling applyUrlToAllFrames:', error);
+                alert('Error applying URL: ' + error.message);
+            }}
+        }}
+        
+        // Also assign to window for global access
+        window.applyUrlFromInput = applyUrlFromInputFunction;
+        
+        // Apply URL on button click
+        if (urlApplyBtn) {{
+            urlApplyBtn.addEventListener('mousedown', (e) => {{
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+            }}, true);
+            
+            urlApplyBtn.addEventListener('click', (e) => {{
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                console.log('Apply button clicked');
+                
+                if (typeof applyUrlFromInputFunction === 'function') {{
+                    applyUrlFromInputFunction();
+                }} else if (window.applyUrlFromInput) {{
+                    window.applyUrlFromInput();
+                }}
+                return false;
+            }}, false);
+            
+            urlApplyBtn.addEventListener('mouseup', (e) => {{
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+            }}, true);
+        }}
+        
+        // Open URL in new window on "O" button click
+        if (urlOpenBtn) {{
+            urlOpenBtn.addEventListener('mousedown', (e) => {{
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+            }}, true);
+            
+            urlOpenBtn.addEventListener('click', (e) => {{
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                console.log('Open button clicked');
+                
+                // Get URL from input field
+                const urlValue = urlInput ? urlInput.value.trim() : '';
+                if (urlValue) {{
+                    // Open URL in new window
+                    window.open(urlValue, '_blank', 'noopener,noreferrer');
+                }} else {{
+                    alert('Please enter a URL first');
+                }}
+                return false;
+            }}, false);
+            
+            urlOpenBtn.addEventListener('mouseup', (e) => {{
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+            }}, true);
+        }}
+        
+        // Apply URL on Enter key
+        if (urlInput) {{
+            urlInput.addEventListener('keypress', (e) => {{
+                e.stopPropagation();
+                if (e.key === 'Enter' || e.keyCode === 13) {{
+                    e.preventDefault();
+                    const canApply = !urlApplyBtn || !urlApplyBtn.disabled;
+                    if (canApply) {{
+                        if (typeof applyUrlFromInputFunction === 'function') {{
+                            applyUrlFromInputFunction();
+                        }} else if (window.applyUrlFromInput) {{
+                            window.applyUrlFromInput();
+                        }}
+                    }}
+                }}
+            }}, true);
+            
+            // Stop events from bubbling to panel
+            urlInput.addEventListener('click', (e) => {{
+                e.stopPropagation();
+            }}, false);
+            
+            urlInput.addEventListener('mousedown', (e) => {{
+                e.stopPropagation();
+            }}, false);
+            
+            urlInput.addEventListener('mouseup', (e) => {{
+                e.stopPropagation();
+            }}, false);
+            
+            urlInput.addEventListener('paste', (e) => {{
+                e.stopPropagation();
+            }}, true);
+            
+            urlInput.addEventListener('keydown', (e) => {{
+                e.stopPropagation();
+            }}, true);
+            
+            urlInput.addEventListener('keyup', (e) => {{
+                e.stopPropagation();
+            }}, true);
+        }}
+        
+        // Stop events on URL control from bubbling to panel
+        if (urlControl) {{
+            ['click', 'mousedown', 'mouseup'].forEach(eventType => {{
+                urlControl.addEventListener(eventType, (e) => {{
+                    const target = e.target;
+                    if (target === urlControl || 
+                        target === urlControl.querySelector('label') ||
+                        (target.tagName && target.tagName.toLowerCase() === 'label')) {{
+                        e.stopPropagation();
+                    }}
+                }}, false);
+            }});
+        }}
+        
+        // Extract initial URL from first iframe to populate input
+        setTimeout(() => {{
+            try {{
+                if (urlInput && originalIframeUrls['iframe0']) {{
+                    urlInput.value = originalIframeUrls['iframe0'];
+                    urlInput.readOnly = false;
+                    urlInput.disabled = false;
+                }}
+            }} catch (error) {{
+                console.error('Error setting initial URL:', error);
+            }}
+        }}, 500);
         
         // Start loading iframes sequentially when page loads
         window.addEventListener('DOMContentLoaded', () => {{
