@@ -2372,7 +2372,7 @@ Examples:
     )
     
     parser.add_argument('log_file', nargs='?', default='insarmaps.log',
-                       help='Path to log file containing URLs (default: insarmaps.log)')
+                       help='Path to file containing URLs (default: insarmaps.log)')
     parser.add_argument('--outdir', default=None,
                        help='Output directory (default: current directory)')
     parser.add_argument('--outfile', default='multi_frame_page.html',
