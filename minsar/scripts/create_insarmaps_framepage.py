@@ -153,8 +153,16 @@ def extract_iframe_src(html_file_or_url, add_cache_bust=True, zoom_factor=None):
     return url
 
 
-def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=None):
-    """Create a webpage with 2 iframes in a side-by-side layout."""
+def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=None, layout='matrix'):
+    """Create a webpage with 2 iframes in specified layout.
+    
+    Args:
+        urls: List of 2 URLs
+        labels: List of 2 labels
+        output_path: Output HTML file path
+        zoom_factor: Optional zoom factor to apply
+        layout: 'matrix' (2 columns), 'column' (2 rows), or 'row' (2 columns, same as matrix)
+    """
     
     if len(urls) < 2:
         raise ValueError(f"Need at least 2 URLs, got {len(urls)}")
@@ -167,6 +175,24 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
     label1 = labels[0] if len(labels) > 0 else 'Dataset'
     label2 = labels[1] if len(labels) > 1 else 'Dataset'
     
+    # Determine grid layout based on layout parameter
+    if layout == 'column':
+        # Single column, 2 rows with fixed 700px height each
+        grid_columns = '1fr'
+        grid_rows = '700px 700px'
+        container_height = 'auto'
+        container_class = 'container-column'
+        panel_class1 = 'panel-top'
+        panel_class2 = 'panel-bottom'
+    else:
+        # matrix or row: 2 columns, 1 row
+        grid_columns = '1fr 1fr'
+        grid_rows = '1fr'
+        container_height = 'calc(100vh - 40px)'
+        container_class = ''
+        panel_class1 = 'panel-top-left'
+        panel_class2 = 'panel-top-right'
+    
     # Create HTML content with JavaScript to ensure iframes are fully loaded and interactive
     html_content = f"""<!DOCTYPE html>
 <html>
@@ -176,7 +202,7 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>InSAR Maps - 2 Panel View</title>
+    <title>Insarmaps - 2 Panel View</title>
     <style>
         body {{
             margin: 0;
@@ -186,11 +212,16 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
         }}
         .container {{
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            grid-template-rows: 1fr;
+            grid-template-columns: {grid_columns};
+            grid-template-rows: {grid_rows};
             gap: 10px;
-            height: calc(100vh - 40px);
+            height: {container_height};
             max-width: 100%;
+        }}
+        .container-column {{
+            margin-left: 16px;
+            margin-right: 16px;
+            background-color: #e0e0e0;
         }}
         .panel {{
             background-color: white;
@@ -219,7 +250,7 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
             align-items: center;
             justify-content: space-between;
             position: relative;
-            height: 36px;
+            height: 38px;
             box-sizing: border-box;
         }}
         .panel-header-title {{
@@ -227,7 +258,7 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
         }}
         .panel iframe {{
             width: 100%;
-            height: calc(100% - 36px);
+            height: calc(100% - 38px);
             border: none;
             display: block;
         }}
@@ -235,6 +266,12 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
             background-color: #4a90e2;
         }}
         .panel-top-right .panel-header {{
+            background-color: #50c878;
+        }}
+        .panel-top .panel-header {{
+            background-color: #4a90e2;
+        }}
+        .panel-bottom .panel-header {{
             background-color: #50c878;
         }}
         .loading {{
@@ -256,7 +293,7 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
             border-radius: 4px;
             flex-shrink: 0;
             pointer-events: auto;
-            height: 20px;
+            height: 22px;
             box-sizing: border-box;
         }}
         .url-control:hover {{
@@ -338,8 +375,8 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
 </head>
 <body>
     <div id="frame-dimensions-info" class="frame-dimensions-info"></div>
-    <div class="container">
-        <div class="panel panel-top-left" id="panel1">
+    <div class="container {container_class}">
+        <div class="panel {panel_class1}" id="panel1">
             <div class="panel-header">
                 <span class="panel-header-title">{label1}</span>
                 <div class="url-control">
@@ -350,7 +387,7 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
             </div>
             <iframe id="iframe1" title="{label1}" allowfullscreen></iframe>
         </div>
-        <div class="panel panel-top-right" id="panel2">
+        <div class="panel {panel_class2}" id="panel2">
             <div class="panel-header">{label2}</div>
             <iframe id="iframe2" title="{label2}" allowfullscreen></iframe>
         </div>
@@ -1253,8 +1290,16 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
     return output_path
 
 
-def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=None):
-    """Create a webpage with 4 iframes in a 2x2 grid."""
+def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=None, layout='matrix'):
+    """Create a webpage with 4 iframes in specified layout.
+    
+    Args:
+        urls: List of 4 URLs
+        labels: List of 4 labels
+        output_path: Output HTML file path
+        zoom_factor: Optional zoom factor to apply
+        layout: 'matrix' (2x2 grid) or 'column' (4 rows)
+    """
     
     if len(urls) < 4:
         raise ValueError(f"Need at least 4 URLs, got {len(urls)}")
@@ -1271,6 +1316,28 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
     label3 = labels[2] if len(labels) > 2 else 'Dataset'
     label4 = labels[3] if len(labels) > 3 else 'Dataset'
     
+    # Determine grid layout based on layout parameter
+    if layout == 'column':
+        # Single column, 4 rows with fixed 700px height each
+        grid_columns = '1fr'
+        grid_rows = '700px 700px 700px 700px'
+        container_height = 'auto'
+        container_class = 'container-column'
+        panel_class1 = 'panel-row1'
+        panel_class2 = 'panel-row2'
+        panel_class3 = 'panel-row3'
+        panel_class4 = 'panel-row4'
+    else:
+        # matrix: 2x2 grid
+        grid_columns = '1fr 1fr'
+        grid_rows = '1fr 1fr'
+        container_height = 'calc(100vh - 40px)'
+        container_class = ''
+        panel_class1 = 'panel-top-left'
+        panel_class2 = 'panel-top-right'
+        panel_class3 = 'panel-bottom-left'
+        panel_class4 = 'panel-bottom-right'
+    
     # Create HTML content with JavaScript to ensure iframes are fully loaded and interactive
     html_content = f"""<!DOCTYPE html>
 <html>
@@ -1280,7 +1347,7 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>InSAR Maps - 4 Panel View</title>
+    <title>Insarmaps - 4 Panel View</title>
     <style>
         body {{
             margin: 0;
@@ -1290,11 +1357,16 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
         }}
         .container {{
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            grid-template-rows: 1fr 1fr;
+            grid-template-columns: {grid_columns};
+            grid-template-rows: {grid_rows};
             gap: 10px;
-            height: calc(100vh - 40px);
+            height: {container_height};
             max-width: 100%;
+        }}
+        .container-column {{
+            margin-left: 16px;
+            margin-right: 16px;
+            background-color: #e0e0e0;
         }}
         .panel {{
             background-color: white;
@@ -1323,7 +1395,7 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
             align-items: center;
             justify-content: space-between;
             position: relative;
-            height: 36px;
+            height: 38px;
             box-sizing: border-box;
         }}
         .panel-header-title {{
@@ -1331,7 +1403,7 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
         }}
         .panel iframe {{
             width: 100%;
-            height: calc(100% - 36px);
+            height: calc(100% - 38px);
             border: none;
             display: block;
         }}
@@ -1345,6 +1417,18 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
             background-color: #ff6b6b;
         }}
         .panel-bottom-right .panel-header {{
+            background-color: #ffa500;
+        }}
+        .panel-row1 .panel-header {{
+            background-color: #4a90e2;
+        }}
+        .panel-row2 .panel-header {{
+            background-color: #50c878;
+        }}
+        .panel-row3 .panel-header {{
+            background-color: #ff6b6b;
+        }}
+        .panel-row4 .panel-header {{
             background-color: #ffa500;
         }}
         .loading {{
@@ -1366,7 +1450,7 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
             border-radius: 4px;
             flex-shrink: 0;
             pointer-events: auto;
-            height: 20px;
+            height: 22px;
             box-sizing: border-box;
         }}
         .url-control:hover {{
@@ -1448,8 +1532,8 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
 </head>
 <body>
     <div id="frame-dimensions-info" class="frame-dimensions-info"></div>
-    <div class="container">
-        <div class="panel panel-top-left" id="panel1">
+    <div class="container {container_class}">
+        <div class="panel {panel_class1}" id="panel1">
             <div class="panel-header">
                 <span class="panel-header-title">{label1}</span>
                 <div class="url-control">
@@ -1460,15 +1544,15 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
             </div>
             <iframe id="iframe1" title="{label1}" allowfullscreen></iframe>
         </div>
-        <div class="panel panel-top-right" id="panel2">
+        <div class="panel {panel_class2}" id="panel2">
             <div class="panel-header">{label2}</div>
             <iframe id="iframe2" title="{label2}" allowfullscreen></iframe>
         </div>
-        <div class="panel panel-bottom-left" id="panel3">
+        <div class="panel {panel_class3}" id="panel3">
             <div class="panel-header">{label3}</div>
             <iframe id="iframe3" title="{label3}" allowfullscreen></iframe>
         </div>
-        <div class="panel panel-bottom-right" id="panel4">
+        <div class="panel {panel_class4}" id="panel4">
             <div class="panel-header">{label4}</div>
             <iframe id="iframe4" title="{label4}" allowfullscreen></iframe>
         </div>
@@ -2412,9 +2496,6 @@ Examples:
     else:
         log_path = os.path.join(os.getcwd(), args.log_file)
     
-    # Construct output path
-    output_path = os.path.join(out_dir, args.outfile)
-    
     # Read URLs from insarmaps.log
     try:
         urls = read_insarmaps_log(log_path)
@@ -2425,13 +2506,38 @@ Examples:
         if num_urls == 2:
             # Extract labels from URLs
             labels = [get_label_from_url(url) for url in urls[:2]]
-            # Create the webpage with 2 frames
-            create_webpage_2frames(urls[:2], labels, output_path, zoom_factor=args.zoom)
+            # Create multiple layout files for 2 frames
+            base_path = os.path.splitext(args.outfile)[0] if args.outfile else 'multi_frame_page'
+            
+            # Create matrix.html (2 columns)
+            matrix_path = os.path.join(out_dir, 'matrix.html')
+            create_webpage_2frames(urls[:2], labels, matrix_path, zoom_factor=args.zoom, layout='matrix')
+            
+            # Create column.html (2 rows)
+            column_path = os.path.join(out_dir, 'column.html')
+            create_webpage_2frames(urls[:2], labels, column_path, zoom_factor=args.zoom, layout='column')
+            
+            # Create row.html (same as matrix - 2 columns)
+            row_path = os.path.join(out_dir, 'row.html')
+            create_webpage_2frames(urls[:2], labels, row_path, zoom_factor=args.zoom, layout='row')
+            
+            print(f"Created 3 layout files: matrix.html, column.html, row.html")
+            
         elif num_urls >= 4:
             # Extract labels from URLs
             labels = [get_label_from_url(url) for url in urls[:4]]
-            # Create the webpage with 4 frames
-            create_webpage_4frames(urls[:4], labels, output_path, zoom_factor=args.zoom)
+            # Create multiple layout files for 4 frames
+            base_path = os.path.splitext(args.outfile)[0] if args.outfile else 'multi_frame_page'
+            
+            # Create matrix.html (2x2 grid)
+            matrix_path = os.path.join(out_dir, 'matrix.html')
+            create_webpage_4frames(urls[:4], labels, matrix_path, zoom_factor=args.zoom, layout='matrix')
+            
+            # Create column.html (4 rows)
+            column_path = os.path.join(out_dir, 'column.html')
+            create_webpage_4frames(urls[:4], labels, column_path, zoom_factor=args.zoom, layout='column')
+            
+            print(f"Created 2 layout files: matrix.html, column.html")
         else:
             # Invalid number of entries
             print(f"Error: Found {num_urls} URLs. Need exactly 2 or at least 4 URLs.")
