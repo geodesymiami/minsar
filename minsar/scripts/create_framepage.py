@@ -5,8 +5,8 @@ Create a webpage with 4 iframes in a 2x2 grid layout.
 Layout:
 - Top Left: FILE1
 - Top Right: FILE2
-- Bottom Left: vert
-- Bottom Right: horz
+- Bottom Left: FILE3
+- Bottom Right: FILE4
 """
 import os
 import re
@@ -162,13 +162,14 @@ def create_webpage(urls, labels, output_path='page.html', zoom_factor=None):
     # Use first 4 URLs and apply zoom factor if provided
     src_file1 = apply_zoom_factor(urls[0], zoom_factor)
     src_file2 = apply_zoom_factor(urls[1], zoom_factor)
-    src_vert = apply_zoom_factor(urls[2], zoom_factor)
-    src_horz = apply_zoom_factor(urls[3], zoom_factor)
+    src_file3 = apply_zoom_factor(urls[2], zoom_factor)
+    src_file4 = apply_zoom_factor(urls[3], zoom_factor)
     
-    label1 = labels[0] if len(labels) > 0 else 'FILE1'
-    label2 = labels[1] if len(labels) > 1 else 'FILE2'
-    label3 = labels[2] if len(labels) > 2 else 'Vertical'
-    label4 = labels[3] if len(labels) > 3 else 'Horizontal'
+    # Use extracted labels from URLs (which derive from dataset names)
+    label1 = labels[0] if len(labels) > 0 else 'Dataset'
+    label2 = labels[1] if len(labels) > 1 else 'Dataset'
+    label3 = labels[2] if len(labels) > 2 else 'Dataset'
+    label4 = labels[3] if len(labels) > 3 else 'Dataset'
     
     # Create HTML content with JavaScript to ensure iframes are fully loaded and interactive
     html_content = f"""<!DOCTYPE html>
@@ -667,8 +668,8 @@ def create_webpage(urls, labels, output_path='page.html', zoom_factor=None):
         const originalIframeUrls = {{
             'iframe1': '{src_file1}',
             'iframe2': '{src_file2}',
-            'iframe3': '{src_vert}',
-            'iframe4': '{src_horz}'
+            'iframe3': '{src_file3}',
+            'iframe4': '{src_file4}'
         }};
         
         // Store current iframe URLs (will be modified by URL template)
