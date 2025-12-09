@@ -9,11 +9,13 @@ Layout:
 - Bottom Right: FILE4
 """
 import os
+import sys
 import re
 import json
 import argparse
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
+from minsar.objects import message_rsmas
 
 
 def read_insarmaps_log(log_path):
@@ -3482,6 +3484,15 @@ def cmd_line_parse(iargs=None):
 
 def main(iargs=None):
     inps = cmd_line_parse(iargs)
+    
+    inps.work_dir = os.getcwd()
+    
+    if not iargs is None:
+        input_arguments = iargs
+    else:
+        input_arguments = sys.argv[1::]
+    
+    message_rsmas.log(inps.work_dir, os.path.basename(__file__) + ' ' + ' '.join(input_arguments))
     
     # Read URLs from insarmaps.log
     try:
