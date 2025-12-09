@@ -358,6 +358,17 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
             cursor: not-allowed;
             color: #999;
         }}
+        .url-control #url-open-btn {{
+            background-color: #4a90e2;
+            color: white;
+            border: 1px solid #4a90e2;
+            padding: 1px 8px;
+            min-width: 20px;
+        }}
+        .url-control #url-open-btn:hover {{
+            background-color: #357abd;
+            border-color: #357abd;
+        }}
         .frame-dimensions-info {{
             position: fixed;
             bottom: 10px;
@@ -383,6 +394,7 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
                     <label for="url-input">URL:</label>
                     <input type="text" id="url-input" placeholder="Paste full URL here">
                     <button id="url-apply-btn">Apply</button>
+                    <button id="url-open-btn" title="Open URL in new window">O</button>
                 </div>
             </div>
             <iframe id="iframe1" title="{label1}" allowfullscreen></iframe>
@@ -858,6 +870,7 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
         // Set up URL control
         const urlInput = document.getElementById('url-input');
         const urlApplyBtn = document.getElementById('url-apply-btn');
+        const urlOpenBtn = document.getElementById('url-open-btn');
         const urlControl = document.querySelector('.url-control');
         
         // Ensure input is editable and stop all event propagation
@@ -1130,6 +1143,41 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
             
             // Also try mouseup as backup
             urlApplyBtn.addEventListener('mouseup', (e) => {{
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+            }}, true);
+        }}
+        
+        // Set up Open button handler
+        if (urlOpenBtn) {{
+            console.log('Setting up Open button handler');
+            
+            // Stop propagation on button to prevent panel from handling it
+            urlOpenBtn.addEventListener('mousedown', (e) => {{
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+            }}, true);
+            
+            // Main click handler
+            urlOpenBtn.addEventListener('click', (e) => {{
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                console.log('Open button clicked');
+                
+                // Get URL from input field
+                const urlValue = urlInput ? urlInput.value.trim() : '';
+                if (urlValue) {{
+                    // Open URL in new window
+                    window.open(urlValue, '_blank', 'noopener,noreferrer');
+                }} else {{
+                    alert('Please enter a URL first');
+                }}
+                return false;
+            }}, false);
+            
+            // Also try mouseup as backup
+            urlOpenBtn.addEventListener('mouseup', (e) => {{
                 e.stopPropagation();
                 e.stopImmediatePropagation();
             }}, true);
@@ -1515,6 +1563,17 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
             cursor: not-allowed;
             color: #999;
         }}
+        .url-control #url-open-btn {{
+            background-color: #4a90e2;
+            color: white;
+            border: 1px solid #4a90e2;
+            padding: 1px 8px;
+            min-width: 20px;
+        }}
+        .url-control #url-open-btn:hover {{
+            background-color: #357abd;
+            border-color: #357abd;
+        }}
         .frame-dimensions-info {{
             position: fixed;
             bottom: 10px;
@@ -1540,6 +1599,7 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
                     <label for="url-input">URL:</label>
                     <input type="text" id="url-input" placeholder="Paste full URL here">
                     <button id="url-apply-btn">Apply</button>
+                    <button id="url-open-btn" title="Open URL in new window">O</button>
                 </div>
             </div>
             <iframe id="iframe1" title="{label1}" allowfullscreen></iframe>
@@ -2029,6 +2089,7 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
         // Set up URL control
         const urlInput = document.getElementById('url-input');
         const urlApplyBtn = document.getElementById('url-apply-btn');
+        const urlOpenBtn = document.getElementById('url-open-btn');
         const urlControl = document.querySelector('.url-control');
         
         // Ensure input is editable and stop all event propagation
@@ -2301,6 +2362,41 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
             
             // Also try mouseup as backup
             urlApplyBtn.addEventListener('mouseup', (e) => {{
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+            }}, true);
+        }}
+        
+        // Set up Open button handler
+        if (urlOpenBtn) {{
+            console.log('Setting up Open button handler');
+            
+            // Stop propagation on button to prevent panel from handling it
+            urlOpenBtn.addEventListener('mousedown', (e) => {{
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+            }}, true);
+            
+            // Main click handler
+            urlOpenBtn.addEventListener('click', (e) => {{
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                console.log('Open button clicked');
+                
+                // Get URL from input field
+                const urlValue = urlInput ? urlInput.value.trim() : '';
+                if (urlValue) {{
+                    // Open URL in new window
+                    window.open(urlValue, '_blank', 'noopener,noreferrer');
+                }} else {{
+                    alert('Please enter a URL first');
+                }}
+                return false;
+            }}, false);
+            
+            // Also try mouseup as backup
+            urlOpenBtn.addEventListener('mouseup', (e) => {{
                 e.stopPropagation();
                 e.stopImmediatePropagation();
             }}, true);
