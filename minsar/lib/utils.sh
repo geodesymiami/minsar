@@ -640,8 +640,6 @@ function write_framepage_url() {
     
     # Write URLs to upload_urls.log
     printf '%s\n' "${frame_urls[@]}" > "$output_file"
-    echo "QQQ $frame_urls"
-    echo "QQQ ${frame_urls[@]}"
 
     echo "Wrote ${#frame_urls[@]} URL(s) to ${output_file}"
 }

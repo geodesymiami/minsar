@@ -13,6 +13,25 @@ source ${SCRIPT_DIR}/../lib/minsarApp_specifics.sh
 echo "sourcing ${SCRIPT_DIR}/../lib/utils.sh ..."
 source ${SCRIPT_DIR}/../lib/utils.sh
 
+# Function to get absolute path with SCRATCHDIR removed
+# Resolves symlinks to handle OneDrive path variations on Mac
+get_path_without_scratchdir() {
+    local file_path="$1"
+    [[ -z "$file_path" || ! -f "$file_path" ]] && return
+    
+    # Get absolute path, resolving symlinks
+    local abs_path=$(realpath "$file_path" 2>/dev/null)
+    [[ -z "$abs_path" ]] && abs_path=$(cd "$(dirname "$file_path")" && pwd)/$(basename "$file_path")
+    
+    # Resolve SCRATCHDIR symlinks and remove prefix if it exists
+    if [[ -n "${SCRATCHDIR:-}" ]]; then
+        local scratchdir_resolved=$(realpath "$SCRATCHDIR" 2>/dev/null || (cd "$SCRATCHDIR" && pwd))
+        [[ "$abs_path" == "$scratchdir_resolved"/* ]] && abs_path="${abs_path#$scratchdir_resolved/}"
+    fi
+    
+    echo "$abs_path"
+}
+
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     helptext="
 Examples:
@@ -192,11 +211,9 @@ echo "Found horz file: $HORZ_FILE"
 
 echo "##############################################"
 ingest_insarmaps.bash "$VERT_FILE"
-mv -v iframe.html iframe_vert.html
 
 echo "##############################################"
 ingest_insarmaps.bash "$HORZ_FILE"
-mv -v iframe.html iframe_horz.html
 
 # Ingest original input files (default behavior, skip if --no-ingest-los is set)
 # Stay in PROJECT_DIR so all insarmaps.log entries go to the same file
@@ -206,21 +223,38 @@ if [[ $ingest_los_flag == "1" ]]; then
     ingest_insarmaps.bash "../$FILE1" --ref-lalo "${ref_lalo[@]}"
     FILE1_HE5=$(ls -t "../$FILE1"/*.he5 2>/dev/null | head -n 1) || FILE1_HE5="../$FILE1"
     flight_direction=$(get_flight_direction.py "$FILE1_HE5")
-    cp -v "../$FILE1/pic/iframe.html" "iframe_${flight_direction}.html"
   
     echo "##############################################"
     ingest_insarmaps.bash "../$FILE2" --ref-lalo "${ref_lalo[@]}"
     FILE2_HE5=$(ls -t "../$FILE2"/*.he5 2>/dev/null | head -n 1) || FILE2_HE5="../$FILE2"
     flight_direction=$(get_flight_direction.py "$FILE2_HE5")
-    cp -v "../$FILE2/pic/iframe.html" "iframe_${flight_direction}.html"
 fi
 
-# Create insarmaps framepage
+# Write data_files.txt with all *he5 files used
 echo "##############################################"
-"${SCRIPT_DIR}/../scripts/create_insarmaps_framepage.py" "$PROJECT_DIR/insarmaps.log" --outdir "$PROJECT_DIR"
+DATA_FILES_TXT="data_files.txt"
+echo "Writing $PROJECT_DIR/$DATA_FILES_TXT with all *he5 files used..."
+{
+    # Always include vert and horz files (they are in PROJECT_DIR)
+    [[ -n "$VERT_FILE" && -f "$VERT_FILE" ]] && get_path_without_scratchdir "$VERT_FILE"
+    [[ -n "$HORZ_FILE" && -f "$HORZ_FILE" ]] && get_path_without_scratchdir "$HORZ_FILE"
+    # Include FILE1 and FILE2 he5 files if they were ingested (paths are relative to PROJECT_DIR)
+    if [[ $ingest_los_flag == "1" ]]; then
+        [[ -n "$FILE1_HE5" && -f "$FILE1_HE5" && "$FILE1_HE5" == *.he5 ]] && get_path_without_scratchdir "$FILE1_HE5"
+        [[ -n "$FILE2_HE5" && -f "$FILE2_HE5" && "$FILE2_HE5" == *.he5 ]] && get_path_without_scratchdir "$FILE2_HE5"
+    fi
+} > "$DATA_FILES_TXT"
+echo "Created $PROJECT_DIR/$DATA_FILES_TXT with $(wc -l < "$DATA_FILES_TXT" | tr -d ' ') file(s)"
 
-# Change back to original directory
+# Change back to original directory as early as possible
 cd "$ORIGINAL_DIR"
+
+# Create insarmaps framepage (using absolute paths since we're back in ORIGINAL_DIR)
+echo "##############################################"
+create_insarmaps_framepages.py" "$PROJECT_DIR/insarmaps.log" --outdir "$PROJECT_DIR"
+write_insarmaps_framepage_urls.py" "$PROJECT_DIR/insarmaps.log" --outdir "$PROJECT_DIR"
+
+
 
 
 
