@@ -1230,9 +1230,48 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
         
         let currentLoadIndex = 0;
         const loadOrder = ['iframe1', 'iframe2'];
+        let sequentialLoadStarted = false;
+        let fallbackLoadTriggered = false;
+        
+        // Simple fallback: load all iframes immediately (for when sequential loading fails)
+        function loadAllIframesImmediately() {{
+            if (fallbackLoadTriggered) {{
+                return; // Already triggered
+            }}
+            fallbackLoadTriggered = true;
+            console.log('Fallback: Loading all iframes immediately');
+            
+            loadOrder.forEach((iframeId, index) => {{
+                const iframe = document.getElementById(iframeId);
+                const panelId = 'panel' + (index + 1);
+                const state = iframeStates[iframeId];
+                
+                if (iframe && !state.loaded) {{
+                    // Set up the iframe
+                    setupIframe(iframeId, panelId);
+                    
+                    // Get URL and add cache-busting
+                    const url = originalIframeUrls[iframeId];
+                    const separator = url.includes('?') ? '&' : '?';
+                    const cacheBustUrl = url + separator + 'hideAttributes=true&_nocache=' + Date.now() + '_' + index + '_' + Math.random().toString(36).substr(2, 9);
+                    
+                    console.log(`Fallback: Loading ${{iframeId}} with URL: ${{cacheBustUrl}}`);
+                    
+                    // Add error handler
+                    iframe.addEventListener('error', (e) => {{
+                        console.error(`Error loading ${{iframeId}}:`, e);
+                    }}, false);
+                    
+                    // Load the iframe
+                    iframe.src = cacheBustUrl;
+                }}
+            }});
+        }}
         
         // Load iframes sequentially to prevent Safari from blocking AJAX calls
         function loadNextIframe() {{
+            sequentialLoadStarted = true;
+            
             if (currentLoadIndex >= loadOrder.length) {{
                 console.log('All iframes loaded sequentially');
                 return;
@@ -1243,10 +1282,31 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
             const panelId = 'panel' + (currentLoadIndex + 1);
             const state = iframeStates[iframeId];
             
+            if (!iframe) {{
+                console.error(`Iframe ${{iframeId}} not found, skipping`);
+                currentLoadIndex++;
+                if (currentLoadIndex < loadOrder.length) {{
+                    loadNextIframe();
+                }}
+                return;
+            }}
+            
             console.log(`Loading ${{iframeId}} ({{currentLoadIndex + 1}}/2)`);
             
             // Set up the iframe first
             setupIframe(iframeId, panelId);
+            
+            // Add error handler
+            iframe.addEventListener('error', (e) => {{
+                console.error(`Error loading ${{iframeId}}:`, e);
+                // On error, try fallback after a delay
+                setTimeout(() => {{
+                    if (!fallbackLoadTriggered) {{
+                        console.warn(`Sequential load failed for ${{iframeId}}, triggering fallback`);
+                        loadAllIframesImmediately();
+                    }}
+                }}, 2000);
+            }}, false);
             
             // Add cache-busting parameter and hideAttributes parameter
             // Use original URL to avoid zoom modifications during initial load
@@ -1304,6 +1364,12 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
                     currentLoadIndex++;
                     if (currentLoadIndex < loadOrder.length) {{
                         loadNextIframe();
+                    }} else {{
+                        // If sequential loading failed completely, try immediate loading
+                        if (!fallbackLoadTriggered) {{
+                            console.warn('Sequential loading failed, trying immediate load fallback');
+                            loadAllIframesImmediately();
+                        }}
                     }}
                 }}
             }}, 10000);
@@ -1315,13 +1381,25 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
             setTimeout(() => {{
                 loadNextIframe();
             }}, 100);
+            
+            // Fallback: if sequential loading hasn't started after 2 seconds, load immediately
+            setTimeout(() => {{
+                if (!sequentialLoadStarted && !fallbackLoadTriggered) {{
+                    console.warn('Sequential loading did not start, using immediate load fallback');
+                    loadAllIframesImmediately();
+                }}
+            }}, 2000);
         }});
         
         // Fallback: if not all iframes loaded after 5 seconds, process what we have
         window.addEventListener('load', () => {{
             setTimeout(() => {{
                 const loadedCount = Object.values(iframeStates).filter(s => s.loaded).length;
-                if (loadedCount > 0 && currentProcessingIndex === 0) {{
+                if (loadedCount === 0 && !fallbackLoadTriggered) {{
+                    // No iframes loaded at all - try immediate loading
+                    console.warn('No iframes loaded, trying immediate load fallback');
+                    loadAllIframesImmediately();
+                }} else if (loadedCount > 0 && currentProcessingIndex === 0) {{
                     console.log(`Starting processing with ${{loadedCount}} loaded iframes`);
                     processNextIframe();
                 }}
