@@ -2619,7 +2619,7 @@ def create_overlay_html(urls, labels, output_path='overlay.html', zoom_factor=No
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>InSAR Maps - Frame Overlay</title>
+    <title>Insarmaps - Frame Overlay</title>
     <style>
         body {{
             margin: 0;
@@ -2833,35 +2833,39 @@ def create_overlay_html(urls, labels, output_path='overlay.html', zoom_factor=No
             title.textContent = frame.label;
             header.appendChild(title);
             
-            // Add URL control (only to first panel)
-            if (index === 0) {{
-                const urlControl = document.createElement('div');
-                urlControl.className = 'url-control';
-                
-                const urlLabel = document.createElement('label');
-                urlLabel.setAttribute('for', 'url-input');
-                urlLabel.textContent = 'URL:';
-                
-                const urlInput = document.createElement('input');
-                urlInput.type = 'text';
-                urlInput.id = 'url-input';
-                urlInput.placeholder = 'Paste full URL here';
-                
-                const urlApplyBtn = document.createElement('button');
-                urlApplyBtn.id = 'url-apply-btn';
-                urlApplyBtn.textContent = 'Apply';
-                
-                const urlOpenBtn = document.createElement('button');
-                urlOpenBtn.id = 'url-open-btn';
-                urlOpenBtn.textContent = 'O';
-                urlOpenBtn.title = 'Open URL in new window';
-                
-                urlControl.appendChild(urlLabel);
-                urlControl.appendChild(urlInput);
-                urlControl.appendChild(urlApplyBtn);
-                urlControl.appendChild(urlOpenBtn);
-                header.appendChild(urlControl);
-            }}
+            // Add URL control to all panels
+            const urlControl = document.createElement('div');
+            urlControl.className = 'url-control';
+            
+            const urlLabel = document.createElement('label');
+            urlLabel.setAttribute('for', `url-input-${{index}}`);
+            urlLabel.textContent = 'URL:';
+            
+            const urlInput = document.createElement('input');
+            urlInput.type = 'text';
+            urlInput.id = `url-input-${{index}}`;
+            urlInput.className = 'url-input-frame';
+            urlInput.placeholder = 'Paste full URL here';
+            
+            // Add Apply button to all panels
+            const urlApplyBtn = document.createElement('button');
+            urlApplyBtn.className = 'url-apply-btn-frame';
+            urlApplyBtn.id = `url-apply-btn-${{index}}`;
+            urlApplyBtn.textContent = 'Apply';
+            
+            // Add "O" button to all panels
+            const urlOpenBtn = document.createElement('button');
+            urlOpenBtn.className = 'url-open-btn-frame';
+            urlOpenBtn.id = `url-open-btn-${{index}}`;
+            urlOpenBtn.textContent = 'O';
+            urlOpenBtn.title = 'Open URL in new window';
+            
+            // Order: URL label, URL input, Apply button, "O" button
+            urlControl.appendChild(urlLabel);
+            urlControl.appendChild(urlInput);
+            urlControl.appendChild(urlApplyBtn);
+            urlControl.appendChild(urlOpenBtn);
+            header.appendChild(urlControl);
             
             const iframe = document.createElement('iframe');
             iframe.id = `iframe${{index}}`;
@@ -2918,6 +2922,12 @@ def create_overlay_html(urls, labels, output_path='overlay.html', zoom_factor=No
                 
                 state.loaded = true;
                 console.log(`Iframe ${{currentLoadIndex + 1}} loaded, waiting for colorscale adjustment...`);
+                
+                // Update URL input for this frame
+                const urlInput = document.getElementById(`url-input-${{currentLoadIndex}}`);
+                if (urlInput && frame.url) {{
+                    urlInput.value = frame.url;
+                }}
                 
                 // Wait 1 second after load for AJAX call to /preLoad to complete
                 // and colorscale to adjust to data-derived values
@@ -2984,11 +2994,14 @@ def create_overlay_html(urls, labels, output_path='overlay.html', zoom_factor=No
             }}
             
             isApplyingUrl = true;
-            const urlApplyBtn = document.getElementById('url-apply-btn');
-            if (urlApplyBtn) {{
-                urlApplyBtn.disabled = true;
-                urlApplyBtn.textContent = 'Applying...';
-            }}
+            // Disable all Apply buttons
+            frames.forEach((frame, idx) => {{
+                const urlApplyBtn = document.getElementById(`url-apply-btn-${{idx}}`);
+                if (urlApplyBtn) {{
+                    urlApplyBtn.disabled = true;
+                    urlApplyBtn.textContent = 'Applying...';
+                }}
+            }});
             
             console.log(`Applying URL template to all iframes: ${{templateUrlString}}`);
             
@@ -2997,11 +3010,14 @@ def create_overlay_html(urls, labels, output_path='overlay.html', zoom_factor=No
             function applyToNextIframe() {{
                 if (applyIndex >= frames.length) {{
                     isApplyingUrl = false;
-                    const urlApplyBtn = document.getElementById('url-apply-btn');
-                    if (urlApplyBtn) {{
-                        urlApplyBtn.disabled = false;
-                        urlApplyBtn.textContent = 'Apply';
-                    }}
+                    // Re-enable all Apply buttons
+                    frames.forEach((frame, idx) => {{
+                        const urlApplyBtn = document.getElementById(`url-apply-btn-${{idx}}`);
+                        if (urlApplyBtn) {{
+                            urlApplyBtn.disabled = false;
+                            urlApplyBtn.textContent = 'Apply';
+                        }}
+                    }});
                     console.log('Finished applying URL to all iframes');
                     return;
                 }}
@@ -3019,6 +3035,12 @@ def create_overlay_html(urls, labels, output_path='overlay.html', zoom_factor=No
                         const targetUrl = originalIframeUrls[iframe.id] || frames[applyIndex].url;
                         const mergedUrl = mergeUrlParameters(templateUrlString, targetUrl);
                         iframe.src = mergedUrl;
+                        
+                        // Update the URL input for this frame
+                        const urlInput = document.getElementById(`url-input-${{applyIndex}}`);
+                        if (urlInput) {{
+                            urlInput.value = mergedUrl;
+                        }}
                         
                         console.log(`Applied URL to iframe ${{applyIndex + 1}}/${{frames.length}}`);
                         
@@ -3101,15 +3123,10 @@ def create_overlay_html(urls, labels, output_path='overlay.html', zoom_factor=No
             }}
         }}
         
-        // URL input and button handlers
-        const urlInput = document.getElementById('url-input');
-        const urlApplyBtn = document.getElementById('url-apply-btn');
-        const urlOpenBtn = document.getElementById('url-open-btn');
-        const urlControl = document.querySelector('.url-control');
-        
-        // Common function to apply URL (used by both button and Enter key)
-        function applyUrlFromInputFunction() {{
-            const urlInput = document.getElementById('url-input');
+        // URL input and button handlers - handle all frames
+        // Common function to apply URL from a specific frame's input
+        function applyUrlFromInputFunction(frameIndex) {{
+            const urlInput = document.getElementById(`url-input-${{frameIndex}}`);
             if (!urlInput) return;
             
             const urlValue = urlInput.value.trim();
@@ -3118,7 +3135,7 @@ def create_overlay_html(urls, labels, output_path='overlay.html', zoom_factor=No
                 return;
             }}
             
-            console.log('Applying URL from input:', urlValue);
+            console.log(`Applying URL from frame ${{frameIndex}} input:`, urlValue);
             
             try {{
                 // Call the applyUrlToAllFrames function
@@ -3134,111 +3151,116 @@ def create_overlay_html(urls, labels, output_path='overlay.html', zoom_factor=No
             }}
         }}
         
-        // Also assign to window for global access
-        window.applyUrlFromInput = applyUrlFromInputFunction;
+        // Also assign to window for global access (uses first frame by default)
+        window.applyUrlFromInput = function() {{
+            applyUrlFromInputFunction(0);
+        }};
         
-        // Apply URL on button click
-        if (urlApplyBtn) {{
-            urlApplyBtn.addEventListener('mousedown', (e) => {{
-                e.stopPropagation();
-                e.stopImmediatePropagation();
-            }}, true);
+        // Set up Apply button handlers for all frames
+        frames.forEach((frame, index) => {{
+            const urlApplyBtn = document.getElementById(`url-apply-btn-${{index}}`);
             
-            urlApplyBtn.addEventListener('click', (e) => {{
-                e.preventDefault();
-                e.stopPropagation();
-                e.stopImmediatePropagation();
-                console.log('Apply button clicked');
+            if (urlApplyBtn) {{
+                urlApplyBtn.addEventListener('mousedown', (e) => {{
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                }}, true);
                 
-                if (typeof applyUrlFromInputFunction === 'function') {{
-                    applyUrlFromInputFunction();
-                }} else if (window.applyUrlFromInput) {{
-                    window.applyUrlFromInput();
-                }}
-                return false;
-            }}, false);
-            
-            urlApplyBtn.addEventListener('mouseup', (e) => {{
-                e.stopPropagation();
-                e.stopImmediatePropagation();
-            }}, true);
-        }}
-        
-        // Open URL in new window on "O" button click
-        if (urlOpenBtn) {{
-            urlOpenBtn.addEventListener('mousedown', (e) => {{
-                e.stopPropagation();
-                e.stopImmediatePropagation();
-            }}, true);
-            
-            urlOpenBtn.addEventListener('click', (e) => {{
-                e.preventDefault();
-                e.stopPropagation();
-                e.stopImmediatePropagation();
-                console.log('Open button clicked');
-                
-                // Get URL from input field
-                const urlValue = urlInput ? urlInput.value.trim() : '';
-                if (urlValue) {{
-                    // Open URL in new window
-                    window.open(urlValue, '_blank', 'noopener,noreferrer');
-                }} else {{
-                    alert('Please enter a URL first');
-                }}
-                return false;
-            }}, false);
-            
-            urlOpenBtn.addEventListener('mouseup', (e) => {{
-                e.stopPropagation();
-                e.stopImmediatePropagation();
-            }}, true);
-        }}
-        
-        // Apply URL on Enter key
-        if (urlInput) {{
-            urlInput.addEventListener('keypress', (e) => {{
-                e.stopPropagation();
-                if (e.key === 'Enter' || e.keyCode === 13) {{
+                urlApplyBtn.addEventListener('click', (e) => {{
                     e.preventDefault();
-                    const canApply = !urlApplyBtn || !urlApplyBtn.disabled;
-                    if (canApply) {{
-                        if (typeof applyUrlFromInputFunction === 'function') {{
-                            applyUrlFromInputFunction();
-                        }} else if (window.applyUrlFromInput) {{
-                            window.applyUrlFromInput();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    console.log(`Apply button clicked for frame ${{index}}`);
+                    
+                    applyUrlFromInputFunction(index);
+                    return false;
+                }}, false);
+                
+                urlApplyBtn.addEventListener('mouseup', (e) => {{
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                }}, true);
+            }}
+        }});
+        
+        // Set up "O" button handlers for all frames
+        frames.forEach((frame, index) => {{
+            const urlOpenBtn = document.getElementById(`url-open-btn-${{index}}`);
+            const urlInput = document.getElementById(`url-input-${{index}}`);
+            
+            if (urlOpenBtn) {{
+                urlOpenBtn.addEventListener('mousedown', (e) => {{
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                }}, true);
+                
+                urlOpenBtn.addEventListener('click', (e) => {{
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    console.log(`Open button clicked for frame ${{index}}`);
+                    
+                    // Get URL from this frame's input field
+                    const urlValue = urlInput ? urlInput.value.trim() : '';
+                    if (urlValue) {{
+                        // Open URL in new window
+                        window.open(urlValue, '_blank', 'noopener,noreferrer');
+                    }} else {{
+                        alert('Please enter a URL first');
+                    }}
+                    return false;
+                }}, false);
+                
+                urlOpenBtn.addEventListener('mouseup', (e) => {{
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                }}, true);
+            }}
+            
+            // Set up event handlers for each URL input
+            if (urlInput) {{
+                // Apply URL on Enter key (applies to all frames using this frame's URL)
+                urlInput.addEventListener('keypress', (e) => {{
+                    e.stopPropagation();
+                    if (e.key === 'Enter' || e.keyCode === 13) {{
+                        e.preventDefault();
+                        const frameApplyBtn = document.getElementById(`url-apply-btn-${{index}}`);
+                        const canApply = !frameApplyBtn || !frameApplyBtn.disabled;
+                        if (canApply) {{
+                            applyUrlFromInputFunction(index);
                         }}
                     }}
-                }}
-            }}, true);
-            
-            // Stop events from bubbling to panel
-            urlInput.addEventListener('click', (e) => {{
-                e.stopPropagation();
-            }}, false);
-            
-            urlInput.addEventListener('mousedown', (e) => {{
-                e.stopPropagation();
-            }}, false);
-            
-            urlInput.addEventListener('mouseup', (e) => {{
-                e.stopPropagation();
-            }}, false);
-            
-            urlInput.addEventListener('paste', (e) => {{
-                e.stopPropagation();
-            }}, true);
-            
-            urlInput.addEventListener('keydown', (e) => {{
-                e.stopPropagation();
-            }}, true);
-            
-            urlInput.addEventListener('keyup', (e) => {{
-                e.stopPropagation();
-            }}, true);
-        }}
+                }}, true);
+                
+                // Stop events from bubbling to panel
+                urlInput.addEventListener('click', (e) => {{
+                    e.stopPropagation();
+                }}, false);
+                
+                urlInput.addEventListener('mousedown', (e) => {{
+                    e.stopPropagation();
+                }}, false);
+                
+                urlInput.addEventListener('mouseup', (e) => {{
+                    e.stopPropagation();
+                }}, false);
+                
+                urlInput.addEventListener('paste', (e) => {{
+                    e.stopPropagation();
+                }}, true);
+                
+                urlInput.addEventListener('keydown', (e) => {{
+                    e.stopPropagation();
+                }}, true);
+                
+                urlInput.addEventListener('keyup', (e) => {{
+                    e.stopPropagation();
+                }}, true);
+            }}
+        }});
         
-        // Stop events on URL control from bubbling to panel
-        if (urlControl) {{
+        // Stop events on URL controls from bubbling to panels
+        document.querySelectorAll('.url-control').forEach(urlControl => {{
             ['click', 'mousedown', 'mouseup'].forEach(eventType => {{
                 urlControl.addEventListener(eventType, (e) => {{
                     const target = e.target;
@@ -3249,18 +3271,27 @@ def create_overlay_html(urls, labels, output_path='overlay.html', zoom_factor=No
                     }}
                 }}, false);
             }});
-        }}
+        }});
         
-        // Extract initial URL from first iframe to populate input
-        setTimeout(() => {{
-            try {{
-                if (urlInput && originalIframeUrls['iframe0']) {{
-                    urlInput.value = originalIframeUrls['iframe0'];
+        // Update URL inputs when iframes load
+        function updateUrlInputs() {{
+            frames.forEach((frame, index) => {{
+                const urlInput = document.getElementById(`url-input-${{index}}`);
+                const iframeId = `iframe${{index}}`;
+                if (urlInput && originalIframeUrls[iframeId]) {{
+                    urlInput.value = originalIframeUrls[iframeId];
                     urlInput.readOnly = false;
                     urlInput.disabled = false;
                 }}
+            }});
+        }}
+        
+        // Extract initial URLs from iframes to populate inputs
+        setTimeout(() => {{
+            try {{
+                updateUrlInputs();
             }} catch (error) {{
-                console.error('Error setting initial URL:', error);
+                console.error('Error setting initial URLs:', error);
             }}
         }}, 500);
         
@@ -3350,7 +3381,7 @@ Examples:
             row_path = os.path.join(out_dir, 'row.html')
             create_webpage_2frames(urls[:2], labels[:2], row_path, zoom_factor=args.zoom, layout='row')
             
-            print(f"Created 3 layout files: matrix.html, column.html, row.html")
+            print(f"Created 4 layout files: overlay.html, matrix.html, column.html, row.html")
             
         elif num_urls >= 4:
             # Create multiple layout files for 4 frames
@@ -3364,11 +3395,11 @@ Examples:
             column_path = os.path.join(out_dir, 'column.html')
             create_webpage_4frames(urls[:4], labels[:4], column_path, zoom_factor=args.zoom, layout='column')
             
-            print(f"Created 2 layout files: matrix.html, column.html")
+            print(f"Created 3 layout files: overlay.html, matrix.html, column.html")
         else:
             # Invalid number of entries for 2/4 frame layouts, but overlay.html was created
             print(f"Note: Found {num_urls} URLs. Need exactly 2 or at least 4 URLs for matrix/column layouts.")
-            print(f"However, overlay.html has been created with all {num_urls} frames.")
+            print(f"Created overlay.html with all {num_urls} frames.")
             return 0
     except Exception as e:
         import traceback
