@@ -10,6 +10,7 @@ Layout:
 """
 import os
 import re
+import json
 import argparse
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -2557,6 +2558,302 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
     return output_path
 
 
+def extract_coordinates_from_url(url):
+    """Extract lat, lon, and zoom from URL path format /start/{lat}/{lon}/{zoom}."""
+    try:
+        parsed = urlparse(url)
+        path_parts = parsed.path.strip('/').split('/')
+        
+        if len(path_parts) >= 4 and path_parts[0] == 'start':
+            lat = float(path_parts[1])
+            lon = float(path_parts[2])
+            zoom = float(path_parts[3])
+            return lat, lon, zoom
+    except (ValueError, IndexError):
+        pass
+    
+    # Try to get from query parameters as fallback
+    try:
+        parsed = urlparse(url)
+        query_params = parse_qs(parsed.query)
+        if 'lat' in query_params and 'lon' in query_params:
+            lat = float(query_params['lat'][0])
+            lon = float(query_params['lon'][0])
+            zoom = float(query_params.get('zoom', ['10'])[0])
+            return lat, lon, zoom
+    except (ValueError, KeyError):
+        pass
+    
+    return None, None, None
+
+
+def create_overlay_html(urls, labels, output_path='overlay.html', zoom_factor=None):
+    """Create an overlay HTML page with all frames overlain and a dropdown to select dataset."""
+    
+    if not urls:
+        raise ValueError("No URLs provided")
+    
+    # Prepare data for each frame
+    frames_data = []
+    for i, url in enumerate(urls):
+        label = labels[i] if i < len(labels) else f'Dataset {i+1}'
+        frames_data.append({
+            'url': apply_zoom_factor(url, zoom_factor),
+            'label': label
+        })
+    
+    # Generate JavaScript for frames data using JSON for proper escaping
+    frames_js = json.dumps(frames_data, indent=8)
+    
+    # Generate options HTML for dropdown
+    options_html = ''
+    for i, frame in enumerate(frames_data):
+        options_html += f'            <option value="{i}">{frame["label"]}</option>\n'
+    
+    # Create HTML content - similar to good_create_insarmaps_framepage.py
+    html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>InSAR Maps - Frame Overlay</title>
+    <style>
+        body {{
+            margin: 0;
+            padding: 10px;
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+        }}
+        .frame-selector {{
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: white;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }}
+        .frame-selector label {{
+            font-weight: bold;
+            font-size: 14px;
+            color: #333;
+        }}
+        .frame-selector select {{
+            padding: 6px 12px;
+            font-size: 14px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: white;
+            cursor: pointer;
+            flex: 1;
+            max-width: 300px;
+        }}
+        .frame-selector select:focus {{
+            outline: none;
+            border-color: #4a90e2;
+        }}
+        .container {{
+            width: 100%;
+            height: calc(100vh - 80px);
+            max-width: 100%;
+            position: relative;
+        }}
+        .panel {{
+            background-color: white;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+            transition: box-shadow 0.2s;
+            display: none;
+        }}
+        .panel.active {{
+            display: block;
+        }}
+        .panel:hover {{
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }}
+        .panel.active {{
+            box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.5);
+        }}
+        .panel-header {{
+            background-color: #4a90e2;
+            color: white;
+            padding: 8px 12px;
+            font-size: 14px;
+            font-weight: bold;
+            margin: 0;
+        }}
+        .panel iframe {{
+            width: 100%;
+            height: calc(100% - 36px);
+            border: none;
+            display: block;
+        }}
+    </style>
+</head>
+<body>
+    <div class="frame-selector">
+        <label for="frame-select">Select dataset:</label>
+        <select id="frame-select">
+{options_html}        </select>
+    </div>
+    <div class="container">
+        <!-- Panels will be created dynamically for each frame -->
+    </div>
+    
+    <script>
+        // Frames data
+        const frames = {frames_js};
+        
+        // Track iframe load states
+        const iframeStates = {{}};
+        const panels = [];
+        let currentLoadIndex = 0;
+        
+        // Create panels for each frame (but don't load iframes yet)
+        const container = document.querySelector('.container');
+        
+        frames.forEach((frame, index) => {{
+            const panel = document.createElement('div');
+            panel.className = 'panel';
+            panel.id = `panel${{index}}`;
+            if (index === 0) {{
+                panel.classList.add('active');
+            }}
+            
+            const header = document.createElement('div');
+            header.className = 'panel-header';
+            header.textContent = frame.label;
+            
+            const iframe = document.createElement('iframe');
+            iframe.id = `iframe${{index}}`;
+            iframe.title = frame.label;
+            iframe.setAttribute('allowfullscreen', '');
+            // Don't set src yet - will load sequentially
+            
+            // Track state
+            iframeStates[iframe.id] = {{ loaded: false }};
+            
+            panel.appendChild(header);
+            panel.appendChild(iframe);
+            container.appendChild(panel);
+            panels.push(panel);
+        }});
+        
+        // Sequential loading function
+        function loadNextIframe() {{
+            if (currentLoadIndex >= frames.length) {{
+                console.log('All iframes loaded');
+                return;
+            }}
+            
+            const iframe = document.getElementById(`iframe${{currentLoadIndex}}`);
+            const panel = panels[currentLoadIndex];
+            const frame = frames[currentLoadIndex];
+            const state = iframeStates[iframe.id];
+            
+            if (!iframe || !panel) {{
+                console.error(`Could not find iframe or panel at index ${{currentLoadIndex}}`);
+                currentLoadIndex++;
+                loadNextIframe();
+                return;
+            }}
+            
+            console.log(`Loading iframe ${{currentLoadIndex + 1}}/${{frames.length}}: ${{frame.label}}`);
+            
+            // Make this panel active and visible
+            panels.forEach(p => p.classList.remove('active'));
+            panel.classList.add('active');
+            
+            // Set iframe source
+            iframe.src = frame.url;
+            
+            // Use load event to detect when iframe is loaded
+            const onIframeLoad = () => {{
+                if (state.loaded) return; // Already processed
+                
+                state.loaded = true;
+                console.log(`Iframe ${{currentLoadIndex + 1}} loaded, waiting for colorscale adjustment...`);
+                
+                // Wait 1 second after load for AJAX call to /preLoad to complete
+                // and colorscale to adjust to data-derived values
+                setTimeout(() => {{
+                    console.log(`Finished processing iframe ${{currentLoadIndex + 1}}, moving to next`);
+                    currentLoadIndex++;
+                    
+                    // Load next iframe
+                    loadNextIframe();
+                }}, 1000);
+            }};
+            
+            // Add load event listener
+            iframe.addEventListener('load', onIframeLoad);
+            
+            // Timeout fallback - if iframe doesn't load within 10 seconds, move on
+            setTimeout(() => {{
+                if (!state.loaded) {{
+                    console.warn(`Iframe ${{currentLoadIndex + 1}} did not load within timeout, moving to next`);
+                    iframe.removeEventListener('load', onIframeLoad);
+                    state.loaded = true; // Mark as loaded to prevent infinite loop
+                    currentLoadIndex++;
+                    loadNextIframe();
+                }}
+            }}, 10000);
+        }}
+        
+        // Frame selector functionality - switch between datasets
+        const frameSelect = document.getElementById('frame-select');
+        if (frameSelect) {{
+            frameSelect.addEventListener('change', (e) => {{
+                const selectedIndex = parseInt(e.target.value);
+                
+                // Hide all panels
+                panels.forEach(panel => {{
+                    panel.classList.remove('active');
+                }});
+                
+                // Show selected panel
+                if (selectedIndex >= 0 && selectedIndex < panels.length) {{
+                    const selectedPanel = panels[selectedIndex];
+                    selectedPanel.classList.add('active');
+                }}
+            }});
+            
+            // Initialize: first panel active by default
+            if (panels.length > 0) {{
+                frameSelect.value = '0';
+            }}
+        }}
+        
+        // Start loading iframes sequentially when page loads
+        window.addEventListener('DOMContentLoaded', () => {{
+            setTimeout(() => {{
+                loadNextIframe();
+            }}, 100);
+        }});
+    </script>
+</body>
+</html>"""
+    
+    # Write to output file
+    with open(output_path, 'w') as f:
+        f.write(html_content)
+    
+    print(f"Overlay webpage created: {os.path.abspath(output_path)}")
+    return output_path
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Create a webpage with 2 or 4 iframes from a log file containing URLs.',
@@ -2598,46 +2895,53 @@ Examples:
         num_urls = len(urls)
         print(f"Found {num_urls} URLs in {log_path}")
         
+        # Extract labels from all URLs
+        labels = [get_label_from_url(url) for url in urls]
+        
+        # Create overlay.html with all frames (works for any number of URLs)
+        overlay_path = os.path.join(out_dir, 'overlay.html')
+        try:
+            create_overlay_html(urls, labels, overlay_path, zoom_factor=args.zoom)
+        except Exception as e:
+            print(f"Warning: Could not create overlay.html: {e}")
+        
         # Count entries and call appropriate function
         if num_urls == 2:
-            # Extract labels from URLs
-            labels = [get_label_from_url(url) for url in urls[:2]]
             # Create multiple layout files for 2 frames
             base_path = os.path.splitext(args.outfile)[0] if args.outfile else 'multi_frame_page'
             
             # Create matrix.html (2 columns)
             matrix_path = os.path.join(out_dir, 'matrix.html')
-            create_webpage_2frames(urls[:2], labels, matrix_path, zoom_factor=args.zoom, layout='matrix')
+            create_webpage_2frames(urls[:2], labels[:2], matrix_path, zoom_factor=args.zoom, layout='matrix')
             
             # Create column.html (2 rows)
             column_path = os.path.join(out_dir, 'column.html')
-            create_webpage_2frames(urls[:2], labels, column_path, zoom_factor=args.zoom, layout='column')
+            create_webpage_2frames(urls[:2], labels[:2], column_path, zoom_factor=args.zoom, layout='column')
             
             # Create row.html (same as matrix - 2 columns)
             row_path = os.path.join(out_dir, 'row.html')
-            create_webpage_2frames(urls[:2], labels, row_path, zoom_factor=args.zoom, layout='row')
+            create_webpage_2frames(urls[:2], labels[:2], row_path, zoom_factor=args.zoom, layout='row')
             
             print(f"Created 3 layout files: matrix.html, column.html, row.html")
             
         elif num_urls >= 4:
-            # Extract labels from URLs
-            labels = [get_label_from_url(url) for url in urls[:4]]
             # Create multiple layout files for 4 frames
             base_path = os.path.splitext(args.outfile)[0] if args.outfile else 'multi_frame_page'
             
             # Create matrix.html (2x2 grid)
             matrix_path = os.path.join(out_dir, 'matrix.html')
-            create_webpage_4frames(urls[:4], labels, matrix_path, zoom_factor=args.zoom, layout='matrix')
+            create_webpage_4frames(urls[:4], labels[:4], matrix_path, zoom_factor=args.zoom, layout='matrix')
             
             # Create column.html (4 rows)
             column_path = os.path.join(out_dir, 'column.html')
-            create_webpage_4frames(urls[:4], labels, column_path, zoom_factor=args.zoom, layout='column')
+            create_webpage_4frames(urls[:4], labels[:4], column_path, zoom_factor=args.zoom, layout='column')
             
             print(f"Created 2 layout files: matrix.html, column.html")
         else:
-            # Invalid number of entries
-            print(f"Error: Found {num_urls} URLs. Need exactly 2 or at least 4 URLs.")
-            return 1
+            # Invalid number of entries for 2/4 frame layouts, but overlay.html was created
+            print(f"Note: Found {num_urls} URLs. Need exactly 2 or at least 4 URLs for matrix/column layouts.")
+            print(f"However, overlay.html has been created with all {num_urls} frames.")
+            return 0
     except Exception as e:
         import traceback
         print(f"Error creating webpage: {e}")
