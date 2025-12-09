@@ -3501,7 +3501,7 @@ Examples:
             row_path = os.path.join(out_dir, 'row.html')
             create_webpage_2frames(urls[:2], labels[:2], row_path, zoom_factor=args.zoom, layout='row')
             
-            print(f"Created 4 layout files: overlay.html, matrix.html, column.html, row.html")
+            print(f"Created layout files: overlay.html, matrix.html, column.html, row.html")
             
         elif num_urls >= 4:
             # Create multiple layout files for 4 frames
@@ -3515,7 +3515,7 @@ Examples:
             column_path = os.path.join(out_dir, 'column.html')
             create_webpage_4frames(urls[:4], labels[:4], column_path, zoom_factor=args.zoom, layout='column')
             
-            print(f"Created 3 layout files: overlay.html, matrix.html, column.html")
+            print(f"Created layout files: overlay.html, matrix.html, column.html")
         else:
             # Invalid number of entries for 2/4 frame layouts, but overlay.html was created
             print(f"Note: Found {num_urls} URLs. Need exactly 2 or at least 4 URLs for matrix/column layouts.")
