@@ -219,6 +219,8 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
             align-items: center;
             justify-content: space-between;
             position: relative;
+            height: 36px;
+            box-sizing: border-box;
         }}
         .panel-header-title {{
             flex: 1;
@@ -250,10 +252,12 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
             gap: 6px;
             margin-left: auto;
             background-color: rgba(255, 255, 255, 0.2);
-            padding: 4px 8px;
+            padding: 1px 8px;
             border-radius: 4px;
             flex-shrink: 0;
             pointer-events: auto;
+            height: 20px;
+            box-sizing: border-box;
         }}
         .url-control:hover {{
             background-color: rgba(255, 255, 255, 0.3);
@@ -268,7 +272,7 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
             flex: 1;
             min-width: 150px;
             max-width: 300px;
-            padding: 4px 8px;
+            padding: 1px 8px;
             border: 1px solid rgba(255, 255, 255, 0.3);
             border-radius: 3px;
             font-size: 11px;
@@ -281,6 +285,9 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
             -moz-user-select: text;
             -ms-user-select: text;
             pointer-events: auto !important;
+            height: 18px;
+            box-sizing: border-box;
+            line-height: 16px;
         }}
         .url-control input:focus {{
             outline: none;
@@ -291,7 +298,7 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
             color: #999;
         }}
         .url-control button {{
-            padding: 4px 10px;
+            padding: 1px 10px;
             background-color: rgba(255, 255, 255, 0.9);
             color: #4a90e2;
             border: 1px solid rgba(255, 255, 255, 0.3);
@@ -301,6 +308,9 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
             font-weight: bold;
             white-space: nowrap;
             pointer-events: auto;
+            height: 18px;
+            box-sizing: border-box;
+            line-height: 16px;
         }}
         .url-control button:hover {{
             background-color: white;
@@ -1313,6 +1323,8 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
             align-items: center;
             justify-content: space-between;
             position: relative;
+            height: 36px;
+            box-sizing: border-box;
         }}
         .panel-header-title {{
             flex: 1;
@@ -1350,10 +1362,12 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
             gap: 6px;
             margin-left: auto;
             background-color: rgba(255, 255, 255, 0.2);
-            padding: 4px 8px;
+            padding: 1px 8px;
             border-radius: 4px;
             flex-shrink: 0;
             pointer-events: auto;
+            height: 20px;
+            box-sizing: border-box;
         }}
         .url-control:hover {{
             background-color: rgba(255, 255, 255, 0.3);
@@ -1368,7 +1382,7 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
             flex: 1;
             min-width: 150px;
             max-width: 300px;
-            padding: 4px 8px;
+            padding: 1px 8px;
             border: 1px solid rgba(255, 255, 255, 0.3);
             border-radius: 3px;
             font-size: 11px;
@@ -1381,6 +1395,9 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
             -moz-user-select: text;
             -ms-user-select: text;
             pointer-events: auto !important;
+            height: 18px;
+            box-sizing: border-box;
+            line-height: 16px;
         }}
         .url-control input:focus {{
             outline: none;
@@ -1391,7 +1408,7 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
             color: #999;
         }}
         .url-control button {{
-            padding: 4px 10px;
+            padding: 1px 10px;
             background-color: rgba(255, 255, 255, 0.9);
             color: #4a90e2;
             border: 1px solid rgba(255, 255, 255, 0.3);
@@ -1401,6 +1418,9 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
             font-weight: bold;
             white-space: nowrap;
             pointer-events: auto;
+            height: 18px;
+            box-sizing: border-box;
+            line-height: 16px;
         }}
         .url-control button:hover {{
             background-color: white;
