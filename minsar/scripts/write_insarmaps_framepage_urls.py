@@ -22,10 +22,10 @@ def create_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    write_insarmaps_framepage.py hvGalapagos
-    write_insarmaps_framepage.py hvGalapagos/*html
-    write_insarmaps_framepage.py hvGalapagos/*html --outdir hvGalapagos
-    cd hvGalapagos; write_insarmaps_framepage.py *html
+    write_insarmaps_framepage_urls.py hvGalapagos
+    write_insarmaps_framepage_urls.py hvGalapagos/*html
+    write_insarmaps_framepage_urls.py hvGalapagos/*html --outdir hvGalapagos
+    cd hvGalapagos; write_insarmaps_framepage_urls.py *html
         """
     )
 
