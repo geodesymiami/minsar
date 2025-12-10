@@ -127,15 +127,8 @@ else
     UPDATE_MODE=""
 fi
 
-# checks whether filename contains a SUFFIX (non-12 characters)
-SUFFIX=$(basename "$INPUT_FILE" .he5 | awk -F'_' '{
-    for(i=NF; i>=1; i--) {
-        if(length($i) != 12) {
-            print $i
-            exit
-        }
-    }
-}')
+# checks whether filename contains a SUFFIX (non-11 characters. If 11 don't start with N or S)
+SUFFIX=$(echo "$INPUT_BASENAME" | awk -F'[_.]' '{s=$(NF-1); if (length(s)<11) print s; else if (length(s)==11 && s !~ /^[SN]/) print s; else print ""}');
 if [[ -n "$SUFFIX" ]]; then
     SUFFIX_FLAG="--suffix ${SUFFIX}"
 else
