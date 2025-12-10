@@ -79,7 +79,7 @@ def main(iargs=None):
         for line in f:
             line = line.strip()
             if line:  # Skip empty lines
-                url = f"http://{REMOTEHOST_DATA}{REMOTE_DIR}{line}"
+                url = f"wget http://{REMOTEHOST_DATA}{REMOTE_DIR}{line}"
                 download_urls.append(url)
     
     if not download_urls:

@@ -1408,6 +1408,9 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
             }}, 5000);
         }});
     </script>
+    <p style="margin: 20px; font-family: Arial, sans-serif; text-align: center;">
+        Data download: <a href="download_commands.txt" target="_blank">link</a>
+    </p>
 </body>
 </html>"""
     
@@ -2627,6 +2630,9 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
             }}, 5000);
         }});
     </script>
+    <p style="margin: 20px; font-family: Arial, sans-serif; text-align: center;">
+        Data download: <a href="download_commands.txt" target="_blank">link</a>
+    </p>
 </body>
 </html>"""
     
@@ -3382,6 +3388,9 @@ def create_overlay_html(urls, labels, output_path='overlay.html', zoom_factor=No
             }}, 100);
         }});
     </script>
+    <p style="margin: 20px; font-family: Arial, sans-serif; text-align: center;">
+        Data download: <a href="download_commands.txt" target="_blank">link</a>
+    </p>
 </body>
 </html>"""
     
