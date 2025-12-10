@@ -18,17 +18,17 @@ source ${SCRIPT_DIR}/../lib/utils.sh
 get_path_without_scratchdir() {
     local file_path="$1"
     [[ -z "$file_path" || ! -f "$file_path" ]] && return
-    
+
     # Get absolute path, resolving symlinks
     local abs_path=$(realpath "$file_path" 2>/dev/null)
     [[ -z "$abs_path" ]] && abs_path=$(cd "$(dirname "$file_path")" && pwd)/$(basename "$file_path")
-    
+
     # Resolve SCRATCHDIR symlinks and remove prefix if it exists
     if [[ -n "${SCRATCHDIR:-}" ]]; then
         local scratchdir_resolved=$(realpath "$SCRATCHDIR" 2>/dev/null || (cd "$SCRATCHDIR" && pwd))
         [[ "$abs_path" == "$scratchdir_resolved"/* ]] && abs_path="${abs_path#$scratchdir_resolved/}"
     fi
-    
+
     echo "$abs_path"
 }
 
@@ -223,7 +223,7 @@ if [[ $ingest_los_flag == "1" ]]; then
     ingest_insarmaps.bash "../$FILE1" --ref-lalo "${ref_lalo[@]}"
     FILE1_HE5=$(ls -t "../$FILE1"/*.he5 2>/dev/null | head -n 1) || FILE1_HE5="../$FILE1"
     flight_direction=$(get_flight_direction.py "$FILE1_HE5")
-  
+
     echo "##############################################"
     ingest_insarmaps.bash "../$FILE2" --ref-lalo "${ref_lalo[@]}"
     FILE2_HE5=$(ls -t "../$FILE2"/*.he5 2>/dev/null | head -n 1) || FILE2_HE5="../$FILE2"
@@ -250,12 +250,7 @@ cd "$ORIGINAL_DIR"
 
 # Create insarmaps framepage (using absolute paths since we're back in ORIGINAL_DIR)
 echo "##############################################"
-create_insarmaps_framepages.py" "$PROJECT_DIR/insarmaps.log" --outdir "$PROJECT_DIR"
-write_insarmaps_framepage_urls.py" "$PROJECT_DIR/insarmaps.log" --outdir "$PROJECT_DIR"
-create_data_download_commands.py hvGalapagos/data_files.txt
-
-
-
-
-
+create_insarmaps_framepages.py "$PROJECT_DIR/insarmaps.log" --outdir "$PROJECT_DIR"
+write_insarmaps_framepage_urls.py "$PROJECT_DIR" --outdir "$PROJECT_DIR"
+create_data_download_commands.py "$PROJECT_DIR/data_files.txt" --outdir "$PROJECT_DIR"
 
