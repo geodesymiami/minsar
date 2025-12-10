@@ -252,5 +252,8 @@ cd "$ORIGINAL_DIR"
 echo "##############################################"
 create_insarmaps_framepages.py "$PROJECT_DIR/insarmaps.log" --outdir "$PROJECT_DIR"
 write_insarmaps_framepage_urls.py "$PROJECT_DIR" --outdir "$PROJECT_DIR"
-create_data_download_commands.py "$PROJECT_DIR/data_files.txt" 
+create_data_download_commands.py "$PROJECT_DIR/data_files.txt"
+
+echo "insarmaps frames created:"
+cat "$PROJECT_DIR/frames_urls.log.
 

@@ -24,11 +24,11 @@ Examples:
     create_data_download_commands.py data_files.txt --outfile download_urls.txt
         """
     )
-    
+
     parser.add_argument('input', help='Path to data_files.txt file')
     parser.add_argument('--outfile', default='download_commands.txt',
                        help='Output file name (default: download_commands.txt)')
-    
+
     return parser
 
 
@@ -42,7 +42,7 @@ def cmd_line_parse(iargs=None):
 def get_sort_key(url):
     """Get sort key for URL based on desc, asc, vert, horz priority."""
     url_lower = url.lower()
-    
+
     # Priority: desc (0), asc (1), vert (2), horz (3), others (4)
     if 'desc' in url_lower:
         return (0, url_lower)
@@ -58,21 +58,21 @@ def get_sort_key(url):
 
 def main(iargs=None):
     inps = cmd_line_parse(iargs)
-    
+
     if iargs is not None:
         input_arguments = iargs
     else:
         input_arguments = sys.argv[1::]
-    
+
     REMOTEHOST_DATA = os.getenv('REMOTEHOST_DATA')
-    REMOTE_DIR = os.getenv('REMOTE_DIR', '/data/HDF5EOS/')    
-    
+    REMOTE_DIR = os.getenv('REMOTE_DIR', '/data/HDF5EOS/')
+
     input_path = os.path.abspath(inps.input)
 
     # Determine output file location (same directory as input file)
     input_dir = os.path.dirname(input_path)
     output_file = os.path.join(input_dir, inps.outfile)
-    
+
     # Read data_files.txt and create URLs
     download_urls = []
     with open(input_path, 'r') as f:
@@ -81,21 +81,21 @@ def main(iargs=None):
             if line:  # Skip empty lines
                 url = f"wget http://{REMOTEHOST_DATA}{REMOTE_DIR}{line}"
                 download_urls.append(url)
-    
+
     if not download_urls:
         print(f"Warning: No valid paths found in {input_path}")
         return 0
-    
+
     # Sort URLs: desc, asc, vert, horz, then others
     download_urls.sort(key=get_sort_key)
-    
+
     # Write download commands to output file
     with open(output_file, 'w') as f:
         for url in download_urls:
             f.write(url + '\n')
-    
-    print(f"Wrote {len(download_urls)} URL(s) to {output_file}")
-    
+
+    print(f"Wrote wget commands to {output_file}")
+
     return
 
 

@@ -144,7 +144,7 @@ def main(iargs=None):
 
     cwd = os.getcwd()
     html_files = find_html_files(inps.input, cwd)
-    
+
     out_dir = inps.outdir if inps.outdir else cwd
     out_dir = os.path.abspath(out_dir)
     output_file = os.path.join(out_dir, 'frames_urls.log')
@@ -159,7 +159,7 @@ def main(iargs=None):
         for url in frame_urls:
             f.write(url + '\n')
 
-    print(f"Wrote {len(frame_urls)} URL(s) to {output_file}")
+    print(f"Wrote URL(s) to {output_file}")
 
     return 0
 
