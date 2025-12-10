@@ -131,8 +131,8 @@ else
     REF_LON="${ref_lalo[1]}"
 fi
 
-echo "Input file: $INPUT_FILE" | tee -a "$LOG_FILE"
-echo "New reference point: lat=$REF_LAT, lon=$REF_LON" | tee -a "$LOG_FILE"
+echo "Input file: $INPUT_FILE"
+echo "New reference point: lat=$REF_LAT, lon=$REF_LON"
 
 # Determine output filename
 if [[ -z "$output_file" ]]; then
@@ -166,22 +166,22 @@ echo "Running: $EXTRACT_CMD" | tee -a "$LOG_FILE"
 eval $EXTRACT_CMD
 
 # Determine coordinate system by checking for geo_ prefix
-if [[ -f "geo_timeseries.h5" ]]; then
+if [[ -f "$INPUT_DIR/geo_timeseries.h5" ]]; then
     COORDS="GEO"
-    TS_FILE="geo_timeseries.h5"
-    MASK_FILE="geo_mask.h5"
-    TCOH_FILE="geo_temporalCoherence.h5"
-    SCOH_FILE="geo_avgSpatialCoherence.h5"
-    GEOM_FILE="geo_geometryRadar.h5"
-    SHADOW_FILE="geo_shadowMask.h5"
-elif [[ -f "timeseries.h5" ]]; then
-    COORDS="RADAR"
-    TS_FILE="timeseries.h5"
-    MASK_FILE="mask.h5"
-    TCOH_FILE="temporalCoherence.h5"
-    SCOH_FILE="avgSpatialCoherence.h5"
-    GEOM_FILE="geometryRadar.h5"
-    SHADOW_FILE="shadowMask.h5"
+    TS_FILE="$INPUT_DIR/geo_timeseries.h5"
+    MASK_FILE="$INPUT_DIR/geo_mask.h5"
+    TCOH_FILE="$INPUT_DIR/geo_temporalCoherence.h5"
+    SCOH_FILE="$INPUT_DIR/geo_avgSpatialCoherence.h5"
+    GEOM_FILE="$INPUT_DIR/geo_geometryRadar.h5"
+    SHADOW_FILE="$INPUT_DIR/geo_shadowMask.h5"
+elif [[ -f "$INPUT_DIR/timeseries.h5" ]]; then
+    COORDS="$INPUT_DIR/RADAR"
+    TS_FILE="$INPUT_DIR/timeseries.h5"
+    MASK_FILE="$INPUT_DIR/mask.h5"
+    TCOH_FILE="$INPUT_DIR/temporalCoherence.h5"
+    SCOH_FILE="$INPUT_DIR/avgSpatialCoherence.h5"
+    GEOM_FILE="$INPUT_DIR/geometryRadar.h5"
+    SHADOW_FILE="$INPUT_DIR/shadowMask.h5"
 else
     echo "Error: Could not find extracted timeseries file" | tee -a "$LOG_FILE"
     exit 1
@@ -203,6 +203,8 @@ done
 echo "####################################" | tee -a "$LOG_FILE"
 echo "Step 2: Changing reference point" | tee -a "$LOG_FILE"
 echo "####################################" | tee -a "$LOG_FILE"
+
+cd $INPUT_DIR
 
 if [[ "$COORDS" == "RADAR" ]]; then
     # REF_CMD="reference_point.py timeseries.h5 --lookup inputs/geometryRadar.h5 --lat $REF_LAT --lon $REF_LON"
