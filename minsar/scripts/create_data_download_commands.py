@@ -79,7 +79,9 @@ def main(iargs=None):
         for line in f:
             line = line.strip()
             if line:  # Skip empty lines
-                url = f"wget http://{REMOTEHOST_DATA}{REMOTE_DIR}{line}"
+                # Use https for insarmaps.miami.edu, http for others
+                protocol = "https" if "insarmaps.miami.edu" in line else "http"
+                url = f"wget {protocol}://{REMOTEHOST_DATA}{REMOTE_DIR}{line}"
                 download_urls.append(url)
 
     if not download_urls:

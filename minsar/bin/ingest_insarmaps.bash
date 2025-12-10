@@ -185,7 +185,13 @@ DATASET_NAME=$(basename "${he5_file%.he5}")
 # Generate insarmaps URLs and store in array
 INSARMAPS_URLS=()
 for insarmaps_host in "${HOSTS[@]}"; do
-    url="http://${insarmaps_host}/start/${REF_LAT}/${REF_LON}/11.0?flyToDatasetCenter=true&startDataset=${DATASET_NAME}"
+    # Use https for insarmaps.miami.edu, http for others
+    if [[ "$insarmaps_host" == *"insarmaps.miami.edu"* ]]; then
+        protocol="https"
+    else
+        protocol="http"
+    fi
+    url="${protocol}://${insarmaps_host}/start/${REF_LAT}/${REF_LON}/11.0?flyToDatasetCenter=true&startDataset=${DATASET_NAME}"
     INSARMAPS_URLS+=("$url")
 done
 
