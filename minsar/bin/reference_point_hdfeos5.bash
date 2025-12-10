@@ -119,6 +119,29 @@ fi
 INPUT_DIR=$(dirname "$INPUT_FILE")
 INPUT_BASENAME=$(basename "$INPUT_FILE")
 
+# update_attr=$(python3 -c "import h5py; f=h5py.File('$INPUT_FILE', 'r'); print(f'{f.attrs.get(\"mintpy.save.hdfEos5.update\", \"no\")}')" 2>/dev/null || echo "no")
+# if [[ "$update_attr" == "yes" ]]; then
+if  [[ "$INPUT_FILE" == *"XXXXXXXX"* ]] ; then
+    UPDATE_MODE="--update"
+else
+    UPDATE_MODE=""
+fi
+
+# checks whether filename contains a SUFFIX (non-12 characters)
+SUFFIX=$(basename "$INPUT_FILE" .he5 | awk -F'_' '{
+    for(i=NF; i>=1; i--) {
+        if(length($i) != 12) {
+            print $i
+            exit
+        }
+    }
+}')
+if [[ -n "$SUFFIX" ]]; then
+    SUFFIX_FLAG="--suffix ${SUFFIX}"
+else
+    SUFFIX_FLAG=""
+fi
+
 # Parse reference point coordinates
 if [[ ${#ref_lalo[@]} -eq 1 ]]; then
     # Comma-separated format
@@ -134,160 +157,66 @@ fi
 echo "Input file: $INPUT_FILE"
 echo "New reference point: lat=$REF_LAT, lon=$REF_LON"
 
-# Determine output filename
-if [[ -z "$output_file" ]]; then
-    # Create backup and overwrite original
-    BACKUP_FILE="${INPUT_FILE}.bak"
-    echo "Creating backup: $BACKUP_FILE" | tee -a "$LOG_FILE"
-    cp "$INPUT_FILE" "$BACKUP_FILE"
-    OUTPUT_FILE="$INPUT_FILE"
-else
-    # Convert output to absolute path if relative
-    if [[ ! "$output_file" =~ ^/ ]]; then
-        OUTPUT_FILE="$PWD/$output_file"
-    else
-        OUTPUT_FILE="$output_file"
-    fi
-    OUTPUT_DIR=$(dirname "$OUTPUT_FILE")
-    # Create output directory if it doesn't exist
-    mkdir -p "$OUTPUT_DIR"
-fi
+OUTPUT_FILE="$INPUT_FILE"
 
 OUTPUT_BASENAME=$(basename "$OUTPUT_FILE")
-echo "Output file: $OUTPUT_FILE" | tee -a "$LOG_FILE"
+echo "Output file: $OUTPUT_FILE" 
 
 # Step 1: Extract HDFEOS5 components
-echo "####################################" | tee -a "$LOG_FILE"
-echo "Step 1: Extracting HDFEOS5 components" | tee -a "$LOG_FILE"
-echo "####################################" | tee -a "$LOG_FILE"
+echo "####################################"
+echo "Step 1: Extracting HDFEOS5 component"
 
 EXTRACT_CMD="extract_hdfeos5.py \"$INPUT_FILE\" --all"
-echo "Running: $EXTRACT_CMD" | tee -a "$LOG_FILE"
+echo "Running: $EXTRACT_CMD"
 eval $EXTRACT_CMD
 
 # Determine coordinate system by checking for geo_ prefix
 if [[ -f "$INPUT_DIR/geo_timeseries.h5" ]]; then
     COORDS="GEO"
-    TS_FILE="$INPUT_DIR/geo_timeseries.h5"
-    MASK_FILE="$INPUT_DIR/geo_mask.h5"
-    TCOH_FILE="$INPUT_DIR/geo_temporalCoherence.h5"
-    SCOH_FILE="$INPUT_DIR/geo_avgSpatialCoherence.h5"
-    GEOM_FILE="$INPUT_DIR/geo_geometryRadar.h5"
-    SHADOW_FILE="$INPUT_DIR/geo_shadowMask.h5"
-elif [[ -f "$INPUT_DIR/timeseries.h5" ]]; then
-    COORDS="$INPUT_DIR/RADAR"
-    TS_FILE="$INPUT_DIR/timeseries.h5"
-    MASK_FILE="$INPUT_DIR/mask.h5"
-    TCOH_FILE="$INPUT_DIR/temporalCoherence.h5"
-    SCOH_FILE="$INPUT_DIR/avgSpatialCoherence.h5"
-    GEOM_FILE="$INPUT_DIR/geometryRadar.h5"
-    SHADOW_FILE="$INPUT_DIR/shadowMask.h5"
+ elif [[ -f "$INPUT_DIR/timeseries.h5" ]]; then
+    COORDS="RADAR"
 else
-    echo "Error: Could not find extracted timeseries file" | tee -a "$LOG_FILE"
+    echo "Error: Could not find extracted timeseries file"
     exit 1
 fi
-
-echo "Detected coordinate system: $COORDS" | tee -a "$LOG_FILE"
-echo "Timeseries file: $TS_FILE" | tee -a "$LOG_FILE"
-
-# Verify all required files exist
-REQUIRED_FILES=("$TS_FILE" "$MASK_FILE" "$TCOH_FILE" "$SCOH_FILE" "$GEOM_FILE")
-for file in "${REQUIRED_FILES[@]}"; do
-    if [[ ! -f "$file" ]]; then
-        echo "Error: Required extracted file not found: $file" | tee -a "$LOG_FILE"
-        exit 1
-    fi
-done
-
-# Step 2: Change reference point
-echo "####################################" | tee -a "$LOG_FILE"
-echo "Step 2: Changing reference point" | tee -a "$LOG_FILE"
-echo "####################################" | tee -a "$LOG_FILE"
-
-cd $INPUT_DIR
+echo "Detected coordinate system: $COORDS"
 
 if [[ "$COORDS" == "RADAR" ]]; then
-    # REF_CMD="reference_point.py timeseries.h5 --lookup inputs/geometryRadar.h5 --lat $REF_LAT --lon $REF_LON"
-    #REF_CMD="reference_point.py timeseries.h5 --lookup inputs/geometryRadar.h5 --lat $REF_LAT --lon $REF_LON ; add_ref_lalo_to_file timeseries.h5 --ref-lalo $REF_LAT $REF_LON"
     REF_CMD="reference_point.py timeseries.h5 --lookup geometryRadar.h5 --lat $REF_LAT --lon $REF_LON ; add_ref_lalo_to_file timeseries.h5 --ref-lalo $REF_LAT $REF_LON"
-
+    SAVE_CMD="save_hdfeos5.py timeseries.h5 --tc temporalCoherence.h5 --asc avgSpatialCoherence.h5 -m mask.h5 -g geometryRadar.h5 --subset $UPDATE_MODE $SUFFIX_FLAG"
+    EXTRACTED_FILES=("timeseries.h5" "mask.h5" "temporalCoherence.h5" "avgSpatialCoherence.h5" "geometryRadar.h5" "shadowMask.h5")
 else
     REF_CMD="reference_point.py geo_timeseries.h5 --lat $REF_LAT --lon $REF_LON"
+    SAVE_CMD="save_hdfeos5.py geo_timeseries.h5 --tc geo_temporalCoherence.h5 --asc geo_avgSpatialCoherence.h5 -m geo_mask.h5 -g geo_geometryRadar.h5 --subset $UPDATE_MODE $SUFFIX_FLAG"
+    EXTRACTED_FILES=("geo_timeseries.h5" "geo_mask.h5" "geo_temporalCoherence.h5" "geo_avgSpatialCoherence.h5" "geo_geometryRadar.h5" "geo_shadowMask.h5")
 fi
 
-echo "Running: $REF_CMD" | tee -a "$LOG_FILE"
+
+echo "Step 2: Changing reference point"
+cd $INPUT_DIR
+echo "Running: $REF_CMD"
 eval $REF_CMD
 
-# Step 3: Reconstruct HDFEOS5 file
-echo "####################################" | tee -a "$LOG_FILE"
-echo "Step 3: Reconstructing HDFEOS5 file" | tee -a "$LOG_FILE"
-echo "####################################" | tee -a "$LOG_FILE"
-
-# Get list of existing .he5 files before running save_hdfeos5.py
-EXISTING_HE5_FILES=$(ls -1 *.he5 2>/dev/null | sort || echo "")
-
-SAVE_CMD="save_hdfeos5.py \"$TS_FILE\" --tc \"$TCOH_FILE\" --asc \"$SCOH_FILE\" -m \"$MASK_FILE\" -g \"$GEOM_FILE\""
-echo "Running: $SAVE_CMD" | tee -a "$LOG_FILE"
+echo "Step 3: Reconstructing HDFEOS5 file"
+echo "Running: $SAVE_CMD"
 eval $SAVE_CMD
 
-# Find the newly created .he5 file (the one that wasn't there before)
-ALL_HE5_FILES=$(ls -1 *.he5 2>/dev/null | sort || echo "")
-GENERATED_FILE=""
-
-# Compare lists to find new file
-while IFS= read -r file; do
-    if ! echo "$EXISTING_HE5_FILES" | grep -q "^${file}$"; then
-        GENERATED_FILE="$file"
-        break
-    fi
-done <<< "$ALL_HE5_FILES"
-
-# If we couldn't find it by comparison, use the most recently modified .he5 file
-# (excluding the input file and backup)
-if [[ -z "$GENERATED_FILE" ]]; then
-    GENERATED_FILE=$(ls -t *.he5 2>/dev/null | grep -v "$INPUT_BASENAME" | grep -v ".bak$" | head -1 || echo "")
-fi
-
-if [[ -z "$GENERATED_FILE" ]]; then
-    echo "Error: Could not determine generated HDFEOS5 file" | tee -a "$LOG_FILE"
-    exit 1
-fi
-
-echo "Generated file: $GENERATED_FILE" | tee -a "$LOG_FILE"
-
-# Rename to desired output filename if different
-if [[ "$GENERATED_FILE" != "$OUTPUT_BASENAME" ]]; then
-    echo "Moving $GENERATED_FILE to $OUTPUT_FILE" | tee -a "$LOG_FILE"
-    mv "$GENERATED_FILE" "$OUTPUT_FILE"
-fi
-
-# Verify output file exists
-if [[ ! -f "$OUTPUT_FILE" ]]; then
-    echo "Error: Output file was not created: $OUTPUT_FILE" | tee -a "$LOG_FILE"
-    exit 1
-fi
-
-echo "HDFEOS5 file reconstructed: $OUTPUT_FILE" | tee -a "$LOG_FILE"
+echo "HDFEOS5 file reconstructed: $OUTPUT_FILE"
 
 # Step 4: Cleanup (if not --keep-extracted)
 if [[ $keep_extracted -eq 0 ]]; then
-    echo "####################################" | tee -a "$LOG_FILE"
-    echo "Step 4: Cleaning up extracted files" | tee -a "$LOG_FILE"
-    echo "####################################" | tee -a "$LOG_FILE"
+    echo "####################################"
+    echo "Step 4: Cleaning up extracted files"
 
-    EXTRACTED_FILES=("$TS_FILE" "$MASK_FILE" "$TCOH_FILE" "$SCOH_FILE" "$GEOM_FILE" "$SHADOW_FILE")
     for file in "${EXTRACTED_FILES[@]}"; do
         if [[ -f "$file" ]]; then
             echo "Removing: $file" | tee -a "$LOG_FILE"
             rm -f "$file"
         fi
     done
-    echo "Cleanup complete" | tee -a "$LOG_FILE"
-else
-    echo "Keeping extracted files (--keep-extracted flag set)" | tee -a "$LOG_FILE"
 fi
 
-echo "####################################" | tee -a "$LOG_FILE"
-echo "Done! Output file: $OUTPUT_FILE" | tee -a "$LOG_FILE"
-echo "####################################" | tee -a "$LOG_FILE"
+echo "####################################"
+echo "Done! Output file: $OUTPUT_FILE"
+echo "####################################"
 
