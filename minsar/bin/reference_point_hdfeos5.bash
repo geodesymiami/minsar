@@ -206,7 +206,8 @@ echo "####################################" | tee -a "$LOG_FILE"
 
 if [[ "$COORDS" == "RADAR" ]]; then
     # REF_CMD="reference_point.py timeseries.h5 --lookup inputs/geometryRadar.h5 --lat $REF_LAT --lon $REF_LON"
-    REF_CMD="reference_point.py timeseries.h5 --lookup inputs/geometryRadar.h5 --lat $REF_LAT --lon $REF_LON ; add_ref_lalo_to_file timeseries.h5 --ref-lalo $REF_LAT $REF_LON"
+    #REF_CMD="reference_point.py timeseries.h5 --lookup inputs/geometryRadar.h5 --lat $REF_LAT --lon $REF_LON ; add_ref_lalo_to_file timeseries.h5 --ref-lalo $REF_LAT $REF_LON"
+    REF_CMD="reference_point.py timeseries.h5 --lookup geometryRadar.h5 --lat $REF_LAT --lon $REF_LON ; add_ref_lalo_to_file timeseries.h5 --ref-lalo $REF_LAT $REF_LON"
 
 else
     REF_CMD="reference_point.py geo_timeseries.h5 --lat $REF_LAT --lon $REF_LON"
@@ -271,7 +272,7 @@ if [[ $keep_extracted -eq 0 ]]; then
     echo "####################################" | tee -a "$LOG_FILE"
     echo "Step 4: Cleaning up extracted files" | tee -a "$LOG_FILE"
     echo "####################################" | tee -a "$LOG_FILE"
-    
+
     EXTRACTED_FILES=("$TS_FILE" "$MASK_FILE" "$TCOH_FILE" "$SCOH_FILE" "$GEOM_FILE" "$SHADOW_FILE")
     for file in "${EXTRACTED_FILES[@]}"; do
         if [[ -f "$file" ]]; then

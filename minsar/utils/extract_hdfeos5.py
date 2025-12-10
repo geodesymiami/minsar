@@ -42,43 +42,43 @@ def determine_coordinates(file_path):
     print("Detected coordinates: RADAR")
     return 'RADAR'
 
-def extract_mask(file_path, coords):
+def extract_mask(file_path, coords, out_dir=""):
     data, attr = readfile.read(file_path, datasetName='HDFEOS/GRIDS/timeseries/quality/mask')
     attr['FILE_TYPE'] = 'mask'
-    out_file = "geo_mask.h5" if coords=="GEO" else "mask.h5"
+    out_file = os.path.join(out_dir, "geo_mask.h5" if coords=="GEO" else "mask.h5")
     writefile.write(data, out_file=out_file, metadata=attr)
     print(f"Extracted mask -> {out_file}")
 
     return out_file
 
-def extract_avgSpatialCoherence(file_path, coords):
+def extract_avgSpatialCoherence(file_path, coords, out_dir=""):
     data, attr = readfile.read(file_path, datasetName='HDFEOS/GRIDS/timeseries/quality/avgSpatialCoherence')
     attr['FILE_TYPE'] = 'avgSpatialCoherence'
-    out_file = "geo_avgSpatialCoherence.h5" if coords=="GEO" else "avgSpatialCoherence.h5"
+    out_file = os.path.join(out_dir, "geo_avgSpatialCoherence.h5" if coords=="GEO" else "avgSpatialCoherence.h5")
     writefile.write(data, out_file=out_file, metadata=attr)
     print(f"Extracted avgSpatialCoherence -> {out_file}")
 
     return out_file
 
-def extract_temporalCoherence(file_path, coords):
+def extract_temporalCoherence(file_path, coords, out_dir=""):
     data, attr = readfile.read(file_path, datasetName='HDFEOS/GRIDS/timeseries/quality/temporalCoherence')
     attr['FILE_TYPE'] = 'temporalCoherence'
-    out_file = "geo_temporalCoherence.h5" if coords=="GEO" else "temporalCoherence.h5"
+    out_file = os.path.join(out_dir, "geo_temporalCoherence.h5" if coords=="GEO" else "temporalCoherence.h5")
     writefile.write(data, out_file=out_file, metadata=attr)
     print(f"Extracted temporalCoherence -> {out_file}")
 
     return out_file
 
-def extract_shadowMask(file_path, coords):
+def extract_shadowMask(file_path, coords, out_dir=""):
     data, attr = readfile.read(file_path, datasetName='HDFEOS/GRIDS/timeseries/geometry/shadowMask')
     attr['FILE_TYPE'] = 'shadowMask'
-    out_file = "geo_shadowMask.h5" if coords=="GEO" else "shadowMask.h5"
+    out_file = os.path.join(out_dir, "geo_shadowMask.h5" if coords=="GEO" else "shadowMask.h5")
     writefile.write(data, out_file=out_file, metadata=attr)
     print(f"Extracted shadowMask -> {out_file}")
 
     return out_file
 
-def extract_geometry(file_path, coords):
+def extract_geometry(file_path, coords, out_dir=""):
     group_path = 'HDFEOS/GRIDS/timeseries/geometry'
     slices = ['azimuthAngle', 'height', 'incidenceAngle', 'latitude', 'longitude', 'shadowMask', 'slantRangeDistance']
     geo_data = {}
@@ -94,18 +94,20 @@ def extract_geometry(file_path, coords):
             print(f"Warning: Could not extract slice '{s}' from {dset_path}: {e}", file=sys.stderr)
     geo_attr['FILE_TYPE'] = 'geometry'
     geo_attr['COORDINATES'] = coords
-    out_file = "geo_geometryRadar.h5" if coords=="GEO" else "geometryRadar.h5"
+    out_file = os.path.join(out_dir, "geo_geometryRadar.h5" if coords=="GEO" else "geometryRadar.h5")
     writefile.write(geo_data, out_file=out_file, metadata=geo_attr)
     print(f"Extracted geometry -> {out_file}")
 
+    if coords=="RADAR":
+        inputs_dir = os.path.join(out_dir, 'inputs')
+        os.makedirs(inputs_dir, exist_ok=True)
+        inputs_file = os.path.join(inputs_dir, 'geometryRadar.h5')
+        shutil.copy(out_file, inputs_file)
+        print(f"Copied geometryRadar.h5 into {inputs_dir}")
+
     return out_file
 
-    if coords=="RADAR":
-        os.makedirs('inputs',exist_ok=True)
-        shutil.copy('geometryRadar.h5', 'inputs')
-        print("Copied geometryRadar.h5 into inputs")
-
-def extract_timeseries(file_path, coords):
+def extract_timeseries(file_path, coords, out_dir=""):
     """
     Extract all displacement datasets from HDFEOS/GRIDS/timeseries/observation.
     Uses HDFEOS from mintpy.objects to obtain the date list.
@@ -127,7 +129,7 @@ def extract_timeseries(file_path, coords):
     data, attr  = readfile.read(file_path, datasetName=dataset_name_list)
 
     attr['FILE_TYPE'] = 'timeseries'
-    out_file = f"geo_timeseries.h5" if coords=="GEO" else "timeseries.h5"
+    out_file = os.path.join(out_dir, "geo_timeseries.h5" if coords=="GEO" else "timeseries.h5")
 
     dates = np.array(date_list, dtype='S8')
 
@@ -168,15 +170,29 @@ def main():
         sys.exit(1)
     file_path = file_list[0]
 
+    # Determine output directory from input file path
+    # If input is in a subdirectory (e.g., "mintpy/file.he5"), extract to that directory
+    # If input is just a filename (e.g., "file.he5"), extract to current directory
+    file_dir = os.path.dirname(file_path)
+    # Get relative path from current working directory
+    if file_dir:
+        # Normalize the path to handle "mintpy/" vs "mintpy\file.he5" etc.
+        out_dir = os.path.normpath(file_dir)
+    else:
+        out_dir = ""
+    # Create output directory if it doesn't exist
+    if out_dir and not os.path.exists(out_dir):
+        os.makedirs(out_dir, exist_ok=True)
+
     coords = determine_coordinates(file_path)
-    extract_mask(file_path, coords)
-    extract_avgSpatialCoherence(file_path, coords)
-    extract_temporalCoherence(file_path, coords)
-    extract_geometry(file_path, coords)
-    extract_shadowMask(file_path, coords)
+    extract_mask(file_path, coords, out_dir)
+    extract_avgSpatialCoherence(file_path, coords, out_dir)
+    extract_temporalCoherence(file_path, coords, out_dir)
+    extract_geometry(file_path, coords, out_dir)
+    extract_shadowMask(file_path, coords, out_dir)
 
     if args.all:
-        extract_timeseries(file_path, coords)
+        extract_timeseries(file_path, coords, out_dir)
 
 if __name__ == "__main__":
     main()
