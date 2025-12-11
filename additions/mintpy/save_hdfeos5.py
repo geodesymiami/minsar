@@ -200,7 +200,11 @@ def metadata_mintpy2unavco(meta_in, dateList, geom_file):
     unavco_meta['last_frame'] = int(meta.get('last_frame', unavco_meta['first_frame']))
 
     unavco_meta['atmos_correct_method']   = meta.get('atmos_correct_method', 'None')
-    unavco_meta['post_processing_method'] = 'MintPy'
+    
+    if 'miaplpy' in os.getcwd():
+        unavco_meta['post_processing_method'] = 'MiaplPy'
+    else:
+        unavco_meta['post_processing_method'] = 'MintPy'
     unavco_meta['processing_dem'] = meta.get('processing_dem', 'Unknown')
     unavco_meta['unwrap_method']  = meta.get('unwrap_method', 'Unknown')
 
