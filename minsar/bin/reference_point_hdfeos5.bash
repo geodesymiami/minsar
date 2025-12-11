@@ -198,12 +198,8 @@ echo "HDFEOS5 file reconstructed: $OUTPUT_FILE"
 
 # Step 4: Cleanup (if not --keep-extracted)
 if [[ $keep_extracted -eq 0 ]]; then
-    echo "####################################"
-    echo "Step 4: Cleaning up extracted files"
-
     for file in "${EXTRACTED_FILES[@]}"; do
         if [[ -f "$file" ]]; then
-            echo "Removing: $file" | tee -a "$LOG_FILE"
             rm -f "$file"
         fi
     done
