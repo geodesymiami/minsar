@@ -3178,6 +3178,68 @@ def create_overlay_html(urls, labels, output_path='overlay.html', zoom_factor=No
             
             function applyToNextIframe() {{
                 if (applyIndex >= frames.length) {{
+                    // All URLs applied - now update dropdown to match template URL's startDataset
+                    try {{
+                        const templateParams = parseUrlParameters(templateUrlString);
+                        const templateStartDataset = templateParams.queryParams.startDataset;
+                        
+                        if (templateStartDataset) {{
+                            // Find which frame's startDataset matches the template
+                            let matchingFrameIndex = -1;
+                            for (let i = 0; i < frames.length; i++) {{
+                                const frameUrl = originalIframeUrls[`iframe${{i}}`] || frames[i].url;
+                                const frameParams = parseUrlParameters(frameUrl);
+                                const frameStartDataset = frameParams.queryParams.startDataset;
+                                
+                                if (frameStartDataset && frameStartDataset.toLowerCase() === templateStartDataset.toLowerCase()) {{
+                                    matchingFrameIndex = i;
+                                    break;
+                                }}
+                            }}
+                            
+                            // Update dropdown and active panel to match the template's startDataset
+                            const frameSelect = document.getElementById('frame-select');
+                            if (frameSelect && matchingFrameIndex >= 0) {{
+                                frameSelect.value = matchingFrameIndex.toString();
+                                // Make the matching panel active
+                                panels.forEach(p => p.classList.remove('active'));
+                                if (panels[matchingFrameIndex]) {{
+                                    panels[matchingFrameIndex].classList.add('active');
+                                }}
+                                console.log(`Updated dropdown to frame ${{matchingFrameIndex + 1}} matching startDataset: ${{templateStartDataset}}`);
+                            }} else if (frameSelect) {{
+                                // No match found, keep first frame active
+                                frameSelect.value = '0';
+                                panels.forEach(p => p.classList.remove('active'));
+                                if (panels[0]) {{
+                                    panels[0].classList.add('active');
+                                }}
+                                console.log(`No matching startDataset found, defaulting to first frame`);
+                            }}
+                        }} else {{
+                            // No startDataset in template URL, keep first frame active
+                            const frameSelect = document.getElementById('frame-select');
+                            if (frameSelect) {{
+                                frameSelect.value = '0';
+                                panels.forEach(p => p.classList.remove('active'));
+                                if (panels[0]) {{
+                                    panels[0].classList.add('active');
+                                }}
+                            }}
+                        }}
+                    }} catch (error) {{
+                        console.error('Error updating dropdown after URL application:', error);
+                        // Fallback: keep first frame active
+                        const frameSelect = document.getElementById('frame-select');
+                        if (frameSelect) {{
+                            frameSelect.value = '0';
+                            panels.forEach(p => p.classList.remove('active'));
+                            if (panels[0]) {{
+                                panels[0].classList.add('active');
+                            }}
+                        }}
+                    }}
+                    
                     isApplyingUrl = false;
                     // Re-enable all Apply buttons
                     frames.forEach((frame, idx) => {{
@@ -3195,14 +3257,10 @@ def create_overlay_html(urls, labels, output_path='overlay.html', zoom_factor=No
                 const panel = panels[applyIndex];
                 
                 if (iframe && panel) {{
-                    // Make panel active
+                    // Don't update dropdown during application - will be updated at the end
+                    // Just make panel active temporarily during loading
                     panels.forEach(p => p.classList.remove('active'));
                     panel.classList.add('active');
-                    // Update dropdown selector to match active panel
-                    const frameSelect = document.getElementById('frame-select');
-                    if (frameSelect) {{
-                        frameSelect.value = applyIndex.toString();
-                    }}
                     
                     // Merge URL parameters (preserve startDataset from target, use template for others)
                     try {{
