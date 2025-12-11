@@ -308,9 +308,9 @@ def get_output_filename(metadata, template, suffix=None, update_mode=False, subs
         DATE2 = 'XXXXXXXX'
 
     if suffix:
-        outName = f'{SAT}_{orbit_direction_str}_{method_str}_{RELORB}_{DATE1}_{DATE2}_{suffix}.he5'
+        outName = f'{SAT}_{orbit_direction_str}_{RELORB}_{method_str}_{DATE1}_{DATE2}_{suffix}.he5'
     else:
-        outName = f'{SAT}_{orbit_direction_str}_{method_str}_{RELORB}_{DATE1}_{DATE2}.he5'
+        outName = f'{SAT}_{orbit_direction_str}_{RELORB}_{method_str}_{DATE1}_{DATE2}.he5'
 
     if subset_mode:
         print('Subset mode is enabled, put subset range info in output filename.')
