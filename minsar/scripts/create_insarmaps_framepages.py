@@ -40,14 +40,14 @@ def read_insarmaps_log(log_path):
             query_params = parse_qs(parsed.query)
             start_dataset = query_params.get('startDataset', [''])[0].lower()
             
-            # Priority: desc (0), asc (1), vert (2), horz (3), others (4)
+            # Priority: desc (0), asc (1), horz (2), vert (3), others (4)
             if 'desc' in start_dataset:
                 return (0, start_dataset)
             elif 'asc' in start_dataset:
                 return (1, start_dataset)
-            elif 'vert' in start_dataset:
-                return (2, start_dataset)
             elif 'horz' in start_dataset:
+                return (2, start_dataset)
+            elif 'vert' in start_dataset:
                 return (3, start_dataset)
             else:
                 return (4, start_dataset)
