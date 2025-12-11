@@ -805,21 +805,57 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
             
             console.log(`Applying URL template to all iframes: ${{templateUrlString}}`);
             
+            // Reset processing state variables (same as on initial load)
+            currentProcessingIndex = 0;
+            currentFocusIndex = -1;
+            
             const iframeIds = ['iframe1', 'iframe2'];
             let currentIndex = 0;
             
             function applyToNextIframe() {{
                 if (currentIndex >= iframeIds.length) {{
-                    // All done
-                    isApplyingUrl = false;
-                    const urlApplyBtn = document.getElementById('url-apply-btn');
-                    if (urlApplyBtn) {{
-                        urlApplyBtn.disabled = false;
-                        urlApplyBtn.textContent = 'Apply';
-                    }}
+                    // All iframes have been set to reload, now wait for them to load
+                    console.log('All iframe URLs updated, waiting for them to load...');
+                    
+                    // Wait for all iframes to finish loading, then trigger processing
+                    const checkAllLoaded = setInterval(() => {{
+                        const allLoaded = Object.values(iframeStates).every(s => s.loaded);
+                        if (allLoaded) {{
+                            clearInterval(checkAllLoaded);
+                            console.log('All iframes loaded with new URL, starting processing sequence...');
+                            
+                            // Reset button state
+                            isApplyingUrl = false;
+                            const urlApplyBtn = document.getElementById('url-apply-btn');
+                            if (urlApplyBtn) {{
+                                urlApplyBtn.disabled = false;
+                                urlApplyBtn.textContent = 'Apply';
+                            }}
+                            
+                            // Trigger the same processing sequence as on initial load
+                            setTimeout(() => {{
+                                processNextIframe();
+                            }}, 1000);
+                        }}
+                    }}, 200);
+                    
+                    // Timeout fallback - if iframes don't load within 10 seconds, try processing anyway
+                    setTimeout(() => {{
+                        clearInterval(checkAllLoaded);
+                        console.log('Timeout waiting for iframes to load, attempting processing...');
+                        isApplyingUrl = false;
+                        const urlApplyBtn = document.getElementById('url-apply-btn');
+                        if (urlApplyBtn) {{
+                            urlApplyBtn.disabled = false;
+                            urlApplyBtn.textContent = 'Apply';
+                        }}
+                        // Try processing anyway
+                        setTimeout(() => {{
+                            processNextIframe();
+                        }}, 1000);
+                    }}, 10000);
+                    
                     // Keep the template URL in the input box so user can see/copy what was applied
-                    // Don't modify the input - it should show the exact URL the user pasted
-                    console.log('Finished applying URL to all iframes');
                     console.log('Template URL that was applied:', templateUrlString);
                     return;
                 }}
@@ -832,11 +868,12 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
                     const originalUrl = originalIframeUrls[iframeId];
                     
                     // Merge template URL with original URL (preserving startDataset)
+                    // This also adds hideAttributes=true
                     let newUrl = mergeUrlParameters(templateUrlString, originalUrl);
                     
-                    // Add cache-busting to force reload
+                    // Add cache-busting to force reload (same as initial load)
                     const separator = newUrl.includes('?') ? '&' : '?';
-                    newUrl = newUrl + separator + '_nocache=' + Date.now() + '_' + currentIndex;
+                    newUrl = newUrl + separator + '_nocache=' + Date.now() + '_' + currentIndex + '_' + Math.random().toString(36).substr(2, 9);
                     
                     console.log(`Updating ${{iframeId}} ({{currentIndex + 1}}/2): ${{newUrl}}`);
                     
@@ -844,14 +881,16 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
                     const cleanNewUrl = newUrl.split('&_nocache')[0].split('?_nocache')[0];
                     originalIframeUrls[iframeId] = cleanNewUrl;
                     
-                    // Reset load state so it can reload properly
+                    // Reset load state so it can reload properly (same as initial load)
                     const state = iframeStates[iframeId];
                     if (state) {{
                         state.loaded = false;
                         state.processed = false;
+                        state.focused = false;
                     }}
                     
-                    // Update iframe src - this will trigger a reload
+                    // Update iframe src - this will trigger a reload and the load event listener
+                    // (setupIframe was already called during initial load, so the listener is active)
                     iframe.src = newUrl;
                     
                     // Wait 1 second before applying to next iframe
@@ -2105,21 +2144,57 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
             
             console.log(`Applying URL template to all iframes: ${{templateUrlString}}`);
             
+            // Reset processing state variables (same as on initial load)
+            currentProcessingIndex = 0;
+            currentFocusIndex = -1;
+            
             const iframeIds = ['iframe1', 'iframe2', 'iframe3', 'iframe4'];
             let currentIndex = 0;
             
             function applyToNextIframe() {{
                 if (currentIndex >= iframeIds.length) {{
-                    // All done
-                    isApplyingUrl = false;
-                    const urlApplyBtn = document.getElementById('url-apply-btn');
-                    if (urlApplyBtn) {{
-                        urlApplyBtn.disabled = false;
-                        urlApplyBtn.textContent = 'Apply';
-                    }}
+                    // All iframes have been set to reload, now wait for them to load
+                    console.log('All iframe URLs updated, waiting for them to load...');
+                    
+                    // Wait for all iframes to finish loading, then trigger processing
+                    const checkAllLoaded = setInterval(() => {{
+                        const allLoaded = Object.values(iframeStates).every(s => s.loaded);
+                        if (allLoaded) {{
+                            clearInterval(checkAllLoaded);
+                            console.log('All iframes loaded with new URL, starting processing sequence...');
+                            
+                            // Reset button state
+                            isApplyingUrl = false;
+                            const urlApplyBtn = document.getElementById('url-apply-btn');
+                            if (urlApplyBtn) {{
+                                urlApplyBtn.disabled = false;
+                                urlApplyBtn.textContent = 'Apply';
+                            }}
+                            
+                            // Trigger the same processing sequence as on initial load
+                            setTimeout(() => {{
+                                processNextIframe();
+                            }}, 1000);
+                        }}
+                    }}, 200);
+                    
+                    // Timeout fallback - if iframes don't load within 10 seconds, try processing anyway
+                    setTimeout(() => {{
+                        clearInterval(checkAllLoaded);
+                        console.log('Timeout waiting for iframes to load, attempting processing...');
+                        isApplyingUrl = false;
+                        const urlApplyBtn = document.getElementById('url-apply-btn');
+                        if (urlApplyBtn) {{
+                            urlApplyBtn.disabled = false;
+                            urlApplyBtn.textContent = 'Apply';
+                        }}
+                        // Try processing anyway
+                        setTimeout(() => {{
+                            processNextIframe();
+                        }}, 1000);
+                    }}, 10000);
+                    
                     // Keep the template URL in the input box so user can see/copy what was applied
-                    // Don't modify the input - it should show the exact URL the user pasted
-                    console.log('Finished applying URL to all iframes');
                     console.log('Template URL that was applied:', templateUrlString);
                     return;
                 }}
@@ -2132,11 +2207,12 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
                     const originalUrl = originalIframeUrls[iframeId];
                     
                     // Merge template URL with original URL (preserving startDataset)
+                    // This also adds hideAttributes=true
                     let newUrl = mergeUrlParameters(templateUrlString, originalUrl);
                     
-                    // Add cache-busting to force reload
+                    // Add cache-busting to force reload (same as initial load)
                     const separator = newUrl.includes('?') ? '&' : '?';
-                    newUrl = newUrl + separator + '_nocache=' + Date.now() + '_' + currentIndex;
+                    newUrl = newUrl + separator + '_nocache=' + Date.now() + '_' + currentIndex + '_' + Math.random().toString(36).substr(2, 9);
                     
                     console.log(`Updating ${{iframeId}} ({{currentIndex + 1}}/4): ${{newUrl}}`);
                     
@@ -2144,14 +2220,16 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
                     const cleanNewUrl = newUrl.split('&_nocache')[0].split('?_nocache')[0];
                     originalIframeUrls[iframeId] = cleanNewUrl;
                     
-                    // Reset load state so it can reload properly
+                    // Reset load state so it can reload properly (same as initial load)
                     const state = iframeStates[iframeId];
                     if (state) {{
                         state.loaded = false;
                         state.processed = false;
+                        state.focused = false;
                     }}
                     
-                    // Update iframe src - this will trigger a reload
+                    // Update iframe src - this will trigger a reload and the load event listener
+                    // (setupIframe was already called during initial load, so the listener is active)
                     iframe.src = newUrl;
                     
                     // Wait 1 second before applying to next iframe
@@ -2995,6 +3073,11 @@ def create_overlay_html(urls, labels, output_path='overlay.html', zoom_factor=No
             // Make this panel active and visible
             panels.forEach(p => p.classList.remove('active'));
             panel.classList.add('active');
+            // Update dropdown selector to match active panel
+            const frameSelect = document.getElementById('frame-select');
+            if (frameSelect) {{
+                frameSelect.value = currentLoadIndex.toString();
+            }}
             
             // Set iframe source
             iframe.src = frame.url;
@@ -3115,6 +3198,11 @@ def create_overlay_html(urls, labels, output_path='overlay.html', zoom_factor=No
                     // Make panel active
                     panels.forEach(p => p.classList.remove('active'));
                     panel.classList.add('active');
+                    // Update dropdown selector to match active panel
+                    const frameSelect = document.getElementById('frame-select');
+                    if (frameSelect) {{
+                        frameSelect.value = applyIndex.toString();
+                    }}
                     
                     // Merge URL parameters (preserve startDataset from target, use template for others)
                     try {{
