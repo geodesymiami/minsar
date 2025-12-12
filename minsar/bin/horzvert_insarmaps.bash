@@ -35,9 +35,9 @@ get_path_without_scratchdir() {
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     helptext="
 Examples:
-    $SCRIPT_NAME ChilesSenD142/mintpy ChilesSenA120/mintpy --ref-lalo 0.84969 -77.86430
-    $SCRIPT_NAME ChilesSenD142/mintpy ChilesSenA120/mintpy --ref-lalo 0.84969 -77.86430 --dry-run
-    $SCRIPT_NAME ChilesSenD142/mintpy ChilesSenA120/mintpy --ref-lalo 0.84969 -77.86430 --intervals 6
+    $SCRIPT_NAME ChilesSenD142/mintpy ChilesSenA120/mintpy --ref-lalo 0.649 -77.878
+    $SCRIPT_NAME ChilesSenD142/mintpy ChilesSenA120/mintpy --ref-lalo 0.649 -77.878 --dry-run
+    $SCRIPT_NAME ChilesSenD142/mintpy ChilesSenA120/mintpy --ref-lalo 0.649 -77.878 --intervals 6
     $SCRIPT_NAME hvGalapagosSenD128/mintpy hvGalapagosSenA106/mintpy --ref-lalo -0.81 -91.190
     $SCRIPT_NAME hvGalapagosSenD128/miaplpy/network_single_reference hvGalapagosSenA106/miaplpy/network_single_reference --ref-lalo -0.81 -91.190 --no-ingest-los
     $SCRIPT_NAME FernandinaSenD128/mintpy/ FernandinaSenA106/mintpy/ --ref-lalo -0.453 -91.390
@@ -223,7 +223,7 @@ echo "##############################################"
 ingest_insarmaps.bash "$HORZ_FILE"
 echo "$ORIGINAL_DIR/$HORZVERT_DIR$HORZ_FILE" >> $DATA_FILES_TXT
 
-# Ingest original input files, stay in HORZVERT_DIR so all entries go to the same insarmaps.log 
+# Ingest original input files, stay in HORZVERT_DIR so all entries go to the same insarmaps.log
 
 if [[ $ingest_los_flag == "1" ]]; then
     # FILE1 and FILE2 are relative to ORIGINAL_DIR
