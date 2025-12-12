@@ -202,6 +202,8 @@ dir="$([ -f "$FILE1" ] && dirname "$FILE1" || echo "$FILE1")"
 processing_method_dir=$(echo "$dir" | tr '/' '\n' | grep -E '^(mintpy|miaplpy)$' | head -1)
 
 HORZVERT_DIR="${PROJECT_DIR}/${processing_method_dir}"
+DATA_FILES_TXT="$ORIGINAL_DIR/$HORZVERT_DIR/data_files.txt"
+rm -f $DATA_FILES_TXT ; touch $DATA_FILES_TXT
 
 # Find the latest (youngest) *vert*.he5 and *horz*.he5 files
 cd "$HORZVERT_DIR"
@@ -214,54 +216,34 @@ echo "Found horz file: $HORZ_FILE"
 
 echo "##############################################"
 ingest_insarmaps.bash "$VERT_FILE"
-get_path_without_scratchdir "$VERT_FILE" > $ORIGINAL_DIR/$HORZVERT_DIR/data_files.txt
+echo "$ORIGINAL_DIR/$HORZVERT_DIR/$VERT_FILE" >> $DATA_FILES_TXT
 
 echo "##############################################"
 ingest_insarmaps.bash "$HORZ_FILE"
-get_path_without_scratchdir "$HORZ_FILE" > $ORIGINAL_DIR/$HORZVERT_DIR/data_files.txt
+echo "$ORIGINAL_DIR/$HORZVERT_DIR$HORZ_FILE" >> $DATA_FILES_TXT
 
-cd "$ORIGINAL_DIR"
+# Ingest original input files, stay in HORZVERT_DIR so all entries go to the same insarmaps.log 
 
-# Ingest original input files (default behavior, skip if --no-ingest-los is set)
-# Stay in PROJECT_DIR so all insarmaps.log entries go to the same file
 if [[ $ingest_los_flag == "1" ]]; then
-    # FILE1 and FILE2 are relative to ORIGINAL_DIR, so from PROJECT_DIR use ../FILE1 and ../FILE2
+    # FILE1 and FILE2 are relative to ORIGINAL_DIR
     cd "$HORZVERT_DIR"
     echo "##############################################"
     ingest_insarmaps.bash "$ORIGINAL_DIR/$FILE1" --ref-lalo "${ref_lalo[@]}"
     FILE1_HE5=$(ls -t "$ORIGINAL_DIR/$FILE1"/*.he5 2>/dev/null | head -n 1) || FILE1_HE5="$ORIGINAL_DIR/$FILE1"
-    get_path_without_scratchdir "$FILE1_HE5" > $ORIGINAL_DIR/$HORZVERT_DIR/data_files.txt
+    echo "$FILE1_HE5" >> $DATA_FILES_TXT
 
     echo "##############################################"
     ingest_insarmaps.bash "$ORIGINAL_DIR/$FILE2" --ref-lalo "${ref_lalo[@]}"
     FILE2_HE5=$(ls -t "$ORIGINAL_DIR/$FILE2"/*.he5 2>/dev/null | head -n 1) || FILE2_HE5="$ORIGINAL_DIR/$FILE2"
-    get_path_without_scratchdir "$FILE2_HE5" > $ORIGINAL_DIR/$HORZVERT_DIR/data_files.txt
+    echo "$FILE2_HE5" >> $DATA_FILES_TXT
 fi
-
-# Write data_files.txt with all *he5 files used
-echo "##############################################"
-
-DATA_FILES_TXT="olddata_files.txt"
-echo "Writing $PROJECT_DIR/$DATA_FILES_TXT with all *he5 files used..."
-{
-    # Always include vert and horz files (they are in PROJECT_DIR)
-    [[ -n "$VERT_FILE" && -f "$VERT_FILE" ]] && get_path_without_scratchdir "$VERT_FILE"
-    [[ -n "$HORZ_FILE" && -f "$HORZ_FILE" ]] && get_path_without_scratchdir "$HORZ_FILE"
-    # Include FILE1 and FILE2 he5 files if they were ingested (paths are relative to PROJECT_DIR)
-    if [[ $ingest_los_flag == "1" ]]; then
-        [[ -n "$FILE1_HE5" && -f "$FILE1_HE5" && "$FILE1_HE5" == *.he5 ]] && get_path_without_scratchdir "$FILE1_HE5"
-        [[ -n "$FILE2_HE5" && -f "$FILE2_HE5" && "$FILE2_HE5" == *.he5 ]] && get_path_without_scratchdir "$FILE2_HE5"
-    fi
-} > "$DATA_FILES_TXT"
-echo "Created $PROJECT_DIR/$DATA_FILES_TXT with $(wc -l < "$DATA_FILES_TXT" | tr -d ' ') file(s)"
-
-cd "$ORIGINAL_DIR"
 
 # Create insarmaps framepage (using absolute paths since we're back in ORIGINAL_DIR)
 echo "##############################################"
+cd "$ORIGINAL_DIR"
 create_insarmaps_framepages.py "$HORZVERT_DIR/insarmaps.log" --outdir "$HORZVERT_DIR"
 write_insarmaps_framepage_urls.py "$HORZVERT_DIR" --outdir "$HORZVERT_DIR"
-create_data_download_commands.py "$HORZVERT_DIR/data_files.txt"
+create_data_download_commands.py "$DATA_FILES_TXT"
 
 echo "insarmaps frames created:"
 cat "$HORZVERT_DIR/frames_urls.log"

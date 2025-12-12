@@ -56,6 +56,14 @@ def get_sort_key(url):
         return (4, url_lower)
 
 
+def remove_scratchdir_from_path(path, scratchdir=None):
+    scratchdir = os.getenv('SCRATCHDIR')
+    scratchdir_resolved = os.path.realpath(scratchdir)
+    path_resolved = os.path.realpath(path)
+    
+    new_path = os.path.relpath(path_resolved, scratchdir_resolved) if path_resolved.startswith(scratchdir_resolved) else path
+    return new_path
+
 def main(iargs=None):
     inps = cmd_line_parse(iargs)
 
@@ -79,14 +87,11 @@ def main(iargs=None):
         for line in f:
             line = line.strip()
             if line:  # Skip empty lines
+                line = remove_scratchdir_from_path(line)
                 # Use https for insarmaps.miami.edu, http for others
                 protocol = "https" if "insarmaps.miami.edu" in line else "http"
                 url = f"wget {protocol}://{REMOTEHOST_DATA}{REMOTE_DIR}{line}"
                 download_urls.append(url)
-
-    if not download_urls:
-        print(f"Warning: No valid paths found in {input_path}")
-        return 0
 
     # Sort URLs: desc, asc, vert, horz, then others
     download_urls.sort(key=get_sort_key)

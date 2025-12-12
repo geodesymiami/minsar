@@ -105,12 +105,10 @@ def create_urls(html_files, project_dir):
     REMOTEHOST_DATA = os.getenv('REMOTEHOST_DATA')
     REMOTE_DIR = '/data/HDF5EOS/'
 
-    if not REMOTEHOST_DATA:
-        raise ValueError("REMOTEHOST_DATA environment variable is not set")
-
     frame_urls = []
     project_dir_abs = os.path.abspath(project_dir)
-    project_name = os.path.basename(project_dir_abs)
+    parts = os.path.normpath(project_dir_abs).split(os.sep)
+    project_name = os.path.join(*parts[-2:]) if len(parts) >= 2 else parts[-1]
 
     for html_file in html_files:
         html_file_abs = os.path.abspath(html_file)
