@@ -226,7 +226,7 @@ echo "$ORIGINAL_DIR/$HORZVERT_DIR$HORZ_FILE" >> $DATA_FILES_TXT
 
 if [[ $ingest_los_flag == "1" ]]; then
     # FILE1 and FILE2 are relative to ORIGINAL_DIR
-    cd "$HORZVERT_DIR"
+    cd "$ORIGINAL_DIR/$HORZVERT_DIR"
     echo "##############################################"
     ingest_insarmaps.bash "$ORIGINAL_DIR/$FILE1" --ref-lalo "${ref_lalo[@]}"
     FILE1_HE5=$(ls -t "$ORIGINAL_DIR/$FILE1"/*.he5 2>/dev/null | head -n 1) || FILE1_HE5="$ORIGINAL_DIR/$FILE1"
