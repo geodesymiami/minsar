@@ -196,13 +196,13 @@ for insarmaps_host in "${HOSTS[@]}"; do
 done
 
 # Write URLs to log files
-echo "Creating insarmaps.log files"
+echo "Appending to insarmaps.log file"
 # Determine the log directory: use pic/ if it exists, otherwise use DATA_DIR directly
-if [[ -d "$WORK_DIR/${DATA_DIR}/pic" ]]; then
-    LOG_DIR="$WORK_DIR/${DATA_DIR}/pic"
-    rm -f "$LOG_DIR/insarmaps.log"
+if [[ -d "${DATA_DIR}/pic" ]]; then
+    rm -f "$DATA_DIR/pic/insarmaps.log"
+    LOG_DIR="$DATA_DIR/pic"
 else
-    LOG_DIR="$WORK_DIR/${DATA_DIR}"
+    LOG_DIR="$WORK_DIR"
 fi
 
 for url in "${INSARMAPS_URLS[@]}"; do
