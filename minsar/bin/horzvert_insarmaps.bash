@@ -199,7 +199,8 @@ eval $CMD
 ORIGINAL_DIR="$PWD"
 PROJECT_DIR=$(get_base_projectname "$FILE1")
 dir="$([ -f "$FILE1" ] && dirname "$FILE1" || echo "$FILE1")"
-processing_method_dir=$(echo "$dir" | tr '/' '\n' | grep -E '^(mintpy|miaplpy)$' | head -1)
+processing_method_dir=$(echo "$dir" | tr '/' '\n' | grep -E '^(mintpy|miaplpy)' | head -1 | cut -d'_' -f1)
+
 
 HORZVERT_DIR="${PROJECT_DIR}/${processing_method_dir}"
 mkdir -p "$ORIGINAL_DIR/$HORZVERT_DIR"
