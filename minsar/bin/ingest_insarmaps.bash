@@ -19,8 +19,13 @@ Examples:
     $SCRIPT_NAME S1_IW1_128_20180303_XXXXXXXX__S00878_S00791_W091201_W091113.he5
     $SCRIPT_NAME hvGalapagosSenD128/mintpy -ref-lalo -0.81,-91.190
     $SCRIPT_NAME hvGalapagosSenD128/miaplpy/network_single_reference
+    $SCRIPT_NAME miaplpy/network_single_reference --dataset geo
+    $SCRIPT_NAME miaplpy/network_single_reference --dataset PS
+    $SCRIPT_NAME miaplpy/network_single_reference --dataset filt*DS
+
   Options:
       --ref-lalo LAT,LON or LAT LON   Reference point (lat,lon or lat lon)
+      --dataset {PS,DS,PSDS,filtDS,filt*DS,geo}  Dataset to upload (default: geo)
       --debug                         Enable debug mode (set -x)
     "
     printf "$helptext"
@@ -43,6 +48,7 @@ positional=()
 geom_file=()
 mask_thresh=""
 ref_lalo=()
+dataset="geo"
 lat_step=""
 horz_az_angle=""
 window_size=""
@@ -71,6 +77,10 @@ do
                 shift
             fi
             shift
+            ;;
+        --dataset)
+            dataset="$2"
+            shift 2
             ;;
         --debug)
             debug_flag=1
@@ -102,15 +112,67 @@ INPUT_PATH="${positional[0]}"
 # Check if input is a file or directory
 if [[ -f "$INPUT_PATH" ]]; then
     # Input is a file - use it directly
-    he5_file="$INPUT_PATH"
-    # DATA_DIR is the directory containing the file
     DATA_DIR=$(dirname "$INPUT_PATH")
+    he5_file="$INPUT_PATH"
 elif [[ -d "$INPUT_PATH" ]]; then
-    # Input is a directory - find the latest .he5 file
+    # Input is a directory - find .he5 file based on dataset option
     DATA_DIR="$INPUT_PATH"
-    he5_file=$(ls -t "$DATA_DIR"/*.he5 2>/dev/null | head -n 1)
-    if [[ -z "$he5_file" ]]; then
+    all_he5_files=($(ls -t "$DATA_DIR"/*.he5 2>/dev/null))
+    
+    if [[ ${#all_he5_files[@]} -eq 0 ]]; then
         echo "Error: No .he5 files found in directory: $DATA_DIR"
+        exit 1
+    fi
+    
+    # Find first matching file based on dataset option
+    he5_file=""
+    case "$dataset" in
+        "geo")
+            # Files without DS and PS in name
+            for file in "${all_he5_files[@]}"; do
+                if [[ "$file" != *"DS"* && "$file" != *"PS"* ]]; then
+                    he5_file="$file"
+                    break
+                fi
+            done
+            ;;
+        "PS")
+            for file in "${all_he5_files[@]}"; do
+                if [[ "$file" == *"PS"* ]]; then
+                    he5_file="$file"
+                    break
+                fi
+            done
+            ;;
+        "DS")
+            for file in "${all_he5_files[@]}"; do
+                if [[ "$file" == *"DS"* && "$file" != *"filt"* ]]; then
+                    he5_file="$file"
+                    break
+                fi
+            done
+            ;;
+        "filtDS"|"filt*DS")
+            for file in "${all_he5_files[@]}"; do
+                if [[ "$file" == *"DS"* && "$file" == *"filt"* ]]; then
+                    he5_file="$file"
+                    break
+                fi
+            done
+            ;;
+        "PSDS")
+            # Files with PS or DS (but not filt)
+            for file in "${all_he5_files[@]}"; do
+                if [[ "$file" == *"PS"* ]] || [[ "$file" == *"DS"* && "$file" != *"filt"* ]]; then
+                    he5_file="$file"
+                    break
+                fi
+            done
+            ;;
+    esac
+    
+    if [[ -z "$he5_file" ]]; then
+        echo "Error: No .he5 files found matching dataset option '$dataset' in directory: $DATA_DIR"
         exit 1
     fi
 else
@@ -131,6 +193,9 @@ fi
 
 HDFEOS_NUM_WORKERS=6
 MBTILES_NUM_WORKERS=6
+
+echo "####################################"
+echo "Processing: $he5_file"
 
 # If --ref-lalo was provided, update the reference point in the he5 file
 if [[ ${#ref_lalo[@]} -gt 0 ]]; then
@@ -154,9 +219,18 @@ if [[ ${#ref_lalo[@]} -gt 0 ]]; then
     reference_point_hdfeos5.bash "$he5_file" --ref-lalo "$REF_LAT" "$REF_LON"
 fi
 
-echo "Processing: $he5_file"
+# Determine JSON directory suffix based on file pattern
+JSON_SUFFIX=""
+if [[ "$he5_file" == *"PS"* ]]; then
+    JSON_SUFFIX="_PS"
+elif [[ "$he5_file" == *"filt"* && "$he5_file" == *"DS"* ]]; then
+    JSON_SUFFIX="_filtDS"
+elif [[ "$he5_file" == *"DS"* ]]; then
+    JSON_SUFFIX="_DS"
+fi
 
-JSON_DIR=$DATA_DIR/JSON
+JSON_DIR=$DATA_DIR/JSON${JSON_SUFFIX}
+
 MBTILES_FILE="$JSON_DIR/$(basename "${he5_file%.he5}.mbtiles")"
 
 echo "####################################"
@@ -168,9 +242,8 @@ for insarmaps_host in "${HOSTS[@]}"; do
     echo "####################################"
     echo "Running json_mbtiles2insarmaps.py..."
     cmd="json_mbtiles2insarmaps.py --num-workers $MBTILES_NUM_WORKERS -u \"$INSARMAPS_USER\" -p \"$INSARMAPS_PASS\" --host \"$insarmaps_host\" -P \"$DB_PASS\" -U \"$DB_USER\" --json_folder \"$JSON_DIR\" --mbtiles_file \"$MBTILES_FILE\""
-
+    
     run_command "$cmd"
-
 done
 
 wait   # Wait for all ingests to complete (parallel uinsg & is not implemented)
@@ -179,6 +252,10 @@ wait   # Wait for all ingests to complete (parallel uinsg & is not implemented)
 REF_COORDS=$(python3 -c "import h5py; f=h5py.File('$he5_file', 'r'); print(f'{f.attrs.get(\"REF_LAT\", 0.0)} {f.attrs.get(\"REF_LON\", 0.0)}')" 2>/dev/null || echo "0.0 0.0")
 REF_LAT=$(echo $REF_COORDS | cut -d' ' -f1)
 REF_LON=$(echo $REF_COORDS | cut -d' ' -f2)
+
+# Format lat/lon to 4 decimal places for insarmaps.log
+REF_LAT_FORMATTED=$(printf "%.4f" "$REF_LAT")
+REF_LON_FORMATTED=$(printf "%.4f" "$REF_LON")
 
 DATASET_NAME=$(basename "${he5_file%.he5}")
 
@@ -191,7 +268,7 @@ for insarmaps_host in "${HOSTS[@]}"; do
     else
         protocol="http"
     fi
-    url="${protocol}://${insarmaps_host}/start/${REF_LAT}/${REF_LON}/11.0?flyToDatasetCenter=true&startDataset=${DATASET_NAME}"
+    url="${protocol}://${insarmaps_host}/start/${REF_LAT_FORMATTED}/${REF_LON_FORMATTED}/11.0?flyToDatasetCenter=true&startDataset=${DATASET_NAME}"
     INSARMAPS_URLS+=("$url")
 done
 
