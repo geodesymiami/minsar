@@ -154,24 +154,21 @@ elif [[ -d "$INPUT_PATH" ]]; then
     # Parse comma-separated dataset types
     IFS=',' read -ra DATASET_TYPES <<< "$dataset"
     
-    # Find all matching files based on dataset option(s)
-    # Use associative array to avoid duplicates while preserving order from ls -t
-    declare -A matched_files  # Use associative array to track which files match
+    # Find the youngest (latest) matching file for each dataset type
+    # Process files in the order specified by dataset types
+    he5_files=()
+    
+    # Iterate through dataset types in order (PS,DS means PS file first, then DS file)
     for ds_type in "${DATASET_TYPES[@]}"; do
         ds_type=$(echo "$ds_type" | xargs)  # Trim whitespace
+        # Find the youngest file matching this dataset type
+        # all_he5_files is already sorted by modification time (newest first) from ls -t
         for file in "${all_he5_files[@]}"; do
             if file_matches_dataset "$file" "$ds_type"; then
-                matched_files["$file"]=1
+                he5_files+=("$file")
+                break  # Only take the first (youngest) match for this dataset type
             fi
         done
-    done
-    
-    # Convert to regular array, preserving order from all_he5_files (newest first)
-    he5_files=()
-    for file in "${all_he5_files[@]}"; do
-        if [[ -n "${matched_files[$file]}" ]]; then
-            he5_files+=("$file")
-        fi
     done
     
     if [[ ${#he5_files[@]} -eq 0 ]]; then
