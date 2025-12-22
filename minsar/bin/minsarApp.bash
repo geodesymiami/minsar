@@ -108,6 +108,8 @@ download_ECMWgF_before_mintpy_flag=0
 args=( "$@" )    # copy of command line arguments
 
 ##################################
+create_template_array $template_file
+##################################
 # set defaults steps (insarmaps_flag and upload_flag are set to 0 if not given on command line or in template file )
 download_flag=1
 dem_flag=1
@@ -121,6 +123,9 @@ miaplpy_startstep=1
 miaplpy_stopstep=9
 isce_startstep=1
 isce_stopstep=11
+if [[ ${template[topsStack.coregistration]:-} == "NESD" ]] || [[ ${template[topsStack.coregistration]:-} == "auto" ]]; then
+   isce_stopstep=16
+fi
 
 skip_mintpy_flag=0
 skip_miaplpy_flag=0
@@ -251,8 +256,6 @@ if [[ ${#POSITIONAL[@]} -gt 1 ]]; then
     echo "Unknown parameters provided: ${POSITIONAL[-1]}"
     exit 1;
 fi
-
-create_template_array $template_file
 
 if [[ $debug_flag == "1" ]]; then
    set -x
@@ -548,6 +551,7 @@ if [[ $ifgram_flag == "1" ]]; then
 
     reference_date=$(get_reference_date)
     echo "Reference date: $reference_date" | tee reference_date_isce.txt
+
 fi
 
 ########################
