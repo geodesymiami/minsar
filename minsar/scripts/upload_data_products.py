@@ -273,6 +273,7 @@ def main(iargs=None):
     for element in scp_list:
         print(element)
     print('################')
+    os.chdir(inps.work_dir)
     import time
     time.sleep(2)
 
