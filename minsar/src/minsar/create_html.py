@@ -40,7 +40,7 @@ def build_html(directory_path):
     # Check if there are any PNG files in the directory
     if not png_files:
         print("No PNG files found in the specified directory.")
-        exit()
+        return
 
     # Define the preferred order of images (temporalCoherence_lowpass_gaussian can be handy for miaplpy DS to eliminate indiviudal high temporal coherence pixels)
     preferred_order = ['geo_velocity.png',
