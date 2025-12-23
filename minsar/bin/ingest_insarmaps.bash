@@ -249,8 +249,9 @@ for he5_file in "${he5_files[@]}"; do
     
     wait   # Wait for all ingests to complete (parallel uinsg & is not implemented)
     
-    # Get center coordinates from data_footprint
-    read CENTER_LAT CENTER_LON < <(get_data_foot_centroid.py "$he5_file" 2>/dev/null || echo "0.0000 0.0000")
+    # Get center coordinates and zoom factorfrom data_footprint
+    read CENTER_LAT CENTER_LON < <(get_data_footprint_centroid.py "$he5_file" 2>/dev/null || echo "0.0000 0.0000")
+    ZOOM_FACTOR=$(get_zoomfactor_from_data_footprint.py "$he5_file" 2>/dev/null || echo "11.0")
     
     DATASET_NAME=$(basename "${he5_file%.he5}")
     
@@ -263,7 +264,7 @@ for he5_file in "${he5_files[@]}"; do
         else
             protocol="http"
         fi
-        url="${protocol}://${insarmaps_host}/start/${CENTER_LAT}/${CENTER_LON}/11.0?flyToDatasetCenter=true&startDataset=${DATASET_NAME}"
+        url="${protocol}://${insarmaps_host}/start/${CENTER_LAT}/${CENTER_LON}/${ZOOM_FACTOR}?flyToDatasetCenter=true&startDataset=${DATASET_NAME}"
         INSARMAPS_URLS+=("$url")
     done
     
