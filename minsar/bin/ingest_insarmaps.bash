@@ -136,6 +136,7 @@ file_matches_dataset() {
     esac
 }
 
+
 # Check if input is a file or directory
 if [[ -f "$INPUT_PATH" ]]; then
     # Input is a file - use it directly
@@ -155,14 +156,12 @@ elif [[ -d "$INPUT_PATH" ]]; then
     IFS=',' read -ra DATASET_TYPES <<< "$dataset"
     
     # Find the youngest (latest) matching file for each dataset type
-    # Process files in the order specified by dataset types
     he5_files=()
     
     # Iterate through dataset types in order (PS,DS means PS file first, then DS file)
     for ds_type in "${DATASET_TYPES[@]}"; do
         ds_type=$(echo "$ds_type" | xargs)  # Trim whitespace
         # Find the youngest file matching this dataset type
-        # all_he5_files is already sorted by modification time (newest first) from ls -t
         for file in "${all_he5_files[@]}"; do
             if file_matches_dataset "$file" "$ds_type"; then
                 he5_files+=("$file")
@@ -250,14 +249,8 @@ for he5_file in "${he5_files[@]}"; do
     
     wait   # Wait for all ingests to complete (parallel uinsg & is not implemented)
     
-    # Extract ref_lat/ref_lon from .he5 file
-    REF_COORDS=$(python3 -c "import h5py; f=h5py.File('$he5_file', 'r'); print(f'{f.attrs.get(\"REF_LAT\", 0.0)} {f.attrs.get(\"REF_LON\", 0.0)}')" 2>/dev/null || echo "0.0 0.0")
-    REF_LAT=$(echo $REF_COORDS | cut -d' ' -f1)
-    REF_LON=$(echo $REF_COORDS | cut -d' ' -f2)
-    
-    # Format lat/lon to 4 decimal places for insarmaps.log
-    REF_LAT_FORMATTED=$(printf "%.4f" "$REF_LAT")
-    REF_LON_FORMATTED=$(printf "%.4f" "$REF_LON")
+    # Get center coordinates from data_footprint
+    read CENTER_LAT CENTER_LON < <(get_data_foot_centroid.py "$he5_file" 2>/dev/null || echo "0.0000 0.0000")
     
     DATASET_NAME=$(basename "${he5_file%.he5}")
     
@@ -270,7 +263,7 @@ for he5_file in "${he5_files[@]}"; do
         else
             protocol="http"
         fi
-        url="${protocol}://${insarmaps_host}/start/${REF_LAT_FORMATTED}/${REF_LON_FORMATTED}/11.0?flyToDatasetCenter=true&startDataset=${DATASET_NAME}"
+        url="${protocol}://${insarmaps_host}/start/${CENTER_LAT}/${CENTER_LON}/11.0?flyToDatasetCenter=true&startDataset=${DATASET_NAME}"
         INSARMAPS_URLS+=("$url")
     done
     
