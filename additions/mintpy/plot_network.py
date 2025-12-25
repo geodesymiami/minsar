@@ -33,11 +33,21 @@ def read_network_info(inps):
         pbase12List = stack_obj.pbaseIfgram
 
         if inps.dsetName in readfile.get_dataset_list(inps.file):
+            # Check if coherenceSpatialAvg.txt already exists
+            # If it exists, don't overwrite it (preserves AOI from modify_network.py)
+            # If it doesn't exist, create it (for standalone plotting)
+            coh_txt_file = f'{inps.dsetName}SpatialAvg.txt'  # e.g., 'coherenceSpatialAvg.txt'
+            
+            if os.path.isfile(coh_txt_file):
+                save_list_flag = False  # File exists, don't overwrite
+            else:
+                save_list_flag = True   # File doesn't exist, create it
+            
             inps.cohList = ut.spatial_average(
                 inps.file,
                 datasetName=inps.dsetName,
                 maskFile=inps.maskFile,
-                saveList=False,
+                saveList=save_list_flag,
                 checkAoi=True,
             )[0]
         elif inps.dsetName == 'pbase':
