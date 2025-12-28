@@ -56,10 +56,19 @@ def create_parser(iargs=None, namespace=None):
     parser.add_argument('--download', action='store_true', help='Download the data')
     parser.add_argument('--dir', metavar='FOLDER', help='Specify path to download the data, if not specified, the data will be downloaded in SCRATCHDIR directory')
 
-    inps = parser.parse_args()
+    if isinstance(iargs, argparse.Namespace):
+        inps = iargs
+    else:
+        inps = parser.parse_args(iargs, namespace)
 
-    # Normalize inps.platform to handle whitespace and case sensitivity
-    inps.platform = inps.platform.split(',')
+    # Normalize inps.platform to a list (safe for None, str, or list inputs)
+    if getattr(inps, 'platform', None):
+        if isinstance(inps.platform, str):
+            inps.platform = [p.strip() for p in inps.platform.split(',') if p.strip()]
+        elif isinstance(inps.platform, (list, tuple)):
+            inps.platform = [p.strip() for p in inps.platform if isinstance(p, str) and p.strip()]
+    else:
+        inps.platform = []
 
     if "BURST" in inps.processing_level:
         inps.processing_level = asf.PRODUCT_TYPE.BURST
@@ -92,7 +101,7 @@ def create_parser(iargs=None, namespace=None):
             inps.dataset = [asf.DATASET.SENTINEL1]
         inps.beam_swath = 'IW'
 
-    elif inps.platform in ['ALOS-2', 'ALOS2'] or inps.processing_level==asf.PRODUCT_TYPE.L1_1:
+    elif any(p in inps.platform for p in ['ALOS-2', 'ALOS2']) or inps.processing_level==asf.PRODUCT_TYPE.L1_1:
         # platform = asf.PLATFORM.ALOS-2
         inps.platform = asf.PLATFORM.ALOS
         inps.processing_level=asf.PRODUCT_TYPE.L1_1
