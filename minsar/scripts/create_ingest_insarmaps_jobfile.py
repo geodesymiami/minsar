@@ -6,6 +6,7 @@
 import os
 import sys
 import argparse
+import subprocess
 from minsar.objects import message_rsmas
 from minsar.job_submission import JOB_SUBMIT
 
@@ -49,8 +50,10 @@ def create_parser():
                         default=os.getenv('QUEUENAME'), 
                         help="Name of queue to submit job to")
     parser.add_argument('--walltime', dest='wall_time', metavar="WALLTIME (HH:MM)", 
-                        default='1:00', 
-                        help='job walltime (default=1:00)')
+                        default=None, 
+                        help='job walltime (default: from job_defaults.cfg)')
+    parser.add_argument('--submit', dest='submit', action='store_true',
+                        help='submit the job after creating the jobfile')
    
     inps = parser.parse_args()
     return inps
@@ -91,9 +94,25 @@ def main(iargs=None):
     
     final_command = [' '.join(command_parts)]
     
-    # Write the jobfile (don't submit)
+    # Create the jobfile
     job_obj.submit_script(job_name, job_file_name, final_command, writeOnly='True')
+    job_file_path = os.path.join(inps.work_dir, job_file_name + '.job')
     print('jobfile created: ', job_file_name + '.job')
+    
+    # Submit the job if --submit option is provided
+    if inps.submit:
+        try:
+            result = subprocess.run(['sbatch', job_file_path], 
+                                  check=True, 
+                                  capture_output=True, 
+                                  text=True)
+            print('Job submitted:', result.stdout.strip())
+        except subprocess.CalledProcessError as e:
+            print(f'Error submitting job: {e.stderr}')
+            return 1
+        except FileNotFoundError:
+            print('Error: sbatch command not found. Are you on a SLURM cluster?')
+            return 1
 
     return None
 
