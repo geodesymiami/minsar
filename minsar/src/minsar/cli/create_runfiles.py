@@ -92,13 +92,13 @@ def convert_intersectsWith_string_to_boundingBox_string(intersectsWith_str, delt
     return bbox_str
 ###########################################################################################
 def get_bbox_from_template(inps, delta_lat, delta_lon):
-    """generates boundingBox string from miaplpy.subset.lalo, mintpy.subset.lalo or intersectsWith POLYGON string"""
+    """generates boundingBox string from mintpy.subset.lalo, miaplpy.subset.lalo or intersectsWith POLYGON string"""
 
-    if 'miaplpy.subset.lalo' in inps.template.keys():
-        print(f"Creating topsStack.boundingBox using miaplpy.subset.lalo={inps.template['miaplpy.subset.lalo']} (with delta_lat, delta_lon: {delta_lat}, {delta_lon})")
-        boundingBox_string = convert_subset_lalo_to_boundingBox_string(inps.template['miaplpy.subset.lalo'], delta_lat, delta_lon)
-    elif 'mintpy.subset.lalo' in inps.template.keys():
+    if 'mintpy.subset.lalo' in inps.template.keys():
         print(f"Creating topsStack.boundingBox using mintpy.subset.lalo={inps.template['mintpy.subset.lalo']} (with delta_lat, delta_lon: {delta_lat}, {delta_lon}) ")
+        boundingBox_string = convert_subset_lalo_to_boundingBox_string(inps.template['mintpy.subset.lalo'], delta_lat, delta_lon)
+    elif 'miaplpy.subset.lalo' in inps.template.keys():
+        print(f"Creating topsStack.boundingBox using miaplpy.subset.lalo={inps.template['miaplpy.subset.lalo']} (with delta_lat, delta_lon: {delta_lat}, {delta_lon})")
         boundingBox_string = convert_subset_lalo_to_boundingBox_string(inps.template['miaplpy.subset.lalo'], delta_lat, delta_lon)
     else:
         print("Creating topsStack.boundingBox using ssaraopt.intersectsWith={inps.template['ssaraopt.intersectsWith']} (with delta_lat, delta_lon: {delta_lat}, {delta_lon})")
