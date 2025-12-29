@@ -46,9 +46,13 @@ normalize_insarmaps_coordinates() {
     
     # Update all lines to use vert coordinates
     sed -i.bak -E "s|(/start/)[^/]+/[^/]+/|\1${vert_lat}/${vert_lon}/|" "$log_file"
+    
+    # Set flyToDatasetCenter=false to prevent auto-recentering when data loads
+    sed -i.bak -E "s|flyToDatasetCenter=true|flyToDatasetCenter=false|g" "$log_file"
+    
     rm -f "${log_file}.bak"
     
-    echo "Updated all coordinates in insarmaps.log"
+    echo "Updated all coordinates in insarmaps.log and disabled flyToDatasetCenter"
 }
 
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
