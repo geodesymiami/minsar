@@ -32,6 +32,25 @@ get_path_without_scratchdir() {
     echo "$abs_path"
 }
 
+# Function to normalize coordinates in insarmaps.log using vert coordinates
+normalize_insarmaps_coordinates() {
+    local log_file="$1"
+    
+    echo "Normalizing coordinates in insarmaps.log to use vert coordinates..."
+    
+    # Extract lat/lon from the line containing "vert"
+    local vert_lat=$(grep "vert" "$log_file" | head -n 1 | cut -d/ -f5)
+    local vert_lon=$(grep "vert" "$log_file" | head -n 1 | cut -d/ -f6)
+    
+    echo "Using vert coordinates: $vert_lat, $vert_lon"
+    
+    # Update all lines to use vert coordinates
+    sed -i.bak -E "s|(/start/)[^/]+/[^/]+/|\1${vert_lat}/${vert_lon}/|" "$log_file"
+    rm -f "${log_file}.bak"
+    
+    echo "Updated all coordinates in insarmaps.log"
+}
+
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     helptext="
 Examples:
@@ -208,7 +227,6 @@ PROJECT_DIR=$(get_base_projectname "$FILE1")
 dir="$([ -f "$FILE1" ] && dirname "$FILE1" || echo "$FILE1")"
 processing_method_dir=$(echo "$dir" | tr '/' '\n' | grep -E '^(mintpy|miaplpy)' | head -1 | cut -d'_' -f1)
 
-
 HORZVERT_DIR="${PROJECT_DIR}/${processing_method_dir}"
 mkdir -p "$ORIGINAL_DIR/$HORZVERT_DIR"
 DATA_FILES_TXT="$ORIGINAL_DIR/$HORZVERT_DIR/data_files.txt"
@@ -223,19 +241,23 @@ HORZ_FILE=$(ls -t *horz*.he5 2>/dev/null | head -1)
 echo "Found vert file: $VERT_FILE"
 echo "Found horz file: $HORZ_FILE"
 
-if [[ $ingest_insarmaps_flag == "1" ]]; then
-    echo "##############################################"
-    ingest_insarmaps.bash "$VERT_FILE"
-    echo "$ORIGINAL_DIR/$HORZVERT_DIR/$VERT_FILE" >> $DATA_FILES_TXT
+# Update data_footprint to match vert file for consistent map overlay (commented out for testing)
+copy_data_footprint.py "$VERT_FILE" "$HORZ_FILE" "$ORIGINAL_DIR/$FILE1" "$ORIGINAL_DIR/$FILE2"
 
-    echo "##############################################"
-    ingest_insarmaps.bash "$HORZ_FILE"
-    echo "$ORIGINAL_DIR/$HORZVERT_DIR$HORZ_FILE" >> $DATA_FILES_TXT
+if [[ $ingest_insarmaps_flag == "0" ]]; then
+    exit 0
 fi
 
-# Ingest original input files, stay in HORZVERT_DIR so all entries go to the same insarmaps.log
+echo "##############################################"
+ingest_insarmaps.bash "$VERT_FILE"
+echo "$ORIGINAL_DIR/$HORZVERT_DIR/$VERT_FILE" >> $DATA_FILES_TXT
 
-if [[ $ingest_los_flag == "1" && $ingest_insarmaps_flag == "1" ]]; then
+echo "##############################################"
+ingest_insarmaps.bash "$HORZ_FILE"
+echo "$ORIGINAL_DIR/$HORZVERT_DIR$HORZ_FILE" >> $DATA_FILES_TXT
+
+# Ingest original input files, stay in HORZVERT_DIR so all entries go to the same insarmaps.log
+if [[ $ingest_los_flag == "1" ]]; then
     # FILE1 and FILE2 are relative to ORIGINAL_DIR
     cd "$ORIGINAL_DIR/$HORZVERT_DIR"
     echo "##############################################"
@@ -247,16 +269,18 @@ if [[ $ingest_los_flag == "1" && $ingest_insarmaps_flag == "1" ]]; then
     ingest_insarmaps.bash "$ORIGINAL_DIR/$FILE2" --ref-lalo "${ref_lalo[@]}"
     FILE2_HE5=$(ls -t "$ORIGINAL_DIR/$FILE2"/*.he5 2>/dev/null | head -n 1) || FILE2_HE5="$ORIGINAL_DIR/$FILE2"
     echo "$FILE2_HE5" >> $DATA_FILES_TXT
+
+    # Normalize coordinates in insarmaps.log to use vert coordinates (we're already in HORZVERT_DIR)
+    normalize_insarmaps_coordinates "insarmaps.log"
+
+    # Create insarmaps framepage (using absolute paths since we're back in ORIGINAL_DIR)
+    echo "##############################################"
+    cd "$ORIGINAL_DIR"
+    create_insarmaps_framepages.py "$HORZVERT_DIR/insarmaps.log" --outdir "$HORZVERT_DIR"
+    write_insarmaps_framepage_urls.py "$HORZVERT_DIR" --outdir "$HORZVERT_DIR"
+    create_data_download_commands.py "$DATA_FILES_TXT"
+
+    echo "insarmaps frames created:"
+    cat "$HORZVERT_DIR/frames_urls.log"
 fi
-
-# Create insarmaps framepage (using absolute paths since we're back in ORIGINAL_DIR)
-echo "##############################################"
-cd "$ORIGINAL_DIR"
-create_insarmaps_framepages.py "$HORZVERT_DIR/insarmaps.log" --outdir "$HORZVERT_DIR"
-write_insarmaps_framepage_urls.py "$HORZVERT_DIR" --outdir "$HORZVERT_DIR"
-create_data_download_commands.py "$DATA_FILES_TXT"
-
-echo "insarmaps frames created:"
-cat "$HORZVERT_DIR/frames_urls.log"
-
 
