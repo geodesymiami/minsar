@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# clean_miaplpy_dir.bash
+# clean_dir_miaplpy.bash
 # Clean miaplpy processing directories to allow restarting from specific steps
 
 set -eo pipefail
@@ -165,8 +165,8 @@ clean_step_9() {
     echo "Removing: demErr.h5 reference_date.txt rms_timeseriesResidual_ramp.txt *lowpass*.h5 timeseries*.h5 velocity.h5 *.he5"
     execute_removal "rm -f demErr.h5 reference_date.txt rms_timeseriesResidual_ramp.txt *lowpass*.h5 timeseries_*.h5 timeseriesR*.h5 velocity.h5 *.he5"
     
-    echo "Removing directories: geo JSON_DS"
-    execute_removal "rm -rf geo JSON_DS"
+    echo "Removing directories: geo JSON*"
+    execute_removal "rm -rf geo JSON*"
 }
 
 # Execute cleanup for selected step and all subsequent steps
@@ -198,4 +198,5 @@ esac
 
 # Return to original directory
 cd "$WORK_DIR"
+
 
