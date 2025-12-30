@@ -11,7 +11,7 @@ SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
 # echo "sourcing ${SCRIPT_DIR}/../lib/minsarApp_specifics.sh ..."
 # source ${SCRIPT_DIR}/../lib/minsarApp_specifics.sh
 # echo "sourcing ${SCRIPT_DIR}/../lib/utils.sh ..."
-# source ${SCRIPT_DIR}/../lib/utils.sh
+source ${SCRIPT_DIR}/../lib/utils.sh
 
 # Function to get absolute path with SCRATCHDIR removed
 # Resolves symlinks to handle OneDrive path variations on Mac
