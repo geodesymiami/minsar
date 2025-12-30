@@ -64,9 +64,13 @@ cc=tools/miniforge3/bin/cc
 make -C tools/snaphu-v2.0.5/src
 
 ### Adding not-commited MintPy fixes
-ln -sf $MINSAR_HOME/additions/mintpy/plot_network.py $MINTPY_HOME/src/mintpy
-ln -sf $MINSAR_HOME/additions/mintpy/save_hdfeos5.py $MINTPY_HOME/src/mintpy
-ln -sf $MINSAR_HOME/additions/mintpy/cli/save_hdfeos5.py $MINTPY_HOME/src/mintpy/cli
+ln -sf $PWD/additions/mintpy/plot_network.py $PWD/tools/MintPy/src/mintpy
+ln -sf $PWD/additions/mintpy/save_hdfeos5.py $PWD/tools/MintPy/src/mintpy
+ln -sf $PWD/additions/mintpy/cli/save_hdfeos5.py $PWD/tools/MintPy/src/mintpy/cli
+#ln -sf $MINSAR_HOME/additions/mintpy/plot_network.py $MINTPY_HOME/src/mintpy
+#ln -sf $MINSAR_HOME/additions/mintpy/save_hdfeos5.py $MINTPY_HOME/src/mintpy
+#ln -sf $MINSAR_HOME/additions/mintpy/cli/save_hdfeos5.py $MINTPY_HOME/src/mintpy/cli
+#cp -p additions/mintpy/plot_network.py tools/MintPy/src/mintpy
 #cp -p additions/mintpy/save_hdfeos5.py tools/MintPy/src/mintpy/
 #cp -p additions/mintpy/cli/save_hdfeos5.py tools/MintPy/src/mintpy/cli/
 
