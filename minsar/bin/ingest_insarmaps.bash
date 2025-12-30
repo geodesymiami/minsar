@@ -264,7 +264,7 @@ for he5_file in "${he5_files[@]}"; do
         else
             protocol="http"
         fi
-        url="${protocol}://${insarmaps_host}/start/${CENTER_LAT}/${CENTER_LON}/${ZOOM_FACTOR}?flyToDatasetCenter=true&startDataset=${DATASET_NAME}"
+        url="${protocol}://${insarmaps_host}/start/${CENTER_LAT}/${CENTER_LON}/${ZOOM_FACTOR}?flyToDatasetCenter=false&startDataset=${DATASET_NAME}"
         INSARMAPS_URLS+=("$url")
     done
     
