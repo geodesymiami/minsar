@@ -571,10 +571,10 @@ if [[ $mintpy_flag == "1" ]]; then
 
     ## insarmaps
     if [[ $insarmaps_flag == "1" ]]; then
-        run_command "create_insarmaps_jobfile.py mintpy --dataset geo"
+        run_command "create_ingest_insarmaps_jobfile.py mintpy --dataset geo"
 
-        insarmaps_jobfile=$(ls -t insar*job | head -n 1)
-        run_command "run_workflow.bash $template_file --jobfile $PWD/$insarmaps_jobfile"
+        ingest_insarmaps_jobfile=$(ls -t ingest_insar*job | head -n 1)
+        run_command "run_workflow.bash $template_file --jobfile $PWD/$ingest_insarmaps_jobfile"
     fi
 
     # upload mintpy directory
@@ -624,11 +624,11 @@ if [[ $miaplpy_flag == "1" ]]; then
 
     ## insarmaps
     if [[ $insarmaps_flag == "1" ]]; then
-        run_command "create_insarmaps_jobfile.py $network_dir --dataset $insarmaps_dataset"
+        run_command "create_ingest_insarmaps_jobfile.py $network_dir --dataset $insarmaps_dataset"
 
         # run jobfile
-        insarmaps_jobfile=$(ls -t insar*job | head -n 1)
-        run_command "run_workflow.bash $template_file --jobfile $PWD/$insarmaps_jobfile"
+        ingest_insarmaps_jobfile=$(ls -t ingest_insar*job | head -n 1)
+        run_command "run_workflow.bash $template_file --jobfile $PWD/$ingest_insarmaps_jobfile"
 
     fi
 

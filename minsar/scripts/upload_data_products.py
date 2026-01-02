@@ -280,6 +280,8 @@ def main(iargs=None):
     remote_url = 'http://' + REMOTEHOST_DATA + REMOTE_DIR + project_name + '/' + data_dir + '/pic'
     with open('upload.log', 'a') as f:
         f.write(remote_url + "\n")
+    
+    os.makedirs(data_dir + '/pic', exist_ok=True)
     with open(data_dir + '/pic/upload.log', 'w') as f:
         f.write(remote_url + "\n")
 
