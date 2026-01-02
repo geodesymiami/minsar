@@ -1,0 +1,50 @@
+######################################################
+ssaraopt.platform                  = ***satellite***  # [Sentinel-1 / ALOS2 / RADARSAT2 / TerraSAR-X / COSMO-Skymed]
+ssaraopt.relativeOrbit             = ***relative_orbit***
+ssaraopt.startDate                 = ***start_date***  # YYYYMMDD
+ssaraopt.endDate                   = ***end_date***    # YYYYMMDD
+######################################################
+topsStack.subswath                 = ***subswath*** # '1 2'
+topsStack.numConnections           = 3    # comment
+topsStack.azimuthLooks             = 5    # comment
+topsStack.rangeLooks               = 20   # comment
+topsStack.filtStrength             = 0.2  # comment
+topsStack.unwMethod                = snaphu  # comment
+topsStack.coregistration           = auto  # [NESD geometry], auto for NESD
+#topsStack.excludeDates            =  20240926
+######################################################
+mintpy.load.autoPath               = yes
+mintpy.compute.cluster             = local #[local / slurm / pbs / lsf / none], auto for none, cluster type
+mintpy.compute.numWorker           = 40 #[int > 1 / all], auto for 4 (local) or 40 (non-local), num of workers
+mintpy.plot.maxMemory              = 0.2  #[float], auto for 4, max memory used by one call of view.py for plotting.
+mintpy.networkInversion.parallel   = yes  #[yes / no], auto for no, parallel processing using dask
+mintpy.save.hdfEos5                = yes   #[yes / update / no], auto for no, save timeseries to UNAVCO InSAR Archive format
+mintpy.save.hdfEos5.update         = yes   #[yes / no], auto for no, put XXXXXXXX as endDate in output filename
+mintpy.save.hdfEos5.subset         = yes   #[yes / no], auto for no, put subset range info in output filename
+mintpy.save.kmz                    = yes   #[yes / no], auto for yes, save geocoded velocity to Google Earth KMZ file
+mintpy.reference.minCoherence      = auto      #[0.0-1.0], auto for 0.85, minimum coherence for auto method
+mintpy.troposphericDelay.method    = ***tropospheric_delay_method***   # pyaps  #[pyaps / height_correlation / base_trop_cor / no], auto for pyaps
+######################################################
+miaplpy.load.processor               = isce
+miaplpy.multiprocessing.numProcessor = 40
+miaplpy.inversion.rangeWindow        = 24   # range window size for searching SHPs, auto for 15
+miaplpy.inversion.azimuthWindow      = 7    # azimuth window size for searching SHPs, auto for 15
+miaplpy.timeseries.tempCohType       = full     # [full, average], auto for full.
+miaplpy.interferograms.networkType   = delaunay # network
+miaplpy.unwrap.snaphu.tileNumPixels  = 10000000000     # number of pixels in a tile, auto for 10000000
+######################################################
+minsar.miaplpyDir.addition           = date  #[name / lalo / no] auto for no (miaply_$name_startDate_endDate)
+mintpy.subset.lalo                   = ***lat1***:***lat2***,***lon1***:***lon2***
+miaplpy.subset.lalo                  = ***lat1***:***lat2***,***miaLon1***:***miaLon2***  #[S:N,W:E / no], auto for no
+miaplpy.load.startDate               = auto  # 20200101
+miaplpy.load.endDate                 = auto
+mintpy.geocode.laloStep              = ***lat_step***,***lon_step***
+miaplpy.timeseries.minTempCoh        = ***min_temp_coh***      # auto for 0.5
+mintpy.networkInversion.minTempCoh   = ***min_temp_coh***
+mintpy.network.minCoherence          = auto  #[0.0-1.0], auto for 0.7
+mintpy.network.aoiLALO               = auto  #[S:N,W:E / no], auto for no - use the whole area
+mintpy.network.coherenceBased        = ***coherence_based*** #[yes / no], auto for no, exclude interferograms with coherence < minCoherence
+######################################################
+minsar.insarmaps_flag                = True
+minsar.upload_flag                   = True
+minsar.insarmaps_dataset             = filt*DS
