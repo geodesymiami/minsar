@@ -283,11 +283,30 @@ def metadata_mintpy2unavco(meta_in, dateList, geom_file):
 
 
 def get_orbit_direction_str(metadata):
+    # First check for ORBIT_DIRECTION
     orbit_direction = metadata.get('ORBIT_DIRECTION', None)
+    
+    # # If not found, check for flight_direction
+    # if orbit_direction is None:
+    #     orbit_direction = metadata.get('flight_direction', None)
+    
+    # If neither exists, infer from HEADING
+    if orbit_direction is None:
+        heading_angle = metadata.get('HEADING', None)
+        if heading_angle is not None:
+            heading_angle = float(heading_angle) + 360.0
+            if heading_angle > 150.0 and heading_angle < 210.0:
+                orbit_direction = 'DESCENDING'
+            else:
+                orbit_direction = 'ASCENDING'
+
     if orbit_direction == 'ASCENDING':
         str = 'asc'
     elif orbit_direction == 'DESCENDING':
         str = 'desc'
+    else:
+        raise ValueError('Cannot determine orbit direction from metadata. '
+                        'Expected ORBIT_DIRECTION or HEADING attribute.')
     
     return str
 
