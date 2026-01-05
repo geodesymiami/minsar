@@ -24,12 +24,13 @@ Arguments:
   urls.txt or URL    Either a file containing URLs (one per line) or a single URL for quick testing
 
 Examples:
-  get_ESA_data.sh urls.txt --cookies cookies-esa-int.txt
-  get_ESA_data.sh urls.txt --cookies cookies-esa-int.txt --outdir SLC --parallel 8 --max-wait 3600
-  get_ESA_data.sh --cookies cookies-esa-int.txt https://esar-ds.eo.esa.int/oads/data/ASA_IMS_1P/ASA_IMS_1PNESA20100225_155310_000000152087_00140_41777_0000.N1
+  get_ESA_data.sh urls.txt                                  # Uses ~/cookies-esa-int.txt by default
+  get_ESA_data.sh urls.txt --cookies /path/to/cookies.txt   # Use custom cookies file
+  get_ESA_data.sh urls.txt --outdir SLC --parallel 8 --max-wait 3600
+  get_ESA_data.sh https://esar-ds.eo.esa.int/oads/data/ASA_IMS_1P/ASA_IMS_1PNESA20100225_155310_000000152087_00140_41777_0000.N1
 
 Options:
-  --cookies FILE     Cookies file in Netscape format (default: cookies-esa-int.txt)
+  --cookies FILE     Cookies file in Netscape format (default: ~/cookies-esa-int.txt)
   --outdir DIR       Output directory (default: .)
   --parallel N       Number of parallel downloads (default: 6)
   --poll-max N       Max polling attempts per URL before giving up (default: 200)
@@ -40,11 +41,12 @@ Authentication:
     https://addons.mozilla.org/firefox/addon/export-cookies-txt/
   1. Log in at https://esar-ds.eo.esa.int/oads/access/collection/ASA_IMS_1P 
   2. Start any download to create session cookie (e.g. https://esar-ds.eo.esa.int/oads/data/ASA_IMS_1P/ASA_IMS_1PNESA20100225_155310_000000152087_00140_41777_0000.N1)
-  3. Click on "puzzle" icon right of addressbar, select "Export Cookies" and save to cookies-esa-int.txt
+  3. Click on "puzzle" icon right of addressbar, select "Export Cookies" and save to ~/cookies-esa-int.txt
+  4. Make it read-only to protect: chmod 444 ~/cookies-esa-int.txt
 
 Verify cookies:
   Check that your cookies file contains the required Shibboleth session:
-    grep -i '_shibsession_' cookies-esa-int.txt
+    grep -i '_shibsession_' ~/cookies-esa-int.txt
   You should see a line with "esar-ds.eo.esa.int" and "_shibsession_" in it.
   If missing, re-login and export cookies again.
 
@@ -57,11 +59,12 @@ Getting the list of URLs:
 Notes:
   - Cookies expire. Re-export and rerun; downloads will resume.
   - Already-downloaded files (>1MB) are skipped.
+  - The original cookies file is NOT modified (script makes working copies per download job).
 
 EOF
 }
 
-cookies_file="cookies-esa-int.txt"
+cookies_file="$HOME/cookies-esa-int.txt"
 outdir="."
 parallel=6
 poll_max=200
@@ -139,15 +142,36 @@ download_one() {
   local max_wait="$5"
 
   local out="$outdir/$(basename "$url")"
+  
+  # Create a per-process cookie file to avoid race conditions in parallel downloads
+  # This allows curl to update session cookies without conflicts
+  local cookie_copy="$(mktemp)"
+  cp "$cookie" "$cookie_copy"
+  trap "rm -f '$cookie_copy'" RETURN
 
-  # If already exists and is big enough, skip (you can remove this if you dislike heuristics).
+  # Check if file exists and determine if complete
   if [[ -f "$out" ]]; then
-    # If it's tiny, it's probably XML/HTML; keep trying.
     local sz
     sz=$(wc -c < "$out" | tr -d ' ')
-    if [[ "$sz" -gt 1000000 ]]; then
-      echo "[SKIP] $(basename "$out") exists (${sz} bytes)"
-      return 0
+    
+    # If very small (< 1MB), likely error response - retry
+    if [[ "$sz" -lt 1000000 ]]; then
+      echo "[INFO] $(basename "$out") is small ($sz bytes), will retry"
+    else
+      # File exists and is large - check if it needs resuming
+      # Try a range request to see if server accepts resume
+      local tmp_header="$(mktemp)"
+      if curl -sI -b "$cookie_copy" -c "$cookie_copy" -r "${sz}-" --max-time 30 "$url" -o "$tmp_header" 2>/dev/null; then
+        # Check if server returns 206 (partial content) or 416 (range not satisfiable = complete)
+        if grep -q "HTTP/[0-9.]\+ 416" "$tmp_header"; then
+          echo "[SKIP] $(basename "$out") already complete (${sz} bytes)"
+          rm -f "$tmp_header"
+          return 0
+        elif grep -q "HTTP/[0-9.]\+ 206" "$tmp_header"; then
+          echo "[RESUME] $(basename "$out") incomplete at ${sz} bytes, resuming..."
+        fi
+      fi
+      rm -f "$tmp_header"
     fi
   fi
 
@@ -158,7 +182,7 @@ download_one() {
     # Fetch first 2KB to detect "ACCEPTED/RetryAfter" XML without downloading the whole file.
     local tmp
     tmp="$(mktemp)"
-    curl -sL -b "$cookie" -c "$cookie" -r 0-2047 "$url" -o "$tmp" || true
+    curl -sL -b "$cookie_copy" -c "$cookie_copy" -r 0-2047 --max-time 60 "$url" -o "$tmp" || true
 
     if grep -q "<ProductDownloadResponse" "$tmp"; then
       local wait_s
@@ -182,7 +206,16 @@ Cookie likely expired or missing _shibsession_... for esar-ds.eo.esa.int"
     rm -f "$tmp"
     echo "[DL]  $(basename "$out") attempt $attempt/$poll_max"
     # Now do the full download with resume
-    curl -L -C - -b "$cookie" -c "$cookie" -o "$out" "$url"
+    # Timeout options: --max-time prevents infinite hangs, --speed-limit/--speed-time aborts if too slow
+    if ! curl -L -C - -b "$cookie_copy" -c "$cookie_copy" \
+         --max-time 7200 \
+         --speed-limit 1000 --speed-time 300 \
+         --retry 3 --retry-delay 5 --retry-max-time 600 \
+         -o "$out" "$url"; then
+      echo "[WARN] curl failed or timed out, will retry..."
+      sleep 10
+      continue
+    fi
     # Basic sanity: if still tiny, keep polling
     local sz
     sz=$(wc -c < "$out" | tr -d ' ')
