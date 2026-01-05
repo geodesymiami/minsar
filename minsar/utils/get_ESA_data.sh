@@ -26,13 +26,13 @@ Arguments:
 Examples:
   get_ESA_data.sh urls.txt                                  # Uses ~/cookies-esa-int.txt by default
   get_ESA_data.sh urls.txt --cookies /path/to/cookies.txt   # Use custom cookies file
-  get_ESA_data.sh urls.txt --outdir SLC --parallel 8 --max-wait 3600
+  get_ESA_data.sh urls.txt --outdir SLC --parallel 3        # Try 3 parallel downloads
   get_ESA_data.sh https://esar-ds.eo.esa.int/oads/data/ASA_IMS_1P/ASA_IMS_1PNESA20100225_155310_000000152087_00140_41777_0000.N1
 
 Options:
   --cookies FILE     Cookies file in Netscape format (default: ~/cookies-esa-int.txt)
   --outdir DIR       Output directory (default: .)
-  --parallel N       Number of parallel downloads (default: 6)
+  --parallel N       Number of parallel downloads (default: 2, ESA typically allows 1-2)
   --poll-max N       Max polling attempts per URL before giving up (default: 200)
   --max-wait SECONDS Cap any single RetryAfter wait to this many seconds (default: 1800)
 
@@ -66,18 +66,22 @@ EOF
 
 cookies_file="$HOME/cookies-esa-int.txt"
 outdir="."
-parallel=6
+parallel=2
 poll_max=200
 max_wait=1800
 urls_file=""
 urls_input=""
 temp_urls_file=""
+wrapper_script=""
 
 die() { echo "[ERROR] $*" >&2; exit 2; }
 
 cleanup() {
   if [[ -n "$temp_urls_file" && -f "$temp_urls_file" ]]; then
     rm -f "$temp_urls_file"
+  fi
+  if [[ -n "$wrapper_script" && -f "$wrapper_script" ]]; then
+    rm -f "$wrapper_script"
   fi
 }
 trap cleanup EXIT
@@ -251,16 +255,123 @@ fi
 echo "[INFO] Found valid Shibboleth session in cookies file"
 
 # --- Download URLs in parallel ---
-# Run in parallel using xargs; each invocation downloads one URL.
-export -f download_one die
-export cookies_file outdir poll_max max_wait
+# Create a temporary wrapper script for parallel execution
+wrapper_script="$(mktemp)"
+cat > "$wrapper_script" << 'WRAPPER_EOF'
+#!/bin/bash
+set -euo pipefail
+
+die() { echo "[ERROR] $*" >&2; exit 2; }
+
+download_one() {
+  local url="$1"
+  local cookie="$2"
+  local outdir="$3"
+  local poll_max="$4"
+  local max_wait="$5"
+
+  local out="$outdir/$(basename "$url")"
+  
+  # Create a per-process cookie file to avoid race conditions in parallel downloads
+  # This allows curl to update session cookies without conflicts
+  local cookie_copy="$(mktemp)"
+  cp "$cookie" "$cookie_copy"
+  trap "rm -f '$cookie_copy'" RETURN
+
+  # Check if file exists and determine if complete
+  if [[ -f "$out" ]]; then
+    local sz
+    sz=$(wc -c < "$out" | tr -d ' ')
+    
+    # If very small (< 1MB), likely error response - retry
+    if [[ "$sz" -lt 1000000 ]]; then
+      echo "[INFO] $(basename "$out") is small ($sz bytes), will retry"
+    else
+      # File exists and is large - check if it needs resuming
+      # Try a range request to see if server accepts resume
+      local tmp_header="$(mktemp)"
+      if curl -sI -b "$cookie_copy" -c "$cookie_copy" -r "${sz}-" --max-time 30 "$url" -o "$tmp_header" 2>/dev/null; then
+        # Check if server returns 206 (partial content) or 416 (range not satisfiable = complete)
+        if grep -q "HTTP/[0-9.]\+ 416" "$tmp_header"; then
+          echo "[SKIP] $(basename "$out") already complete (${sz} bytes)"
+          rm -f "$tmp_header"
+          return 0
+        elif grep -q "HTTP/[0-9.]\+ 206" "$tmp_header"; then
+          echo "[RESUME] $(basename "$out") incomplete at ${sz} bytes, resuming..."
+        fi
+      fi
+      rm -f "$tmp_header"
+    fi
+  fi
+
+  local attempt=0
+  while (( attempt < poll_max )); do
+    attempt=$((attempt+1))
+
+    # Fetch first 2KB to detect "ACCEPTED/RetryAfter" XML without downloading the whole file.
+    local tmp
+    tmp="$(mktemp)"
+    curl -sL -b "$cookie_copy" -c "$cookie_copy" -r 0-2047 --max-time 60 "$url" -o "$tmp" || true
+
+    if grep -q "<ProductDownloadResponse" "$tmp"; then
+      local wait_s
+      wait_s=$(sed -n 's/.*<RetryAfter>\([0-9]\+\)<\/RetryAfter>.*/\1/p' "$tmp" | head -n1 || true)
+      [[ -z "${wait_s:-}" ]] && wait_s=300
+      # Cap wait to avoid absurd sleeps
+      if (( wait_s > max_wait )); then wait_s="$max_wait"; fi
+      echo "[WAIT] $(basename "$out") attempt $attempt/$poll_max RetryAfter=${wait_s}s"
+      rm -f "$tmp"
+      sleep "$wait_s"
+      continue
+    fi
+
+    # If it looks like HTML, auth is broken or expired.
+    if head -c 200 "$tmp" | grep -qi "<html"; then
+      rm -f "$tmp"
+      die "Got HTML (likely login page) for: $url
+Cookie likely expired or missing _shibsession_... for esar-ds.eo.esa.int"
+    fi
+
+    rm -f "$tmp"
+    echo "[DL]  $(basename "$out") attempt $attempt/$poll_max"
+    # Now do the full download with resume
+    # Timeout options: --max-time prevents infinite hangs, --speed-limit/--speed-time aborts if too slow
+    if ! curl -L -C - -b "$cookie_copy" -c "$cookie_copy" \
+         --max-time 7200 \
+         --speed-limit 1000 --speed-time 300 \
+         --retry 3 --retry-delay 5 --retry-max-time 600 \
+         -o "$out" "$url"; then
+      echo "[WARN] curl failed or timed out, will retry..."
+      sleep 10
+      continue
+    fi
+    # Basic sanity: if still tiny, keep polling
+    local sz
+    sz=$(wc -c < "$out" | tr -d ' ')
+    if [[ "$sz" -lt 1000000 ]]; then
+      echo "[WARN] Downloaded only ${sz} bytes (too small). Will retry."
+      sleep 5
+      continue
+    fi
+    return 0
+  done
+
+  die "Exceeded poll-max=$poll_max for URL: $url"
+}
+
+# xargs passes: cookies_file outdir poll_max max_wait URL
+# download_one expects: url cookie outdir poll_max max_wait
+# Reorder arguments: URL is $5, cookies_file is $1
+download_one "$5" "$1" "$2" "$3" "$4"
+WRAPPER_EOF
+
+chmod +x "$wrapper_script"
 
 echo "[INFO] Downloading $(awk 'NF && $0 !~ /^#/' "$urls_file" | wc -l | tr -d ' ') files with $parallel parallel jobs"
 
-# Filter blanks/comments
+# Filter blanks/comments, strip carriage returns (Windows line endings), and pass to wrapper script
 awk 'NF && $0 !~ /^#/' "$urls_file" \
-  | xargs -n 1 -P "$parallel" bash -lc '
-      download_one "$1" "$cookies_file" "$outdir" "$poll_max" "$max_wait"
-    ' bash
+  | tr -d '\r' \
+  | xargs -n 1 -P "$parallel" "$wrapper_script" "$cookies_file" "$outdir" "$poll_max" "$max_wait"
 
 echo "[DONE] All downloads complete"
