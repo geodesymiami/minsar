@@ -397,7 +397,7 @@ def create_webpage_2frames(urls, labels, output_path='page.html', zoom_factor=No
                     <label for="url-input">URL:</label>
                     <input type="text" id="url-input" placeholder="Paste full URL here">
                     <button id="url-apply-btn">Apply</button>
-                    <button id="url-open-btn" title="Open URL in new window">O</button>
+                    <button id="url-open-btn" title="For displaying different area/zoom/periods, open in new wondow and copy-paste updated URL into URL box.">i</button>
                 </div>
             </div>
             <iframe id="iframe1" title="{label1}" allowfullscreen></iframe>
@@ -1722,7 +1722,7 @@ def create_webpage_4frames(urls, labels, output_path='page.html', zoom_factor=No
                     <label for="url-input">URL:</label>
                     <input type="text" id="url-input" placeholder="Paste full URL here">
                     <button id="url-apply-btn">Apply</button>
-                    <button id="url-open-btn" title="Open URL in new window">O</button>
+                    <button id="url-open-btn" title="For displaying different area/zoom/periods, open in new wondow and copy-paste updated URL into URL box.">i</button>
                 </div>
             </div>
             <iframe id="iframe1" title="{label1}" allowfullscreen></iframe>
@@ -3017,14 +3017,14 @@ def create_overlay_html(urls, labels, output_path='overlay.html', zoom_factor=No
             urlApplyBtn.id = `url-apply-btn-${{index}}`;
             urlApplyBtn.textContent = 'Apply';
             
-            // Add "O" button to all panels
+            // Add "i" button to all panels
             const urlOpenBtn = document.createElement('button');
             urlOpenBtn.className = 'url-open-btn-frame';
             urlOpenBtn.id = `url-open-btn-${{index}}`;
-            urlOpenBtn.textContent = 'O';
-            urlOpenBtn.title = 'Open URL in new window';
+            urlOpenBtn.textContent = 'i';
+            urlOpenBtn.title = 'For displaying different area/zoom/periods, open in new wondow and copy-paste updated URL into URL box.';
             
-            // Order: URL label, URL input, Apply button, "O" button
+            // Order: URL label, URL input, Apply button, "i" button
             urlControl.appendChild(urlLabel);
             urlControl.appendChild(urlInput);
             urlControl.appendChild(urlApplyBtn);
