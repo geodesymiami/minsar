@@ -147,15 +147,19 @@ def main(iargs=None):
     for data_dir in inps.data_dirs:
         data_dir = data_dir.rstrip('/')
 
-        # If path is a subdirectory (contains '/') but NOT a miaplpy network directory,
-        # upload all contents (e.g., mintpy/inputs, mintpy/pic, test1/EnvD140)
-        # Exclude miaplpy network directories - they should use standard processing
-        if '/' in data_dir and os.path.isdir(data_dir) and 'network_' not in data_dir:
-            print(f"Uploading all contents of directory: {data_dir}")
-            if os.path.isdir(data_dir + '/pic'):
-                create_html_if_needed(data_dir + '/pic')
-            scp_list.extend(['/' + data_dir])
-            continue
+        # If path is a subdirectory (contains '/'), determine if it should upload all contents
+        # Upload all for: mintpy/inputs, test1/EnvD140, miaplpy_*/network_*/pic, etc.
+        # Use standard processing for: miaplpy_*/network_single_reference (network dirs themselves)
+        if '/' in data_dir and os.path.isdir(data_dir):
+            basename = os.path.basename(data_dir)
+            # If it's a network directory itself (ends with network_*), use standard processing
+            # Otherwise, if it's a subdirectory (like pic, inputs, geo), upload all contents
+            if not basename.startswith('network_'):
+                print(f"Uploading all contents of directory: {data_dir}")
+                if os.path.isdir(data_dir + '/pic'):
+                    create_html_if_needed(data_dir + '/pic')
+                scp_list.extend(['/' + data_dir])
+                continue
 
         # Main directory processing (mintpy, miaplpy, etc.)
         if 'mintpy' in data_dir:
