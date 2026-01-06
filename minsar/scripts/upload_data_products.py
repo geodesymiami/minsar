@@ -274,13 +274,11 @@ def main(iargs=None):
                     '/'+ os.path.dirname(data_dir) +'/inverted/tempCoh_full*'
                     ])
         else:
-            # sarvey. May work for other directories containing images
+            # Other directories (e.g., EnvD140, sarvey, etc.) - upload entire directory
+            print(f"Uploading all contents of directory: {data_dir}")
             if os.path.isdir(data_dir + '/pic'):
-               create_html_if_needed(data_dir + '/pic')
-            scp_list.extend([ '/'+ data_dir +'/pic', ])
-            scp_list.extend([ '/'+ data_dir +'/../maskfiles/*', ])
-            #scp_list.extend([ '/'+ data_dir +'/shp', ])
-            #scp_list.extend([ '/'+ data_dir +'/outputs/output_csv/*.csv', ])
+                create_html_if_needed(data_dir + '/pic')
+            scp_list.extend(['/' + data_dir])
 
     print('################')
     print('Data to upload: ')
