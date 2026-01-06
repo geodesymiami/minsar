@@ -154,6 +154,13 @@ def main(iargs=None):
                 continue  # Skip the normal mintpy processing below
 
         if 'mintpy' in data_dir:
+            # Handle --all flag: upload entire directory
+            if inps.all_flag:
+                if os.path.isdir(data_dir + '/pic'):
+                    create_html_if_needed(data_dir + '/pic')
+                scp_list.extend(['/' + data_dir])
+                continue  # Skip specific file patterns
+            
             if os.path.isdir(data_dir + '/pic'):
                create_html_if_needed(data_dir + '/pic')
 
@@ -181,10 +188,26 @@ def main(iargs=None):
                   '/'+ data_dir +'/geo/geo_*.shx',
                   ])
         elif 'miaplpy' in data_dir and 'inputs' in data_dir:
-            #scp_list.extend(['/' + data_dir])
-            scp_list.extend(['/' + data_dir + '/*'])
+            # Handle --all flag: upload entire directory
+            if inps.all_flag:
+                scp_list.extend(['/' + data_dir])
+            else:
+                scp_list.extend(['/' + data_dir + '/*'])
 
         elif 'miaplpy' in data_dir and not 'inputs' in data_dir:
+            # Handle --all flag: upload entire directory
+            if inps.all_flag:
+                if 'network_' in data_dir:
+                    dir_list = [ data_dir ]
+                else:
+                    dir_list = glob.glob(data_dir + '/network_*')
+                
+                for network_dir in dir_list:
+                    if os.path.isdir(network_dir + '/pic'):
+                        create_html_if_needed(network_dir + '/pic')
+                    scp_list.extend(['/' + network_dir])
+                continue  # Skip specific file patterns
+            
             if 'network_' in data_dir:
                dir_list = [ data_dir ]
             else:
@@ -237,17 +260,6 @@ def main(iargs=None):
                        scp_list.extend([
                        '/'+ network_dir +'/numTriNonzeroIntAmbiguity.h5',
                        ])
-                    if inps.all_flag:
-                        scp_list.extend([
-                        '/'+ network_dir +'/numInvIfgram.h5',
-                        '/'+ network_dir +'/timeseries_demErr.h5',
-                        '/'+ network_dir +'/inputs/ifgramStack.h5',
-                        '/'+ network_dir +'/inputs/smallbaselineApp.cfg',
-                        '/'+ network_dir +'/inputs/*template',
-                        '/'+ network_dir +'/*.cfg',
-                        '/'+ network_dir +'/*.txt',
-                        '/'+ network_dir +'/geo',
-                        ])
 
                     # After completion of network_* loops
                     scp_list.extend([
