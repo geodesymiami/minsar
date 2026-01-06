@@ -147,12 +147,17 @@ def main(iargs=None):
     for data_dir in inps.data_dirs:
         data_dir = data_dir.rstrip('/')
 
-        if 'mintpy' in data_dir and data_dir.endswith('inputs'):
-            if os.path.isdir(data_dir):
-                print(f"Uploading contents of inputs directory: {data_dir}")
-                scp_list.extend(['/' + data_dir + '/*'])
-                continue  # Skip the normal mintpy processing below
+        # If path is a subdirectory (contains '/') but NOT a miaplpy network directory,
+        # upload all contents (e.g., mintpy/inputs, mintpy/pic, test1/EnvD140)
+        # Exclude miaplpy network directories - they should use standard processing
+        if '/' in data_dir and os.path.isdir(data_dir) and 'network_' not in data_dir:
+            print(f"Uploading all contents of directory: {data_dir}")
+            if os.path.isdir(data_dir + '/pic'):
+                create_html_if_needed(data_dir + '/pic')
+            scp_list.extend(['/' + data_dir])
+            continue
 
+        # Main directory processing (mintpy, miaplpy, etc.)
         if 'mintpy' in data_dir:
             # Handle --all flag: upload entire directory
             if inps.all_flag:
@@ -187,14 +192,7 @@ def main(iargs=None):
                   '/'+ data_dir +'/geo/geo_*.shp',
                   '/'+ data_dir +'/geo/geo_*.shx',
                   ])
-        elif 'miaplpy' in data_dir and 'inputs' in data_dir:
-            # Handle --all flag: upload entire directory
-            if inps.all_flag:
-                scp_list.extend(['/' + data_dir])
-            else:
-                scp_list.extend(['/' + data_dir + '/*'])
-
-        elif 'miaplpy' in data_dir and not 'inputs' in data_dir:
+        elif 'miaplpy' in data_dir:
             # Handle --all flag: upload entire directory
             if inps.all_flag:
                 if 'network_' in data_dir:
@@ -289,13 +287,35 @@ def main(iargs=None):
     import time
     time.sleep(2)
 
-    remote_url = 'http://' + REMOTEHOST_DATA + REMOTE_DIR + project_name + '/' + data_dir + '/pic'
-    with open('upload.log', 'a') as f:
-        f.write(remote_url + "\n")
-    
-    os.makedirs(data_dir + '/pic', exist_ok=True)
-    with open(data_dir + '/pic/upload.log', 'w') as f:
-        f.write(remote_url + "\n")
+    # Write upload.log for all uploaded directories
+    remote_urls = []
+    for data_dir in inps.data_dirs:
+        data_dir = data_dir.rstrip('/')
+        
+        # Check if this directory has a pic subdirectory
+        pic_dir = data_dir + '/pic'
+        if os.path.isdir(pic_dir):
+            # If pic exists, URL points to pic directory
+            remote_url = 'http://' + REMOTEHOST_DATA + REMOTE_DIR + project_name + '/' + data_dir + '/pic'
+            
+            # Append to main upload.log
+            with open('upload.log', 'a') as f:
+                f.write(remote_url + "\n")
+            
+            # Write to pic/upload.log (only if pic directory exists)
+            with open(pic_dir + '/upload.log', 'w') as f:
+                f.write(remote_url + "\n")
+            
+            remote_urls.append(remote_url)
+        else:
+            # If no pic directory, URL points to the uploaded directory itself
+            remote_url = 'http://' + REMOTEHOST_DATA + REMOTE_DIR + project_name + '/' + data_dir
+            
+            # Append to main upload.log
+            with open('upload.log', 'a') as f:
+                f.write(remote_url + "\n")
+            
+            remote_urls.append(remote_url)
 
     print('\n################')
     print('Deleting remote directories...')
@@ -350,8 +370,9 @@ def main(iargs=None):
 ##########################################
     add_log_remote_hdfeos5(scp_list, inps.work_dir)
 ##########################################
-    print('Data at:')
-    print(remote_url)
+    print('\nData at:')
+    for url in remote_urls:
+        print(url)
 
     return None
 
