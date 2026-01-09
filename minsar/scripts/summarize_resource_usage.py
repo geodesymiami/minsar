@@ -163,8 +163,8 @@ def get_number_of_bursts_from_out_create_jobfiles(file_path='out_create_jobfiles
                 else:
                     raise ValueError("Line found but pattern did not match: " + line)
 
-    if number_of_bursts is None:
-        raise ValueError("No line containing 'number of bursts' found.")
+   # if number_of_bursts is None:
+   #     raise ValueError("No line containing 'number of bursts' found.")
 
     return number_of_bursts
 
@@ -191,6 +191,10 @@ def main(iargs=None):
     inps_dict = dataset_template.options
 
     number_of_bursts = get_number_of_bursts_from_out_create_jobfiles()
+
+    if number_of_bursts is None:
+        print("number of bursts unknown -- exiting")
+        return
 
     slc_size_units = miaplpy_size_units = 0
     if isce_log_files:
