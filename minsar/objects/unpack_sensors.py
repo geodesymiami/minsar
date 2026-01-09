@@ -163,11 +163,16 @@ class Sensors:
                 image_folder_out = os.path.join(SLC_dir, os.path.basename(image_folder))
                 if os.path.isdir(image_folder_out):
                     shutil.rmtree(image_folder_out)
+
                 # move the image acqusition folder in the date folder
-                cmd = 'mv ' + image_folder + '/* ' + SLC_dir + '.'
-                os.system(cmd)
-                cmd = 'rmdir ' + image_folder
-                os.system(cmd)
+                if os.path.isfile(image_folder):
+                    cmd = 'mv ' + image_folder + ' ' + SLC_dir + '.'         # FA 1/2026: For Envisat it is a file
+                    os.system(cmd)
+                else:
+                    cmd = 'mv ' + image_folder + '/* ' + SLC_dir + '.'
+                    os.system(cmd)
+                    cmd = 'rmdir ' + image_folder
+                    os.system(cmd)
 
                 print('changing folder name to date Succes: ' + imgDate)
             else:
@@ -188,6 +193,9 @@ class Sensors:
 
         elif 'TSX' in self.sensor:
             successflag, acquisitionDate = self.get_TSX_TDX_date(data_folder)
+
+        elif 'Envisat' in self.sensor:
+            successflag, acquisitionDate = self.get_ENVISAT_date(data_folder)
 
         else:
             successflag = False
@@ -284,6 +292,23 @@ class Sensors:
             successflag = False
             acquisitionDate = 'FAIL'
             return successflag, acquisitionDate
+
+    def get_ENVISAT_date(self, ENVISAT_folder):
+
+        ENVISAT_file = os.path.basename(ENVISAT_folder)
+
+        if len(ENVISAT_file) > 0:
+            parts = ENVISAT_file.split('_')
+            acquisitionDate = parts[2][6:]
+            successflag = True
+            return successflag, acquisitionDate
+        else:
+            # if it reached here it could not find the acqusiitionDate
+            successflag = False
+            acquisitionDate = 'FAIL'
+
+        return successflag, acquisitionDate
+
 
     def create_run_unpack(self):
 
