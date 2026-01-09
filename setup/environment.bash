@@ -57,6 +57,10 @@ export GBIS_TESTDATA=${WORKDIR}/TESTDATA_GBIS
 export GEODMOD_TESTBENCH=${SCRATCHDIR}/GEODMOD_TESTBENCH
 export GBIS_INFILES=${WORKDIR}/infiles/${USER_PREFERRED}/GBIS_INFILES
 
+############## Envisat ##############
+export VOR_DIR="$WORKDIR/Envisat_DORIS/VOR_DIR"
+export INS_DIR="$WORKDIR/ASAR_Auxiliary_Files/ASA_INS_AX"
+
 ###########  USEFUL VARIABLES  #########
 export SAMPLESDIR=${MINSAR_HOME}/samples
 export DEMDIR=${WORKDIR}/DEMDIR
