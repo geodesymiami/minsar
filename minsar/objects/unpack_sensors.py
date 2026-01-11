@@ -41,6 +41,18 @@ class Sensors:
         unpack_runfile = self.create_run_unpack()
 
         return unpack_runfile
+    
+    def create_runfiles_only(self):
+        """
+        Creates run files without doing the actual unpacking.
+        Returns both the uncompress_rename runfile and the unpack runfile.
+        This is used when you want to parallelize the extraction process.
+        """
+        self.get_sensor_type()
+        uncompress_runfile = self.create_run_uncompress_rename()
+        # Note: unpack runfile will be created after uncompress is done
+        # So we just return the uncompress runfile for now
+        return uncompress_runfile
 
     def get_sensor_type(self):
         # search criteria for the different sensors
@@ -310,6 +322,29 @@ class Sensors:
         return successflag, acquisitionDate
 
 
+    def create_run_uncompress_rename(self):
+        """
+        Creates a run file with commands to uncompress and rename archive files in parallel.
+        Each line will process one archive file.
+        """
+        # Get the uncompress_and_rename script path
+        minsar_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        uncompress_script = os.path.join(minsar_path, 'utils', 'uncompress_and_rename.py')
+        
+        # filename of the run file
+        run_uncompress = os.path.join(self.input_dir, 'run_00_extract_archives')
+        
+        # Determine remove flag
+        remove_flag = '--remove' if self.rmfile in [True, 'True'] else ''
+        
+        with open(run_uncompress, 'w') as f:
+            for archive_file in self.file_list:
+                cmd = f'{uncompress_script} {os.path.abspath(archive_file)} {self.sensor} {remove_flag} --data-type {self.data_type}'
+                print(cmd)
+                f.write(cmd + '\n')
+        
+        return run_uncompress
+
     def create_run_unpack(self):
 
         script_path = os.path.join(os.getenv('ISCE_STACK'), 'stripmapStack')
@@ -327,7 +362,7 @@ class Sensors:
         unpack_script = unpack_script + '.py'
 
         # filename of the run file
-        run_unPack = os.path.join(self.input_dir, 'run_0_unPack_raw')
+        run_unPack = os.path.join(self.input_dir, 'run_01_unpackFrame')
         dateDirs = glob.glob(os.path.join(self.input_dir, '2*'))
 
         if self.output_dir is not None:
