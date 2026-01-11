@@ -90,6 +90,7 @@ def main(iargs=None):
     unpack_run_file = unpackObj.start()
     unpackObj.close()
 
+    unpack_run_file = os.path.abspath( os.path.join(inps.work_dir, unpack_run_file))
     inps.out_dir = inps.work_dir
     inps.num_data = 1
     job_obj = JOB_SUBMIT(inps)  

@@ -217,9 +217,14 @@ class JOB_SUBMIT:
 
             self.get_memory_walltime(batch_file, job_type='batch')
 
-            log_args = 'job_submission.py --template {t} {a} --outdir {b} ' \
+            if hasattr(self, "custom_template_file"):
+                log_args = 'job_submission.py --template {t} {a} --outdir {b} ' \
                        '--numMemoryUnits {c} --writeonly'.format(t=self.custom_template_file,
                                                             a=batch_file, b=self.out_dir,
+                                                            c=self.num_memory_units)
+            else:
+                log_args = 'job_submission.py {a} --outdir {b} ' \
+                       '--numMemoryUnits {c} --writeonly'.format(a=batch_file, b=self.out_dir,
                                                             c=self.num_memory_units)
 
             if self.remora:
@@ -1449,7 +1454,7 @@ def auto_template_not_existing_options(args):
     job_options = ['QUEUENAME', 'CPUS_PER_NODE', 'THREADS_PER_CORE', 'MAX_JOBS_PER_WORKFLOW', 'MAX_JOBS_PER_QUEUE',
                    'WALLTIME_FACTOR', 'MEM_PER_NODE', 'job_submission_scheme']
 
-    if hasattr(args, 'custom_template_file'):
+    if hasattr(args, 'custom_template_file') and args.custom_template_file:
         from minsar.objects.dataset_template import Template
         template = Template(args.custom_template_file).options
 
