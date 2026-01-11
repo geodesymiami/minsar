@@ -334,7 +334,7 @@ class Sensors:
             f = open(run_unPack, 'w')
             #if sensor_list_affix[self.sensor] is 'CSK':
             #self.output_dir = self.input_dir.replace('RAW_data','SLC')   # FA 4/2021: replaces ./SLC by full path. SM suggests to change defaults to None
-            self.output_dir = os.path.dirname(self.input_dir) + '/SLC'    # FA 12/2022   Above did not work for TSX. I should do SM's suggestion above
+            self.output_dir = os.path.join(os.path.dirname(os.path.abspath(self.input_dir)), 'SLC')    # FA 12/2022, FA 1/2026: use abspath to handle relative paths
             for dateDir in dateDirs:
                 acquisitionDate = os.path.basename(dateDir)
                 slcDir = os.path.join(self.output_dir, acquisitionDate)
