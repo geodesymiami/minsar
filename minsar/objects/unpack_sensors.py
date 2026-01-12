@@ -29,18 +29,28 @@ class Sensors:
 
         self.file_list = sorted(glob.glob(os.path.join(self.input_dir, '*.zip')) + \
                                 glob.glob(os.path.join(self.input_dir, '*.tar')) + \
-                                glob.glob(os.path.join(self.input_dir, '*.gz')))
+                                glob.glob(os.path.join(self.input_dir, '*.gz')) + \
+                                glob.glob(os.path.join(self.input_dir, '*.N1')))
 
         return
 
     def start(self):
 
         self.get_sensor_type()
-        self.unpack()
+        self.uncompress()
         self.change_folder_names_to_date()
-        unpack_runfile = self.create_run_unpack()
+        unpackFrame_runfile = self.create_run_unpackFrame()
 
-        return unpack_runfile
+        return unpackFrame_runfile
+    
+    def create_uncompress_rename_runfile(self):
+        """
+        Creates the run_01_uncompress_rename file without doing the actual unpacking.
+        Returns the uncompress_rename runfile path.
+        """
+        self.get_sensor_type()
+        uncompress_rename_runfile = self.create_run_uncompress_rename()
+        return uncompress_rename_runfile
 
     def get_sensor_type(self):
         # search criteria for the different sensors
@@ -85,7 +95,7 @@ class Sensors:
         return
 
 
-    def unpack(self):
+    def uncompress(self):
 
         failed_files = []
 
@@ -310,28 +320,52 @@ class Sensors:
         return successflag, acquisitionDate
 
 
-    def create_run_unpack(self):
+    def create_run_uncompress_rename(self):
+        """
+        Creates a run file with commands to uncompress and rename archive files in parallel.
+        Each line will process one archive file.
+        """
+        # Get the uncompress_and_rename_data script path
+        minsar_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        uncompress_script = os.path.join(minsar_path, 'utils', 'uncompress_and_rename_data.py')
+        
+        # filename of the run file
+        run_uncompress_rename = os.path.join(self.input_dir, 'run_01_uncompress_rename')
+        
+        # Determine remove flag
+        remove_flag = '--remove' if self.rmfile in [True, 'True'] else ''
+        
+        with open(run_uncompress_rename, 'w') as f:
+            for archive_file in self.file_list:
+                cmd = f'{uncompress_script} {os.path.abspath(archive_file)} {remove_flag}'
+                cmd = cmd.strip()  # Remove trailing space if no remove_flag
+                print(cmd)
+                f.write(cmd + '\n')
+        
+        return run_uncompress_rename
+
+    def create_run_unpackFrame(self):
 
         script_path = os.path.join(os.getenv('ISCE_STACK'), 'stripmapStack')
 
-        unpack_script = os.path.join(script_path, 'unpackFrame')
+        unpackFrame_script = os.path.join(script_path, 'unpackFrame')
 
         sensor_list_affix = {'Envisat': 'ENV', 'ERS_CEOS': 'ERS', 'ERS_ENV': 'ERS', 'ALOS1': 'ALOS', 'ALOS2': 'ALOS2',
                              'CSK': 'CSK', 'TSX/TDX': 'TSX', 'RSAT2': 'RSAT2'}
         if self.sensor in sensor_list_affix.keys():
-            unpack_script = unpack_script + '_{}'.format(sensor_list_affix[self.sensor])
+            unpackFrame_script = unpackFrame_script + '_{}'.format(sensor_list_affix[self.sensor])
 
         if self.data_type == 'raw':
-            unpack_script = unpack_script + '_raw'
+            unpackFrame_script = unpackFrame_script + '_raw'
 
-        unpack_script = unpack_script + '.py'
+        unpackFrame_script = unpackFrame_script + '.py'
 
         # filename of the run file
-        run_unPack = os.path.join(self.input_dir, 'run_0_unPack_raw')
+        run_unpackFrame = os.path.join(self.input_dir, 'run_02_unpackFrame')
         dateDirs = glob.glob(os.path.join(self.input_dir, '2*'))
 
         if self.output_dir is not None:
-            f = open(run_unPack, 'w')
+            f = open(run_unpackFrame, 'w')
             #if sensor_list_affix[self.sensor] is 'CSK':
             #self.output_dir = self.input_dir.replace('RAW_data','SLC')   # FA 4/2021: replaces ./SLC by full path. SM suggests to change defaults to None
             self.output_dir = os.path.join(os.path.dirname(os.path.abspath(self.input_dir)), 'SLC')    # FA 12/2022, FA 1/2026: use abspath to handle relative paths
@@ -339,10 +373,10 @@ class Sensors:
                 acquisitionDate = os.path.basename(dateDir)
                 slcDir = os.path.join(self.output_dir, acquisitionDate)
                 os.makedirs(slcDir, exist_ok=True)
-                cmd = unpack_script + ' -i ' + os.path.abspath(dateDir) + ' -o ' + slcDir
+                cmd = unpackFrame_script + ' -i ' + os.path.abspath(dateDir) + ' -o ' + slcDir
                 print(cmd)
                 f.write(cmd + '\n')
-        return run_unPack
+        return run_unpackFrame
     
     def close(self):
         os.environ['PATH'] = self.system_path
