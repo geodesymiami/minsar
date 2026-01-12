@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 ########################
 # Author: Falk Amelung
-# Based on unpack_SLCs.py by Sara Mirzaee
 ########################
 
 """
-Unpacks SLC files into SLC directory using a two-stage parallel approach:
+Unpacks SLC files into SLC directory using a two-stage approach:
 1. Extract archives and rename folders (parallelized via SLURM)
 2. Run ISCE unpackFrame scripts (parallelized via SLURM)
-
-This is more efficient than unpack_SLCs.py for large numbers of files.
 """
 
 import os
@@ -28,13 +25,13 @@ from minsar.job_submission import JOB_SUBMIT
 EXAMPLE = """
 
 Examples:
-    unpack_SLCs_parallel.py RAW_data
-    unpack_SLCs_parallel.py SLC_ORIG
-    unpack_SLCs_parallel.py SLC_ORIG --queue skx --walltime 0:45
+    unpack_SLCs.py RAW_data
+    unpack_SLCs.py SLC_ORIG
+    unpack_SLCs.py SLC_ORIG --queue skx --unpack-walltime 1:30 --extract-walltime 0:45
 """
 
 DESCRIPTION = (
-    "Unpacks SLC files into SLC directory using parallel extraction"
+    "Unpacks SLC files into SLC directories"
 )
 
 def create_parser():
@@ -43,7 +40,7 @@ def create_parser():
     parser.add_argument("slc_orig_dir", metavar="SLC_ORIG", help="path to SLC_ORIG directory")
     parser.add_argument("--queue", dest="queue", metavar="QUEUE", help="Name of queue to submit job to")
     parser.add_argument('--jobfiles', dest='write_jobs', action='store_true', help='writes the jobs corresponding to run files')
-    parser.add_argument('--walltime', dest='wall_time', metavar="WALLTIME (HH:MM)", default='1:00', help='job walltime (default=1:00)')
+    parser.add_argument('--unpack-walltime', dest='unpack_wall_time', metavar="WALLTIME (HH:MM)", default='1:00', help='walltime for unpackFrame stage (default=1:00)')
     parser.add_argument('--extract-walltime', dest='extract_wall_time', metavar="WALLTIME (HH:MM)", default='0:30', help='walltime for extraction stage (default=0:30)')
     return parser
 
@@ -51,7 +48,6 @@ def cmd_line_parse(iargs=None):
     parser = create_parser()
     inps = parser.parse_args(args=iargs)
     return inps
-
 
 def main(iargs=None):
     inps = cmd_line_parse()
@@ -67,7 +63,7 @@ def main(iargs=None):
     slc_dir = os.path.join(inps.work_dir, 'SLC')
     unpackObj = Sensors(inps.slc_orig_dir, slc_dir, remove_file='False')
     
-    # Stage 1: Create and submit the extraction/rename run file
+    # Stage 1: Create and submit the extraction/rename run_file
     print("\n" + "="*80)
     print("STAGE 1: Creating run file for archive extraction and renaming")
     print("="*80)
@@ -76,17 +72,15 @@ def main(iargs=None):
     extract_run_file = os.path.abspath(extract_run_file)
     print(f"Created: {extract_run_file}")
     
-    # Submit extraction job
+    # Submit data extraction job
     inps.out_dir = inps.work_dir
     inps.num_data = 1
-    inps.custom_template_file = None
-    
-    # Use shorter walltime for extraction
+    inps.custom_template_file = None    
     if hasattr(inps, 'extract_wall_time'):
         inps.wall_time = inps.extract_wall_time
     
     job_obj = JOB_SUBMIT(inps)
-    print(f"\nSubmitting extraction job...")
+    print(f"\nSubmitting data uncompression and extraction job...")
     job_obj.write_batch_jobs(batch_file=extract_run_file)
     job_status = job_obj.submit_batch_jobs(batch_file=extract_run_file)
     
@@ -105,8 +99,8 @@ def main(iargs=None):
     print(f"Created: {unpack_run_file}")
     
     # Reset walltime to user-specified value for unpack stage
-    if hasattr(inps, 'wall_time_orig'):
-        inps.wall_time = inps.wall_time_orig
+    if hasattr(inps, 'unpack_wall_time'):
+        inps.wall_time = inps.unpack_wall_time
     else:
         inps.wall_time = '1:00'  # default
     

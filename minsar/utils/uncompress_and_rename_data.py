@@ -1,18 +1,12 @@
 #!/usr/bin/env python3
 ########################
 # Author: Falk Amelung
-# Based on unpack_sensors.py by Sara Mirzaee
+# Based on unpack_sensors.py
 ########################
 
 """
-Script to uncompress a single archive file and rename the folder to date format.
-This is designed to be run in parallel via SLURM for many archive files.
-
-Usage:
-    uncompress_and_rename.py archive_file sensor_type [--remove]
-    
-Example:
-    uncompress_and_rename.py SLC_ORIG/TSX1_SM_036_strip_014_20170901.tar.gz TSX/TDX
+Script to uncompress a single data file and rename the folder to date format.
+This is designed to be run in parallel via SLURM for many data files.
 """
 
 import os
@@ -23,13 +17,46 @@ import argparse
 import xml.etree.ElementTree as etree
 
 
+############################################################
+EXAMPLE = """Examples:
+    uncompress_and_rename_data.py TSX1_SM_036_strip_014_20171004111805.tar.gz
+    uncompress_and_rename_data.py CSKS2_RAW_B_HI_06_HH_RA_SF_20201009161233_20201009161240.tar.gz
+    uncompress_and_rename_data.py TSX1_SM_036_strip_014_20171004111805.tar.gz --remove
+"""
+
+
 def create_parser():
-    parser = argparse.ArgumentParser(description='Uncompress and rename a single archive file')
-    parser.add_argument('archive_file', help='Path to archive file (.zip, .tar, .gz)')
-    parser.add_argument('sensor_type', help='Sensor type (e.g., CSK, TSX/TDX, ALOS1, ALOS2, RSAT2, Envisat)')
-    parser.add_argument('--remove', action='store_true', help='Remove archive after successful extraction')
-    parser.add_argument('--data-type', default='slc', choices=['slc', 'raw'], help='Data type (default: slc)')
+    synopsis = 'Uncompress a single data file and rename folder to date format'
+    epilog = EXAMPLE
+    parser = argparse.ArgumentParser(description=synopsis, epilog=epilog, formatter_class=argparse.RawTextHelpFormatter)
+    parser.add_argument('data_file', help='Path to data file (.zip, .tar, .gz)')
+    parser.add_argument('--remove', action='store_true', 
+                        help='Remove data file after successful extraction (default: move to ARCHIVED_FILES directory)')
+    parser.add_argument('--data-type', default='slc', choices=['slc', 'raw'], 
+                        help='Data type (default: %(default)s)')
     return parser
+
+
+def detect_sensor_type(data_file):
+    """Detect sensor type from filename."""
+    basename = os.path.basename(data_file)
+    
+    # Check for different sensor patterns
+    if basename.startswith('ASA'):
+        return 'Envisat'
+    elif basename.startswith('CSK') or basename.startswith('EL'):
+        return 'CSK'
+    elif basename.startswith('TSX') or basename.startswith('TDX') or 'dims_op' in basename:
+        return 'TSX/TDX'
+    elif basename.startswith('ALPSRP'):
+        return 'ALOS1'
+    elif basename.startswith('00') and 'ALOS2' in basename:
+        return 'ALOS2'
+    elif basename.startswith('RS2'):
+        return 'RSAT2'
+    else:
+        print(f"ERROR: Could not detect sensor type from filename: {basename}")
+        sys.exit(1)
 
 
 def get_date_from_folder(data_folder, sensor):
@@ -123,51 +150,54 @@ def main():
     sys.path.append(os.path.join(os.getenv('ISCE_STACK'), 'stripmapStack'))
     from uncompressFile import uncompressfile
     
-    archive_file = os.path.abspath(args.archive_file)
-    workdir = os.path.dirname(archive_file)
-    out_folder = os.path.basename(archive_file).split('.')[0]
+    data_file = os.path.abspath(args.data_file)
+    workdir = os.path.dirname(data_file)
+    out_folder = os.path.basename(data_file).split('.')[0]
     out_folder = os.path.join(workdir, out_folder)
     
-    print(f"Processing: {archive_file}")
+    print(f"Processing: {data_file}")
     
-    # Check if archive file exists
-    if not os.path.isfile(archive_file):
-        print(f"ERROR: Archive file not found: {archive_file}")
+    # Check if data file exists
+    if not os.path.isfile(data_file):
+        print(f"ERROR: Data file not found: {data_file}")
         sys.exit(1)
+    
+    # Detect sensor type
+    sensor_type = detect_sensor_type(data_file)
+    print(f"  Sensor: {sensor_type}")
     
     # Uncompress the file
     print(f"  Uncompressing to: {out_folder}")
-    success = uncompressfile(archive_file, out_folder)
+    success = uncompressfile(data_file, out_folder)
     
     if not success:
-        print(f"  ERROR: Uncompressing failed for {archive_file}")
+        print(f"  ERROR: Uncompressing failed for {data_file}")
         # Move to FAILED_FILES directory
         failed_dir = os.path.join(workdir, 'FAILED_FILES')
         os.makedirs(failed_dir, exist_ok=True)
         try:
-            os.rename(archive_file, os.path.join(failed_dir, os.path.basename(archive_file)))
-            print(f"  Moved to FAILED_FILES directory")
+            os.rename(data_file, os.path.join(failed_dir, os.path.basename(data_file)))
+            print(f"  Moved to FAILED_FILES")
         except OSError as e:
             print(f"  Failed to move to FAILED_FILES: {e}")
         sys.exit(1)
     
     # Get the date from the extracted folder
     print(f"  Extracting date...")
-    successflag, imgDate = get_date_from_folder(out_folder, args.sensor_type)
+    successflag, imgDate = get_date_from_folder(out_folder, sensor_type)
     
     if not successflag:
         print(f"  ERROR: Could not extract date from {out_folder}")
         sys.exit(1)
     
     # Create date directory and move contents
-    print(f"  Renaming to date: {imgDate}")
+    print(f"  Date: {imgDate}")
     date_dir = os.path.join(workdir, imgDate)
     os.makedirs(date_dir, exist_ok=True)
     
     # Check if folder already exists in date directory
     image_folder_out = os.path.join(date_dir, os.path.basename(out_folder))
     if os.path.isdir(image_folder_out):
-        print(f"  Removing existing folder: {image_folder_out}")
         shutil.rmtree(image_folder_out)
     
     # Move the extracted folder contents into the date folder
@@ -182,18 +212,14 @@ def main():
         cmd = f'rmdir {out_folder}'
         os.system(cmd)
     
-    print(f"  Success: {imgDate}")
-    
-    # Handle the archive file
+    # Handle the data file
     if args.remove:
-        os.remove(archive_file)
-        print(f"  Deleted archive: {archive_file}")
+        os.remove(data_file)
     else:
         archive_dir = os.path.join(workdir, 'ARCHIVED_FILES')
         os.makedirs(archive_dir, exist_ok=True)
-        cmd = f'mv {archive_file} {archive_dir}/.'
+        cmd = f'mv {data_file} {archive_dir}/.'
         os.system(cmd)
-        print(f"  Archived: {archive_file}")
     
     return 0
 

@@ -327,9 +327,9 @@ class Sensors:
         Creates a run file with commands to uncompress and rename archive files in parallel.
         Each line will process one archive file.
         """
-        # Get the uncompress_and_rename script path
+        # Get the uncompress_and_rename_data script path
         minsar_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        uncompress_script = os.path.join(minsar_path, 'utils', 'uncompress_and_rename.py')
+        uncompress_script = os.path.join(minsar_path, 'utils', 'uncompress_and_rename_data.py')
         
         # filename of the run file
         run_uncompress = os.path.join(self.input_dir, 'run_00_extract_archives')
@@ -339,7 +339,8 @@ class Sensors:
         
         with open(run_uncompress, 'w') as f:
             for archive_file in self.file_list:
-                cmd = f'{uncompress_script} {os.path.abspath(archive_file)} {self.sensor} {remove_flag} --data-type {self.data_type}'
+                cmd = f'{uncompress_script} {os.path.abspath(archive_file)} {remove_flag} --data-type {self.data_type}'
+                cmd = cmd.strip()  # Remove trailing space if no remove_flag
                 print(cmd)
                 f.write(cmd + '\n')
         
