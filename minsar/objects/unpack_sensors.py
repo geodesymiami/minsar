@@ -42,17 +42,13 @@ class Sensors:
 
         return unpackFrame_runfile
     
-    def create_runfiles_only(self):
+    def create_uncompress_rename_runfile(self):
         """
-        Creates run files without doing the actual unpacking.
-        Returns the uncompress_rename runfile.
-        The unpackFrame runfile will be created after uncompress_rename is done.
-        This is used when you want to parallelize the extraction process.
+        Creates the run_01_uncompress_rename file without doing the actual unpacking.
+        Returns the uncompress_rename runfile path.
         """
         self.get_sensor_type()
         uncompress_rename_runfile = self.create_run_uncompress_rename()
-        # Note: unpackFrame runfile will be created after uncompress_rename is done
-        # So we just return the uncompress_rename runfile for now
         return uncompress_rename_runfile
 
     def get_sensor_type(self):

@@ -68,7 +68,7 @@ def main(iargs=None):
     print("\n" + "#"*60)
     print("STAGE 1: Creating run file for data uncompression and renaming")
     
-    uncompress_rename_run_file = sensorsObj.create_runfiles_only()
+    uncompress_rename_run_file = sensorsObj.create_uncompress_rename_runfile()
     uncompress_rename_run_file = os.path.abspath(uncompress_rename_run_file)
     print(f"Created: {uncompress_rename_run_file}")
     
