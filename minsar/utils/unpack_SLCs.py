@@ -27,7 +27,7 @@ EXAMPLE = """
 Examples:
     unpack_SLCs.py RAW_data
     unpack_SLCs.py SLC_ORIG
-    unpack_SLCs.py SLC_ORIG --queue skx --unpack-walltime 1:30 --extract-walltime 0:45
+    unpack_SLCs.py SLC_ORIG --queue skx --unpack-walltime 1:30 --uncompress-walltime 0:45
 """
 
 DESCRIPTION = (
@@ -40,7 +40,7 @@ def create_parser():
     parser.add_argument("slc_orig_dir", metavar="SLC_ORIG", help="path to SLC_ORIG directory")
     parser.add_argument("--queue", dest="queue", metavar="QUEUE", help="Name of queue to submit job to")
     parser.add_argument('--jobfiles', dest='write_jobs', action='store_true', help='writes the jobs corresponding to run files')
-    parser.add_argument('--extract-walltime', dest='extract_wall_time', metavar="WALLTIME (HH:MM)", default='0:30', help='walltime for extraction stage (default=0:30)')
+    parser.add_argument('--uncompress-walltime', dest='uncompress_wall_time', metavar="WALLTIME (HH:MM)", default='0:30', help='walltime for data uncompress stage (default=0:30)')
     parser.add_argument('--unpack-walltime', dest='unpack_wall_time', metavar="WALLTIME (HH:MM)", default='1:00', help='walltime for unpackFrame stage (default=1:00)')
     return parser
 
@@ -75,8 +75,8 @@ def main(iargs=None):
     inps.out_dir = inps.work_dir
     inps.num_data = 1
     inps.custom_template_file = None    
-    if hasattr(inps, 'extract_wall_time'):
-        inps.wall_time = inps.extract_wall_time
+    if hasattr(inps, 'uncompress_wall_time'):
+        inps.wall_time = inps.uncompress_wall_time
     
     job_obj = JOB_SUBMIT(inps)
     print(f"\nSubmitting uncompress_rename job...")
