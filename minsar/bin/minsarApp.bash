@@ -469,9 +469,9 @@ if [[ $download_flag == "1" ]]; then
 
        for date in "${date_array[@]}"; do
            echo "Remove $date if exist"
-           files="RAW_data/*$date*"
+           files="$download_dir/*$date*"
            echo "Removing: $files"
-           rm $files
+           rm -f $files
        done
     fi
 fi

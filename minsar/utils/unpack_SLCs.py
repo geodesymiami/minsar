@@ -40,8 +40,8 @@ def create_parser():
     parser.add_argument("slc_orig_dir", metavar="SLC_ORIG", help="path to SLC_ORIG directory")
     parser.add_argument("--queue", dest="queue", metavar="QUEUE", help="Name of queue to submit job to")
     parser.add_argument('--jobfiles', dest='write_jobs', action='store_true', help='writes the jobs corresponding to run files')
-    parser.add_argument('--unpack-walltime', dest='unpack_wall_time', metavar="WALLTIME (HH:MM)", default='1:00', help='walltime for unpackFrame stage (default=1:00)')
     parser.add_argument('--extract-walltime', dest='extract_wall_time', metavar="WALLTIME (HH:MM)", default='0:30', help='walltime for extraction stage (default=0:30)')
+    parser.add_argument('--unpack-walltime', dest='unpack_wall_time', metavar="WALLTIME (HH:MM)", default='1:00', help='walltime for unpackFrame stage (default=1:00)')
     return parser
 
 def cmd_line_parse(iargs=None):
@@ -62,13 +62,13 @@ def main(iargs=None):
     # Create Sensors object
     slc_dir = os.path.join(inps.work_dir, 'SLC')
     shutil.rmtree(slc_dir, ignore_errors=True)
-    unpackObj = Sensors(inps.slc_orig_dir, slc_dir, remove_file='False')
+    sensorsObj = Sensors(inps.slc_orig_dir, slc_dir, remove_file='False')
     
     # Stage 1: Create and submit the uncompress_rename run_file
     print("\n" + "#"*60)
     print("STAGE 1: Creating run file for data uncompression and renaming")
     
-    uncompress_rename_run_file = unpackObj.create_runfiles_only()
+    uncompress_rename_run_file = sensorsObj.create_runfiles_only()
     uncompress_rename_run_file = os.path.abspath(uncompress_rename_run_file)
     print(f"Created: {uncompress_rename_run_file}")
     
@@ -92,7 +92,7 @@ def main(iargs=None):
     print("\n" + "#"*60)
     print("STAGE 2: Creating run file for ISCE unpackFrame processing")
     
-    unpackFrame_run_file = unpackObj.create_run_unpackFrame()
+    unpackFrame_run_file = sensorsObj.create_run_unpackFrame()
     unpackFrame_run_file = os.path.abspath(unpackFrame_run_file)
     print(f"Created: {unpackFrame_run_file}")
     
@@ -106,7 +106,7 @@ def main(iargs=None):
     job_obj2.write_batch_jobs(batch_file=unpackFrame_run_file)
     job_status2 = job_obj2.submit_batch_jobs(batch_file=unpackFrame_run_file)
     
-    unpackObj.close()
+    sensorsObj.close()
     
     if not job_status2:
         raise Exception('ERROR: unpackFrame job failed')

@@ -36,7 +36,7 @@ class Sensors:
     def start(self):
 
         self.get_sensor_type()
-        self.unpack()
+        self.uncompress()
         self.change_folder_names_to_date()
         unpackFrame_runfile = self.create_run_unpackFrame()
 
@@ -98,7 +98,7 @@ class Sensors:
         return
 
 
-    def unpack(self):
+    def uncompress(self):
 
         failed_files = []
 
