@@ -371,7 +371,7 @@ elif [[ $stopstep == "unpack" ]]; then
     jobfiles_flag=0
     ifgram_flag=0
     mintpy_flag=0
-    miaplpy_flag=0    
+    miaplpy_flag=0
 elif [[ $stopstep == "dem" ]]; then
     jobfiles_flag=0
     ifgram_flag=0
@@ -437,7 +437,7 @@ if [[ $download_flag == "1" ]]; then
     run_command "generate_download_command.py $template_file --delta-lat 0.0 --delta-lon 0.0"
 
     mkdir -p $download_dir
-  
+
     if [[ $download_method == "asf-burst" ]]; then
         run_command "./download_asf_burst.sh  2>out_download_asf_burst.e 1>out_download_asf_burst.o"
     elif [[ "$download_method" == "asf-slc" ]]; then
@@ -456,7 +456,8 @@ if [[ $download_flag == "1" ]]; then
         cd $download_dir
         # FA debug note 1/2026: use -avzn for dry-run
         run_command "rsync -avz --progress --sparse ${template[minsar.remoteDataDir]} ."
-    else 
+        cd ..
+    else
         echo "ERROR: Unknown download method <$download_method>, Exiting"
         exit 1
     fi
@@ -630,9 +631,9 @@ if [[ $miaplpy_flag == "1" ]]; then
 
     if [[ $skip_miaplpy_flag != "1" ]]; then
        # remove slcStack.h5 if exist and create miaplpy jobfiles  (FA 8/25: we may want to remove entire miaplpy folder)
-       
+
        [[ "$miaplpy_startstep" == 1 ]] &&  rm -f ${miaplpy_dir_name}/inputs/slcStack.h5 ${miaplpy_dir_name}/inputs/geometryRadar.h5
-       run_command "create_jobfile_to_generate_miaplpy_jobfiles.py $template_file $miaplpy_dir_name" 
+       run_command "create_jobfile_to_generate_miaplpy_jobfiles.py $template_file $miaplpy_dir_name"
        run_command "run_workflow.bash $template_file --jobfile $PWD/create_miaplpy_jobfiles.job"
 
        # run miaplpy jobfiles
