@@ -64,13 +64,13 @@ def main(iargs=None):
     shutil.rmtree(slc_dir, ignore_errors=True)
     unpackObj = Sensors(inps.slc_orig_dir, slc_dir, remove_file='False')
     
-    # Stage 1: Create and submit the extraction/rename run_file
+    # Stage 1: Create and submit the uncompress_rename run_file
     print("\n" + "#"*60)
-    print("STAGE 1: Creating run file for archive extraction and renaming")
+    print("STAGE 1: Creating run file for data uncompression and renaming")
     
-    extract_run_file = unpackObj.create_runfiles_only()
-    extract_run_file = os.path.abspath(extract_run_file)
-    print(f"Created: {extract_run_file}")
+    uncompress_rename_run_file = unpackObj.create_runfiles_only()
+    uncompress_rename_run_file = os.path.abspath(uncompress_rename_run_file)
+    print(f"Created: {uncompress_rename_run_file}")
     
     inps.out_dir = inps.work_dir
     inps.num_data = 1
@@ -79,22 +79,22 @@ def main(iargs=None):
         inps.wall_time = inps.extract_wall_time
     
     job_obj = JOB_SUBMIT(inps)
-    print(f"\nSubmitting data uncompression and untarring job...")
-    job_obj.write_batch_jobs(batch_file=extract_run_file)
-    job_status = job_obj.submit_batch_jobs(batch_file=extract_run_file)
+    print(f"\nSubmitting uncompress_rename job...")
+    job_obj.write_batch_jobs(batch_file=uncompress_rename_run_file)
+    job_status = job_obj.submit_batch_jobs(batch_file=uncompress_rename_run_file)
     
     if not job_status:
-        raise Exception('ERROR: Data uncompression and untarring job failed')
+        raise Exception('ERROR: uncompress_rename job failed')
     
-    print("Data uncompression and untarring job completed successfully!")
+    print("uncompress_rename job completed successfully!")
     
-    # Stage 2: Create and submit the ISCE unpack run file
+    # Stage 2: Create and submit the unpackFrame run file
     print("\n" + "#"*60)
     print("STAGE 2: Creating run file for ISCE unpackFrame processing")
     
-    unpack_run_file = unpackObj.create_run_unpack()
-    unpack_run_file = os.path.abspath(unpack_run_file)
-    print(f"Created: {unpack_run_file}")
+    unpackFrame_run_file = unpackObj.create_run_unpackFrame()
+    unpackFrame_run_file = os.path.abspath(unpackFrame_run_file)
+    print(f"Created: {unpackFrame_run_file}")
     
     if hasattr(inps, 'unpack_wall_time'):
         inps.wall_time = inps.unpack_wall_time
@@ -103,15 +103,15 @@ def main(iargs=None):
     
     job_obj2 = JOB_SUBMIT(inps)
     print(f"\nSubmitting unpackFrame job...")
-    job_obj2.write_batch_jobs(batch_file=unpack_run_file)
-    job_status2 = job_obj2.submit_batch_jobs(batch_file=unpack_run_file)
+    job_obj2.write_batch_jobs(batch_file=unpackFrame_run_file)
+    job_status2 = job_obj2.submit_batch_jobs(batch_file=unpackFrame_run_file)
     
     unpackObj.close()
     
     if not job_status2:
-        raise Exception('ERROR: UnpackFrame job failed')
+        raise Exception('ERROR: unpackFrame job failed')
     
-    print("UnpackFrame job completed successfully!")
+    print("unpackFrame job completed successfully!")
 
 
 ###########################################################################################
