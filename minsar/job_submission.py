@@ -121,7 +121,7 @@ class JOB_SUBMIT:
 
         self.submission_scheme, self.platform_name, self.scheduler, self.queue_name, \
         self.number_of_cores_per_node, self.number_of_threads_per_core, self.max_jobs_per_workflow, \
-        self.max_memory_per_node, self.wall_time_factor = set_job_queue_values(inps)
+        self.max_memory_per_node, self.wall_time_factor, self.max_jobs_per_queue = set_job_queue_values(inps)
         self.number_of_parallel_tasks_per_node = 1
 
         if not 'num_memory_units' in inps or not inps.num_memory_units:
@@ -306,6 +306,25 @@ class JOB_SUBMIT:
 
             return False
 
+    def get_num_active_jobs_in_queue(self):
+        """
+        Get the number of active jobs (running or pending) in the current queue.
+        :return: Number of active jobs
+        """
+        if self.scheduler == 'SLURM':
+            try:
+                # Count jobs with running or pending status for this user and queue
+                command = "squeue -u $USER -h -t running,pending -r -p {} | wc -l".format(self.queue)
+                output = subprocess.check_output(command, stderr=subprocess.STDOUT, shell=True)
+                num_jobs = int(output.decode("utf-8").strip())
+                return num_jobs
+            except subprocess.CalledProcessError:
+                # If command fails, return 0 to allow submission
+                return 0
+        else:
+            # For non-SLURM schedulers, don't check (return 0 to allow submission)
+            return 0
+
     def submit_single_job(self, job_file_name, work_dir):
         """
         Submit a single job (to bsub or qsub). Used by submit_jobs_individually and submit_job_with_launcher and submit_script.
@@ -328,6 +347,15 @@ class JOB_SUBMIT:
                 job_num_exists = False
         else:
             raise Exception("ERROR: scheduler {0} not supported".format(self.scheduler))
+
+        # Wait if the queue is full (only for SLURM scheduler)
+        if self.scheduler == 'SLURM' and hasattr(self, 'max_jobs_per_queue') and self.max_jobs_per_queue:
+            while True:
+                num_active_jobs = self.get_num_active_jobs_in_queue()
+                if num_active_jobs < self.max_jobs_per_queue:
+                    break
+                print(f"Queue {self.queue} is full ({num_active_jobs}/{self.max_jobs_per_queue} jobs). Waiting 30 seconds...")
+                time.sleep(30)
 
         output_job = subprocess.check_output(command, stderr=subprocess.STDOUT, shell=True)
 
@@ -1444,7 +1472,7 @@ def set_job_queue_values(args):
 
     out_puts = (submission_scheme, platform_name, scheduler, check_auto['queue_name'], check_auto['number_of_cores_per_node'],
                 check_auto['number_of_threads_per_core'], check_auto['max_jobs_per_workflow'],
-                check_auto['max_memory_per_node'], check_auto['wall_time_factor'])
+                check_auto['max_memory_per_node'], check_auto['wall_time_factor'], check_auto['max_jobs_per_queue'])
 
     return out_puts
 
