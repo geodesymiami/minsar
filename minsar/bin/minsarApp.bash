@@ -27,7 +27,7 @@ helptext="                                                                      
   Processing steps (start/end/dostep): \n\
    Command line options for steps processing with names are chosen from the following list: \n\
                                                                                  \n\
-   ['download', 'dem', 'jobfiles', 'ifgram', 'mintpy', 'miaplpy']                \n\
+   ['download', 'unpack', 'dem', 'jobfiles', 'ifgram', 'mintpy', 'miaplpy']                \n\
                                                                                  \n\
    --upload    [--no-upload]    upload data products to jetstream (default)      \n\
    --insarmaps [--no-insarmaps] ingest into insarmaps (default is yes for mintpy no for miaplpy)  \n\
@@ -112,6 +112,7 @@ create_template_array $template_file
 ##################################
 # set defaults steps (insarmaps_flag and upload_flag are set to 0 if not given on command line or in template file )
 download_flag=1
+unpack_flag=1
 dem_flag=1
 ifgram_flag=1
 mintpy_flag=1
@@ -308,23 +309,31 @@ fi
 
 if [[ $startstep == "download" ]]; then
     download_flag=1
+elif [[ $startstep == "unpack" ]]; then
+    download_flag=0
+    unpack_flag=1
 elif [[ $startstep == "dem" ]]; then
     download_flag=0
+    unpack_flag=0
     dem_flag=1
 elif [[ $startstep == "jobfiles" ]]; then
     download_flag=0
+    unpack_flag=0
     dem_flag=0
 elif [[ $startstep == "ifgram" ]]; then
     download_flag=0
+    unpack_flag=0
     dem_flag=0
     jobfiles_flag=0
 elif [[ $startstep == "mintpy" ]]; then
     download_flag=0
+    unpack_flag=0
     dem_flag=0
     jobfiles_flag=0
     ifgram_flag=0
 elif [[ $startstep == "miaplpy" ]]; then
     download_flag=0
+    unpack_flag=0
     dem_flag=0
     jobfiles_flag=0
     ifgram_flag=0
@@ -332,6 +341,7 @@ elif [[ $startstep == "miaplpy" ]]; then
     miaplpy_flag=1
 elif [[ $startstep == "finishup" ]]; then
     download_flag=0
+    unpack_flag=0
     dem_flag=0
     jobfiles_flag=0
     ifgram_flag=0
@@ -344,12 +354,19 @@ elif [[ $startstep != "" ]]; then
 fi
 
 if [[ $stopstep == "download" ]]; then
+    unpack_flag=0
     dem_flag=0
     jobfiles_flag=0
     ifgram_flag=0
     mintpy_flag=0
     miaplpy_flag=0
     finishup_flag=0
+elif [[ $stopstep == "unpack" ]]; then
+    dem_flag=0
+    jobfiles_flag=0
+    ifgram_flag=0
+    mintpy_flag=0
+    miaplpy_flag=0    
 elif [[ $stopstep == "dem" ]]; then
     jobfiles_flag=0
     ifgram_flag=0
@@ -382,8 +399,8 @@ fi
 
 echo "Switches: download_method: <$download_method> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
 echo "Flags for processing steps:"
-echo "download dem jobfiles ifgram mintpy miaplpy upload insarmaps finishup"
-echo "    $download_flag     $dem_flag      $jobfiles_flag       $ifgram_flag       $mintpy_flag      $miaplpy_flag      $upload_flag       $insarmaps_flag        $finishup_flag"
+echo "download unpack dem jobfiles ifgram mintpy miaplpy upload insarmaps finishup"
+echo "    $download_flag      $unpack_flag     $dem_flag      $jobfiles_flag       $ifgram_flag       $mintpy_flag      $miaplpy_flag      $upload_flag       $insarmaps_flag        $finishup_flag"
 
 sleep 3
 
@@ -397,13 +414,11 @@ if [[ -z $platform_str ]]; then
    platform_str="TERRASAR-X"
 fi
 
-if [[ $platform_str == *"COSMO-SKYMED"* ]]; then
-    download_dir="$WORK_DIR/RAW_data"
-    if [[ $download_method == *"asf-burst"* ]]; then download_method="ssara-bash"; fi
-elif [[ $platform_str == *"TERRASAR-X"* ]]; then
+if [[ $platform_str =~ COSMO-SKYMED|TERRASAR-X|ENVISAT ]]; then
     download_dir="$WORK_DIR/SLC_ORIG"
-    if [[ $download_method == *"asf-burst"* ]]; then download_method="ssara-bash"; fi
+    [[ $download_method == *asf-burst* ]] && download_method="ssara-bash"
 else
+    # Sentinel-1
     download_dir="$WORK_DIR/SLC"
 fi
 
@@ -450,6 +465,11 @@ if [[ $download_flag == "1" ]]; then
            rm $files
        done
     fi
+fi
+
+# Unpack SLCs for non-Sentinel-1 platforms
+if [[ $platform_str != *"Sentinel-1"* ]] && [[ $unpack_flag == "1" ]]; then
+    run_command "unpack_SLCs.py $download_dir --queue $QUEUENAME"
 fi
 
 if [[ $dem_flag == "1" ]]; then
