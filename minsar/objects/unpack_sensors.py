@@ -340,7 +340,7 @@ class Sensors:
         
         with open(run_uncompress_rename, 'w') as f:
             for archive_file in self.file_list:
-                cmd = f'{uncompress_script} {os.path.abspath(archive_file)} {remove_flag} --data-type {self.data_type}'
+                cmd = f'{uncompress_script} {os.path.abspath(archive_file)} {remove_flag}'
                 cmd = cmd.strip()  # Remove trailing space if no remove_flag
                 print(cmd)
                 f.write(cmd + '\n')

@@ -33,7 +33,7 @@ def create_parser():
     parser.add_argument('--remove', action='store_true', 
                         help='Remove data file after successful extraction (default: move to ARCHIVED_FILES directory)')
     parser.add_argument('--data-type', default='slc', choices=['slc', 'raw'], 
-                        help='Data type (default: %(default)s)')
+                        help='Data type (default: %(default)s). Note: raw option not yet implemented')
     return parser
 
 
