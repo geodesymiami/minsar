@@ -456,6 +456,7 @@ if [[ $download_flag == "1" ]]; then
         cd $download_dir
         # FA debug note 1/2026: use -avzn for dry-run
         run_command "rsync -avz --progress --sparse ${template[minsar.remoteDataDir]} ."
+        cd ..
     else 
         echo "ERROR: Unknown download method <$download_method>, Exiting"
         exit 1
