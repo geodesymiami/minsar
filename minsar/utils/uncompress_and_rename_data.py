@@ -21,6 +21,7 @@ import xml.etree.ElementTree as etree
 EXAMPLE = """Examples:
     uncompress_and_rename_data.py TSX1_SM_036_strip_014_20171004111805.tar.gz
     uncompress_and_rename_data.py CSKS2_RAW_B_HI_06_HH_RA_SF_20201009161233_20201009161240.tar.gz
+    uncompress_and_rename_data.py ASA_IMS_1PNUPA20100906_175446_000000172089_00084_44354_0000.N1
     uncompress_and_rename_data.py TSX1_SM_036_strip_014_20171004111805.tar.gz --remove
 """
 
@@ -146,14 +147,8 @@ def main():
     parser = create_parser()
     args = parser.parse_args()
     
-    # Import uncompressfile from ISCE
-    sys.path.append(os.path.join(os.getenv('ISCE_STACK'), 'stripmapStack'))
-    from uncompressFile import uncompressfile
-    
     data_file = os.path.abspath(args.data_file)
     workdir = os.path.dirname(data_file)
-    out_folder = os.path.basename(data_file).split('.')[0]
-    out_folder = os.path.join(workdir, out_folder)
     
     print(f"Processing: {data_file}")
     
@@ -164,22 +159,39 @@ def main():
     sensor_type = detect_sensor_type(data_file)
     print(f"  Sensor: {sensor_type}")
     
-    print(f"  Uncompressing to: {out_folder}")
-    success = uncompressfile(data_file, out_folder)
+    # Check if file needs uncompression based on extension
+    file_ext = os.path.splitext(data_file)[1].lower()
+    needs_uncompress = file_ext in ['.zip', '.tar', '.gz', '.tgz', '.bz2']
     
-    if not success:
-        print(f"  ERROR: Uncompressing failed for {data_file}")
-        # Move to FAILED_FILES directory
-        failed_dir = os.path.join(workdir, 'FAILED_FILES')
-        os.makedirs(failed_dir, exist_ok=True)
-        try:
-            os.rename(data_file, os.path.join(failed_dir, os.path.basename(data_file)))
-            print(f"  Moved to FAILED_FILES")
-        except OSError as e:
-            print(f"  Failed to move to FAILED_FILES: {e}")
-        sys.exit(1)
-    
-    successflag, imgDate = get_date_from_folder(out_folder, sensor_type)
+    if needs_uncompress:
+        # Import uncompressfile from ISCE
+        sys.path.append(os.path.join(os.getenv('ISCE_STACK'), 'stripmapStack'))
+        from uncompressFile import uncompressfile
+        
+        out_folder = os.path.basename(data_file).split('.')[0]
+        out_folder = os.path.join(workdir, out_folder)
+        
+        print(f"  Uncompressing to: {out_folder}")
+        success = uncompressfile(data_file, out_folder)
+        
+        if not success:
+            print(f"  ERROR: Uncompressing failed for {data_file}")
+            # Move to FAILED_FILES directory
+            failed_dir = os.path.join(workdir, 'FAILED_FILES')
+            os.makedirs(failed_dir, exist_ok=True)
+            try:
+                os.rename(data_file, os.path.join(failed_dir, os.path.basename(data_file)))
+                print(f"  Moved to FAILED_FILES")
+            except OSError as e:
+                print(f"  Failed to move to FAILED_FILES: {e}")
+            sys.exit(1)
+        
+        successflag, imgDate = get_date_from_folder(out_folder, sensor_type)
+    else:
+        # File doesn't need uncompression (e.g., .N1 files for Envisat)
+        print(f"  File already uncompressed, extracting date...")
+        out_folder = data_file  # For uncompressed files, the data_file itself is used
+        successflag, imgDate = get_date_from_folder(data_file, sensor_type)
     
     if not successflag:
         print(f"  ERROR: Could not extract date from {out_folder}")
@@ -190,31 +202,43 @@ def main():
     date_dir = os.path.join(workdir, imgDate)
     os.makedirs(date_dir, exist_ok=True)
     
-    # Check if folder already exists in date directory
-    image_folder_out = os.path.join(date_dir, os.path.basename(out_folder))
-    if os.path.isdir(image_folder_out):
-        shutil.rmtree(image_folder_out)
-    
-    # Move the extracted folder contents into the date folder
-    if os.path.isfile(out_folder):
-        # For Envisat (file, not directory)
-        cmd = f'mv {out_folder} {date_dir}/.'
-        os.system(cmd)
+    if needs_uncompress:
+        # Handle extracted folder from compressed archive
+        # Check if folder already exists in date directory
+        image_folder_out = os.path.join(date_dir, os.path.basename(out_folder))
+        if os.path.isdir(image_folder_out):
+            shutil.rmtree(image_folder_out)
+        
+        # Move the extracted folder contents into the date folder
+        if os.path.isfile(out_folder):
+            # For Envisat (file, not directory) - though this shouldn't happen for compressed files
+            cmd = f'mv {out_folder} {date_dir}/.'
+            os.system(cmd)
+        else:
+            # For other sensors (directory)
+            cmd = f'mv {out_folder}/* {date_dir}/.'
+            os.system(cmd)
+            cmd = f'rmdir {out_folder}'
+            os.system(cmd)
+        
+        # Handle the compressed data file
+        if args.remove:
+            os.remove(data_file)
+        else:
+            archive_dir = os.path.join(workdir, 'ARCHIVED_FILES')
+            os.makedirs(archive_dir, exist_ok=True)
+            cmd = f'mv {data_file} {archive_dir}/.'
+            os.system(cmd)
     else:
-        # For other sensors (directory)
-        cmd = f'mv {out_folder}/* {date_dir}/.'
+        # Handle uncompressed file (e.g., Envisat .N1)
+        # Move the file directly into the date directory
+        dest_file = os.path.join(date_dir, os.path.basename(data_file))
+        if os.path.exists(dest_file):
+            os.remove(dest_file)
+        
+        cmd = f'mv {data_file} {date_dir}/.'
         os.system(cmd)
-        cmd = f'rmdir {out_folder}'
-        os.system(cmd)
-    
-    # Handle the data file
-    if args.remove:
-        os.remove(data_file)
-    else:
-        archive_dir = os.path.join(workdir, 'ARCHIVED_FILES')
-        os.makedirs(archive_dir, exist_ok=True)
-        cmd = f'mv {data_file} {archive_dir}/.'
-        os.system(cmd)
+        print(f"  Moved to: {date_dir}/")
     
     return 0
 

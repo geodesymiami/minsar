@@ -29,7 +29,8 @@ class Sensors:
 
         self.file_list = sorted(glob.glob(os.path.join(self.input_dir, '*.zip')) + \
                                 glob.glob(os.path.join(self.input_dir, '*.tar')) + \
-                                glob.glob(os.path.join(self.input_dir, '*.gz')))
+                                glob.glob(os.path.join(self.input_dir, '*.gz')) + \
+                                glob.glob(os.path.join(self.input_dir, '*.N1')))
 
         return
 
