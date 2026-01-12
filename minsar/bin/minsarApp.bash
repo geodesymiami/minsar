@@ -27,7 +27,7 @@ helptext="                                                                      
   Processing steps (start/end/dostep): \n\
    Command line options for steps processing with names are chosen from the following list: \n\
                                                                                  \n\
-   ['download', 'unpack', 'dem', 'jobfiles', 'ifgram', 'mintpy', 'miaplpy']                \n\
+   ['download', 'unpack', 'dem', 'jobfiles', 'ifgram', 'mintpy', 'miaplpy']      \n\
                                                                                  \n\
    --upload    [--no-upload]    upload data products to jetstream (default)      \n\
    --insarmaps [--no-insarmaps] ingest into insarmaps (default is yes for mintpy no for miaplpy)  \n\
@@ -35,6 +35,7 @@ helptext="                                                                      
    In order to use either --start or --dostep, it is necessary that a            \n\
    previous run was done using one of the steps options to process at least      \n\
    through the step immediately preceding the starting step of the current run.  \n\
+   (unpack is relevant for non-Sentinel-1 platforms only)                        \n\
                                                                                  \n\
    --start STEP          start processing at the named step [default: download]. \n\
    --end STEP, --stop STEP                                                       \n\
@@ -307,6 +308,10 @@ else
    insarmaps_dataset=geo
 fi
 
+if [[ -n "${template[minsar.remoteDataDir]:-}" ]]; then
+    download_method="remote_data_dir"
+fi
+
 if [[ $startstep == "download" ]]; then
     download_flag=1
 elif [[ $startstep == "unpack" ]]; then
@@ -447,6 +452,10 @@ if [[ $download_flag == "1" ]]; then
         cmd=$(cat ../download_ssara_bash.cmd)
         run_command "$cmd"
         cd ..
+    elif [[ $download_method == "remote_data_dir" ]]; then
+        cd $download_dir
+        # FA debug note 1/2026: use -avzn for dry-run
+        run_command "rsync -avz --progress --sparse ${template[minsar.remoteDataDir]} ."
     else 
         echo "ERROR: Unknown download method <$download_method>, Exiting"
         exit 1
