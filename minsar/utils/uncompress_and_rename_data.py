@@ -157,16 +157,13 @@ def main():
     
     print(f"Processing: {data_file}")
     
-    # Check if data file exists
     if not os.path.isfile(data_file):
         print(f"ERROR: Data file not found: {data_file}")
         sys.exit(1)
     
-    # Detect sensor type
     sensor_type = detect_sensor_type(data_file)
     print(f"  Sensor: {sensor_type}")
     
-    # Uncompress the file
     print(f"  Uncompressing to: {out_folder}")
     success = uncompressfile(data_file, out_folder)
     
@@ -182,8 +179,6 @@ def main():
             print(f"  Failed to move to FAILED_FILES: {e}")
         sys.exit(1)
     
-    # Get the date from the extracted folder
-    print(f"  Extracting date...")
     successflag, imgDate = get_date_from_folder(out_folder, sensor_type)
     
     if not successflag:

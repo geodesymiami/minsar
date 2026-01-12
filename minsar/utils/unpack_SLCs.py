@@ -31,7 +31,7 @@ Examples:
 """
 
 DESCRIPTION = (
-    "Unpacks SLC files into SLC directories"
+    "Unpacks SLC files into SLC directory"
 )
 
 def create_parser():
@@ -61,18 +61,17 @@ def main(iargs=None):
 
     # Create Sensors object
     slc_dir = os.path.join(inps.work_dir, 'SLC')
+    shutil.rmtree(slc_dir, ignore_errors=True)
     unpackObj = Sensors(inps.slc_orig_dir, slc_dir, remove_file='False')
     
     # Stage 1: Create and submit the extraction/rename run_file
-    print("\n" + "="*80)
+    print("\n" + "#"*60)
     print("STAGE 1: Creating run file for archive extraction and renaming")
-    print("="*80)
     
     extract_run_file = unpackObj.create_runfiles_only()
     extract_run_file = os.path.abspath(extract_run_file)
     print(f"Created: {extract_run_file}")
     
-    # Submit data extraction job
     inps.out_dir = inps.work_dir
     inps.num_data = 1
     inps.custom_template_file = None    
@@ -80,25 +79,23 @@ def main(iargs=None):
         inps.wall_time = inps.extract_wall_time
     
     job_obj = JOB_SUBMIT(inps)
-    print(f"\nSubmitting data uncompression and extraction job...")
+    print(f"\nSubmitting data uncompression and untarring job...")
     job_obj.write_batch_jobs(batch_file=extract_run_file)
     job_status = job_obj.submit_batch_jobs(batch_file=extract_run_file)
     
     if not job_status:
-        raise Exception('ERROR: Archive extraction job failed')
+        raise Exception('ERROR: Data uncompression and untarring job failed')
     
-    print("Extraction job completed successfully!")
+    print("Data uncompression and untarring job completed successfully!")
     
     # Stage 2: Create and submit the ISCE unpack run file
-    print("\n" + "="*80)
+    print("\n" + "#"*60)
     print("STAGE 2: Creating run file for ISCE unpackFrame processing")
-    print("="*80)
     
     unpack_run_file = unpackObj.create_run_unpack()
     unpack_run_file = os.path.abspath(unpack_run_file)
     print(f"Created: {unpack_run_file}")
     
-    # Reset walltime to user-specified value for unpack stage
     if hasattr(inps, 'unpack_wall_time'):
         inps.wall_time = inps.unpack_wall_time
     else:
@@ -115,9 +112,6 @@ def main(iargs=None):
         raise Exception('ERROR: UnpackFrame job failed')
     
     print("UnpackFrame job completed successfully!")
-    print("\n" + "="*80)
-    print("All unpacking stages completed successfully!")
-    print("="*80 + "\n")
 
 
 ###########################################################################################
