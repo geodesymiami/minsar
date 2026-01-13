@@ -6,12 +6,11 @@ ssaraopt.relativeOrbit  = 140         # This is not teh correct orbit_number. co
 unavco.relative_orbit   = 140
 ##################### ISCE OPTIONS ####################
 stripmapStack.boundingBox          = -0.5 -0.3 -91.17 -91.07                          # '-1 0.15 -91.6 -90.9'
-stripmapStack.azimuthLooks         = 4
-stripmapStack.rangeLooks           = 10
+stripmapStack.azimuthLooks         = 25
+stripmapStack.rangeLooks           = 5
 stripmapStack.timeThreshold        = 300
 stripmapStack.baselineThreshold    = 600
 stripmapStack.unwMethod            = snaphu
-stripmapStack.sensor               = envisat
 stripmapStack.nofocus              = True
 #stripmapStack.zerodop              = False
 #stripmapStack.golsteinFilterStrength  = 0.5
@@ -20,7 +19,7 @@ stripmapStack.nofocus              = True
 
 ##################### MINTPY OPTIONS ###################
 mintpy.compute.cluster            = local #[local / slurm / pbs / lsf / none], auto for none, cluster type
-mintpy.compute.numWorker          = 6 #[int > 1 / all], auto for 4 (local) or 40 (non-local), num of workers
+mintpy.compute.numWorker          = 36 #[int > 1 / all], auto for 4 (local) or 40 (non-local), num of workers
 mintpy.load.autoPath              = yes
 mintpy.load.waterMaskFile         = no  #[path of water  mask file], optional but recommended
 mintpy.network.coherenceBased     = yes  #[yes / no], auto for no, exclude interferograms with coherence < minCoherence
