@@ -38,7 +38,7 @@ class PathFind:
             return ['topsStack.subswath']
 
         elif acquisition_mode == 'stripmap':
-            return ['stripmapStack.sensor', 'stripmapStack.boundingBox']
+            return ['stripmapStack.boundingBox']
         else:
             return None
 
