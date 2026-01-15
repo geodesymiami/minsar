@@ -169,7 +169,7 @@ def main(iargs=None):
                     create_html_if_needed(data_dir + '/pic')
                 scp_list.extend(['/' + data_dir])
                 continue  # Skip specific file patterns
-            
+
             if os.path.isdir(data_dir + '/pic'):
                create_html_if_needed(data_dir + '/pic')
 
@@ -203,13 +203,13 @@ def main(iargs=None):
                     dir_list = [ data_dir ]
                 else:
                     dir_list = glob.glob(data_dir + '/network_*')
-                
+
                 for network_dir in dir_list:
                     if os.path.isdir(network_dir + '/pic'):
                         create_html_if_needed(network_dir + '/pic')
                     scp_list.extend(['/' + network_dir])
                 continue  # Skip specific file patterns
-            
+
             if 'network_' in data_dir:
                dir_list = [ data_dir ]
             else:
@@ -293,49 +293,51 @@ def main(iargs=None):
     remote_urls = []
     for data_dir in inps.data_dirs:
         data_dir = data_dir.rstrip('/')
-        
+
         # Check if this directory has a pic subdirectory
         pic_dir = data_dir + '/pic'
         if os.path.isdir(pic_dir):
             # If pic exists, URL points to pic directory
             remote_url = 'http://' + REMOTEHOST_DATA + REMOTE_DIR + project_name + '/' + data_dir + '/pic'
-            
+
             # Append to main upload.log
             with open('upload.log', 'a') as f:
                 f.write(remote_url + "\n")
-            
+
             # Write to pic/upload.log (only if pic directory exists)
             with open(pic_dir + '/upload.log', 'w') as f:
                 f.write(remote_url + "\n")
-            
+
             remote_urls.append(remote_url)
         else:
             # If no pic directory, URL points to the uploaded directory itself
             remote_url = 'http://' + REMOTEHOST_DATA + REMOTE_DIR + project_name + '/' + data_dir
-            
+
             # Append to main upload.log
             with open('upload.log', 'a') as f:
                 f.write(remote_url + "\n")
-            
+
             remote_urls.append(remote_url)
 
     print('\n################')
-    print('Deleting remote directories...')
     for data_dir in inps.data_dirs:
         data_dir = data_dir.rstrip('/')
-        remote_path = f'{REMOTE_DIR}{project_name}/{data_dir}'
-        cleanup_cmd = f'ssh {REMOTE_CONNECTION} "rm -rf {remote_path}"'
-        print(f'Deleting: {cleanup_cmd}')
-        status = subprocess.Popen(cleanup_cmd, shell=True).wait()
-        if status != 0:
-            print(f'Warning: Could not delete {remote_path} (may not exist yet)')
+        # Only delete if directory name contains 'mintpy' or 'miaplpy'
+        if 'mintpy' in data_dir or 'miaplpy' in data_dir:
+            print('Deleting remote mintpy/miaplpy directories ...')
+            remote_path = f'{REMOTE_DIR}{project_name}/{data_dir}'
+            cleanup_cmd = f'ssh {REMOTE_CONNECTION} "rm -rf {remote_path}"'
+            print(f'Deleting: {cleanup_cmd}')
+            status = subprocess.Popen(cleanup_cmd, shell=True).wait()
+            if status != 0:
+                print(f'Warning: Could not delete {remote_path} (may not exist yet)')
 
     print('################\n')
-    
+
     # Step 1: Collect all unique directories that need to be created
     unique_dirs = set()
     upload_commands = []
-    
+
     for pattern in scp_list:
         if len(glob.glob(inps.work_dir + pattern)) >= 1:
             files = glob.glob(inps.work_dir + pattern)
@@ -349,11 +351,11 @@ def main(iargs=None):
 
             dir_name = full_dir_name.removeprefix(inps.work_dir + '/')
             unique_dirs.add(dir_name)
-            
+
             # Store upload command for later
             upload_cmd = f'rsync -avz --progress {inps.work_dir}{pattern} {REMOTE_CONNECTION_DIR}/{project_name}/{"/".join(pattern.split("/")[0:-1])}'
             upload_commands.append(upload_cmd)
-    
+
     # Step 2: Create ALL remote directories with ONE SSH command
     if unique_dirs:
         print('\nCreating all remote directories with one SSH command...')
@@ -363,7 +365,7 @@ def main(iargs=None):
         status = subprocess.Popen(command, shell=True).wait()
         if status != 0:
             raise Exception('ERROR creating remote directories in upload_data_products.py')
-    
+
     # Step 3: Upload all data
     for command in upload_commands:
         print('\nUploading data:')
@@ -374,7 +376,7 @@ def main(iargs=None):
 
     # Step 4: Adjust permissions for all uploaded directories
     print('\nAdjusting permissions for all uploaded directories...')
-    
+
     # Get all unique top-level directories from inps.data_dirs
     unique_top_dirs = set()
     for data_dir in inps.data_dirs:
@@ -382,7 +384,7 @@ def main(iargs=None):
         # Get the top-level directory (e.g., 'mintpy' from 'mintpy/geo')
         top_dir = data_dir.split('/')[0]
         unique_top_dirs.add(top_dir)
-    
+
     # Adjust permissions for all top-level directories at once
     if unique_top_dirs:
         all_paths = ' '.join([f'{REMOTE_DIR}{project_name}/{d}' for d in sorted(unique_top_dirs)])
