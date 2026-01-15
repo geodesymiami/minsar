@@ -2,7 +2,6 @@
 
 import isce
 from isceobj.Sensor import createSensor
-from isceobj.Scene.Track import Track
 import shelve
 import argparse
 import glob
@@ -42,7 +41,7 @@ def unpack(hdf5, slcname):
         print(f'  - {os.path.basename(fname)}')
     
     if not os.path.isdir(slcname):
-        os.mkdir(slcname)
+        os.makedirs(slcname, exist_ok=True)
 
     date = os.path.basename(slcname)
 
@@ -92,14 +91,10 @@ def unpack(hdf5, slcname):
         return
 
     # Multiple frames - need to concatenate
-    print('Multiple frames detected - concatenating...')
-    
-    # Create Track object for concatenation
-    track = Track()
-    track.configure()
+    print('Multiple frames detected - concatenating with overlap handling...')
     
     temp_outputs = []
-    frames = []
+    frames_data = []
     
     # Process each frame
     for i, fname in enumerate(fnames):
@@ -121,14 +116,109 @@ def unpack(hdf5, slcname):
         obj.frame.dopplerVsRange = [0.0]
         obj.frame._dopplerVsPixel = [0.0]
         
-        frames.append(obj.frame)
+        frames_data.append({
+            'frame': obj.frame,
+            'file': temp_output,
+            'width': obj.frame.getNumberOfSamples(),
+            'length': obj.frame.getNumberOfLines(),
+            'start_time': obj.frame.getSensingStart(),
+            'stop_time': obj.frame.getSensingStop(),
+            'prf': obj.frame.getInstrument().getPulseRepetitionFrequency()
+        })
         temp_outputs.append(temp_output)
-        track.addFrame(obj.frame)
     
-    # Stitch frames together
+    # Compute frame positions accounting for overlaps
     output_file = os.path.join(slcname, date+'.slc')
-    print(f'\nStitching {len(frames)} frames into {output_file}')
-    track.stitchFrames(output_file)
+    print(f'\nComputing frame positions and overlaps...')
+    
+    # Check frame widths - if different, need to pad to maximum width
+    widths = [f['width'] for f in frames_data]
+    max_width = max(widths)
+    min_width = min(widths)
+    
+    if len(set(widths)) != 1:
+        print(f'WARNING: Frames have different widths: {widths}')
+        print(f'Will pad narrower frames to maximum width: {max_width}')
+        
+        # Pad narrower frames
+        for i, fdata in enumerate(frames_data):
+            if fdata['width'] < max_width:
+                print(f'  Padding frame {i+1} from {fdata["width"]} to {max_width} samples')
+                pad_width = max_width - fdata['width']
+                
+                # Read original file and write padded version
+                padded_file = fdata['file'] + '.padded'
+                with open(fdata['file'], 'rb') as inf, open(padded_file, 'wb') as outf:
+                    for line in range(fdata['length']):
+                        # Read line
+                        line_data = inf.read(fdata['width'] * 8)
+                        # Write line with zero padding on the right
+                        outf.write(line_data)
+                        outf.write(b'\x00' * (pad_width * 8))
+                
+                # Update frame data to use padded file
+                os.remove(fdata['file'])
+                os.rename(padded_file, fdata['file'])
+                fdata['width'] = max_width
+                fdata['frame'].setNumberOfSamples(max_width)
+    
+    width = max_width
+    prf = frames_data[0]['prf']
+    
+    # Calculate start line for each frame based on timing
+    track_start_time = frames_data[0]['start_time']
+    for i, fdata in enumerate(frames_data):
+        time_offset = (fdata['start_time'] - track_start_time).total_seconds()
+        start_line = int(round(time_offset * prf))
+        fdata['start_line'] = start_line
+        print(f'  Frame {i+1}: starts at line {start_line}, {fdata["length"]} lines')
+    
+    # Calculate total output length
+    last_frame = frames_data[-1]
+    total_length = last_frame['start_line'] + last_frame['length']
+    print(f'Total output length: {total_length} lines (accounting for overlaps)')
+    
+    # Concatenate with overlap handling (last frame wins)
+    print(f'Writing concatenated SLC with overlap handling...')
+    bytes_per_line = width * 8  # complex64 = 8 bytes per sample
+    
+    with open(output_file, 'wb') as outf:
+        # Initialize output file with zeros
+        outf.write(b'\x00' * (bytes_per_line * total_length))
+        
+        # Write each frame at its correct position (last frame overwrites overlaps)
+        for i, fdata in enumerate(frames_data):
+            print(f'  Writing frame {i+1} at line {fdata["start_line"]}')
+            outf.seek(fdata['start_line'] * bytes_per_line)
+            with open(fdata['file'], 'rb') as inf:
+                outf.write(inf.read())
+    
+    # Use the first frame as template and update dimensions
+    combined_frame = frames_data[0]['frame']
+    combined_frame.setNumberOfLines(total_length)
+    combined_frame.setNumberOfSamples(width)
+    
+    # Update timing info to span all frames
+    combined_frame.setSensingStart(frames_data[0]['start_time'])
+    combined_frame.setSensingStop(frames_data[-1]['stop_time'])
+    
+    # Calculate mid time
+    start_time = frames_data[0]['start_time']
+    stop_time = frames_data[-1]['stop_time']
+    time_diff = (stop_time - start_time).total_seconds() / 2.0
+    mid_time = start_time + datetime.timedelta(seconds=time_diff)
+    combined_frame.setSensingMid(mid_time)
+    
+    # Update image reference
+    from isceobj import createSlcImage
+    rawImage = createSlcImage()
+    rawImage.setFilename(output_file)
+    rawImage.setAccessMode('read')
+    rawImage.setByteOrder('l')
+    rawImage.setXmin(0)
+    rawImage.setXmax(width)
+    rawImage.setWidth(width)
+    combined_frame.setImage(rawImage)
     
     # Clean up temporary files
     for temp_file in temp_outputs:
@@ -143,16 +233,16 @@ def unpack(hdf5, slcname):
             print(f'Cleaned up: {temp_file}')
     
     # Render header
-    track.getFrame().getImage().renderHdr()
+    combined_frame.getImage().renderHdr()
     
     # Save concatenated frame to shelve
     pickName = os.path.join(slcname, 'data')
     with shelve.open(pickName) as db:
-        db['frame'] = track.getFrame()
+        db['frame'] = combined_frame
     
     print('\nConcatenation complete!')
-    print(f'Total lines: {track.getFrame().getNumberOfLines()}')
-    print(f'Total samples: {track.getFrame().getNumberOfSamples()}') 
+    print(f'Total lines: {combined_frame.getNumberOfLines()}')
+    print(f'Total samples: {combined_frame.getNumberOfSamples()}') 
 
 
 if __name__ == '__main__':
