@@ -559,8 +559,7 @@ if [[ $jobfiles_flag == "1" ]]; then
     pwd=`pwd`; echo "DIR: $pwd"
     run_command "run_clean_dir.bash $PWD --runfiles --ifgram --mintpy --miaplpy"
 
-    if [[ $template_file == *"Tsx"*  ]] || [[ $template_file == *"Csk"*  ]]; then
-       export PATH=$ISCE_STACK/stripmapStack:$PATH             # needed for stripmapStack
+    if [[ $template_file =~ (Tsx|Csk|Env) ]]; then
        BUFFOPT="PYTHONUNBUFFERED=1"
     fi
     ( run_command "$BUFFOPT create_runfiles.py $template_file --jobfiles --queue $QUEUENAME" ) 2>out_create_jobfiles.e | tee out_create_jobfiles.o
@@ -568,8 +567,11 @@ fi
 
 if [[ $ifgram_flag == "1" ]]; then
 
-    if [[ $template_file != *"Sen"* ]]; then
-       run_command "run_workflow.bash $template_file --dostep ifgram"
+    if [[ $template_file =~ (Tsx|Csk|Env) ]]; then
+        OLD_PATH="$PATH"
+        PATH="$ISCE_STACK/stripmapStack:$PATH"
+        run_command "run_workflow.bash $template_file --dostep ifgram"
+        PATH="$OLD_PATH"
     else
        echo "topsStack.workflow: <${template[topsStack.workflow]}>"
        if [[ ${template[topsStack.workflow]} == "slc" ]] || [[ $mintpy_flag == 0 ]]; then
