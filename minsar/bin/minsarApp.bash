@@ -619,11 +619,11 @@ fi
 ########################
 if [[ $miaplpy_flag == "1" ]]; then
 
-    # remove directory with reference data which should not be here ( https://github.com/geodesymiami/rsmas_insar/issues/568)
-    if [[ $template_file == *"Tsx"*  ]] || [[ $template_file == *"Csk"*  ]]; then
-       dir=$(find merged/SLC/ -type f -path '*/referenceShelve/data.rsc' -printf '%h\n' | sed 's|/referenceShelve$||')
-       [ -n "$dir" ] && rm -r "$dir"
-    fi
+    ## remove directory with reference data which should not be here ( https://github.com/geodesymiami/rsmas_insar/issues/568)
+    #if [[ $template_file == *"Tsx"*  ]] || [[ $template_file == *"Csk"*  ]]; then
+    #   dir=$(find merged/SLC/ -type f -path '*/referenceShelve/data.rsc' -printf '%h\n' | sed 's|/referenceShelve$||')
+    #   [ -n "$dir" ] && rm -r "$dir"
+    #fi
 
     miaplpy_dir_name=$(get_miaplpy_dir_name)
     network_type=$(get_network_type)
