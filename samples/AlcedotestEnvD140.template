@@ -1,21 +1,18 @@
 ############## DOWNLOAD, GENERAL OPTIONS ##############
-minsar.remoteDataDir    = $REMOTEUSER@$REMOTEHOST_DATA:$REMOTE_DATADIR/Envisat/AlcedotestEnvD140/*
-acquisition_mode        = stripmap
-ssaraopt.platform       = ENVISAT
-ssaraopt.relativeOrbit  = 140         # This is not teh correct orbit_number. copied from Mauna Loa
-unavco.relative_orbit   = 140
+minsar.remoteDataDir              = $REMOTEUSER@$REMOTEHOST_DATA:$REMOTE_DATADIR/Envisat/AlcedotestEnvD140/*
+acquisition_mode                  = stripmap
+ssaraopt.platform                 = ENVISAT
+ssaraopt.relativeOrbit            = 140         # This is not teh correct orbit_number. copied from Mauna Loa
 ##################### ISCE OPTIONS ####################
-stripmapStack.boundingBox          = -0.5 -0.3 -91.17 -91.07                          # '-1 0.15 -91.6 -90.9'
-stripmapStack.azimuthLooks         = 25
-stripmapStack.rangeLooks           = 5
-stripmapStack.timeThreshold        = 300
-stripmapStack.baselineThreshold    = 600
-stripmapStack.unwMethod            = snaphu
-stripmapStack.nofocus              = True
-#stripmapStack.zerodop              = False
-#stripmapStack.golsteinFilterStrength  = 0.5
-#stripmapStack.boundingBox                 = 19 20 -156 -155
-#stripmapStack.demDir                      = /scratch/projects/insarlab/bkv3/MaunaloaT10CskAsc/DEM/output.dem
+stripmapStack.boundingBox         = -0.5 -0.3 -91.17 -91.07                          # '-1 0.15 -91.6 -90.9'
+stripmapStack.azimuthLooks        = 10
+stripmapStack.rangeLooks          = 5
+stripmapStack.timeThreshold       = 300
+stripmapStack.baselineThreshold   = 600
+stripmapStack.unwMethod           = snaphu
+stripmapStack.nofocus             = True
+#stripmapStack.zerodop             = False
+#stripmapStack.golsteinFilterStrength = 0.5
 
 ##################### MINTPY OPTIONS ###################
 mintpy.compute.cluster            = local #[local / slurm / pbs / lsf / none], auto for none, cluster type
@@ -30,13 +27,28 @@ mintpy.deramp                     = linear  #[no / linear / quadratic], auto for
 mintpy.troposphericDelay.method   = no    # pyaps  #[pyaps / height_correlation / base_trop_cor / no], auto for pyaps
 mintpy.geocode.laloStep           = auto  #[-0.000555556,0.000555556 / None], auto for None, output resolution in degree
 mintpy.save.hdfEos5               = yes   #[yes / update / no], auto for no, save timeseries to UNAVCO InSAR Archive format
+mintpy.save.hdfEos5.update        = yes   #[yes / no], auto for no, put XXXXXXXX as endDate in output filename
+mintpy.save.hdfEos5.subset        = yes   #[yes / no], auto for no, put subset range info in output filename
 minsar.miaplpyDir.addition        = date  #[name / lalo / no] auto for no (miaply_$name_startDate_endDate))
-mintpy.subset.lalo                = -0.5:-0.31,-91.165:-91.081    #[S:N,W:E / no], auto for no
-miaplpy.subset.lalo               = -0.464:-0.381,-91.165:-91.081    #[S:N,W:E / no], auto for no
-
-
+######################################################
 miaplpy.load.processor      = isce
 miaplpy.load.autoPath       = yes
 miaplpy.multiprocessing.numProcessor = 40
-#######################################################
+miaplpy.inversion.rangeWindow      = 10   # range window size for searching SHPs, auto for 15
+miaplpy.inversion.azimuthWindow    = 20    # azimuth window size for searching SHPs, auto for 15
+miaplpy.timeseries.tempCohType     = full     # [full, average], auto for full.
+miaplpy.interferograms.networkType = delaunay # network
+miaplpy.interferograms.networkType = single_reference # network
+miaplpy.unwrap.snaphu.tileNumPixels = 10000000000     # number of pixels in a tile, auto for 10000000
+
+minsar.miaplpyDir.addition          = auto  #[name / lalo / no] auto for no (miaply_$name_startDate_endDate))
+mintpy.subset.lalo                  = -0.5:-0.31,-91.165:-91.081    #[S:N,W:E / no], auto for no
+miaplpy.subset.lalo                 = -0.464:-0.381,-91.165:-91.081    #[S:N,W:E / no], auto for no
+miaplpy.load.startDate              = auto  # 20200101
+miaplpy.load.endDate                = auto
+miaplpy.timeseries.minTempCoh       = 0.75      # auto for 0.5
+mintpy.networkInversion.minTempCoh  = 0.75
+######################################################
+minsar.insarmaps_flag                = True
 minsar.upload_flag                   = True
+minsar.insarmaps_dataset             = filt*DS

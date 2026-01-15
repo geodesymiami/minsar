@@ -100,6 +100,7 @@ cp tools/isce2/contrib/demUtils/demstitcher/DemStitcher.py  tools/miniforge3/env
 #FA 1/2026: this should be done for all modification and remove copying tools/isce2/contrib/stack/* into share/isce2
 ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/stripmapStack/unpackFrame_ENV_raw.py $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/stripmapStack
 ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/stripmapStack/unpackFrame_ENV.py $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/stripmapStack
+ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/stripmapStack/referenceStackCopy.py $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/stripmapStack
 fi
 
 echo ""
