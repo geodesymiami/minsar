@@ -190,8 +190,8 @@ def unpack(hdf5, slcname):
         fdata['expected_start'] = expected_start_line
         fdata['expected_duration'] = expected_lines_from_timing
     
-    # Simple concatenation with overlap removal: append frames but skip overlapping start of later frames
-    print('\nConcatenating frames with overlap removal...')
+    # Concatenation with overlap averaging to preserve phase continuity
+    print('\nConcatenating frames with overlap averaging...')
     bytes_per_line = width * 8  # complex64 = 8 bytes per sample
     
     with open(output_file, 'wb') as outf:
@@ -206,10 +206,7 @@ def unpack(hdf5, slcname):
                 lines_written += fdata["length"]
             else:
                 # Subsequent frames: calculate overlap with previous cumulative output
-                # Expected start of this frame based on timing
                 expected_start = fdata['expected_start']
-                
-                # Overlap = difference between where we are vs where frame should start
                 overlap_lines = int(round(lines_written - expected_start))
                 
                 print(f'  Frame {i+1}:')
@@ -217,15 +214,43 @@ def unpack(hdf5, slcname):
                 print(f'    Currently at line {lines_written}')
                 print(f'    Overlap: {overlap_lines} lines')
                 
-                # Skip overlap lines from this frame
-                lines_to_write = fdata['length'] - max(0, overlap_lines)
-                bytes_to_skip = max(0, overlap_lines) * bytes_per_line
-                
-                print(f'    Skipping first {max(0, overlap_lines)} lines, writing {lines_to_write} lines')
-                
-                with open(fdata['file'], 'rb') as inf:
-                    inf.seek(bytes_to_skip)  # Skip overlapping lines
-                    outf.write(inf.read())
+                if overlap_lines > 0:
+                    # Average the overlap region
+                    print(f'    Averaging overlap region ({overlap_lines} lines)')
+                    
+                    # Read overlap data from current frame
+                    with open(fdata['file'], 'rb') as inf:
+                        overlap_data_new = inf.read(overlap_lines * bytes_per_line)
+                        non_overlap_data = inf.read()  # Rest of the frame
+                    
+                    # Read existing overlap data from output
+                    overlap_start_pos = int(round(expected_start)) * bytes_per_line
+                    outf.seek(overlap_start_pos)
+                    overlap_data_old = outf.read(overlap_lines * bytes_per_line)
+                    
+                    # Convert to numpy arrays and average
+                    old_array = np.frombuffer(overlap_data_old, dtype=np.complex64).reshape(overlap_lines, width)
+                    new_array = np.frombuffer(overlap_data_new, dtype=np.complex64).reshape(overlap_lines, width)
+                    
+                    # Average the two overlapping regions
+                    averaged = ((old_array + new_array) / 2.0).astype(np.complex64)
+                    
+                    # Write averaged overlap back
+                    outf.seek(overlap_start_pos)
+                    outf.write(averaged.tobytes())
+                    
+                    # Write non-overlapping part
+                    outf.seek(lines_written * bytes_per_line)
+                    outf.write(non_overlap_data)
+                    
+                    lines_to_write = fdata['length'] - overlap_lines
+                    print(f'    Writing {lines_to_write} non-overlapping lines')
+                else:
+                    # No overlap, just append
+                    print(f'    No overlap, writing all {fdata["length"]} lines')
+                    with open(fdata['file'], 'rb') as inf:
+                        outf.write(inf.read())
+                    lines_to_write = fdata['length']
                 
                 lines_written += lines_to_write
     
