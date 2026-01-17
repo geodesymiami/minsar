@@ -149,7 +149,7 @@ def main(iargs=None):
     bbox_LeftBottomRightTop = [int(west), int(south), int(east), int(north)]
     output_name = f"DEM/elevation_{format_bbox(bbox_LeftBottomRightTop)}.dem"
 
-    command_sardem = f"sardem --bbox {int(west)} {int(south)} {int(east)}  {int(north)} --data COP --make-isce-xml --output-type int16 --output {output_name}"
+    command_sardem = f"sardem --bbox {int(west)} {int(south)} {int(east)}  {int(north)} --data COP --make-isce-xml --output-type int16 --output-format ENVI --output {output_name}"
     command_isce = 'dem.py -a stitch --filling --filling_value 0 -b ' + demBbox + ' -c -u https://e4ftl01.cr.usgs.gov/MEASURES/SRTMGL1.003/2000.02.11/'
 
     log_command_sardem = f"echo \"$(date +\"%Y%m%d:%H-%M\") * {command_sardem} | tee -a log\""
