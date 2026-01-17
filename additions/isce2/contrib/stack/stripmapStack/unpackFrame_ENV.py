@@ -131,6 +131,19 @@ def unpack(hdf5, slcname):
     output_file = os.path.join(slcname, date+'.slc')
     print(f'\nComputing frame positions and overlaps...')
     
+    # Print actual sensing times for debugging
+    print('\nFrame timing information from metadata:')
+    for i, fdata in enumerate(frames_data):
+        print(f'  Frame {i+1}:')
+        print(f'    Sensing start: {fdata["start_time"]}')
+        print(f'    Sensing stop:  {fdata["stop_time"]}')
+        duration = (fdata["stop_time"] - fdata["start_time"]).total_seconds()
+        print(f'    Duration: {duration:.3f} seconds ({fdata["length"]} lines at PRF={fdata["prf"]:.2f} Hz)')
+        expected_lines = duration * fdata["prf"]
+        print(f'    Expected lines from timing: {expected_lines:.1f}')
+        if abs(expected_lines - fdata["length"]) > 10:
+            print(f'    WARNING: Line count mismatch! ({expected_lines:.1f} expected vs {fdata["length"]} actual)')
+    
     # Check frame widths - if different, need to pad to maximum width
     widths = [f['width'] for f in frames_data]
     max_width = max(widths)
@@ -166,7 +179,27 @@ def unpack(hdf5, slcname):
     prf = frames_data[0]['prf']
     
     # Calculate expected overlap between frames
-    print('Detecting frame overlaps...')
+    print('\nDetecting frame overlaps and gaps...')
+    
+    # Check gaps/overlaps between consecutive frames
+    for i in range(len(frames_data) - 1):
+        frame_curr = frames_data[i]
+        frame_next = frames_data[i+1]
+        
+        gap_seconds = (frame_next['start_time'] - frame_curr['stop_time']).total_seconds()
+        gap_lines = gap_seconds * prf
+        
+        print(f'\nBetween frames {i+1} and {i+2}:')
+        print(f'  Frame {i+1} ends:   {frame_curr["stop_time"]}')
+        print(f'  Frame {i+2} starts: {frame_next["start_time"]}')
+        
+        if gap_seconds > 0:
+            print(f'  → GAP of {gap_seconds:.3f} seconds ({gap_lines:.1f} lines)')
+        elif gap_seconds < 0:
+            print(f'  → OVERLAP of {-gap_seconds:.3f} seconds ({-gap_lines:.1f} lines)')
+        else:
+            print(f'  → Perfect continuation (no gap or overlap)')
+    
     track_start_time = frames_data[0]['start_time']
     
     # For first frame, calculate expected number of lines from timing
@@ -190,71 +223,63 @@ def unpack(hdf5, slcname):
         fdata['expected_start'] = expected_start_line
         fdata['expected_duration'] = expected_lines_from_timing
     
-    # Concatenation with overlap averaging to preserve phase continuity
-    print('\nConcatenating frames with overlap averaging...')
+    # Concatenation: Skip overlapping data to maintain uniform azimuth time grid
+    # Overlaps occur because adjacent frames image the same ground at similar times
+    # We must skip redundant lines to keep one-to-one correspondence between line number and azimuth time
+    print('\nConcatenating frames (skipping overlap regions to maintain time grid)...')
     bytes_per_line = width * 8  # complex64 = 8 bytes per sample
     
     with open(output_file, 'wb') as outf:
-        lines_written = 0
+        cumulative_lines = 0  # Track how many lines we've written so far
         
         for i, fdata in enumerate(frames_data):
             if i == 0:
                 # First frame: write all lines
-                print(f'  Frame 1: writing all {fdata["length"]} lines')
+                print(f'  Frame 1: writing all {fdata["length"]} lines (lines 0 to {fdata["length"]-1})')
                 with open(fdata['file'], 'rb') as inf:
                     outf.write(inf.read())
-                lines_written += fdata["length"]
+                cumulative_lines = fdata['length']
+                fdata['skipped'] = 0
             else:
-                # Subsequent frames: calculate overlap with previous cumulative output
+                # Subsequent frames: determine overlap based on timing
                 expected_start = fdata['expected_start']
-                overlap_lines = int(round(lines_written - expected_start))
+                
+                # Overlap = (current cumulative lines) - (where this frame should start)
+                # If positive, we have overlap; if negative, we have a gap
+                overlap_lines = cumulative_lines - int(round(expected_start))
+                
+                # Lines to skip from the beginning of this frame
+                lines_to_skip = max(0, overlap_lines)
+                lines_to_write = fdata['length'] - lines_to_skip
                 
                 print(f'  Frame {i+1}:')
-                print(f'    Expected to start at line {expected_start:.1f}')
-                print(f'    Currently at line {lines_written}')
-                print(f'    Overlap: {overlap_lines} lines')
+                print(f'    Expected to start at line {expected_start:.1f} in combined track')
+                print(f'    Current output position: line {cumulative_lines}')
                 
                 if overlap_lines > 0:
-                    # Average the overlap region
-                    print(f'    Averaging overlap region ({overlap_lines} lines)')
-                    
-                    # Read overlap data from current frame
-                    with open(fdata['file'], 'rb') as inf:
-                        overlap_data_new = inf.read(overlap_lines * bytes_per_line)
-                        non_overlap_data = inf.read()  # Rest of the frame
-                    
-                    # Read existing overlap data from output
-                    overlap_start_pos = int(round(expected_start)) * bytes_per_line
-                    outf.seek(overlap_start_pos)
-                    overlap_data_old = outf.read(overlap_lines * bytes_per_line)
-                    
-                    # Convert to numpy arrays and average
-                    old_array = np.frombuffer(overlap_data_old, dtype=np.complex64).reshape(overlap_lines, width)
-                    new_array = np.frombuffer(overlap_data_new, dtype=np.complex64).reshape(overlap_lines, width)
-                    
-                    # Average the two overlapping regions
-                    averaged = ((old_array + new_array) / 2.0).astype(np.complex64)
-                    
-                    # Write averaged overlap back
-                    outf.seek(overlap_start_pos)
-                    outf.write(averaged.tobytes())
-                    
-                    # Write non-overlapping part
-                    outf.seek(lines_written * bytes_per_line)
-                    outf.write(non_overlap_data)
-                    
-                    lines_to_write = fdata['length'] - overlap_lines
-                    print(f'    Writing {lines_to_write} non-overlapping lines')
+                    print(f'    → Overlap: {overlap_lines} lines (imaging same ground as previous frames)')
+                    print(f'    → Skipping first {lines_to_skip} lines of this frame')
+                elif overlap_lines < 0:
+                    print(f'    → Gap: {-overlap_lines} lines (WARNING: data gap detected!)')
                 else:
-                    # No overlap, just append
-                    print(f'    No overlap, writing all {fdata["length"]} lines')
-                    with open(fdata['file'], 'rb') as inf:
-                        outf.write(inf.read())
-                    lines_to_write = fdata['length']
+                    print(f'    → Perfect continuation (no overlap or gap)')
                 
-                lines_written += lines_to_write
+                print(f'    → Writing {lines_to_write} lines (lines {cumulative_lines} to {cumulative_lines + lines_to_write - 1})')
+                
+                # Store how many lines were skipped for metadata calculation
+                fdata['skipped'] = lines_to_skip
+                
+                # Read and write only the non-overlapping part
+                with open(fdata['file'], 'rb') as inf:
+                    # Skip the overlapping portion
+                    inf.seek(lines_to_skip * bytes_per_line)
+                    # Write the rest
+                    outf.write(inf.read())
+                
+                cumulative_lines += lines_to_write
     
-    total_length = lines_written
+    # Calculate total lines written (accounting for skipped overlaps)
+    total_length = cumulative_lines
     print(f'\nTotal lines written: {total_length}')
     
     # Use the first frame as template and update dimensions
@@ -263,15 +288,32 @@ def unpack(hdf5, slcname):
     combined_frame.setNumberOfSamples(width)
     
     # Update timing info to span all frames
+    # Important: The azimuth time grid is now uniform from first to last frame
+    # Each line represents a unique azimuth time sample
     combined_frame.setSensingStart(frames_data[0]['start_time'])
     combined_frame.setSensingStop(frames_data[-1]['stop_time'])
     
     # Calculate mid time
     start_time = frames_data[0]['start_time']
     stop_time = frames_data[-1]['stop_time']
-    time_diff = (stop_time - start_time).total_seconds() / 2.0
+    total_duration = (stop_time - start_time).total_seconds()
+    time_diff = total_duration / 2.0
     mid_time = start_time + datetime.timedelta(seconds=time_diff)
     combined_frame.setSensingMid(mid_time)
+    
+    # Verify azimuth time grid consistency
+    expected_lines_from_timing = total_duration * prf
+    print(f'\nAzimuth time grid verification:')
+    print(f'  Total sensing duration: {total_duration:.3f} seconds')
+    print(f'  PRF: {prf:.3f} Hz')
+    print(f'  Expected lines from timing: {expected_lines_from_timing:.1f}')
+    print(f'  Actual lines written: {total_length}')
+    line_discrepancy = abs(expected_lines_from_timing - total_length)
+    if line_discrepancy > 10:
+        print(f'  WARNING: Line count discrepancy of {line_discrepancy:.1f} lines!')
+        print(f'           This may indicate timing or PRF issues.')
+    else:
+        print(f'  ✓ Line count matches expected timing (within {line_discrepancy:.1f} lines)')
     
     # Update image reference
     from isceobj import createSlcImage
