@@ -165,33 +165,72 @@ def unpack(hdf5, slcname):
     width = max_width
     prf = frames_data[0]['prf']
     
-    # Calculate start line for each frame based on timing
+    # Calculate expected overlap between frames
+    print('Detecting frame overlaps...')
     track_start_time = frames_data[0]['start_time']
-    for i, fdata in enumerate(frames_data):
+    
+    # For first frame, calculate expected number of lines from timing
+    for i in range(len(frames_data)):
+        fdata = frames_data[i]
+        
+        # Calculate where this frame should start based on timing
         time_offset = (fdata['start_time'] - track_start_time).total_seconds()
-        start_line = int(round(time_offset * prf))
-        fdata['start_line'] = start_line
-        print(f'  Frame {i+1}: starts at line {start_line}, {fdata["length"]} lines')
+        expected_start_line = time_offset * prf
+        
+        # Calculate expected end time and line
+        frame_duration = (fdata['stop_time'] - fdata['start_time']).total_seconds()
+        expected_lines_from_timing = frame_duration * prf
+        
+        print(f'  Frame {i+1}:')
+        print(f'    Start time offset: {time_offset:.3f} s → line {expected_start_line:.1f}')
+        print(f'    Duration: {frame_duration:.3f} s → {expected_lines_from_timing:.1f} lines')
+        print(f'    Actual lines in file: {fdata["length"]}')
+        
+        # Store for overlap calculation
+        fdata['expected_start'] = expected_start_line
+        fdata['expected_duration'] = expected_lines_from_timing
     
-    # Calculate total output length
-    last_frame = frames_data[-1]
-    total_length = last_frame['start_line'] + last_frame['length']
-    print(f'Total output length: {total_length} lines (accounting for overlaps)')
-    
-    # Concatenate with overlap handling (last frame wins)
-    print(f'Writing concatenated SLC with overlap handling...')
+    # Simple concatenation with overlap removal: append frames but skip overlapping start of later frames
+    print('\nConcatenating frames with overlap removal...')
     bytes_per_line = width * 8  # complex64 = 8 bytes per sample
     
     with open(output_file, 'wb') as outf:
-        # Initialize output file with zeros
-        outf.write(b'\x00' * (bytes_per_line * total_length))
+        lines_written = 0
         
-        # Write each frame at its correct position (last frame overwrites overlaps)
         for i, fdata in enumerate(frames_data):
-            print(f'  Writing frame {i+1} at line {fdata["start_line"]}')
-            outf.seek(fdata['start_line'] * bytes_per_line)
-            with open(fdata['file'], 'rb') as inf:
-                outf.write(inf.read())
+            if i == 0:
+                # First frame: write all lines
+                print(f'  Frame 1: writing all {fdata["length"]} lines')
+                with open(fdata['file'], 'rb') as inf:
+                    outf.write(inf.read())
+                lines_written += fdata["length"]
+            else:
+                # Subsequent frames: calculate overlap with previous cumulative output
+                # Expected start of this frame based on timing
+                expected_start = fdata['expected_start']
+                
+                # Overlap = difference between where we are vs where frame should start
+                overlap_lines = int(round(lines_written - expected_start))
+                
+                print(f'  Frame {i+1}:')
+                print(f'    Expected to start at line {expected_start:.1f}')
+                print(f'    Currently at line {lines_written}')
+                print(f'    Overlap: {overlap_lines} lines')
+                
+                # Skip overlap lines from this frame
+                lines_to_write = fdata['length'] - max(0, overlap_lines)
+                bytes_to_skip = max(0, overlap_lines) * bytes_per_line
+                
+                print(f'    Skipping first {max(0, overlap_lines)} lines, writing {lines_to_write} lines')
+                
+                with open(fdata['file'], 'rb') as inf:
+                    inf.seek(bytes_to_skip)  # Skip overlapping lines
+                    outf.write(inf.read())
+                
+                lines_written += lines_to_write
+    
+    total_length = lines_written
+    print(f'\nTotal lines written: {total_length}')
     
     # Use the first frame as template and update dimensions
     combined_frame = frames_data[0]['frame']

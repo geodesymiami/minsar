@@ -43,7 +43,7 @@ def unpack(hdf5, slcname, multiple=False):
         imgname = [glob.glob(os.path.join(hdf5,'ASA*'))[0]]
 
     if not os.path.isdir(slcname):
-        os.mkdir(slcname)
+        os.makedirs(slcname, exist_ok=True)
 
     date = os.path.basename(slcname)
     obj = createSensor('ENVISAT')
