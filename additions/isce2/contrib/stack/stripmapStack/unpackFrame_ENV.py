@@ -123,9 +123,22 @@ def unpack(hdf5, slcname):
             'length': obj.frame.getNumberOfLines(),
             'start_time': obj.frame.getSensingStart(),
             'stop_time': obj.frame.getSensingStop(),
-            'prf': obj.frame.getInstrument().getPulseRepetitionFrequency()
+            'prf': obj.frame.getInstrument().getPulseRepetitionFrequency(),
+            'original_index': i  # Track original order for debugging
         })
         temp_outputs.append(temp_output)
+    
+    # CRITICAL: Sort frames by sensing start time (not filename order!)
+    # Filenames may not be in chronological order
+    frames_data_unsorted = frames_data.copy()
+    frames_data.sort(key=lambda x: x['start_time'])
+    
+    # Check if sorting changed the order
+    if any(frames_data[i]['original_index'] != frames_data_unsorted[i]['original_index'] for i in range(len(frames_data))):
+        print('\nWARNING: Frames were NOT in chronological order by filename!')
+        print('Reordered frames by sensing start time:')
+        for i, fdata in enumerate(frames_data):
+            print(f'  Frame {i+1} (was #{fdata["original_index"]+1}): starts at {fdata["start_time"]}')
     
     # Compute frame positions accounting for overlaps
     output_file = os.path.join(slcname, date+'.slc')
