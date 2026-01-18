@@ -236,60 +236,84 @@ def unpack(hdf5, slcname):
         fdata['expected_start'] = expected_start_line
         fdata['expected_duration'] = expected_lines_from_timing
     
-    # Concatenation: Skip overlapping data to maintain uniform azimuth time grid
-    # Overlaps occur because adjacent frames image the same ground at similar times
-    # We must skip redundant lines to keep one-to-one correspondence between line number and azimuth time
-    print('\nConcatenating frames (skipping overlap regions to maintain time grid)...')
+    # Concatenation: Handle overlaps by splitting removal between frames
+    # This minimizes phase discontinuity at frame boundaries
+    print('\nConcatenating frames (splitting overlap removal to minimize boundary artifacts)...')
     bytes_per_line = width * 8  # complex64 = 8 bytes per sample
     
+    # First pass: calculate how much to trim from end of each frame (except last)
+    cumulative_position = 0
+    
+    for i in range(len(frames_data)):
+        fdata = frames_data[i]
+        
+        # Calculate expected start position based on timing
+        time_offset = (fdata['start_time'] - frames_data[0]['start_time']).total_seconds()
+        expected_start = time_offset * prf
+        
+        fdata['expected_start_line'] = expected_start
+        fdata['trim_start'] = 0
+        fdata['trim_end'] = 0
+        
+        if i == 0:
+            # First frame: no trim_start, might have trim_end
+            fdata['output_start'] = 0
+            cumulative_position = fdata['length']
+        else:
+            # Calculate overlap
+            overlap = cumulative_position - expected_start
+            
+            if overlap > 0:
+                # Split overlap: trim half from previous frame's end, half from this frame's start
+                trim_prev_end = int(overlap // 2)
+                trim_curr_start = overlap - trim_prev_end
+                
+                # Update previous frame
+                frames_data[i-1]['trim_end'] = trim_prev_end
+                cumulative_position -= trim_prev_end  # Adjust for trimmed lines
+                
+                # Update current frame
+                fdata['trim_start'] = trim_curr_start
+                fdata['output_start'] = cumulative_position
+                
+                print(f'\nBetween frames {i} and {i+1}:')
+                print(f'  Overlap: {overlap} lines')
+                print(f'  Splitting: trim {trim_prev_end} from end of frame {i}, {trim_curr_start} from start of frame {i+1}')
+                print(f'  This centers the boundary at the overlap midpoint')
+                
+                cumulative_position += (fdata['length'] - trim_curr_start)
+            else:
+                # No overlap or gap
+                fdata['output_start'] = cumulative_position
+                cumulative_position += fdata['length']
+    
+    # Second pass: write the frames with trimming
+    print('\nWriting concatenated frames...')
     with open(output_file, 'wb') as outf:
-        cumulative_lines = 0  # Track how many lines we've written so far
+        cumulative_lines = 0
         
         for i, fdata in enumerate(frames_data):
-            if i == 0:
-                # First frame: write all lines
-                print(f'  Frame 1: writing all {fdata["length"]} lines (lines 0 to {fdata["length"]-1})')
-                with open(fdata['file'], 'rb') as inf:
-                    outf.write(inf.read())
-                cumulative_lines = fdata['length']
-                fdata['skipped'] = 0
-            else:
-                # Subsequent frames: determine overlap based on timing
-                expected_start = fdata['expected_start']
-                
-                # Overlap = (current cumulative lines) - (where this frame should start)
-                # If positive, we have overlap; if negative, we have a gap
-                overlap_lines = cumulative_lines - int(round(expected_start))
-                
-                # Lines to skip from the beginning of this frame
-                lines_to_skip = max(0, overlap_lines)
-                lines_to_write = fdata['length'] - lines_to_skip
-                
-                print(f'  Frame {i+1}:')
-                print(f'    Expected to start at line {expected_start:.1f} in combined track')
-                print(f'    Current output position: line {cumulative_lines}')
-                
-                if overlap_lines > 0:
-                    print(f'    → Overlap: {overlap_lines} lines (imaging same ground as previous frames)')
-                    print(f'    → Skipping first {lines_to_skip} lines of this frame')
-                elif overlap_lines < 0:
-                    print(f'    → Gap: {-overlap_lines} lines (WARNING: data gap detected!)')
-                else:
-                    print(f'    → Perfect continuation (no overlap or gap)')
-                
-                print(f'    → Writing {lines_to_write} lines (lines {cumulative_lines} to {cumulative_lines + lines_to_write - 1})')
-                
-                # Store how many lines were skipped for metadata calculation
-                fdata['skipped'] = lines_to_skip
-                
-                # Read and write only the non-overlapping part
-                with open(fdata['file'], 'rb') as inf:
-                    # Skip the overlapping portion
-                    inf.seek(lines_to_skip * bytes_per_line)
-                    # Write the rest
-                    outf.write(inf.read())
-                
-                cumulative_lines += lines_to_write
+            trim_start = fdata.get('trim_start', 0)
+            trim_end = fdata.get('trim_end', 0)
+            lines_to_write = fdata['length'] - trim_start - trim_end
+            
+            print(f'  Frame {i+1}:')
+            print(f'    Total lines: {fdata["length"]}')
+            if trim_start > 0:
+                print(f'    Trimming start: {trim_start} lines')
+            if trim_end > 0:
+                print(f'    Trimming end: {trim_end} lines')
+            print(f'    Writing: {lines_to_write} lines at position {cumulative_lines}')
+            
+            with open(fdata['file'], 'rb') as inf:
+                # Skip trimmed start
+                inf.seek(trim_start * bytes_per_line)
+                # Read the portion to write
+                data_to_write = inf.read(lines_to_write * bytes_per_line)
+                outf.write(data_to_write)
+            
+            fdata['skipped'] = trim_start + trim_end
+            cumulative_lines += lines_to_write
     
     # Calculate total lines written (accounting for skipped overlaps)
     total_length = cumulative_lines
