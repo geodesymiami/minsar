@@ -266,7 +266,7 @@ def unpack(hdf5, slcname):
             if overlap > 0:
                 # Split overlap: trim half from previous frame's end, half from this frame's start
                 trim_prev_end = int(overlap // 2)
-                trim_curr_start = overlap - trim_prev_end
+                trim_curr_start = int(overlap - trim_prev_end)
                 
                 # Update previous frame
                 frames_data[i-1]['trim_end'] = trim_prev_end
@@ -293,9 +293,9 @@ def unpack(hdf5, slcname):
         cumulative_lines = 0
         
         for i, fdata in enumerate(frames_data):
-            trim_start = fdata.get('trim_start', 0)
-            trim_end = fdata.get('trim_end', 0)
-            lines_to_write = fdata['length'] - trim_start - trim_end
+            trim_start = int(fdata.get('trim_start', 0))
+            trim_end = int(fdata.get('trim_end', 0))
+            lines_to_write = int(fdata['length'] - trim_start - trim_end)
             
             print(f'  Frame {i+1}:')
             print(f'    Total lines: {fdata["length"]}')
