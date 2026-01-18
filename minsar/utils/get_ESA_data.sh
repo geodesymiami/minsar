@@ -60,6 +60,8 @@ Notes:
   - Cookies expire. Re-export and rerun; downloads will resume.
   - Already-downloaded files (>1MB) are skipped.
   - The original cookies file is NOT modified (script makes working copies per download job).
+  - Downloaded files are validated to ensure they contain SAR data and not HTML error pages.
+  - Invalid HTML files are automatically deleted and download will be retried.
 
 EOF
 }
@@ -228,6 +230,18 @@ Cookie likely expired or missing _shibsession_... for esar-ds.eo.esa.int"
       sleep 5
       continue
     fi
+    
+    # Validate that file contains SAR data and not HTML
+    local first_line
+    first_line=$(head -n 1 "$out" 2>/dev/null || echo "")
+    if [[ "$first_line" =~ ^[[:space:]]*\<\!DOCTYPE[[:space:]]+html ]] || [[ "$first_line" =~ ^[[:space:]]*\<html ]]; then
+      echo "[ERROR] Downloaded file contains HTML instead of SAR data: $(basename "$out")"
+      rm -f "$out"
+      echo "[WARN] Removed invalid HTML file, will retry..."
+      sleep 10
+      continue
+    fi
+    
     return 0
   done
 
@@ -353,6 +367,18 @@ Cookie likely expired or missing _shibsession_... for esar-ds.eo.esa.int"
       sleep 5
       continue
     fi
+    
+    # Validate that file contains SAR data and not HTML
+    local first_line
+    first_line=$(head -n 1 "$out" 2>/dev/null || echo "")
+    if [[ "$first_line" =~ ^[[:space:]]*\<\!DOCTYPE[[:space:]]+html ]] || [[ "$first_line" =~ ^[[:space:]]*\<html ]]; then
+      echo "[ERROR] Downloaded file contains HTML instead of SAR data: $(basename "$out")"
+      rm -f "$out"
+      echo "[WARN] Removed invalid HTML file, will retry..."
+      sleep 10
+      continue
+    fi
+    
     return 0
   done
 
