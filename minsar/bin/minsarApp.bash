@@ -562,7 +562,7 @@ if [[ $jobfiles_flag == "1" ]]; then
     if [[ $template_file =~ (Tsx|Csk|Env) ]]; then
        BUFFOPT="PYTHONUNBUFFERED=1"
     fi
-    ( run_command "$BUFFOPT create_runfiles.py $template_file --jobfiles --queue $QUEUENAME" ) 2>out_create_jobfiles.e | tee out_create_jobfiles.o
+    ( run_command "$BUFFOPT create_runfiles.py $template_file --jobfiles --queue $QUEUENAME" ) 2> >(tee out_create_jobfiles.e >&2) | tee out_create_jobfiles.o
 fi
 
 if [[ $ifgram_flag == "1" ]]; then
@@ -667,15 +667,6 @@ if [[ $miaplpy_flag == "1" ]]; then
     # upload data products
     run_command "upload_data_products.py $network_dir ${template[minsar.upload_option]}"
 
-fi
-
-if [[ $finishup_flag == "1" ]]; then
-    if [[ $miaplpy_flag == "1" ]]; then
-        miaplpy_opt="--miaplpyDir $miaplpy_dir_name"
-    else
-        miaplpy_opt=""
-    fi
-    #run_command "summarize_job_run_times.py $template_file $copy_to_tmp $miaplpy_opt"
 fi
 
 echo
