@@ -39,7 +39,7 @@ Options:
 Authentication:
   ESA uses EO Sign In (SAML/Shibboleth). Export cookies from Firefox using "Export Cookies" extension:
     https://addons.mozilla.org/firefox/addon/export-cookies-txt/
-  1. Log in at https://esar-ds.eo.esa.int/oads/access/collection/ASA_IMS_1P 
+  1. Log in at https://esar-ds.eo.esa.int/oads/access/collection/ASA_IMS_1P
   2. Start any download to create session cookie (e.g. https://esar-ds.eo.esa.int/oads/data/ASA_IMS_1P/ASA_IMS_1PNESA20100225_155310_000000152087_00140_41777_0000.N1)
   3. Click on "puzzle" icon right of addressbar, select "Export Cookies" and save to ~/cookies-esa-int.txt
   4. Make it read-only to protect: chmod 444 ~/cookies-esa-int.txt
@@ -51,7 +51,8 @@ Verify cookies:
   If missing, re-login and export cookies again.
 
 Getting the list of URLs:
-  1. Go to https://esar-ds.eo.esa.int/socat/ASA_IMS_1P
+  1. Go to https://esar-ds.eo.esa.int/socat/ASA_IMS_1P (Envisat)
+           https://esar-ds.eo.esa.int/socat/SAR_IMS_1P (ERS)
   2. Run geographic search with date range
   3. Click "bulk download lists" and save as HTML
   4. Extract URLs: grep -oE 'https://esar-ds\.eo\.esa\.int/oads/data/[^" <]+' bulk.html | sort -u > urls.txt
@@ -115,7 +116,7 @@ while [[ $# -gt 0 ]]; do
         urls_input="$1"
         shift
       else
-        die "Unexpected argument: $1 (use --help)" 
+        die "Unexpected argument: $1 (use --help)"
       fi
       ;;
   esac
@@ -148,7 +149,7 @@ download_one() {
   local max_wait="$5"
 
   local out="$outdir/$(basename "$url")"
-  
+
   # Create a per-process cookie file to avoid race conditions in parallel downloads
   # This allows curl to update session cookies without conflicts
   local cookie_copy="$(mktemp)"
@@ -159,7 +160,7 @@ download_one() {
   if [[ -f "$out" ]]; then
     local sz
     sz=$(wc -c < "$out" | tr -d ' ')
-    
+
     # If very small (< 1MB), likely error response - retry
     if [[ "$sz" -lt 1000000 ]]; then
       echo "[INFO] $(basename "$out") is small ($sz bytes), will retry"
@@ -230,7 +231,7 @@ Cookie likely expired or missing _shibsession_... for esar-ds.eo.esa.int"
       sleep 5
       continue
     fi
-    
+
     # Validate that file contains SAR data and not HTML
     local first_line
     first_line=$(head -n 1 "$out" 2>/dev/null || echo "")
@@ -241,7 +242,7 @@ Cookie likely expired or missing _shibsession_... for esar-ds.eo.esa.int"
       sleep 10
       continue
     fi
-    
+
     return 0
   done
 
@@ -285,7 +286,7 @@ download_one() {
   local max_wait="$5"
 
   local out="$outdir/$(basename "$url")"
-  
+
   # Create a per-process cookie file to avoid race conditions in parallel downloads
   # This allows curl to update session cookies without conflicts
   local cookie_copy="$(mktemp)"
@@ -296,7 +297,7 @@ download_one() {
   if [[ -f "$out" ]]; then
     local sz
     sz=$(wc -c < "$out" | tr -d ' ')
-    
+
     # If very small (< 1MB), likely error response - retry
     if [[ "$sz" -lt 1000000 ]]; then
       echo "[INFO] $(basename "$out") is small ($sz bytes), will retry"
@@ -367,7 +368,7 @@ Cookie likely expired or missing _shibsession_... for esar-ds.eo.esa.int"
       sleep 5
       continue
     fi
-    
+
     # Validate that file contains SAR data and not HTML
     local first_line
     first_line=$(head -n 1 "$out" 2>/dev/null || echo "")
@@ -378,7 +379,7 @@ Cookie likely expired or missing _shibsession_... for esar-ds.eo.esa.int"
       sleep 10
       continue
     fi
-    
+
     return 0
   done
 
