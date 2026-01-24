@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+!/usr/bin/env bash
 set -eo pipefail
 
 ### git clone the code   #################
@@ -15,6 +15,7 @@ git clone git@github.com:geodesymiami/PlotData tools/PlotData
 git clone git@github.com:geodesymiami/PlotDataFA tools/PlotDataFA
 git clone git@github.com:geodesymiami/precip tools/Precip
 git clone git@github.com:geodesymiami/precip_web tools/Precip_web
+git clone git@github.com:geodesymiami/VolcDef_web tools/VolcDef_web
 git clone git@github.com:geodesymiami/precip_cron tools/Precip_cron
 git clone git@github.com:scottstanie/sardem tools/sardem
 git clone git@github.com:luhipi/sarvey tools/sarvey
