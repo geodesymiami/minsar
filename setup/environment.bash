@@ -122,6 +122,7 @@ export PATH=${PATH}:${MIMTPY_HOME}/mimtpy
 export PATH=${PATH}:${SARVEY_HOME}/sarvey
 export PATH=${PATH}:${MINSAR_HOME}/tools/snaphu-v2.0.5/bin
 export PATH=${PATH}:${MINSAR_HOME}/tools/insarmaps_scripts
+export PATH=${PATH}:${MINSAR_HOME}/tools/VolcDef_web/volcdef_web
 export PATH=${PATH}:${MINSAR_HOME}/tools/autoencoder
 export PATH=${PATH}:${MINSAR_HOME}/tools/MakeTemplate/src/maketemplate/cli
 export PATH=${PATH}:${PROJ_LIB}

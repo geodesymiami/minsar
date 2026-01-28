@@ -109,6 +109,6 @@ then
   export JOBSCHEDULER=SLURM
   export QUEUENAME=skx
   export WORKDIR=~/oneDrive/insarlab
-  export SCRATCHDIR=~/onedrive/scratch
+  export SCRATCHDIR=~/scratch
   export GEOS_DIR=/opt/homebrew/Cellar/geos/3.12.0
 fi
