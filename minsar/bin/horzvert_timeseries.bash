@@ -286,6 +286,6 @@ if [[ $ingest_los_flag == "1" ]]; then
     create_data_download_commands.py "$DATA_FILES_TXT"
 
     echo "insarmaps frames created:"
-    cat "$HORZVERT_DIR/frames_urls.log"
+    cat "$HORZVERT_DIR/urls.log"
 fi
 
