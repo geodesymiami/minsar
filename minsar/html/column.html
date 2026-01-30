@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Insarmaps - Column View</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 10px;
+            font-family: Arial, sans-serif;
+            background-color: #e0e0e0;
+        }
+        .container {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+            max-width: 100%;
+            margin-left: 16px;
+            margin-right: 16px;
+        }
+        .container.two-frames {
+            grid-template-rows: 700px 700px;
+        }
+        .container.four-frames {
+            grid-template-rows: 700px 700px 700px 700px;
+        }
+        .panel {
+            background-color: white;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            position: relative;
+            cursor: pointer;
+            transition: box-shadow 0.2s;
+        }
+        .panel:hover {
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .panel.active {
+            box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.5);
+        }
+        .panel-header {
+            color: white;
+            padding: 8px 12px;
+            font-size: 14px;
+            font-weight: bold;
+            margin: 0;
+            height: 38px;
+            box-sizing: border-box;
+            display: flex;
+            align-items: center;
+        }
+        .panel:nth-child(1) .panel-header {
+            background-color: #4a90e2;
+        }
+        .panel:nth-child(2) .panel-header {
+            background-color: #50c878;
+        }
+        .panel:nth-child(3) .panel-header {
+            background-color: #ff6b6b;
+        }
+        .panel:nth-child(4) .panel-header {
+            background-color: #ffa500;
+        }
+        .panel iframe {
+            width: 100%;
+            height: calc(100% - 38px);
+            border: none;
+            display: block;
+        }
+        .loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #666;
+            font-size: 14px;
+            background-color: white;
+            padding: 20px;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <div id="loading" class="loading">Loading insarmaps data...</div>
+    <div class="container" id="container"></div>
+    
+    <script>
+        // Parse insarmaps.log and create iframes dynamically
+        fetch('insarmaps.log')
+            .then(response => response.text())
+            .then(data => {
+                const lines = data.split('\n');
+                const urls = lines
+                    .map(line => line.trim())
+                    .filter(line => line && (line.startsWith('http://') || line.startsWith('https://')));
+                
+                if (urls.length === 0) {
+                    document.getElementById('loading').textContent = 'No URLs found in insarmaps.log';
+                    return;
+                }
+                
+                // Sort URLs by dataset type: desc (0), asc (1), horz (2), vert (3), others (4)
+                urls.sort((a, b) => {
+                    const getSortKey = (url) => {
+                        try {
+                            const urlObj = new URL(url);
+                            const startDataset = urlObj.searchParams.get('startDataset') || '';
+                            const lower = startDataset.toLowerCase();
+                            if (lower.includes('desc')) return 0;
+                            if (lower.includes('asc')) return 1;
+                            if (lower.includes('horz')) return 2;
+                            if (lower.includes('vert')) return 3;
+                            return 4;
+                        } catch (e) {
+                            return 5;
+                        }
+                    };
+                    return getSortKey(a) - getSortKey(b);
+                });
+                
+                // Extract labels from URLs
+                const getLabel = (url) => {
+                    try {
+                        const urlObj = new URL(url);
+                        const startDataset = urlObj.searchParams.get('startDataset') || '';
+                        const lower = startDataset.toLowerCase();
+                        if (lower.includes('desc')) return 'Descending';
+                        if (lower.includes('asc')) return 'Ascending';
+                        if (lower.includes('vert')) return 'Vertical';
+                        if (lower.includes('horz')) return 'Horizontal';
+                        return startDataset || 'Dataset';
+                    } catch (e) {
+                        return 'Dataset';
+                    }
+                };
+                
+                // Determine layout based on number of URLs
+                const container = document.getElementById('container');
+                if (urls.length === 2) {
+                    container.className = 'container two-frames';
+                } else if (urls.length >= 4) {
+                    container.className = 'container four-frames';
+                    // Only use first 4 URLs
+                    urls.splice(4);
+                } else {
+                    document.getElementById('loading').textContent = `Found ${urls.length} URLs. Column view requires 2 or 4 URLs. Use overlay.html instead.`;
+                    return;
+                }
+                
+                // Create panels for each URL
+                urls.forEach((url, index) => {
+                    // Create panel
+                    const panel = document.createElement('div');
+                    panel.className = 'panel';
+                    panel.id = `panel${index}`;
+                    
+                    // Create header
+                    const header = document.createElement('div');
+                    header.className = 'panel-header';
+                    header.textContent = getLabel(url);
+                    
+                    // Create iframe
+                    const iframe = document.createElement('iframe');
+                    iframe.id = `iframe${index}`;
+                    iframe.title = getLabel(url);
+                    iframe.src = url + (url.includes('?') ? '&' : '?') + 'hideAttributes=true&_t=' + Date.now();
+                    iframe.setAttribute('allowfullscreen', '');
+                    
+                    panel.appendChild(header);
+                    panel.appendChild(iframe);
+                    container.appendChild(panel);
+                    
+                    // Click to activate panel
+                    panel.addEventListener('click', () => {
+                        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+                        panel.classList.add('active');
+                        iframe.focus();
+                    });
+                });
+                
+                // Hide loading message
+                document.getElementById('loading').style.display = 'none';
+            })
+            .catch(error => {
+                console.error('Error loading insarmaps.log:', error);
+                document.getElementById('loading').textContent = 'Error loading insarmaps.log: ' + error.message;
+            });
+        
+        // Load download link dynamically
+        fetch('download_commands.txt')
+            .then(response => response.text())
+            .then(() => {
+                // File exists, add download link
+                const p = document.createElement('p');
+                p.style.cssText = 'margin: 20px; font-family: Arial, sans-serif; text-align: center;';
+                p.innerHTML = 'Data download: <a href="download_commands.txt" target="_blank">link</a>';
+                document.body.appendChild(p);
+            })
+            .catch(() => {
+                // File doesn't exist, no download link
+                console.log('download_commands.txt not found');
+            });
+    </script>
+</body>
+</html>
+
+
