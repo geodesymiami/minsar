@@ -76,27 +76,31 @@ function clean_array() {
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
 helptext="                                                                         \n\
 Job submission script
-usage: run_workflow.bash custom_template_file [--start] [--stop] [--dostep] [--help]\n\
-       run_workflow.bash \$PWD --jobfile insarmaps_miaplpy_geo.job                  \n\
+usage: run_workflow.bash [custom_template_file] [OPTIONS]\n\
                                                                                     \n\
-  Examples:                                                                        \n\
-      run_workflow.bash \$SAMPLESDIR/unittestGalapagosSenDT128.template              \n\
-      run_workflow.bash \$SAMPLESDIR/unittestGalapagosSenDT128.template --start 2    \n\
-      run_workflow.bash \$SAMPLESDIR/unittestGalapagosSenDT128.template --dostep 4   \n\
-      run_workflow.bash \$SAMPLESDIR/unittestGalapagosSenDT128.template --stop 8     \n\
-      run_workflow.bash \$SAMPLESDIR/unittestGalapagosSenDT128.template --start mintpy \n\
-      run_workflow.bash \$SAMPLESDIR/unittestGalapagosSenDT128.template --dostep insarmaps \n\
-      run_workflow.bash \$SAMPLESDIR/unittestGalapagosSenDT128.template --dostep miaplpy    \n\
+  The template file is OPTIONAL for most use cases.                               \n\
+  It is REQUIRED only when using --miaplpy or --dir options.                      \n\
+                                                                                    \n\
+  Examples (without template file):                                               \n\
+      run_workflow.bash --start 2                                                 \n\
+      run_workflow.bash --dostep 4                                                \n\
+      run_workflow.bash --stop 8                                                  \n\
+      run_workflow.bash --start 2 --stop 5                                        \n\
+      run_workflow.bash --start mintpy                                            \n\
+      run_workflow.bash --dostep insarmaps                                        \n\
+      run_workflow.bash --jobfile insarmaps.job                                   \n\
+      run_workflow.bash --append                                                  \n\
+                                                                                    \n\
+  Examples (with template file - REQUIRED for miaplpy):                           \n\
       run_workflow.bash \$SAMPLESDIR/unittestGalapagosSenDT128.template --miaplpy    \n\
+      run_workflow.bash \$SAMPLESDIR/unittestGalapagosSenDT128.template --miaplpy --start 2    \n\
+      run_workflow.bash \$SAMPLESDIR/unittestGalapagosSenDT128.template --miaplpy --dostep generate_ifgram    \n\
+      run_workflow.bash \$SAMPLESDIR/unittestGalapagosSenDT128.template --miaplpy --start load_ifgram    \n\
       run_workflow.bash \$SAMPLESDIR/unittestGalapagosSenDT128.template --dir miaplpy_2015_2021  \n\
       run_workflow.bash \$SAMPLESDIR/unittestGalapagosSenDT128.template --dir miaplpy_2015_2021 --start 9 \n\
       run_workflow.bash \$SAMPLESDIR/unittestGalapagosSenDT128.template --dir miaplpy_2015_2021 --start timeseries_correction \n\
-      run_workflow.bash \$SAMPLESDIR/unittestGalapagosSenDT128.template --miaplpy --start load_ifgram    \n\
-      run_workflow.bash \$SAMPLESDIR/unittestGalapagosSenDT128.template --miaplpy --dostep generate_ifgram    \n\
-      run_workflow.bash \$SAMPLESDIR/unittestGalapagosSenDT128.template --jobfile insarmaps.job    \n\
-      run_workflow.bash \$SAMPLESDIR/unittestGalapagosSenDT128.template --append    \n\
                                                                                    \n\
- Processing steps (start/end/dostep): \n\
+| Processing steps (start/end/dostep): \n\
                                                                                  \n\
    ['1-16', 'mintpy', 'miaplpy', 'insarmaps' ]                                          \n\
                                                                                  \n\
@@ -109,7 +113,7 @@ usage: run_workflow.bash custom_template_file [--start] [--stop] [--dostep] [--h
                          end processing at the named step [default: upload]      \n\
    --dostep STEP         run processing at the named step only                   \n\
                                                                                  \n\
-   --miaplpy:  the run_files directory is determined by the *template file       \n\
+   --miaplpy:  requires template file; the run_files directory is determined by the *template file       \n\
    --dir:      for --miaplpy only (see  miaplpyApp.py --help)                    \n\
    --miaplpy --start --end options:                                               \n\
               'load_data', 'phase_linking', 'concatenate_patches', 'generate_ifgram', 'unwrap_ifgram'       \n\
@@ -119,13 +123,25 @@ usage: run_workflow.bash custom_template_file [--start] [--stop] [--dostep] [--h
    "
     printf "$helptext"
     exit 0;
-else
-    PROJECT_NAME=$(basename "$1" | cut -d. -f1)
-    PROJECT_NAME=$(basename "$1" | awk -F ".template" '{print $1}')
-    template_file=$1
 fi
-WORKDIR=$SCRATCHDIR/$PROJECT_NAME
+
+# Parse optional template file (if first argument doesn't start with --)
+template_file=""
+if [[ -n "$1" && "$1" != --* ]]; then
+    template_file=$1
+    shift  # Remove template file from arguments
+fi
+
+# Set WORKDIR to current directory
+WORKDIR=$(pwd)
 cd $WORKDIR
+
+# Set PROJECT_NAME from current directory if no template provided
+if [[ -n "$template_file" ]]; then
+    PROJECT_NAME=$(basename "$template_file" | awk -F ".template" '{print $1}')
+else
+    PROJECT_NAME=$(basename "$WORKDIR")
+fi
 
 randomorder=false
 rapid=false
@@ -140,21 +156,13 @@ stopstep=11
 
 # FA 4/23: need function to get  stopstep depending on ToPS verus stripmap
 dir_flag=false
-
-template_file_dir=$(dirname "$1")          # create name including $TE for concise log file
-if  [[ $template_file_dir == $TE ]]; then
-    template_print_name="\$TE/$(basename $template_file)"
-elif [[ $template_file_dir == $SAMPLESDIR ]]; then
-    template_print_name="\$SAMPLESDIR/$(basename $template_file)"
-else
-    template_print_name="$template_file"
-fi
-echo "$(date +"%Y%m%d:%H-%M") + run_workflow.bash $template_print_name ${@:2}" >> "${WORKDIR}"/log
+miaplpy_flag=false
 
 jobfile_flag=0
 check_job_outputs_flag=true
 jobfiles=()
 
+# Parse command line arguments
 while [[ $# -gt 0 ]]
 do
     key="$1"
@@ -200,6 +208,17 @@ do
         --jobfile)
             jobfile_flag=true
             jobfile="$2"
+            # Handle relative jobfile paths - check if file exists in current directory
+            if [[ "$jobfile" != /* ]]; then
+                # It's a relative path
+                if [[ -f "$PWD/$jobfile" ]]; then
+                    jobfile="$PWD/$jobfile"
+                elif [[ ! -f "$jobfile" ]]; then
+                    echo "ERROR: jobfile '$jobfile' not found in current directory ($PWD) or as absolute path. Exiting."
+                    exit 1
+                fi
+            fi
+            shift
             shift
             ;;
         --dir)
@@ -219,6 +238,29 @@ set -- "${POSITIONAL[@]}" # restore positional parameters
 
 if [[ $startstep == "miaplpy" ]]; then
    miaplpy_flag=true
+fi
+
+# Check if miaplpy requires template file
+if [[ $miaplpy_flag == "true" && -z "$template_file" ]]; then
+    echo "ERROR: --miaplpy option requires a template file argument. Exiting."
+    exit 1
+fi
+
+# Log the command invocation with full command line
+if [[ -n "$template_file" ]]; then
+    # Create a nice print name for the template file
+    template_file_dir=$(dirname "$template_file")
+    if  [[ $template_file_dir == $TE ]]; then
+        template_print_name="\$TE/$(basename $template_file)"
+    elif [[ $template_file_dir == $SAMPLESDIR ]]; then
+        template_print_name="\$SAMPLESDIR/$(basename $template_file)"
+    else
+        template_print_name="$template_file"
+    fi
+    echo "$(date +"%Y%m%d:%H-%M") + run_workflow.bash $template_print_name $@" >> "${WORKDIR}"/log
+else
+    # Log without template file
+    echo "$(date +"%Y%m%d:%H-%M") + run_workflow.bash $@" >> "${WORKDIR}"/log
 fi
 
 # Print the collected job files for confirmation
@@ -299,7 +341,7 @@ fi
 # )
 
 ##### For proper logging to both file and stdout #####
-num_logfiles=$(ls $WORKDIR/workflow.*.log | wc -l)
+num_logfiles=$(ls $WORKDIR/workflow.*.log 2>/dev/null | wc -l)
 test -f $WORKDIR/workflow.0.log  || touch workflow.0.log
 if $append; then num_logfiles=$(($num_logfiles-1)); fi
 logfile_name="${WORKDIR}/workflow.${num_logfiles}.log"
@@ -314,6 +356,7 @@ RUNFILES_DIR=$WORKDIR"/"$run_files_name
 
 if [[ $miaplpy_flag == "true" ]]; then
    # get miaplpy run_files directory name
+   # This requires the template file
    if [[ ! -z $(grep "^miaplpy.interferograms.networkType" $template_file) ]];  then
       network_type=$(grep -E "^miaplpy.interferograms.networkType" $template_file | awk -F= '{print $2}' |  awk -F# '{print $1}' | tail -1 | xargs  )
       if [[ $network_type == "auto" ]];  then
@@ -416,7 +459,7 @@ echo "Started at: $(date +"%Y-%m-%d %H:%M:%S")"
 if [[ $jobfile_flag == "true" ]]; then
     if [[ -n $jobfile ]]; then
         globlist=("$jobfile")
-        # if it’s not already a *.job file, append the pattern
+        # if it's not already a *.job file, append the pattern
         if [[ ${globlist[0]} != *job ]]; then
             globlist[0]="${globlist[0]}*.job"
         fi
@@ -579,4 +622,3 @@ for g in "${globlist[@]}"; do
        echo
     fi
 done
-

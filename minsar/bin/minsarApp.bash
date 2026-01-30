@@ -570,7 +570,7 @@ if [[ $ifgram_flag == "1" ]]; then
     if [[ $template_file =~ (Tsx|Csk|Env) ]]; then
         OLD_PATH="$PATH"
         PATH="$ISCE_STACK/stripmapStack:$PATH"
-        run_command "run_workflow.bash $template_file --dostep ifgram"
+        run_command "run_workflow.bash --dostep ifgram"
         PATH="$OLD_PATH"
     else
        echo "topsStack.workflow: <${template[topsStack.workflow]}>"
@@ -578,7 +578,7 @@ if [[ $ifgram_flag == "1" ]]; then
           isce_stopstep=7
        fi
 
-       run_command "run_workflow.bash $template_file --start $isce_startstep --stop $isce_stopstep"
+       run_command "run_workflow.bash --start $isce_startstep --stop $isce_stopstep"
     fi
 
     reference_date=$(get_reference_date)
@@ -593,7 +593,7 @@ if [[ $mintpy_flag == "1" ]]; then
 
     if [[ $skip_mintpy_flag != "1" ]]; then
         # run MintPy
-        run_command "run_workflow.bash $template_file --append --dostep mintpy"
+        run_command "run_workflow.bash --append --dostep mintpy"
     fi
 
     # summarize profiling logs
@@ -606,7 +606,7 @@ if [[ $mintpy_flag == "1" ]]; then
         run_command "create_ingest_insarmaps_jobfile.py mintpy --dataset geo"
 
         ingest_insarmaps_jobfile=$(ls -t ingest_insar*job | head -n 1)
-        run_command "run_workflow.bash $template_file --jobfile $PWD/$ingest_insarmaps_jobfile"
+        run_command "run_workflow.bash --jobfile $PWD/$ingest_insarmaps_jobfile"
     fi
 
     # upload mintpy directory
@@ -660,7 +660,7 @@ if [[ $miaplpy_flag == "1" ]]; then
 
         # run jobfile
         ingest_insarmaps_jobfile=$(ls -t ingest_insar*job | head -n 1)
-        run_command "run_workflow.bash $template_file --jobfile $PWD/$ingest_insarmaps_jobfile"
+        run_command "run_workflow.bash --jobfile $PWD/$ingest_insarmaps_jobfile"
 
     fi
 
