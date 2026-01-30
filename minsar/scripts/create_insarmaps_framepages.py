@@ -3660,57 +3660,77 @@ def main(iargs=None):
         # Extract labels from all URLs
         labels = [get_label_from_url(url) for url in urls]
         
-        # Create overlay.html with all frames (works for any number of URLs)
-        overlay_path = os.path.join(inps.out_dir, 'overlay.html')
-        try:
-            create_overlay_html(urls, labels, overlay_path, zoom_factor=inps.zoom)
-        except Exception as e:
-            print(f"Warning: Could not create overlay.html: {e}")
+        # Find template directory (relative to this script)
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        template_dir = os.path.join(os.path.dirname(script_dir), 'html')
         
-        # Count entries and call appropriate function
-        if num_urls == 2:
-            # Create multiple layout files for 2 frames
-            base_path = os.path.splitext(inps.outfile)[0] if inps.outfile else 'multi_frame_page'
+        if not os.path.exists(template_dir):
+            print(f"Warning: Template directory not found: {template_dir}")
+            print("Falling back to generating HTML files...")
+            # Fall back to old method
+            overlay_path = os.path.join(inps.out_dir, 'overlay.html')
+            try:
+                create_overlay_html(urls, labels, overlay_path, zoom_factor=inps.zoom)
+            except Exception as e:
+                print(f"Warning: Could not create overlay.html: {e}")
             
-            # Create matrix.html (2 columns)
-            matrix_path = os.path.join(inps.out_dir, 'matrix.html')
-            create_webpage_2frames(urls[:2], labels[:2], matrix_path, zoom_factor=inps.zoom, layout='matrix')
-            
-            # Create column.html (2 rows)
-            column_path = os.path.join(inps.out_dir, 'column.html')
-            create_webpage_2frames(urls[:2], labels[:2], column_path, zoom_factor=inps.zoom, layout='column')
-            
-            # Create row.html (same as matrix - 2 columns)
-            row_path = os.path.join(inps.out_dir, 'row.html')
-            create_webpage_2frames(urls[:2], labels[:2], row_path, zoom_factor=inps.zoom, layout='row')
-            
-            print(f"Created layout files: overlay.html, matrix.html, column.html, row.html")
-            
-        elif num_urls >= 4:
-            # Create multiple layout files for 4 frames
-            base_path = os.path.splitext(inps.outfile)[0] if inps.outfile else 'multi_frame_page'
-            
-            # Create matrix.html (2x2 grid)
-            matrix_path = os.path.join(inps.out_dir, 'matrix.html')
-            create_webpage_4frames(urls[:4], labels[:4], matrix_path, zoom_factor=inps.zoom, layout='matrix')
-            
-            # Create column.html (4 rows)
-            column_path = os.path.join(inps.out_dir, 'column.html')
-            create_webpage_4frames(urls[:4], labels[:4], column_path, zoom_factor=inps.zoom, layout='column')
-            
-            print(f"Created layout files: overlay.html, matrix.html, column.html")
+            if num_urls == 2:
+                matrix_path = os.path.join(inps.out_dir, 'matrix.html')
+                create_webpage_2frames(urls[:2], labels[:2], matrix_path, zoom_factor=inps.zoom, layout='matrix')
+                column_path = os.path.join(inps.out_dir, 'column.html')
+                create_webpage_2frames(urls[:2], labels[:2], column_path, zoom_factor=inps.zoom, layout='column')
+                row_path = os.path.join(inps.out_dir, 'row.html')
+                create_webpage_2frames(urls[:2], labels[:2], row_path, zoom_factor=inps.zoom, layout='row')
+                print(f"Created layout files: overlay.html, matrix.html, column.html, row.html")
+            elif num_urls >= 4:
+                matrix_path = os.path.join(inps.out_dir, 'matrix.html')
+                create_webpage_4frames(urls[:4], labels[:4], matrix_path, zoom_factor=inps.zoom, layout='matrix')
+                column_path = os.path.join(inps.out_dir, 'column.html')
+                create_webpage_4frames(urls[:4], labels[:4], column_path, zoom_factor=inps.zoom, layout='column')
+                print(f"Created layout files: overlay.html, matrix.html, column.html")
+            else:
+                print(f"Note: Found {num_urls} URLs. Need exactly 2 or at least 4 URLs for matrix/column layouts.")
+                print(f"Created overlay.html with all {num_urls} frames.")
         else:
-            # Invalid number of entries for 2/4 frame layouts, but overlay.html was created
-            print(f"Note: Found {num_urls} URLs. Need exactly 2 or at least 4 URLs for matrix/column layouts.")
-            print(f"Created overlay.html with all {num_urls} frames.")
-            return 0
+            # Copy template files to output directory
+            import shutil
+            templates = ['overlay.html', 'matrix.html', 'column.html']
+            for template_name in templates:
+                src = os.path.join(template_dir, template_name)
+                dst = os.path.join(inps.out_dir, template_name)
+                if os.path.exists(src):
+                    shutil.copy2(src, dst)
+                    print(f"Copied {template_name} to {inps.out_dir}")
+                else:
+                    print(f"Warning: Template {template_name} not found at {src}")
+            
+            # Create row.html as a copy of matrix.html for backward compatibility
+            matrix_src = os.path.join(template_dir, 'matrix.html')
+            row_dst = os.path.join(inps.out_dir, 'row.html')
+            if os.path.exists(matrix_src):
+                shutil.copy2(matrix_src, row_dst)
+                print(f"Copied matrix.html to row.html")
+            
+            print(f"\nHTML files will read insarmaps.log dynamically.")
+            print(f"To change URLs, simply edit {inps.log_path} and refresh the browser.")
+            
+            if num_urls == 2:
+                print(f"\nCreated layout files: overlay.html, matrix.html, column.html, row.html")
+                print(f"All layouts support 2 frames.")
+            elif num_urls >= 4:
+                print(f"\nCreated layout files: overlay.html, matrix.html, column.html, row.html")
+                print(f"Matrix and column layouts will use first 4 frames.")
+                print(f"Overlay layout supports all {num_urls} frames.")
+            else:
+                print(f"\nNote: Found {num_urls} URLs. Matrix/column views require 2 or 4 URLs.")
+                print(f"Use overlay.html to view all {num_urls} frames.")
+        
+        return 0
     except Exception as e:
         import traceback
         print(f"Error creating webpage: {e}")
         traceback.print_exc()
         return 1
-    
-    return 0
 
 
 if __name__ == '__main__':

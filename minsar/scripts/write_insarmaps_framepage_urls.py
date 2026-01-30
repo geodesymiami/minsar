@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Create URLs for HTML files and write them to frames_urls.log.
+Create URLs for HTML files and write them to urls.log.
 
 This script finds HTML files in a directory or from a glob pattern,
 creates URLs using REMOTEHOST_DATA and REMOTE_DIR environment variables,
-and writes them to frames_urls.log in the output directory.
+and writes them to urls.log in the output directory.
 """
 import os
 import sys
@@ -18,7 +18,7 @@ from minsar.objects import message_rsmas
 def create_parser():
     """Create argument parser."""
     parser = argparse.ArgumentParser(
-        description='Create URLs for HTML files and write them to frames_urls.log.',
+        description='Create URLs for HTML files and write them to urls.log.',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -32,7 +32,7 @@ Examples:
     parser.add_argument('input', nargs='?', default=None,
                        help='Directory name or glob pattern for HTML files (default: *.html in current directory)')
     parser.add_argument('--outdir', default=None,
-                       help='Output directory for frames_urls.log (default: directory containing HTML files)')
+                       help='Output directory for urls.log (default: directory containing HTML files)')
 
     return parser
 
@@ -87,7 +87,7 @@ def find_html_files(input_path, cwd):
     return html_files
 
 def determine_output_dir(html_files, input_path, cwd, outdir_arg):
-    """Determine output directory for frames_urls.log."""
+    """Determine output directory for urls.log."""
     if outdir_arg:
         return os.path.abspath(outdir_arg)
 
@@ -145,7 +145,7 @@ def main(iargs=None):
 
     out_dir = inps.outdir if inps.outdir else cwd
     out_dir = os.path.abspath(out_dir)
-    output_file = os.path.join(out_dir, 'frames_urls.log')
+    output_file = os.path.join(out_dir, 'urls.log')
     if os.path.exists(output_file):
         os.remove(output_file)
     project_dir = os.path.dirname(html_files[0])
