@@ -1,76 +1,15 @@
 ##! /bin/bash
 #set -x
 
-function abbreviate {
-    abb=$1
-    if [[ "${#abb}" -gt $2 ]]; then
-        abb=$(echo "$(echo $(basename $abb) | cut -c -$3)...$(echo $(basename $abb) | rev | cut -c -$4 | rev)")
-    fi
-    echo $abb
-}
-
-function convert_array_to_comma_separated_string() {
-    joined_string=""
-    for item in "$@"; do
-        joined_string+="${item},"
-    done
-    # Remove the trailing comma at the end
-    joined_string="${joined_string%,}"
-
-    echo $joined_string
-}
-
-function get_comma_separated_list {
-    abb=$1
-    if [[ "${#abb}" -gt $2 ]]; then
-        abb=$(echo "$(echo $(basename $abb) | cut -c -$3)...$(echo $(basename $abb) | rev | cut -c -$4 | rev)")
-    fi
-    echo $abb
-}
-
-function remove_from_list {
-    var=$1
-    shift
-    list=("$@")
-    new_list=() # Not strictly necessary, but added for clarity
-    
-    #echo "VAR: $var"
-    for item in ${list[@]}
-    do
-        #echo "$item"
-        if [ "$item" != "$var" ]
-        then
-            new_list+=("$item")
-        fi
-    done
-    list=("${new_list[@]}")
-    unset new_list
-    echo "${list[@]}"
-}
-
-function clean_array() {
-# cleans array in-place by removing empty elements and white space elements
-# Usage:
-# clean_array globlist
-    local arr_name="$1"
-    local original=()
-    local cleaned=()
-
-    # copy array into 'original'
-    eval "original=(\"\${${arr_name}[@]}\")"
-
-    # iterate and keep only non-empty, non-whitespace entries
-    for item in "${original[@]}"; do
-        # Trim whitespace
-        local trimmed="$(echo "$item" | xargs)"
-        if [[ -n "$trimmed" ]]; then
-            cleaned+=("$item")
-        fi
-    done
-
-    # overwrite original array with cleaned one
-    eval "$arr_name=(\"\${cleaned[@]}\")"
-}
+# Source shared utility functions (Task 4 refactor)
+# Determine script directory for relative sourcing
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MINSAR_LIB_DIR="${SCRIPT_DIR}/../lib"
+if [[ -f "${MINSAR_LIB_DIR}/workflow_utils.sh" ]]; then
+    source "${MINSAR_LIB_DIR}/workflow_utils.sh"
+elif [[ -n "${RSMASINSAR_HOME}" && -f "${RSMASINSAR_HOME}/minsar/lib/workflow_utils.sh" ]]; then
+    source "${RSMASINSAR_HOME}/minsar/lib/workflow_utils.sh"
+fi
 ###########################################
 
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
@@ -271,34 +210,27 @@ fi
 echo "job from --jobfile: <${jobfile}>"
 sleep 1
 
+# MiaplPy step name to number mapping (Task 3 refactor)
+declare -A MIAPLPY_STEPS=(
+    [load_data]=1 [phase_linking]=2 [concatenate_patches]=3
+    [generate_ifgram]=4 [unwrap_ifgram]=5 [load_ifgram]=6
+    [ifgram_correction]=7 [invert_network]=8 [timeseries_correction]=9
+)
+
 # set startstep, stopstep if miaplpy options are given
 echo "startstep, stopstep:<$startstep> <$stopstep>"
-if [[ $miaplpy_flag == "true" ]]; then 
-    if [[ $startstep == "load_data" ]]; then               startstep=1
-    elif [[ $startstep == "phase_linking" ]]; then         startstep=2
-    elif [[ $startstep == "concatenate_patches" ]]; then   startstep=3
-    elif [[ $startstep == "generate_ifgram" ]]; then       startstep=4
-    elif [[ $startstep == "unwrap_ifgram" ]]; then         startstep=5
-    elif [[ $startstep == "load_ifgram" ]]; then           startstep=6
-    elif [[ $startstep == "ifgram_correction" ]]; then     startstep=7
-    elif [[ $startstep == "invert_network" ]]; then        startstep=8
-    elif [[ $startstep == "timeseries_correction" ]]; then startstep=9
-    #elif [[ $startstep != "1" ]] && [[ $startstep != "mintpy" ]] && [[ $startstep != "miaplpy" ]]; then 
-    elif [[ $startstep != *[1-9]* ]] && [[ $startstep != "mintpy" ]] && [[ $startstep != "miaplpy" ]]; then 
+if [[ $miaplpy_flag == "true" ]]; then
+    # Convert step names to numbers using associative array
+    if [[ -n "${MIAPLPY_STEPS[$startstep]}" ]]; then
+        startstep="${MIAPLPY_STEPS[$startstep]}"
+    elif [[ $startstep != *[1-9]* ]] && [[ $startstep != "mintpy" ]] && [[ $startstep != "miaplpy" ]]; then
         echo "ERROR: $startstep -- not a valid startstep. Exiting."
         exit 1
     fi
 
-    if [[ $stopstep == "load_data" ]]; then               stopstep=1
-    elif [[ $stopstep == "phase_linking" ]]; then         stopstep=2
-    elif [[ $stopstep == "concatenate_patches" ]]; then   stopstep=3
-    elif [[ $stopstep == "generate_ifgram" ]]; then       stopstep=4
-    elif [[ $stopstep == "unwrap_ifgram" ]]; then         stopstep=5
-    elif [[ $stopstep == "load_ifgram" ]]; then           stopstep=6
-    elif [[ $stopstep == "ifgram_correction" ]]; then     stopstep=7
-    elif [[ $stopstep == "invert_network" ]]; then        stopstep=8
-    elif [[ $stopstep == "timeseries_correction" ]]; then stopstep=9
-    elif [[ $startstep != *[1-9]* ]] && [[ $stopstep != "mintpy" ]] && [[ $stopstep != "miaplpy" ]]; then 
+    if [[ -n "${MIAPLPY_STEPS[$stopstep]}" ]]; then
+        stopstep="${MIAPLPY_STEPS[$stopstep]}"
+    elif [[ $stopstep != *[1-9]* ]] && [[ $stopstep != "mintpy" ]] && [[ $stopstep != "miaplpy" ]]; then
         echo "ERROR: $stopstep -- not a valid stopstep. Exiting."
         exit 1
     fi
@@ -394,82 +326,67 @@ if [[ $miaplpy_flag == "true" ]]; then
    echo "Running miaplpy jobs in ${RUNFILES_DIR}"
 fi
 
-#find the last job (11 for 'geometry' and 16 for 'NESD', 9 for stripmap) and remove leading zero
-#jobfile_arr=(ls $RUNFILES_DIR/run_*_0.job)   # before FA 8/2025 change
-jobfile_arr=(ls $RUNFILES_DIR/run_*_*.job)    # FA 8/2025   (not 
-last_jobfile=${jobfile_arr[-1]}
-last_jobfile=${last_jobfile##*/}
-last_jobfile_number=${last_jobfile:4:2}
-last_jobfile_number=$(echo $((10#${last_jobfile_number})))        # FA 10/2025. This probably related to leading zeros (01, 02) etc, but chat suggests to change to last_jobfile_number=$((10#${last_jobfile_number})). That may remove the error
-echo "last jobfile number: <$last_jobfile_number>"
+# Single job file mode - skip all globlist construction (Task 1 refactor)
+if [[ $jobfile_flag == "true" ]]; then
+    echo "Single job file mode: $jobfile"
+    globlist=("$jobfile")
+else
+    # Normal mode: construct globlist from steps
 
-if [[ $startstep == "ifgram" || $startstep == "miaplpy" ]]; then
-    startstep=1
-elif [[ $startstep == "mintpy" ]]; then
-    startstep=$((last_jobfile_number+1))
-elif [[ $startstep == "insarmaps" ]]; then
-    startstep=$((last_jobfile_number+2))
-fi
+    #find the last job (11 for 'geometry' and 16 for 'NESD', 9 for stripmap) and remove leading zero
+    #jobfile_arr=(ls $RUNFILES_DIR/run_*_0.job)   # before FA 8/2025 change
+    jobfile_arr=(ls $RUNFILES_DIR/run_*_*.job)    # FA 8/2025   (not 
+    last_jobfile=${jobfile_arr[-1]}
+    last_jobfile=${last_jobfile##*/}
+    last_jobfile_number=${last_jobfile:4:2}
+    last_jobfile_number=$(echo $((10#${last_jobfile_number})))        # FA 10/2025. This probably related to leading zeros (01, 02) etc, but chat suggests to change to last_jobfile_number=$((10#${last_jobfile_number})). That may remove the error
+    echo "last jobfile number: <$last_jobfile_number>"
 
-if [[ $stopstep == "ifgram" || $stopstep == "miaplpy" || -z ${stopstep+x}  ]]; then
-    stopstep=$last_jobfile_number
-elif [[ $stopstep == "mintpy" ]]; then
-    stopstep=$((last_jobfile_number+1))
-elif [[ $stopstep == "insarmaps" ]]; then
-    stopstep=$((last_jobfile_number+2))
-fi
-
-echo "last jobfile number: <$last_jobfile_number>, startstep: <$startstep>, stopstep: <$stopstep>"
-for (( i=$startstep; i<=$stopstep; i++ )) do
-    stepnum="$(printf "%02d" ${i})"
-    if [[ $i -le $last_jobfile_number ]]; then
-        fname="$RUNFILES_DIR/run_${stepnum}_*.job"
-    elif [[ $i -eq $((last_jobfile_number+1)) ]]; then
-        fname="$WORKDIR/smallbaseline_wrapper.job"
-    else
-        fname="$WORKDIR/insarmaps.job"
+    # Convert named steps (mintpy, insarmaps) to step numbers
+    if [[ $startstep == "ifgram" || $startstep == "miaplpy" ]]; then
+        startstep=1
+    elif [[ $startstep == "mintpy" ]]; then
+        # Convert to jobfile mode for mintpy
+        jobfile_flag=true
+        jobfile="$WORKDIR/smallbaseline_wrapper.job"
+        globlist=("$jobfile")
+        echo "Converting --start mintpy to single job file mode: $jobfile"
+    elif [[ $startstep == "insarmaps" ]]; then
+        # Convert to jobfile mode for insarmaps
+        jobfile_flag=true
+        jobfile="$WORKDIR/insarmaps.job"
+        globlist=("$jobfile")
+        echo "Converting --start insarmaps to single job file mode: $jobfile"
     fi
-    globlist+=("$fname")
-done
 
-# FA 9/2025: The above inserted empty elements wich are removed below. I think we can remove all reference to samllbaseline and insarmaos, i.e. remove the liens above
-tmp=()
-for g in "${globlist[@]}"; do
-    [[ -n $g ]] && tmp+=("$g")
-done
-globlist=("${tmp[@]}")
-echo "globlist length: "${#globlist[@]}""
+    # Only continue with globlist construction if not converted to jobfile mode
+    if [[ $jobfile_flag != "true" ]]; then
+        if [[ $stopstep == "ifgram" || $stopstep == "miaplpy" || -z ${stopstep+x}  ]]; then
+            stopstep=$last_jobfile_number
+        elif [[ $stopstep == "mintpy" ]]; then
+            stopstep=$((last_jobfile_number+1))
+        elif [[ $stopstep == "insarmaps" ]]; then
+            stopstep=$((last_jobfile_number+2))
+        fi
 
-# If joblist contains run_0* files remove smallbaseline_wrapper.job and insarmaps.job 
-# 5/24 FA removing smallbaseline_wrapper.job and insarmaps.job above did not work
-if [[ "${globlist[*]}" == *"run_"* ]]; then
-    globlist=("${globlist[@]/$WORKDIR\/smallbaseline_wrapper.job/}")
-    globlist=("${globlist[@]/$WORKDIR\/insarmaps.job/}")
-    # Remove any empty elements
-    globlist=("${globlist[@]//}")
+        echo "last jobfile number: <$last_jobfile_number>, startstep: <$startstep>, stopstep: <$stopstep>"
+        
+        # Build globlist from numbered steps only (no special handling for smallbaseline/insarmaps)
+        for (( i=$startstep; i<=$stopstep; i++ )) do
+            stepnum="$(printf "%02d" ${i})"
+            if [[ $i -le $last_jobfile_number ]]; then
+                fname="$RUNFILES_DIR/run_${stepnum}_*.job"
+                globlist+=("$fname")
+            fi
+        done
+
+        echo "Full list of jobfiles to submit: ${globlist[@]}"
+    fi
 fi
-
-echo "Full list of jobfiles to submit: ${globlist[@]}"
 
 defaults_file="${RSMASINSAR_HOME}/minsar/defaults/job_defaults.cfg"
 
 echo "Started at: $(date +"%Y-%m-%d %H:%M:%S")"
-
-# 5/2024 hack to be able to run one jobfile
-if [[ $jobfile_flag == "true" ]]; then
-    if [[ -n $jobfile ]]; then
-        globlist=("$jobfile")
-        # if it's not already a *.job file, append the pattern
-        if [[ ${globlist[0]} != *job ]]; then
-            globlist[0]="${globlist[0]}*.job"
-        fi
-        echo "--jobfile hack applies: replaced full list by jobfile $jobfile"
-    else
-        # explicitly empty array if jobfile is unset/empty
-        globlist=()
-        echo "--jobfile flag true but no jobfile provided → globlist is empty"
-    fi
-fi
 
 #echo "QQQ globlist (shown with declare -p):"
 #declare -p globlist
