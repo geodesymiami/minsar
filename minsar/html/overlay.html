@@ -113,6 +113,104 @@
     <div class="container" id="container"></div>
     
     <script>
+        // ===== URL STATE MANAGEMENT =====
+        // Map view labels to short codes for URL
+        const viewCodes = {
+            'Descending': 'desc',
+            'Ascending': 'asc',
+            'Vertical': 'vert',
+            'Horizontal': 'horz'
+        };
+        const codeToLabel = { 'desc': 'Descending', 'asc': 'Ascending', 'vert': 'Vertical', 'horz': 'Horizontal' };
+
+        // Get URL parameters from overlay.html's URL
+        function getOverlayUrlParams() {
+            const params = new URLSearchParams(window.location.search);
+            return {
+                view: params.get('view'),
+                lat: params.get('lat'),
+                lng: params.get('lng'),
+                zoom: params.get('zoom'),
+                minScale: params.get('minScale'),
+                maxScale: params.get('maxScale'),
+                startDate: params.get('startDate'),
+                endDate: params.get('endDate'),
+                pointLat: params.get('pointLat'),
+                pointLon: params.get('pointLon'),
+                refPointLat: params.get('refPointLat'),
+                refPointLon: params.get('refPointLon'),
+                colorscale: params.get('colorscale'),
+                pixelSize: params.get('pixelSize'),
+                background: params.get('background')
+            };
+        }
+
+        // Update overlay.html's browser URL with current state
+        function updateOverlayUrl(viewCode, mapParams) {
+            const params = new URLSearchParams();
+            if (viewCode) params.set('view', viewCode);
+            if (mapParams.lat) params.set('lat', mapParams.lat);
+            if (mapParams.lng) params.set('lng', mapParams.lng);
+            if (mapParams.zoom) params.set('zoom', mapParams.zoom);
+            if (mapParams.minScale) params.set('minScale', mapParams.minScale);
+            if (mapParams.maxScale) params.set('maxScale', mapParams.maxScale);
+            if (mapParams.startDate) params.set('startDate', mapParams.startDate);
+            if (mapParams.endDate) params.set('endDate', mapParams.endDate);
+            if (mapParams.pointLat) params.set('pointLat', mapParams.pointLat);
+            if (mapParams.pointLon) params.set('pointLon', mapParams.pointLon);
+            if (mapParams.refPointLat) params.set('refPointLat', mapParams.refPointLat);
+            if (mapParams.refPointLon) params.set('refPointLon', mapParams.refPointLon);
+            if (mapParams.colorscale) params.set('colorscale', mapParams.colorscale);
+            if (mapParams.pixelSize) params.set('pixelSize', mapParams.pixelSize);
+            if (mapParams.background) params.set('background', mapParams.background);
+            
+            const newUrl = window.location.pathname + '?' + params.toString();
+            window.history.replaceState({}, '', newUrl);
+        }
+
+        // Build insarmaps URL with given parameters
+        function buildInsarmapsUrl(baseUrl, dataset, lat, lng, zoom, mapParams) {
+            const params = new URLSearchParams();
+            params.set('flyToDatasetCenter', 'false');
+            params.set('startDataset', dataset);
+            if (mapParams.minScale) params.set('minScale', mapParams.minScale);
+            if (mapParams.maxScale) params.set('maxScale', mapParams.maxScale);
+            if (mapParams.startDate) params.set('startDate', mapParams.startDate);
+            if (mapParams.endDate) params.set('endDate', mapParams.endDate);
+            if (mapParams.pointLat) params.set('pointLat', mapParams.pointLat);
+            if (mapParams.pointLon) params.set('pointLon', mapParams.pointLon);
+            if (mapParams.refPointLat) params.set('refPointLat', mapParams.refPointLat);
+            if (mapParams.refPointLon) params.set('refPointLon', mapParams.refPointLon);
+            if (mapParams.colorscale) params.set('colorscale', mapParams.colorscale);
+            if (mapParams.pixelSize) params.set('pixelSize', mapParams.pixelSize);
+            if (mapParams.background) params.set('background', mapParams.background);
+            params.set('hideAttributes', 'true');
+            params.set('_t', Date.now());
+            
+            return `${baseUrl}/start/${lat}/${lng}/${zoom}?${params.toString()}`;
+        }
+
+        // Extract lat/lng/zoom from an insarmaps URL
+        function parseInsarmapsUrl(url) {
+            try {
+                const urlObj = new URL(url);
+                const pathMatch = urlObj.pathname.match(/\/start\/([^\/]+)\/([^\/]+)\/([^\/]+)/);
+                if (pathMatch) {
+                    return { lat: pathMatch[1], lng: pathMatch[2], zoom: pathMatch[3] };
+                }
+            } catch (e) {}
+            return null;
+        }
+        // ===== END URL STATE MANAGEMENT =====
+
+        // Global state
+        let iframeDatasets = new Map();  // index -> dataset name
+        let iframeLabels = new Map();    // index -> label (Descending, etc.)
+        let baseUrl = '';
+        let currentViewCode = 'desc';
+        let currentMapParams = {};
+        let urlsList = [];
+
         // Parse insarmaps.log and create iframes dynamically
         fetch('insarmaps.log')
             .then(response => response.text())
@@ -146,6 +244,8 @@
                     return getSortKey(a) - getSortKey(b);
                 });
                 
+                urlsList = urls;
+                
                 // Extract labels from URLs
                 const getLabel = (url) => {
                     try {
@@ -162,58 +262,220 @@
                     }
                 };
                 
+                // Get initial params from overlay.html URL
+                const initialParams = getOverlayUrlParams();
+                
+                // Initialize current map params from overlay URL or first insarmaps URL
+                const firstUrlCoords = parseInsarmapsUrl(urls[0]);
+                currentMapParams = {
+                    lat: initialParams.lat || (firstUrlCoords ? firstUrlCoords.lat : null),
+                    lng: initialParams.lng || (firstUrlCoords ? firstUrlCoords.lng : null),
+                    zoom: initialParams.zoom || (firstUrlCoords ? firstUrlCoords.zoom : null),
+                    minScale: initialParams.minScale,
+                    maxScale: initialParams.maxScale,
+                    startDate: initialParams.startDate,
+                    endDate: initialParams.endDate,
+                    pointLat: initialParams.pointLat,
+                    pointLon: initialParams.pointLon,
+                    refPointLat: initialParams.refPointLat,
+                    refPointLon: initialParams.refPointLon,
+                    colorscale: initialParams.colorscale,
+                    pixelSize: initialParams.pixelSize,
+                    background: initialParams.background
+                };
+                
                 // Create panels for each URL
                 const container = document.getElementById('container');
                 const frameSelect = document.getElementById('frame-select');
                 const frameSelector = document.getElementById('frame-selector');
                 
+                // Determine initial active panel based on URL view param
+                let initialActiveIndex = 0;
+                
+                urls.forEach((url, index) => {
+                    try {
+                        const urlObj = new URL(url);
+                        const dataset = urlObj.searchParams.get('startDataset');
+                        iframeDatasets.set(index, dataset);
+                        
+                        // Extract base URL from first URL
+                        if (!baseUrl) {
+                            baseUrl = urlObj.origin;
+                        }
+                    } catch (e) {
+                        console.warn('Could not parse URL:', url);
+                    }
+                    
+                    const label = getLabel(url);
+                    iframeLabels.set(index, label);
+                    const labelCode = viewCodes[label] || label.toLowerCase();
+                    
+                    // Check if this should be the active panel based on URL param
+                    if (initialParams.view && labelCode === initialParams.view) {
+                        initialActiveIndex = index;
+                        currentViewCode = labelCode;
+                    }
+                    
+                    // Add option to dropdown
+                    const option = document.createElement('option');
+                    option.value = index;
+                    option.textContent = label;
+                    frameSelect.appendChild(option);
+                });
+                
+                // Set default view code if not specified in URL
+                if (!initialParams.view) {
+                    const firstLabel = iframeLabels.get(0);
+                    currentViewCode = viewCodes[firstLabel] || 'desc';
+                }
+                
+                // Create panels with potentially modified URLs
                 urls.forEach((url, index) => {
                     // Create panel
                     const panel = document.createElement('div');
                     panel.className = 'panel';
                     panel.id = `panel${index}`;
-                    if (index === 0) panel.classList.add('active');
+                    if (index === initialActiveIndex) panel.classList.add('active');
                     
                     // Create header
                     const header = document.createElement('div');
                     header.className = 'panel-header';
                     const title = document.createElement('span');
                     title.className = 'panel-header-title';
-                    title.textContent = getLabel(url);
+                    title.textContent = iframeLabels.get(index);
                     header.appendChild(title);
+                    
+                    // Build iframe URL - use overlay params if available
+                    let iframeSrc = url;
+                    const dataset = iframeDatasets.get(index);
+                    if (currentMapParams.lat && currentMapParams.lng && currentMapParams.zoom && dataset) {
+                        iframeSrc = buildInsarmapsUrl(
+                            baseUrl, 
+                            dataset, 
+                            currentMapParams.lat, 
+                            currentMapParams.lng, 
+                            currentMapParams.zoom, 
+                            currentMapParams
+                        );
+                    } else {
+                        iframeSrc = url + (url.includes('?') ? '&' : '?') + 'hideAttributes=true&_t=' + Date.now();
+                    }
                     
                     // Create iframe
                     const iframe = document.createElement('iframe');
                     iframe.id = `iframe${index}`;
-                    iframe.title = getLabel(url);
-                    iframe.src = url + (url.includes('?') ? '&' : '?') + 'hideAttributes=true&_t=' + Date.now();
+                    iframe.title = iframeLabels.get(index);
+                    iframe.src = iframeSrc;
                     iframe.setAttribute('allowfullscreen', '');
                     
                     panel.appendChild(header);
                     panel.appendChild(iframe);
                     container.appendChild(panel);
-                    
-                    // Add option to dropdown
-                    const option = document.createElement('option');
-                    option.value = index;
-                    option.textContent = getLabel(url);
-                    frameSelect.appendChild(option);
                 });
                 
                 // Show selector and hide loading
                 frameSelector.style.display = 'flex';
                 document.getElementById('loading').style.display = 'none';
                 
-                // Frame selector functionality
+                // Set initial dropdown selection
+                frameSelect.value = initialActiveIndex.toString();
+                
+                // Update overlay URL with initial state
+                updateOverlayUrl(currentViewCode, currentMapParams);
+                
+                // Frame selector functionality - update URL when dataset changes
                 frameSelect.addEventListener('change', (e) => {
                     const selectedIndex = parseInt(e.target.value);
                     document.querySelectorAll('.panel').forEach(panel => panel.classList.remove('active'));
                     const selectedPanel = document.getElementById(`panel${selectedIndex}`);
                     if (selectedPanel) selectedPanel.classList.add('active');
+                    
+                    // Update currentViewCode and overlay URL
+                    const label = iframeLabels.get(selectedIndex);
+                    currentViewCode = viewCodes[label] || label.toLowerCase();
+                    updateOverlayUrl(currentViewCode, currentMapParams);
                 });
                 
-                // Set initial selection
-                if (urls.length > 0) frameSelect.value = '0';
+                // ===== IFRAME SYNCHRONIZATION =====
+                // Debounce timer for sync updates
+                let syncTimeout = null;
+                const SYNC_DEBOUNCE_MS = 300;
+                
+                // Listen for URL updates from any iframe (requires insarmaps postMessage support)
+                window.addEventListener('message', (event) => {
+                    // Validate message structure
+                    if (!event.data || event.data.type !== 'insarmaps-url-update') return;
+                    
+                    // Clear previous pending sync
+                    if (syncTimeout) clearTimeout(syncTimeout);
+                    
+                    // Debounce: wait for user to stop interacting
+                    syncTimeout = setTimeout(() => {
+                        const newUrlPath = event.data.url;
+                        
+                        // Parse path: /start/{lat}/{lng}/{zoom}?params...
+                        const pathMatch = newUrlPath.match(/^\/start\/([^\/]+)\/([^\/]+)\/([^?]+)/);
+                        if (!pathMatch) return;
+                        
+                        const [, lat, lng, zoom] = pathMatch;
+                        
+                        // Parse query parameters from insarmaps URL
+                        const queryStart = newUrlPath.indexOf('?');
+                        const params = new URLSearchParams(
+                            queryStart >= 0 ? newUrlPath.substring(queryStart) : ''
+                        );
+                        
+                        // Update current map params
+                        currentMapParams = {
+                            lat: lat,
+                            lng: lng,
+                            zoom: zoom,
+                            minScale: params.get('minScale'),
+                            maxScale: params.get('maxScale'),
+                            startDate: params.get('startDate'),
+                            endDate: params.get('endDate'),
+                            pointLat: params.get('pointLat'),
+                            pointLon: params.get('pointLon'),
+                            refPointLat: params.get('refPointLat'),
+                            refPointLon: params.get('refPointLon'),
+                            colorscale: params.get('colorscale'),
+                            pixelSize: params.get('pixelSize'),
+                            background: params.get('background')
+                        };
+                        
+                        // Update overlay.html's browser URL
+                        updateOverlayUrl(currentViewCode, currentMapParams);
+                        
+                        // Find which iframe sent the message
+                        let senderIndex = -1;
+                        for (let i = 0; i < urlsList.length; i++) {
+                            const iframe = document.getElementById(`iframe${i}`);
+                            if (iframe && event.source === iframe.contentWindow) {
+                                senderIndex = i;
+                                break;
+                            }
+                        }
+                        
+                        // Update all OTHER iframes with new coordinates/params, keeping their dataset
+                        iframeDatasets.forEach((originalDataset, index) => {
+                            if (index === senderIndex) return;  // Don't reload the sender
+                            
+                            const newUrl = buildInsarmapsUrl(
+                                baseUrl, 
+                                originalDataset, 
+                                lat, 
+                                lng, 
+                                zoom, 
+                                currentMapParams
+                            );
+                            const iframe = document.getElementById(`iframe${index}`);
+                            if (iframe) {
+                                iframe.src = newUrl;
+                            }
+                        });
+                    }, SYNC_DEBOUNCE_MS);
+                });
+                // ===== END IFRAME SYNCHRONIZATION =====
             })
             .catch(error => {
                 console.error('Error loading insarmaps.log:', error);
