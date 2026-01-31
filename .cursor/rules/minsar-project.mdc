@@ -43,21 +43,33 @@ Brief description of what we're doing and why.
 - [ ] Run full test suite
 ```
 
-### 2. Write Tests First
+### 2. STOP - Get Human Approval
+
+**Do NOT proceed until the human reviews and approves the plan.**
+
+After creating `PLAN.md`:
+- Present the plan to the user
+- Wait for explicit approval before proceeding
+- Address any feedback or concerns
+- Update the plan if requested
+
+Only continue to step 3 after receiving approval.
+
+### 3. Write Tests First
 
 If unit tests don't exist for what you're changing:
 - Add tests capturing current behavior BEFORE making changes
 - This ensures you don't break existing functionality
 
-### 3. Implement Feature
+### 4. Implement Feature
 
 Make the planned changes following the execution plan.
 
-### 4. Add Tests for New Feature
+### 5. Add Tests for New Feature
 
 Write tests covering the new functionality.
 
-### 5. Run Tests & Verify
+### 6. Run Tests & Verify
 
 ```bash
 bash tests/test_run_workflow.bash  # Workflow tests
@@ -65,6 +77,26 @@ bash tests/run_all_tests.bash      # Full suite
 ```
 
 **Do not consider work complete until all tests pass.**
+
+### 7. Update Architecture Docs
+
+**Always update `architecture_docs/` when:**
+- Adding new features, scripts, or modules
+- Changing existing workflows or data flows
+- Discovering undocumented behavior or nuances
+- Fixing bugs that reveal architectural insights
+- Modifying configuration files or defaults
+
+**Which file to update:**
+| Change Type | Update File |
+|-------------|-------------|
+| New scripts/entry points | `FILE_STRUCTURE.md`, `OVERVIEW.md` |
+| Workflow changes | `WORKFLOW_ARCHITECTURE.md` |
+| New concepts/terminology | `KEY_CONCEPTS.md` |
+| Testing changes | `DEVELOPMENT_GUIDE.md` |
+| Quick reference updates | `README.md` |
+
+Keep documentation in sync with code - outdated docs are worse than no docs.
 
 ---
 

@@ -1,6 +1,10 @@
 .vscode
 .history
 .*
+# Un-ignore Cursor rules (for AI agent context)
+!.cursor/
+!.cursor/rules/
+!.cursor/rules/**
 log
 q
 qq
