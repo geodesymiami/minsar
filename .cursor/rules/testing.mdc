@@ -1,12 +1,145 @@
 ---
-description: Testing conventions for MinSAR test suite
-globs: "tests/**/*.bash"
+description: Testing conventions for MinSAR - Python and Bash tests
+globs: "**/test_*.py,**/test_*.bash,tests/**"
 alwaysApply: false
 ---
 
-# Testing Standards
+# MinSAR Testing Framework
 
-## Test File Structure
+## Test Organization (Hybrid Approach)
+
+**Prefer colocated tests** in a `tests/` subdirectory next to the code:
+
+```
+minsar/
+├── tests/                              # Integration/end-to-end tests
+│   ├── test_integration.py
+│   └── test_run_workflow.bash
+├── minsar/
+│   └── utils/
+│       ├── system_utils.py
+│       └── tests/                      # Colocated unit tests
+│           ├── __init__.py
+│           └── test_system_utils.py
+```
+
+### Where to Put Tests
+
+| Test Type | Location | Example |
+|-----------|----------|---------|
+| Unit tests | `<module>/tests/` subdir | `minsar/utils/tests/test_system_utils.py` |
+| Integration tests | `tests/` directory | `tests/test_workflow_integration.py` |
+| Bash workflow tests | `tests/` directory | `tests/test_run_workflow.bash` |
+
+### Adding Colocated Tests for a New Module
+
+```bash
+# 1. Create tests directory
+mkdir -p minsar/<module>/tests
+
+# 2. Add __init__.py
+echo "# Tests for minsar/<module>" > minsar/<module>/tests/__init__.py
+
+# 3. Create test file
+cat > minsar/<module>/tests/test_<name>.py << 'EOF'
+#!/usr/bin/env python3
+"""Unit tests for <module>/<name>.py"""
+import unittest
+
+class Test<Name>(unittest.TestCase):
+    def test_example(self):
+        self.assertTrue(True)
+
+if __name__ == '__main__':
+    unittest.main()
+EOF
+
+# 4. Register in run_all_tests.bash (edit the test_locations array)
+#    Add: "minsar/<module>/tests"
+```
+
+### Adding a New Bash Test Suite
+
+```bash
+# Create new test file in tests/
+cat > tests/test_my_feature.bash << 'EOF'
+#!/usr/bin/env bash
+source "$(dirname "$0")/test_helpers.bash"
+
+test_my_feature() {
+    setup_test_workspace
+    # Test logic here
+    assert_equals "expected" "$actual" "Description"
+    teardown_test_workspace
+}
+
+test_my_feature
+print_summary
+EOF
+
+# Register in tests/run_bash_tests.bash TEST_SUITES array
+```
+
+## Running Tests
+
+```bash
+# Run ALL tests (recommended)
+./run_all_tests.bash
+
+# Run only Python tests
+./run_all_tests.bash --python-only
+
+# Run only Bash tests
+./run_all_tests.bash --bash-only
+
+# Run specific Python test file
+python -m unittest minsar.utils.tests.test_system_utils -v
+
+# Run specific Bash test suite
+bash tests/run_bash_tests.bash test_run_workflow.bash
+```
+
+## Writing Python Tests (unittest)
+
+```python
+#!/usr/bin/env python3
+"""Unit tests for my_module."""
+import unittest
+
+class TestMyFunction(unittest.TestCase):
+    """Tests for my_function."""
+    
+    def test_basic_case(self):
+        """Test basic functionality."""
+        result = my_function("input")
+        self.assertEqual(result, "expected")
+    
+    def test_edge_case(self):
+        """Test edge case handling."""
+        with self.assertRaises(ValueError):
+            my_function(None)
+    
+    def test_returns_correct_type(self):
+        """Test return type."""
+        result = my_function("input")
+        self.assertIsInstance(result, str)
+
+if __name__ == '__main__':
+    unittest.main()
+```
+
+### Python Assertions
+
+| Method | Purpose |
+|--------|---------|
+| `self.assertEqual(a, b)` | Exact match |
+| `self.assertIn(item, list)` | Membership |
+| `self.assertTrue(expr)` | Boolean check |
+| `self.assertIsInstance(obj, cls)` | Type check |
+| `self.assertRaises(Error)` | Exception check |
+| `self.assertIsNone(val)` | None check |
+
+## Writing Bash Tests
 
 ```bash
 #!/usr/bin/env bash
@@ -31,7 +164,7 @@ test_my_feature() {
 test_my_feature
 ```
 
-## Available Assertions
+### Bash Assertions
 
 | Function | Purpose |
 |----------|---------|
@@ -41,7 +174,7 @@ test_my_feature
 | `assert_file_exists PATH MSG` | File existence |
 | `assert_exit_code EXPECTED ACTUAL MSG` | Exit code check |
 
-## Test Utilities
+### Bash Test Utilities
 
 | Function | Purpose |
 |----------|---------|
@@ -50,11 +183,54 @@ test_my_feature
 | `create_mock_run_files DIR N` | Create N mock job files |
 | `create_mock_miaplpy_run_files DIR TYPE` | Create MiaplPy structure |
 
-## Running Tests
+## Substantive Testing Philosophy
 
-```bash
-bash tests/test_run_workflow.bash  # 73 workflow tests
-bash tests/run_all_tests.bash      # All tests
+**Write tests that matter, not tests for coverage.**
+
+### What to Test (High Priority)
+- **Error paths**: What happens when things fail?
+- **Edge cases**: Empty inputs, boundary values, unexpected formats
+- **Parsing logic**: Template parsing, argument parsing, config reading
+- **State transitions**: Job states, workflow steps, flag combinations
+- **Integration points**: Where modules interact, external tool calls
+
+### What NOT to Test (Skip These)
+- Trivial getters/setters
+- Simple pass-through functions
+- Code that just calls another tested function
+- Obvious one-liners with no branching
+
+### Refactoring for Testability
+
+**OK to refactor if:**
+- Extracting a pure function from a larger script
+- Making a testable helper from inline code
+- Isolating external dependencies (file I/O, network)
+
+**NOT OK:**
+- Rewriting entire modules "while we're at it"
+- Changing interfaces that many things depend on
+- Refactoring beyond what's needed for the current task
+
+### Example: Good vs Bad Tests
+
+```python
+# BAD: Testing the obvious
+def test_returns_string(self):
+    result = get_name()
+    self.assertIsInstance(result, str)
+
+# GOOD: Testing what can break
+def test_handles_missing_template_key(self):
+    template = {}  # Missing required key
+    with self.assertRaises(KeyError):
+        parse_template(template)
+
+def test_handles_malformed_date(self):
+    result = parse_date("not-a-date")
+    self.assertIsNone(result)
 ```
 
-Always run relevant tests after modifying workflow scripts.
+## CI Integration
+
+Tests run automatically in CircleCI. All tests must pass before merging.

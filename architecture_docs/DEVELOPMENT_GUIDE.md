@@ -172,20 +172,69 @@ def my_function(arg1):
 
 ## Testing
 
+MinSAR uses a unified testing framework that supports both Python (unittest) and Bash tests.
+
+### Test Organization (Hybrid Approach)
+
+**Prefer colocated tests** in a `tests/` subdirectory next to the code:
+
+```
+minsar/
+├── run_all_tests.bash              # Top-level unified test runner
+├── tests/                          # Integration tests & Bash tests
+│   ├── __init__.py
+│   ├── run_bash_tests.bash         # Bash test orchestrator
+│   ├── test_helpers.bash           # Shared Bash utilities
+│   ├── test_run_workflow.bash      # Workflow tests
+│   ├── test_submit_jobs.bash
+│   └── test_sbatch_conditional.bash
+├── minsar/
+│   └── utils/
+│       ├── system_utils.py
+│       └── tests/                  # Colocated unit tests
+│           ├── __init__.py
+│           └── test_system_utils.py
+```
+
+| Test Type | Where to Put It |
+|-----------|-----------------|
+| Unit tests for a module | `minsar/<module>/tests/test_foo.py` |
+| Integration/end-to-end tests | `tests/` directory |
+| Bash workflow tests | `tests/` directory |
+
 ### Running Tests
 
 ```bash
-# Run all workflow tests
-bash tests/test_run_workflow.bash
+# Run ALL tests (Python + Bash) - recommended
+./run_all_tests.bash
 
-# Run specific test file
-bash tests/test_sbatch_conditional.bash
+# Run only Python tests
+./run_all_tests.bash --python-only
 
-# Run all tests
-bash tests/run_all_tests.bash
+# Run only Bash tests
+./run_all_tests.bash --bash-only
+
+# Run with verbose output
+./run_all_tests.bash -v
 ```
 
-### Writing Tests
+### Running Individual Test Suites
+
+```bash
+# Run specific Bash test suite
+bash tests/run_bash_tests.bash test_run_workflow.bash
+
+# Run specific Python test file (colocated)
+python -m unittest minsar.utils.tests.test_system_utils -v
+
+# Run specific Python test file (centralized)
+python -m unittest tests.test_utils -v
+
+# Discover and run all Python tests
+python -m unittest discover -s . -p "test_*.py" -v
+```
+
+### Writing Bash Tests
 
 Test file structure (`tests/test_*.bash`):
 
@@ -213,7 +262,33 @@ test_my_feature() {
 test_my_feature
 ```
 
-### Test Utilities
+### Writing Python Tests
+
+Test file structure (`tests/test_*.py`):
+
+```python
+#!/usr/bin/env python3
+"""Unit tests for module."""
+import unittest
+
+class TestMyFeature(unittest.TestCase):
+    """Tests for my_feature function."""
+    
+    def test_basic_functionality(self):
+        """Test basic case."""
+        result = my_function("input")
+        self.assertEqual(result, "expected")
+    
+    def test_edge_case(self):
+        """Test edge case."""
+        with self.assertRaises(ValueError):
+            my_function(None)
+
+if __name__ == '__main__':
+    unittest.main()
+```
+
+### Test Utilities (Bash)
 
 | Function | Purpose |
 |----------|---------|
@@ -224,6 +299,87 @@ test_my_feature
 | `assert_contains HAYSTACK NEEDLE MSG` | Substring assertion |
 | `assert_file_exists PATH MSG` | File existence check |
 | `assert_exit_code EXPECTED ACTUAL MSG` | Exit code check |
+
+### Test Utilities (Python)
+
+| Method | Purpose |
+|--------|---------|
+| `self.assertEqual(a, b)` | Exact match |
+| `self.assertIn(item, list)` | Membership check |
+| `self.assertTrue(expr)` | Boolean check |
+| `self.assertIsInstance(obj, cls)` | Type check |
+| `self.assertRaises(Error)` | Exception check |
+
+### CI/CD Integration
+
+Tests are automatically run in CircleCI on every push. The unified test runner (`run_all_tests.bash`) is called during the CI pipeline.
+
+### Adding New Python Tests (Colocated)
+
+To add unit tests for a module like `minsar/objects/auto_defaults.py`:
+
+```bash
+# 1. Create the tests directory
+mkdir -p minsar/objects/tests
+
+# 2. Add __init__.py to make it a package
+echo "# Tests for minsar/objects" > minsar/objects/tests/__init__.py
+
+# 3. Create the test file
+cat > minsar/objects/tests/test_auto_defaults.py << 'EOF'
+#!/usr/bin/env python3
+"""Unit tests for minsar/objects/auto_defaults.py"""
+import unittest
+from minsar.objects.auto_defaults import PathFind
+
+class TestPathFind(unittest.TestCase):
+    """Tests for PathFind class."""
+    
+    def test_pathfind_instantiation(self):
+        """PathFind should instantiate without errors."""
+        pf = PathFind()
+        self.assertIsNotNone(pf)
+
+if __name__ == '__main__':
+    unittest.main()
+EOF
+
+# 4. Register the directory in run_all_tests.bash
+# Edit the test_locations array to include "minsar/objects/tests"
+```
+
+### Adding New Bash Tests
+
+To add a new Bash test suite:
+
+```bash
+# 1. Create the test file
+cat > tests/test_my_feature.bash << 'EOF'
+#!/usr/bin/env bash
+source "$(dirname "$0")/test_helpers.bash"
+
+test_my_feature() {
+    print_test_start "My Feature" "Tests the my_feature functionality"
+    
+    setup_test_workspace
+    
+    # Your test logic here
+    result=$(some_function "input")
+    
+    assert_equals "expected" "$result" "Should return expected value"
+    
+    teardown_test_workspace
+    print_test_end "My Feature"
+}
+
+# Run tests
+test_my_feature
+print_summary
+EOF
+
+# 2. Register in tests/run_bash_tests.bash
+# Add "test_my_feature.bash" to the TEST_SUITES array
+```
 
 ## Debugging
 

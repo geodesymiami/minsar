@@ -879,7 +879,7 @@ run_all_tests() {
     test_help_flag
     test_abbreviate_function
     test_remove_from_list_function
-    test_convert_array_to_comma_separated
+    test_congivert_array_to_comma_separated
     test_clean_array_function
     
     echo -e "${YELLOW}═══════════════════════════════════════════════════════════════════════════${NC}"

@@ -61,13 +61,27 @@ If unit tests don't exist for what you're changing:
 - Add tests capturing current behavior BEFORE making changes
 - This ensures you don't break existing functionality
 
+**Focus on substantive tests only:**
+- Test things that can actually go wrong (edge cases, error paths, state transitions)
+- Don't write trivial tests just for coverage
+- Prioritize: parsing logic, conditional branches, error handling, integration points
+
 ### 4. Implement Feature
 
 Make the planned changes following the execution plan.
 
+**Refactoring for testability is OK** if:
+- It makes critical code paths testable
+- Changes are localized (not "refactoring the world")
+- You're extracting functions, not rewriting architecture
+
 ### 5. Add Tests for New Feature
 
-Write tests covering the new functionality.
+Write substantive tests for the new functionality:
+- Focus on what can break, not what's obviously correct
+- Test error conditions and edge cases
+- Test integration points with other components
+- Skip trivial getter/setter style tests
 
 ### 6. Run Tests & Verify
 
@@ -137,10 +151,34 @@ For `run_workflow.bash` internals: `minsar/bin/ARCHITECTURE.md`
 
 ## Testing
 
-Run tests before committing changes to workflow scripts:
+### Running Tests
 ```bash
-bash tests/test_run_workflow.bash  # 73 tests for run_workflow.bash
-bash tests/run_all_tests.bash      # Complete test suite
+./run_all_tests.bash              # Run ALL tests (Python + Bash)
+./run_all_tests.bash --python-only   # Python tests only
+./run_all_tests.bash --bash-only     # Bash tests only
+```
+
+### Test Organization (Hybrid Approach)
+- **Unit tests**: Colocate in `tests/` subdir (`minsar/utils/tests/test_system_utils.py`)
+- **Integration tests**: Place in top-level `tests/` directory
+- **Bash workflow tests**: Place in top-level `tests/` directory
+
+### Writing Tests
+- **Python**: Use `unittest` (built-in, no dependencies)
+- **Bash**: Use `test_helpers.bash` assertions
+
+```python
+# Python test example (minsar/utils/test_foo.py)
+import unittest
+class TestFoo(unittest.TestCase):
+    def test_basic(self):
+        self.assertEqual(foo(), "expected")
+```
+
+```bash
+# Bash test example (tests/test_foo.bash)
+source "$(dirname "$0")/test_helpers.bash"
+assert_equals "expected" "$result" "Description"
 ```
 
 ## Important Nuances

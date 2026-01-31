@@ -10,7 +10,7 @@ jobs:
           fingerprints:
               - "SHA256:UQXk8EzF60pAQ4fbeZgkWDcI3OMEXV5LcyuK6KJzJy8"
       - run:
-          name: Set up Enviornment
+          name: Set up Environment
           command: |
             echo "Working directory: ${PWD}"
             ./setup/install_python.bash
@@ -19,9 +19,21 @@ jobs:
             echo "alias s.bw2='export MINSAR_HOME=${CIRCLE_WORKING_DIRECTORY}; source project/setup/environment.bash'" >> ~/.bashrc
 
       - run:
+          name: Run Unit Tests
+          command: |
+            set +u   # needed for circleCI
+            source tools/miniforge3/etc/profile.d/conda.sh
+            conda activate minsar
+            
+            export MINSAR_HOME=${CIRCLE_WORKING_DIRECTORY}
+            source setup/environment.bash
+            
+            # Run the unified test suite
+            ./run_all_tests.bash
+
+      - run:
           name: Prepare test data (Sentinel-1)
           command: |
-
             set +u   # needed for circleCI
             source tools/miniforge3/etc/profile.d/conda.sh
             conda activate minsar
