@@ -6,6 +6,8 @@ alwaysApply: false
 
 # MinSAR Testing Framework
 
+**All tests and bash commands must work on both Mac and Linux.** See `.cursor/rules/cross-platform-bash.mdc` for portable patterns (avoid `grep -oP`, `ls -1v`, `sed -r`, `shuf`; use `sed -E`, `sort -V`, etc.).
+
 ## Test Organization (Hybrid Approach)
 
 **Prefer colocated tests** in a `tests/` subdirectory next to the code:

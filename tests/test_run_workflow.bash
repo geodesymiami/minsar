@@ -426,9 +426,9 @@ test_globlist_construction_basic() {
     
     echo "  [Check] Counting job files in run_files/..."
     
-    # Count job files in run_files
+    # Count job files in run_files (trim wc -l output for BSD/macOS)
     local num_job_files
-    num_job_files=$(ls -1 run_files/run_*.job 2>/dev/null | wc -l)
+    num_job_files=$(ls -1 run_files/run_*.job 2>/dev/null | wc -l | tr -d ' \n')
     
     assert_equals "33" "$num_job_files" "Found 33 job files (11 steps × 3 parallel jobs each)"
     
@@ -461,7 +461,7 @@ test_globlist_with_start_stop() {
     
     for pattern in "${expected_patterns[@]}"; do
         local count
-        count=$(ls -1 run_files/${pattern}_*.job 2>/dev/null | wc -l)
+        count=$(ls -1 run_files/${pattern}_*.job 2>/dev/null | wc -l | tr -d ' \n')
         assert_equals "3" "$count" "Pattern $pattern matches 3 job files"
     done
     
@@ -469,7 +469,7 @@ test_globlist_with_start_stop() {
     
     # Verify steps outside range exist but wouldn't be selected
     local outside_count
-    outside_count=$(ls -1 run_files/run_04_*.job 2>/dev/null | wc -l)
+    outside_count=$(ls -1 run_files/run_04_*.job 2>/dev/null | wc -l | tr -d ' \n')
     assert_equals "3" "$outside_count" "Step 4 files exist (outside --start 5 range)"
     
     teardown_test_workspace
@@ -526,9 +526,9 @@ test_miaplpy_directory_structure() {
     assert_file_exists "$runfiles_dir/run_01_miaplpy_load_data_0.job" "MiaplPy step 1 (load_data) exists"
     assert_file_exists "$runfiles_dir/run_09_mintpy_timeseries_correction_0.job" "MiaplPy step 9 (timeseries_correction) exists"
     
-    # Count total miaplpy jobs
+    # Count total miaplpy jobs (trim wc -l for BSD/macOS)
     local num_jobs
-    num_jobs=$(ls -1 "$runfiles_dir"/run_*.job 2>/dev/null | wc -l)
+    num_jobs=$(ls -1 "$runfiles_dir"/run_*.job 2>/dev/null | wc -l | tr -d ' \n')
     assert_equals "18" "$num_jobs" "Found 18 job files (9 steps × 2 parallel jobs each)"
     
     teardown_test_workspace
@@ -614,8 +614,9 @@ test_last_jobfile_number_detection() {
     cd "$TEST_WORKSPACE"
     
     # The script extracts the last job number from files like run_11_*.job
+    # Use sort -V for version sort (portable on Mac and Linux; ls -1v is GNU-only)
     local last_file
-    last_file=$(ls -1v run_files/run_*_*.job | tail -1)
+    last_file=$(ls run_files/run_*_*.job 2>/dev/null | sort -V | tail -1)
     local last_num
     last_num=$(basename "$last_file" | cut -c5-6)
     # Remove leading zero
@@ -632,10 +633,10 @@ test_last_jobfile_number_detection() {
     create_mock_run_files "$TEST_WORKSPACE" 16
     cd "$TEST_WORKSPACE"
     
-    last_file=$(ls -1v run_files/run_*_*.job | tail -1)
+    last_file=$(ls run_files/run_*_*.job 2>/dev/null | sort -V | tail -1)
     last_num=$(basename "$last_file" | cut -c5-6)
     last_num=$((10#$last_num))
-    
+
     assert_equals "16" "$last_num" "Detected last step = 16 (for 16-step workflow)"
     
     teardown_test_workspace
@@ -734,12 +735,12 @@ test_regression_globlist_output() {
     
     echo "  [Check] Verifying each step pattern matches files..."
     
-    # Verify each pattern matches files
+    # Verify each pattern matches files (trim wc -l for BSD/macOS)
     for pattern in "${expected_patterns[@]}"; do
         local count
-        count=$(ls -1 $pattern 2>/dev/null | wc -l)
+        count=$(ls -1 $pattern 2>/dev/null | wc -l | tr -d ' \n')
         local step_num
-        step_num=$(echo "$pattern" | grep -oP 'run_\d{2}')
+        step_num=$(echo "$pattern" | sed -E 's/.*(run_[0-9][0-9]).*/\1/')
         
         if [[ $count -gt 0 ]]; then
             echo -e "  ${GREEN}✓ PASS${NC}: Pattern '$step_num' → $count files"
