@@ -98,6 +98,29 @@ rename_stderr_stdout_file() {
     done
 }
 
+# Extract step name from job file path
+# Handles multiple patterns without hardcoded special job names:
+#   run_01_unpack_topo_reference_0.job -> unpack_topo_reference
+#   smallbaseline_wrapper.job -> smallbaseline_wrapper
+#   insarmaps.job -> insarmaps
+#   any_future_job.job -> any_future_job
+extract_step_name() {
+    local job_file="$1"
+    local basename step_name
+    
+    basename=$(basename "$job_file" .job)
+    
+    # Try to extract from run_XX_<stepname>_N pattern
+    if [[ $basename =~ ^run_[0-9]{2}_(.+)_[0-9]+$ ]]; then
+        step_name="${BASH_REMATCH[1]}"
+    else
+        # Fallback: use basename, removing trailing _N if present
+        step_name=$(echo "$basename" | sed -E 's/_[0-9]+$//')
+    fi
+    
+    echo "$step_name"
+}
+
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     helptext="
     Custom sbatch job submission wrapper. Conditionally submits jobs to the sbatch scheduler                     
@@ -139,10 +162,7 @@ fi
 #echo $$
 
 job_file=$1
-step_name=$(echo $job_file | grep -oP "(?<=run_\d{2}_)(.*)(?=_\d{1,}.job)|smallbaseline_wrapper|insarmaps|ingest_insarmaps|horzvert_timeseries|create_miaplpy_jobfiles")
-if [ -z "$step_name" ]; then
-    step_name=${job_file%.*}
-fi
+step_name=$(extract_step_name "$job_file")
 verbose="false"
 
 while [[ $# -gt 0 ]]
