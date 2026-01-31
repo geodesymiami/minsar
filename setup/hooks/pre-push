@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+#
+# Pre-push hook: runs all tests before allowing a push
+# If tests fail, the push is aborted
+#
+# To bypass this hook (use sparingly!): git push --no-verify
+#
+
+set -e
+
+# Get the root of the git repository
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+echo ""
+echo "╔══════════════════════════════════════════════════════════════════════════╗"
+echo "║                     PRE-PUSH HOOK: Running tests...                      ║"
+echo "╚══════════════════════════════════════════════════════════════════════════╝"
+echo ""
+
+# Run the test suite
+if ! bash "$REPO_ROOT/run_all_tests.bash"; then
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════════════════════╗"
+    echo "║  PUSH BLOCKED: Tests failed. Fix the issues and try again.              ║"
+    echo "║  To bypass (use sparingly!): git push --no-verify                       ║"
+    echo "╚══════════════════════════════════════════════════════════════════════════╝"
+    echo ""
+    exit 1
+fi
+
+echo ""
+echo "╔══════════════════════════════════════════════════════════════════════════╗"
+echo "║  PRE-PUSH HOOK: All tests passed. Proceeding with push...               ║"
+echo "╚══════════════════════════════════════════════════════════════════════════╝"
+echo ""
+
+exit 0
