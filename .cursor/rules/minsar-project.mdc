@@ -1,0 +1,195 @@
+---
+description: MinSAR InSAR processing pipeline - project conventions and architecture reference
+alwaysApply: true
+---
+
+# MinSAR Project Guidelines
+
+## Development Workflow (REQUIRED)
+
+**Always follow this workflow for any non-trivial changes:**
+
+### 1. Plan First → Create `PLAN.md`
+
+Before writing code, create a `PLAN.md` file in the working directory with:
+
+```markdown
+# Plan: [Feature/Change Name]
+
+## Summary
+Brief description of what we're doing and why.
+
+## Key Components Affected
+- List files/modules that will be modified
+- Note dependencies and interactions
+
+## Action Items
+- [ ] Item 1
+- [ ] Item 2
+
+## Execution Plan (Detailed Change Instructions)
+1. Step-by-step changes to make
+2. Include specific file paths and functions
+3. Note any edge cases or gotchas
+
+## Key Commands & Flows
+- Commands to run
+- Data flow if relevant
+
+## TODO List
+- [ ] Write tests for existing behavior
+- [ ] Implement changes
+- [ ] Add tests for new behavior
+- [ ] Run full test suite
+```
+
+### 2. STOP - Get Human Approval
+
+**Do NOT proceed until the human reviews and approves the plan.**
+
+After creating `PLAN.md`:
+- Present the plan to the user
+- Wait for explicit approval before proceeding
+- Address any feedback or concerns
+- Update the plan if requested
+
+Only continue to step 3 after receiving approval.
+
+### 3. Write Tests First
+
+If unit tests don't exist for what you're changing:
+- Add tests capturing current behavior BEFORE making changes
+- This ensures you don't break existing functionality
+
+**Focus on substantive tests only:**
+- Test things that can actually go wrong (edge cases, error paths, state transitions)
+- Don't write trivial tests just for coverage
+- Prioritize: parsing logic, conditional branches, error handling, integration points
+
+### 4. Implement Feature
+
+Make the planned changes following the execution plan.
+
+**Refactoring for testability is OK** if:
+- It makes critical code paths testable
+- Changes are localized (not "refactoring the world")
+- You're extracting functions, not rewriting architecture
+
+### 5. Add Tests for New Feature
+
+Write substantive tests for the new functionality:
+- Focus on what can break, not what's obviously correct
+- Test error conditions and edge cases
+- Test integration points with other components
+- Skip trivial getter/setter style tests
+
+### 6. Run Tests & Verify
+
+```bash
+bash tests/test_run_workflow.bash  # Workflow tests
+bash tests/run_all_tests.bash      # Full suite
+```
+
+**Do not consider work complete until all tests pass.**
+
+### 7. Update Architecture Docs
+
+**Always update `architecture_docs/` when:**
+- Adding new features, scripts, or modules
+- Changing existing workflows or data flows
+- Discovering undocumented behavior or nuances
+- Fixing bugs that reveal architectural insights
+- Modifying configuration files or defaults
+
+**Which file to update:**
+| Change Type | Update File |
+|-------------|-------------|
+| New scripts/entry points | `FILE_STRUCTURE.md`, `OVERVIEW.md` |
+| Workflow changes | `WORKFLOW_ARCHITECTURE.md` |
+| New concepts/terminology | `KEY_CONCEPTS.md` |
+| Testing changes | `DEVELOPMENT_GUIDE.md` |
+| Quick reference updates | `README.md` |
+
+Keep documentation in sync with code - outdated docs are worse than no docs.
+
+---
+
+## Architecture Documentation
+
+**Read these first when working on this project:**
+- `architecture_docs/README.md` - Quick reference and lookup tables
+- `architecture_docs/OVERVIEW.md` - High-level architecture
+- `architecture_docs/FILE_STRUCTURE.md` - Repository layout
+- `architecture_docs/WORKFLOW_ARCHITECTURE.md` - Job submission system
+- `architecture_docs/KEY_CONCEPTS.md` - Terminology and concepts
+- `architecture_docs/DEVELOPMENT_GUIDE.md` - Coding conventions and testing
+
+For `run_workflow.bash` internals: `minsar/bin/ARCHITECTURE.md`
+
+## Key Entry Points
+
+| Script | Purpose |
+|--------|---------|
+| `minsar/bin/minsarApp.bash` | Main entry point |
+| `minsar/bin/run_workflow.bash` | Job orchestration |
+| `minsar/bin/submit_jobs.bash` | Batch submission |
+| `minsar/bin/sbatch_conditional.bash` | Resource-checked sbatch |
+
+## Coding Conventions
+
+### Bash Scripts
+- Use `[[ ]]` for conditionals, not `[ ]`
+- Quote variables: `"$var"` not `$var`
+- Use `$(command)` not backticks
+- Include `--help` handling for user-facing scripts
+- Source shared libs: `source "${SCRIPT_DIR}/../lib/workflow_utils.sh"`
+
+### Python Scripts
+- Use `argparse` for CLI arguments
+- Use `pathlib.Path` for file paths
+- Include docstrings for modules/functions
+
+## Testing
+
+### Running Tests
+```bash
+./run_all_tests.bash              # Run ALL tests (Python + Bash)
+./run_all_tests.bash --python-only   # Python tests only
+./run_all_tests.bash --bash-only     # Bash tests only
+```
+
+### Test Organization (Hybrid Approach)
+- **Unit tests**: Colocate in `tests/` subdir (`minsar/utils/tests/test_system_utils.py`)
+- **Integration tests**: Place in top-level `tests/` directory
+- **Bash workflow tests**: Place in top-level `tests/` directory
+
+### Writing Tests
+- **Python**: Use `unittest` (built-in, no dependencies)
+- **Bash**: Use `test_helpers.bash` assertions
+
+```python
+# Python test example (minsar/utils/test_foo.py)
+import unittest
+class TestFoo(unittest.TestCase):
+    def test_basic(self):
+        self.assertEqual(foo(), "expected")
+```
+
+```bash
+# Bash test example (tests/test_foo.bash)
+source "$(dirname "$0")/test_helpers.bash"
+assert_equals "expected" "$result" "Description"
+```
+
+## Important Nuances
+
+1. **MiaplPy requires template file**: `run_workflow.bash $TE/file.template --miaplpy`
+2. **Job file mode bypasses step logic**: `--jobfile` is a special path
+3. **NESD vs geometry**: 16 steps vs 11 steps based on `topsStack.coregistration`
+4. **MiaplPy directory varies**: `miaplpy/network_<type>/run_files/`
+
+## Configuration Files
+
+- `minsar/defaults/job_defaults.cfg` - Walltime, memory per job
+- `minsar/defaults/queues.cfg` - Queue resource limits
+- `samples/*.template` - Example template files

@@ -1,0 +1,64 @@
+---
+description: Bash script conventions for MinSAR workflow scripts
+globs: "**/*.bash,**/*.sh"
+alwaysApply: false
+---
+
+# Bash Script Standards
+
+## Script Structure
+
+```bash
+#!/usr/bin/env bash
+set -eo pipefail
+
+# Source shared libraries
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/../lib/workflow_utils.sh"
+
+# Help text (required for user-facing scripts)
+if [[ "$1" == "--help" || "$1" == "-h" ]]; then
+    helptext="
+    Description
+    
+    usage: script.bash [OPTIONS]
+    
+    Examples:
+        script.bash --option value
+    "
+    echo -e "$helptext"
+    exit 0
+fi
+```
+
+## Argument Parsing Pattern
+
+```bash
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --option)
+            value="$2"
+            shift 2
+            ;;
+        *)
+            POSITIONAL+=("$1")
+            shift
+            ;;
+    esac
+done
+set -- "${POSITIONAL[@]}"
+```
+
+## Shared Utilities (workflow_utils.sh)
+
+- `abbreviate STRING MAX PREFIX SUFFIX` - Truncate with ellipsis
+- `convert_array_to_comma_separated_string "${arr[@]}"` - Array to CSV
+- `remove_from_list ITEM "${arr[@]}"` - Remove from array
+- `clean_array ARRAY_NAME` - Remove empty elements
+
+## Best Practices
+
+- Use `[[ ]]` not `[ ]` for conditionals
+- Quote all variables: `"$var"`
+- Check exit status: `if [[ $? -ne 0 ]]; then`
+- Log to `$WORKDIR/log` for important commands
