@@ -1,0 +1,60 @@
+---
+description: Testing conventions for MinSAR test suite
+globs: "tests/**/*.bash"
+alwaysApply: false
+---
+
+# Testing Standards
+
+## Test File Structure
+
+```bash
+#!/usr/bin/env bash
+source "$(dirname "$0")/test_helpers.bash"
+
+test_my_feature() {
+    echo -e "\n${YELLOW}Test: My Feature${NC}"
+    
+    setup_test_workspace
+    
+    # Test logic here
+    result=$(my_function "input")
+    
+    assert_equals "expected" "$result" "Description"
+    assert_contains "$output" "substring" "Description"
+    assert_file_exists "$path" "Description"
+    
+    teardown_test_workspace
+}
+
+# Run the test
+test_my_feature
+```
+
+## Available Assertions
+
+| Function | Purpose |
+|----------|---------|
+| `assert_equals EXPECTED ACTUAL MSG` | Exact match |
+| `assert_contains HAYSTACK NEEDLE MSG` | Substring match |
+| `assert_not_contains HAYSTACK NEEDLE MSG` | Negative substring |
+| `assert_file_exists PATH MSG` | File existence |
+| `assert_exit_code EXPECTED ACTUAL MSG` | Exit code check |
+
+## Test Utilities
+
+| Function | Purpose |
+|----------|---------|
+| `setup_test_workspace` | Create temp directory |
+| `teardown_test_workspace` | Clean up temp directory |
+| `create_mock_run_files DIR N` | Create N mock job files |
+| `create_mock_miaplpy_run_files DIR TYPE` | Create MiaplPy structure |
+
+## Running Tests
+
+```bash
+bash tests/test_run_workflow.bash  # 73 workflow tests
+bash tests/run_all_tests.bash      # All tests
+```
+
+Always run relevant tests after modifying workflow scripts.
