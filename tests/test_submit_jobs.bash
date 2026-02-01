@@ -102,27 +102,27 @@ test_file_pattern_expansion() {
     
     local files count
     
-    # Test 1: Pattern matching run_01 files
+    # Test 1: Pattern matching run_01 files (sort -V for version order; portable Mac/Linux)
     echo "  [Test] Pattern: run_files/run_01*.job"
-    files=($(ls -1v run_files/run_01*.job 2>/dev/null))
+    files=($(ls run_files/run_01*.job 2>/dev/null | sort -V))
     count=${#files[@]}
     assert_equals "3" "$count" "run_01*.job matches 3 files"
     
     # Test 2: Pattern matching run_05 files
     echo "  [Test] Pattern: run_files/run_05*.job"
-    files=($(ls -1v run_files/run_05*.job 2>/dev/null))
+    files=($(ls run_files/run_05*.job 2>/dev/null | sort -V))
     count=${#files[@]}
     assert_equals "3" "$count" "run_05*.job matches 3 files"
     
     # Test 3: Pattern matching all run files
     echo "  [Test] Pattern: run_files/run_*.job"
-    files=($(ls -1v run_files/run_*.job 2>/dev/null))
+    files=($(ls run_files/run_*.job 2>/dev/null | sort -V))
     count=${#files[@]}
     assert_equals "33" "$count" "run_*.job matches all 33 files"
     
     # Test 4: Single file pattern (smallbaseline)
     echo "  [Test] Pattern: smallbaseline_wrapper.job"
-    files=($(ls -1v smallbaseline_wrapper.job 2>/dev/null))
+    files=($(ls smallbaseline_wrapper.job 2>/dev/null | sort -V))
     count=${#files[@]}
     assert_equals "1" "$count" "smallbaseline_wrapper.job matches 1 file"
     
@@ -143,13 +143,13 @@ test_random_order_shuffle() {
     
     echo "  [Action] Testing random shuffle behavior..."
     
-    # Get files in normal order
+    # Get files in normal order (sort -V portable; ls -1v is GNU-only)
     local normal_order
-    normal_order=$(ls -1v run_files/run_01*.job | tr '\n' ' ')
+    normal_order=$(ls run_files/run_01*.job 2>/dev/null | sort -V | tr '\n' ' ')
     
-    # Shuffle using the same method as submit_jobs.bash
+    # Shuffle: use sed -E (portable) and awk+sort for shuffle (shuf is GNU-only)
     local shuffled_order
-    shuffled_order=$(echo "$normal_order" | sed -r 's/(.[^;]*;)/ \1 /g' | tr " " "\n" | shuf | tr -d " " | tr '\n' ' ')
+    shuffled_order=$(echo "$normal_order" | tr " " "\n" | awk 'BEGIN{srand()}{print rand()"\t"$0}' | sort -n | cut -f2- | tr '\n' ' ')
     
     # Note: This test documents the shuffle mechanism but can't guarantee difference
     # due to randomness. We just verify the mechanism doesn't break.
@@ -177,19 +177,21 @@ test_job_pattern_extraction() {
     
     local result
     
+    # Portable pattern extraction: strip _N.job or .job (grep -oP is GNU-only)
+    # sed -E: strip _<digits>.job from end, then .job for special names
     # Test 1: Standard run file
     echo "  [Test] Extracting pattern from 'run_files/run_01_unpack_topo_reference_0.job'"
-    result=$(echo "run_files/run_01_unpack_topo_reference_0.job" | grep -oP "(.*)(?=_\d{1,}.job)|insarmaps|smallbaseline_wrapper")
+    result=$(echo "run_files/run_01_unpack_topo_reference_0.job" | sed -E 's/_[0-9]+\.job$//; s/\.job$//')
     assert_equals "run_files/run_01_unpack_topo_reference" "$result" "Extracts pattern without trailing number"
     
     # Test 2: smallbaseline_wrapper
     echo "  [Test] Extracting pattern from 'smallbaseline_wrapper.job'"
-    result=$(echo "smallbaseline_wrapper.job" | grep -oP "(.*)(?=_\d{1,}.job)|insarmaps|smallbaseline_wrapper")
+    result=$(echo "smallbaseline_wrapper.job" | sed -E 's/_[0-9]+\.job$//; s/\.job$//')
     assert_equals "smallbaseline_wrapper" "$result" "Extracts smallbaseline_wrapper"
     
     # Test 3: insarmaps
     echo "  [Test] Extracting pattern from 'insarmaps.job'"
-    result=$(echo "insarmaps.job" | grep -oP "(.*)(?=_\d{1,}.job)|insarmaps|smallbaseline_wrapper")
+    result=$(echo "insarmaps.job" | sed -E 's/_[0-9]+\.job$//; s/\.job$//')
     assert_equals "insarmaps" "$result" "Extracts insarmaps"
     
     print_test_end "Job Pattern Extraction"

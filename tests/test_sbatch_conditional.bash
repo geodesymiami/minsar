@@ -27,11 +27,11 @@ TEST_WORKSPACE=""
 #######################################
 source_sbatch_functions() {
     # Extract and source functions from sbatch_conditional.bash
-    # We source lines 1-145 which contain the utility functions before main logic
+    # We source lines 1 up to (but not including) the help check.
+    # Use sed '$d' instead of head -n -1 (BSD head doesn't support negative count).
     local func_file=$(mktemp)
     
-    # Extract functions (up to the help check)
-    sed -n '1,/^if \[\[ "\$1" == "--help"/p' "$SBATCH_SCRIPT" | head -n -1 > "$func_file"
+    sed -n '1,/^if \[\[ "\$1" == "--help"/p' "$SBATCH_SCRIPT" | sed '$d' > "$func_file"
     
     source "$func_file"
     rm -f "$func_file"

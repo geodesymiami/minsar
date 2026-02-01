@@ -19,7 +19,7 @@ git clone git@github.com:geodesymiami/VolcDef_web tools/VolcDef_web
 git clone git@github.com:scottstanie/sardem tools/sardem
 git clone git@github.com:luhipi/sarvey tools/sarvey
 git clone git@github.com:falkamelung/sarplotter-main.git tools/sarplotter-main
-git clone git@github.com/isce-framework/dolphin.git tools/dolphin
+git clone git@github.com:isce-framework/dolphin.git tools/dolphin
 
 #git clone git@github.com:geodesymiami/SourceInversion.git tools/SourceInversion
 #git clone https://github.com/EliTras/VSM.git tools/SourceInversion/src/VSM
