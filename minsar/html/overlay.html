@@ -123,53 +123,53 @@
         };
         const codeToLabel = { 'desc': 'Descending', 'asc': 'Ascending', 'vert': 'Vertical', 'horz': 'Horizontal' };
 
-        // Get URL parameters from overlay.html's URL
+        // Get URL parameters from overlay.html's URL (path format: /start/lat/lon/zoom?params)
         function getOverlayUrlParams() {
+            const pathMatch = window.location.pathname.match(/\/start\/([^\/]+)\/([^\/]+)\/([^\/]+)/);
             const params = new URLSearchParams(window.location.search);
             return {
                 view: params.get('view'),
-                lat: params.get('lat'),
-                lng: params.get('lng'),
-                zoom: params.get('zoom'),
+                lat: pathMatch ? pathMatch[1] : null,
+                lon: pathMatch ? pathMatch[2] : null,
+                zoom: pathMatch ? pathMatch[3] : null,
                 minScale: params.get('minScale'),
                 maxScale: params.get('maxScale'),
                 startDate: params.get('startDate'),
                 endDate: params.get('endDate'),
-                pointLat: params.get('pointLat'),
-                pointLon: params.get('pointLon'),
-                refPointLat: params.get('refPointLat'),
-                refPointLon: params.get('refPointLon'),
-                colorscale: params.get('colorscale'),
                 pixelSize: params.get('pixelSize'),
-                background: params.get('background')
+                background: params.get('background'),
+                opacity: params.get('opacity')
             };
         }
 
-        // Update overlay.html's browser URL with current state
+        // Update overlay.html's browser URL with current state (path format like insarmaps)
         function updateOverlayUrl(viewCode, mapParams) {
             const params = new URLSearchParams();
             if (viewCode) params.set('view', viewCode);
-            if (mapParams.lat) params.set('lat', mapParams.lat);
-            if (mapParams.lng) params.set('lng', mapParams.lng);
-            if (mapParams.zoom) params.set('zoom', mapParams.zoom);
             if (mapParams.minScale) params.set('minScale', mapParams.minScale);
             if (mapParams.maxScale) params.set('maxScale', mapParams.maxScale);
             if (mapParams.startDate) params.set('startDate', mapParams.startDate);
             if (mapParams.endDate) params.set('endDate', mapParams.endDate);
-            if (mapParams.pointLat) params.set('pointLat', mapParams.pointLat);
-            if (mapParams.pointLon) params.set('pointLon', mapParams.pointLon);
-            if (mapParams.refPointLat) params.set('refPointLat', mapParams.refPointLat);
-            if (mapParams.refPointLon) params.set('refPointLon', mapParams.refPointLon);
-            if (mapParams.colorscale) params.set('colorscale', mapParams.colorscale);
             if (mapParams.pixelSize) params.set('pixelSize', mapParams.pixelSize);
             if (mapParams.background) params.set('background', mapParams.background);
+            if (mapParams.opacity) params.set('opacity', mapParams.opacity);
             
-            const newUrl = window.location.pathname + '?' + params.toString();
+            // Use path format: /start/lat/lon/zoom?params (like insarmaps)
+            let basePath = window.location.pathname.replace(/\/start\/[^?]*/, '');
+            if (!basePath.endsWith('/')) basePath = basePath.substring(0, basePath.lastIndexOf('/') + 1);
+            if (basePath === '/') basePath = window.location.pathname.split('/start/')[0] || '';
+            
+            let newUrl;
+            if (mapParams.lat && mapParams.lon && mapParams.zoom) {
+                newUrl = `${basePath}start/${mapParams.lat}/${mapParams.lon}/${mapParams.zoom}?${params.toString()}`;
+            } else {
+                newUrl = `${basePath}?${params.toString()}`;
+            }
             window.history.replaceState({}, '', newUrl);
         }
 
         // Build insarmaps URL with given parameters
-        function buildInsarmapsUrl(baseUrl, dataset, lat, lng, zoom, mapParams) {
+        function buildInsarmapsUrl(baseUrl, dataset, lat, lon, zoom, mapParams) {
             const params = new URLSearchParams();
             params.set('flyToDatasetCenter', 'false');
             params.set('startDataset', dataset);
@@ -177,26 +177,21 @@
             if (mapParams.maxScale) params.set('maxScale', mapParams.maxScale);
             if (mapParams.startDate) params.set('startDate', mapParams.startDate);
             if (mapParams.endDate) params.set('endDate', mapParams.endDate);
-            if (mapParams.pointLat) params.set('pointLat', mapParams.pointLat);
-            if (mapParams.pointLon) params.set('pointLon', mapParams.pointLon);
-            if (mapParams.refPointLat) params.set('refPointLat', mapParams.refPointLat);
-            if (mapParams.refPointLon) params.set('refPointLon', mapParams.refPointLon);
-            if (mapParams.colorscale) params.set('colorscale', mapParams.colorscale);
             if (mapParams.pixelSize) params.set('pixelSize', mapParams.pixelSize);
             if (mapParams.background) params.set('background', mapParams.background);
-            params.set('hideAttributes', 'true');
+            if (mapParams.opacity) params.set('opacity', mapParams.opacity);
             params.set('_t', Date.now());
             
-            return `${baseUrl}/start/${lat}/${lng}/${zoom}?${params.toString()}`;
+            return `${baseUrl}/start/${lat}/${lon}/${zoom}?${params.toString()}`;
         }
 
-        // Extract lat/lng/zoom from an insarmaps URL
+        // Extract lat/lon/zoom from an insarmaps URL
         function parseInsarmapsUrl(url) {
             try {
                 const urlObj = new URL(url);
                 const pathMatch = urlObj.pathname.match(/\/start\/([^\/]+)\/([^\/]+)\/([^\/]+)/);
                 if (pathMatch) {
-                    return { lat: pathMatch[1], lng: pathMatch[2], zoom: pathMatch[3] };
+                    return { lat: pathMatch[1], lon: pathMatch[2], zoom: pathMatch[3] };
                 }
             } catch (e) {}
             return null;
@@ -210,6 +205,10 @@
         let currentViewCode = 'desc';
         let currentMapParams = {};
         let urlsList = [];
+        
+        // Sync control - defined early so it's available everywhere
+        let lastSyncTime = 0;
+        const SYNC_COOLDOWN_MS = 3000;
 
         // Parse insarmaps.log and create iframes dynamically
         fetch('insarmaps.log')
@@ -269,19 +268,15 @@
                 const firstUrlCoords = parseInsarmapsUrl(urls[0]);
                 currentMapParams = {
                     lat: initialParams.lat || (firstUrlCoords ? firstUrlCoords.lat : null),
-                    lng: initialParams.lng || (firstUrlCoords ? firstUrlCoords.lng : null),
+                    lon: initialParams.lon || (firstUrlCoords ? firstUrlCoords.lon : null),
                     zoom: initialParams.zoom || (firstUrlCoords ? firstUrlCoords.zoom : null),
                     minScale: initialParams.minScale,
                     maxScale: initialParams.maxScale,
                     startDate: initialParams.startDate,
                     endDate: initialParams.endDate,
-                    pointLat: initialParams.pointLat,
-                    pointLon: initialParams.pointLon,
-                    refPointLat: initialParams.refPointLat,
-                    refPointLon: initialParams.refPointLon,
-                    colorscale: initialParams.colorscale,
                     pixelSize: initialParams.pixelSize,
-                    background: initialParams.background
+                    background: initialParams.background,
+                    opacity: initialParams.opacity
                 };
                 
                 // Create panels for each URL
@@ -348,17 +343,17 @@
                     // Build iframe URL - use overlay params if available
                     let iframeSrc = url;
                     const dataset = iframeDatasets.get(index);
-                    if (currentMapParams.lat && currentMapParams.lng && currentMapParams.zoom && dataset) {
+                    if (currentMapParams.lat && currentMapParams.lon && currentMapParams.zoom && dataset) {
                         iframeSrc = buildInsarmapsUrl(
                             baseUrl, 
                             dataset, 
                             currentMapParams.lat, 
-                            currentMapParams.lng, 
+                            currentMapParams.lon, 
                             currentMapParams.zoom, 
                             currentMapParams
                         );
                     } else {
-                        iframeSrc = url + (url.includes('?') ? '&' : '?') + 'hideAttributes=true&_t=' + Date.now();
+                        iframeSrc = url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now();
                     }
                     
                     // Create iframe
@@ -383,7 +378,7 @@
                 // Update overlay URL with initial state
                 updateOverlayUrl(currentViewCode, currentMapParams);
                 
-                // Frame selector functionality - update URL when dataset changes
+                // Frame selector functionality - update URL and reload iframe when dataset changes
                 frameSelect.addEventListener('change', (e) => {
                     const selectedIndex = parseInt(e.target.value);
                     document.querySelectorAll('.panel').forEach(panel => panel.classList.remove('active'));
@@ -394,59 +389,90 @@
                     const label = iframeLabels.get(selectedIndex);
                     currentViewCode = viewCodes[label] || label.toLowerCase();
                     updateOverlayUrl(currentViewCode, currentMapParams);
+                    
+                    // Always reload the selected iframe with current params
+                    const dataset = iframeDatasets.get(selectedIndex);
+                    if (dataset && currentMapParams.lat && currentMapParams.lon && currentMapParams.zoom) {
+                        const newUrl = buildInsarmapsUrl(
+                            baseUrl,
+                            dataset,
+                            currentMapParams.lat,
+                            currentMapParams.lon,
+                            currentMapParams.zoom,
+                            currentMapParams
+                        );
+                        const iframe = document.getElementById(`iframe${selectedIndex}`);
+                        if (iframe) {
+                            // Set cooldown to prevent feedback loop
+                            lastSyncTime = Date.now();
+                            iframe.src = newUrl;
+                        }
+                    }
                 });
                 
                 // ===== IFRAME SYNCHRONIZATION =====
-                // Debounce timer for sync updates
                 let syncTimeout = null;
-                const SYNC_DEBOUNCE_MS = 300;
+                const SYNC_DEBOUNCE_MS = 1500;
+                let lastSyncedKey = '';
                 
-                // Listen for URL updates from any iframe (requires insarmaps postMessage support)
+                // Listen for URL updates from any iframe
                 window.addEventListener('message', (event) => {
-                    // Validate message structure
                     if (!event.data || event.data.type !== 'insarmaps-url-update') return;
                     
-                    // Clear previous pending sync
+                    // Ignore messages during cooldown
+                    const now = Date.now();
+                    if (now - lastSyncTime < SYNC_COOLDOWN_MS) return;
+                    
                     if (syncTimeout) clearTimeout(syncTimeout);
                     
-                    // Debounce: wait for user to stop interacting
                     syncTimeout = setTimeout(() => {
                         const newUrlPath = event.data.url;
                         
-                        // Parse path: /start/{lat}/{lng}/{zoom}?params...
+                        // Parse path: /start/{lat}/{lon}/{zoom}?params...
                         const pathMatch = newUrlPath.match(/^\/start\/([^\/]+)\/([^\/]+)\/([^?]+)/);
                         if (!pathMatch) return;
                         
-                        const [, lat, lng, zoom] = pathMatch;
+                        const [, lat, lon, zoom] = pathMatch;
                         
-                        // Parse query parameters from insarmaps URL
+                        // Parse query parameters
                         const queryStart = newUrlPath.indexOf('?');
                         const params = new URLSearchParams(
                             queryStart >= 0 ? newUrlPath.substring(queryStart) : ''
                         );
                         
+                        // Create sync key with all sync-relevant params
+                        const syncKey = JSON.stringify({
+                            lat, lon, zoom,
+                            minScale: params.get('minScale'),
+                            maxScale: params.get('maxScale'),
+                            startDate: params.get('startDate'),
+                            endDate: params.get('endDate'),
+                            pixelSize: params.get('pixelSize'),
+                            background: params.get('background'),
+                            opacity: params.get('opacity')
+                        });
+                        
+                        if (syncKey === lastSyncedKey) return;
+                        lastSyncedKey = syncKey;
+                        
                         // Update current map params
                         currentMapParams = {
                             lat: lat,
-                            lng: lng,
+                            lon: lon,
                             zoom: zoom,
                             minScale: params.get('minScale'),
                             maxScale: params.get('maxScale'),
                             startDate: params.get('startDate'),
                             endDate: params.get('endDate'),
-                            pointLat: params.get('pointLat'),
-                            pointLon: params.get('pointLon'),
-                            refPointLat: params.get('refPointLat'),
-                            refPointLon: params.get('refPointLon'),
-                            colorscale: params.get('colorscale'),
                             pixelSize: params.get('pixelSize'),
-                            background: params.get('background')
+                            background: params.get('background'),
+                            opacity: params.get('opacity')
                         };
                         
                         // Update overlay.html's browser URL
                         updateOverlayUrl(currentViewCode, currentMapParams);
                         
-                        // Find which iframe sent the message
+                        // Find sender iframe
                         let senderIndex = -1;
                         for (let i = 0; i < urlsList.length; i++) {
                             const iframe = document.getElementById(`iframe${i}`);
@@ -456,15 +482,18 @@
                             }
                         }
                         
-                        // Update all OTHER iframes with new coordinates/params, keeping their dataset
+                        // Set cooldown
+                        lastSyncTime = Date.now();
+                        
+                        // Update all OTHER iframes
                         iframeDatasets.forEach((originalDataset, index) => {
-                            if (index === senderIndex) return;  // Don't reload the sender
+                            if (index === senderIndex) return;
                             
                             const newUrl = buildInsarmapsUrl(
                                 baseUrl, 
                                 originalDataset, 
                                 lat, 
-                                lng, 
+                                lon, 
                                 zoom, 
                                 currentMapParams
                             );
@@ -486,18 +515,14 @@
         fetch('download_commands.txt')
             .then(response => response.text())
             .then(() => {
-                // File exists, add download link
                 const p = document.createElement('p');
                 p.style.cssText = 'margin: 20px; font-family: Arial, sans-serif; text-align: center;';
                 p.innerHTML = 'Data download: <a href="download_commands.txt" target="_blank">link</a>';
                 document.body.appendChild(p);
             })
             .catch(() => {
-                // File doesn't exist, no download link
                 console.log('download_commands.txt not found');
             });
     </script>
 </body>
 </html>
-
-
