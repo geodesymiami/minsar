@@ -2,7 +2,7 @@
 <!--
   ╔═══════════════════════════════════════════════════════════════════════════════╗
   ║  CONFIGURATION: To switch between URL formats (view=desc vs startDataset=...) ║
-  ║  Go to line 124 and comment/uncomment USE_FULL_DATASET_IN_URL                ║
+  ║  Go to line ~295 and comment/uncomment USE_FULL_DATASET_IN_URL               ║
   ╚═══════════════════════════════════════════════════════════════════════════════╝
 -->
 <html>
@@ -20,12 +20,19 @@
             font-family: Arial, sans-serif;
             background-color: #f5f5f5;
         }
-        .frame-selector {
+        .controls-bar {
             margin-bottom: 10px;
             padding: 10px;
             background-color: white;
             border: 2px solid #ddd;
             border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        .frame-selector {
             display: flex;
             align-items: center;
             gap: 10px;
@@ -42,7 +49,6 @@
             border-radius: 4px;
             background-color: white;
             cursor: pointer;
-            flex: 1;
             max-width: 300px;
             overflow: auto;
         }
@@ -50,18 +56,120 @@
             outline: none;
             border-color: #4a90e2;
         }
-        .frame-selector select option {
-            padding: 4px 8px;
+        .time-controls-toggle {
+            display: flex;
+            align-items: center;
+            gap: 5px;
         }
-        .frame-selector select option:checked {
-            background-color: #4a90e2;
+        .time-controls-toggle input[type="checkbox"] {
+            margin: 0;
+            cursor: pointer;
+            width: 16px;
+            height: 16px;
+        }
+        .time-controls-toggle label {
+            font-size: 13px;
+            color: #333;
+            cursor: pointer;
+        }
+        /* Time controls panel - hidden by default */
+        .time-controls-panel {
+            display: none;
+            width: 100%;
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 15px;
+        }
+        .time-controls-panel.visible {
+            display: flex;
+        }
+        .time-control-group {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .time-control-group label {
+            font-size: 13px;
+            color: #333;
+            white-space: nowrap;
+        }
+        .time-control-group input[type="number"] {
+            width: 50px;
+            padding: 4px 6px;
+            font-size: 13px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .time-control-group .unit {
+            font-size: 13px;
+            color: #666;
+        }
+        .time-control-group input[type="checkbox"] {
+            margin: 0;
+            cursor: pointer;
+        }
+        .nav-btn {
+            padding: 6px 12px;
+            font-size: 16px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f8f8f8;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .nav-btn:hover {
+            background-color: #e8e8e8;
+        }
+        .nav-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .period-indicator {
+            font-size: 12px;
+            font-weight: bold;
+            color: #333;
+            min-width: 40px;
+            text-align: center;
+        }
+        .play-btn {
+            padding: 6px 14px;
+            font-size: 13px;
+            font-weight: bold;
+            border: 1px solid #27ae60;
+            border-radius: 4px;
+            background-color: #27ae60;
             color: white;
+            cursor: pointer;
+        }
+        .play-btn:hover {
+            background-color: #219a52;
+        }
+        .play-btn.playing {
+            background-color: #e74c3c;
+            border-color: #e74c3c;
+        }
+        .memory-display {
+            font-size: 11px;
+            color: #888;
+            padding: 4px 8px;
+            background-color: #fff3e0;
+            border-radius: 4px;
+            font-family: monospace;
         }
         .container {
             width: 100%;
-            height: calc(100vh - 160px);  /* Adjusted for taller frame selector */
+            height: calc(100vh - 120px);
             max-width: 100%;
             position: relative;
+        }
+        .container.time-controls-open {
+            height: calc(100vh - 200px);
         }
         .panel {
             background-color: white;
@@ -76,17 +184,10 @@
             height: 100%;
             cursor: pointer;
             transition: box-shadow 0.2s;
-            /* Use visibility instead of display:none to keep iframes rendered */
-            visibility: hidden;
-            z-index: 0;
+            /* Visibility and z-index controlled by JavaScript */
         }
         .panel.active {
-            visibility: visible;
-            z-index: 1;
             box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.5);
-        }
-        .panel:hover {
-            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
         }
         .panel-header {
             background-color: #4a90e2;
@@ -97,13 +198,18 @@
             margin: 0;
             display: flex;
             align-items: center;
-            justify-content: space-between;
+            justify-content: center;
             position: relative;
             height: 38px;
             box-sizing: border-box;
         }
         .panel-header-title {
-            flex: 1;
+            position: absolute;
+            left: 12px;
+        }
+        .panel-header-period {
+            font-size: 13px;
+            font-weight: normal;
         }
         .panel iframe {
             width: 100%;
@@ -123,9 +229,42 @@
 </head>
 <body>
     <div id="loading" class="loading">Loading insarmaps data...</div>
-    <div class="frame-selector" id="frame-selector" style="display:none;">
-        <label for="frame-select">Select dataset:</label>
-        <select id="frame-select"></select>
+    <div class="controls-bar" id="controls-bar" style="display:none;">
+        <div class="frame-selector" id="frame-selector">
+            <label for="frame-select">Dataset:</label>
+            <select id="frame-select"></select>
+        </div>
+        <div class="time-controls-toggle">
+            <input type="checkbox" id="time-controls-checkbox">
+            <label for="time-controls-checkbox">Time Controls</label>
+        </div>
+        <span class="memory-display" id="memory-display" title="Estimated memory usage">Mem: 0 MB</span>
+        
+        <!-- Time controls panel - shown when checkbox checked -->
+        <div class="time-controls-panel" id="time-controls-panel">
+            <div class="time-control-group">
+                <label for="period-value">Period:</label>
+                <input type="number" id="period-value" value="2" min="0.1" step="0.1">
+                <span class="unit">years</span>
+            </div>
+            <div class="time-control-group">
+                <input type="checkbox" id="sequential-mode">
+                <label for="sequential-mode">Sequential</label>
+            </div>
+            <div class="time-control-group">
+                <button class="nav-btn" id="btn-backward" title="Previous period" disabled>◀</button>
+                <span class="period-indicator" id="period-indicator">-/-</span>
+                <button class="nav-btn" id="btn-forward" title="Next period" disabled>▶</button>
+            </div>
+            <div class="time-control-group">
+                <button class="play-btn" id="btn-play">▶ Play</button>
+            </div>
+            <div class="time-control-group">
+                <label for="frame-delay">Delay:</label>
+                <input type="number" id="frame-delay" value="2" min="0.5" step="0.5">
+                <span class="unit">secs</span>
+            </div>
+        </div>
     </div>
     <div class="container" id="container"></div>
     
@@ -145,15 +284,41 @@
         };
         const codeToLabel = { 'desc': 'Descending', 'asc': 'Ascending', 'vert': 'Vertical', 'horz': 'Horizontal' };
 
-        // Get URL parameters from overlay.html's URL
-        // Supports both hash format: overlay.html#/start/lat/lon/zoom?params (preferred, shareable)
-        // and legacy path format: overlay.html/start/lat/lon/zoom?params (for backwards compatibility)
-        // Also supports both view=desc and startDataset=<full_name> formats
+        // Helper: Parse YYYYMMDD to Date
+        function parseDate(yyyymmdd) {
+            if (!yyyymmdd) return null;
+            const str = String(yyyymmdd);
+            if (str.length !== 8) return null;
+            const year = parseInt(str.substring(0, 4));
+            const month = parseInt(str.substring(4, 6)) - 1;
+            const day = parseInt(str.substring(6, 8));
+            return new Date(year, month, day);
+        }
+        
+        // Helper: Format Date to YYYYMMDD
+        function formatDate(date) {
+            if (!date) return null;
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}${month}${day}`;
+        }
+        
+        // Helper: Format Date for display (29 Oct 2024)
+        function formatDateDisplay(yyyymmdd) {
+            const d = parseDate(yyyymmdd);
+            if (!d) return yyyymmdd;
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+        }
+
+        // Get URL parameters from overlay.html's URL (supports hash-based routing)
         function getOverlayUrlParams() {
             let pathPart = '';
             let queryPart = '';
             
-            // Check hash first (preferred format for shareability)
+            // Check for hash-based URL first (e.g., overlay.html#/start/lat/lon/zoom?params)
             if (window.location.hash) {
                 const hash = window.location.hash.substring(1); // Remove leading #
                 const queryIdx = hash.indexOf('?');
@@ -164,11 +329,12 @@
                     pathPart = hash;
                 }
             } else {
-                // Fallback to pathname (legacy format)
+                // Fallback to regular URL
                 pathPart = window.location.pathname;
                 queryPart = window.location.search.substring(1);
             }
             
+            // Parse path: /start/{lat}/{lon}/{zoom}
             const pathMatch = pathPart.match(/\/start\/([^\/]+)\/([^\/]+)\/([^\/?\#]+)/);
             const params = new URLSearchParams(queryPart);
             
@@ -349,8 +515,6 @@
                 
                 // Create panels for each URL
                 const container = document.getElementById('container');
-                const frameSelect = document.getElementById('frame-select');
-                const frameSelector = document.getElementById('frame-selector');
                 
                 // Determine initial active panel based on URL view param
                 let initialActiveIndex = 0;
@@ -386,11 +550,7 @@
                         currentDataset = dataset;
                     }
                     
-                    // Add option to dropdown
-                    const option = document.createElement('option');
-                    option.value = index;
-                    option.textContent = label;
-                    frameSelect.appendChild(option);
+                    // Dataset list items will be created after all URLs are processed
                 });
                 
                 // Set default view code and dataset if not specified in URL
@@ -408,7 +568,18 @@
                     const panel = document.createElement('div');
                     panel.className = 'panel';
                     panel.id = `panel${index}`;
-                    if (index === initialActiveIndex) panel.classList.add('active');
+                    
+                    // Set initial visibility - only show the active panel
+                    if (index === initialActiveIndex) {
+                        panel.classList.add('active');
+                        panel.style.visibility = 'visible';
+                        panel.style.zIndex = '10';
+                        panel.style.pointerEvents = 'auto';
+                    } else {
+                        panel.style.visibility = 'hidden';
+                        panel.style.zIndex = '-1';
+                        panel.style.pointerEvents = 'none';
+                    }
                     
                     // Create header
                     const header = document.createElement('div');
@@ -449,57 +620,78 @@
                     container.appendChild(panel);
                 });
                 
-                // Show selector and hide loading
-                frameSelector.style.display = 'flex';
+                // Show controls bar and hide loading
+                document.getElementById('controls-bar').style.display = 'flex';
                 document.getElementById('loading').style.display = 'none';
                 
-                // Set select size to show all options (max 6 to avoid huge list)
+                // Create dropdown options
+                const frameSelect = document.getElementById('frame-select');
+                iframeLabels.forEach((label, index) => {
+                    const option = document.createElement('option');
+                    option.value = index;
+                    option.textContent = label;
+                    frameSelect.appendChild(option);
+                });
+                
+                // Set select size to show all options (max 6)
                 const numOptions = frameSelect.options.length;
                 frameSelect.size = Math.min(numOptions, 6);
-                
-                // Set initial dropdown selection
                 frameSelect.value = initialActiveIndex.toString();
+                
+                // Active dataset index
+                let activeDatasetIdx = initialActiveIndex;
+                
+                // Frame selector change handler
+                frameSelect.addEventListener('change', (e) => {
+                    const selectedIndex = parseInt(e.target.value);
+                    selectDataset(selectedIndex);
+                });
+                
+                // Function to select a dataset
+                function selectDataset(index) {
+                    const previousIdx = activeDatasetIdx;
+                    activeDatasetIdx = index;
+                    const label = iframeLabels.get(index);
+                    currentViewCode = viewCodes[label] || label.toLowerCase();
+                    currentDataset = iframeDatasets.get(index);
+                    
+                    // Check if time controls are active (defined later, use typeof check)
+                    const isTimeControlsActive = (typeof timeControlsActive !== 'undefined' && timeControlsActive);
+                    
+                    if (isTimeControlsActive && previousIdx !== index) {
+                        // Time controls active and dataset changed - reload periods for new dataset
+                        updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
+                        
+                        // Call handleDatasetChangeInTimeControls if it exists
+                        if (typeof handleDatasetChangeInTimeControls === 'function') {
+                            handleDatasetChangeInTimeControls(index);
+                        }
+                        return;
+                    }
+                    
+                    // Hide all panels (push to back)
+                    document.querySelectorAll('.panel').forEach(panel => {
+                        panel.style.visibility = 'hidden';
+                        panel.style.zIndex = '-1';
+                        panel.style.pointerEvents = 'none';
+                        panel.classList.remove('active');
+                    });
+                    
+                    // Show the selected panel
+                    const selectedPanel = document.getElementById(`panel${index}`);
+                    if (selectedPanel) {
+                        selectedPanel.style.visibility = 'visible';
+                        selectedPanel.style.zIndex = '10';
+                        selectedPanel.style.pointerEvents = 'auto';
+                        selectedPanel.classList.add('active');
+                    }
+                    
+                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
+                    updatePeriodHeader();
+                }
                 
                 // Update overlay URL with initial state
                 updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
-                
-                // Frame selector functionality - update URL and reload iframe when dataset changes
-                frameSelect.addEventListener('change', (e) => {
-                    const selectedIndex = parseInt(e.target.value);
-                    document.querySelectorAll('.panel').forEach(panel => panel.classList.remove('active'));
-                    const selectedPanel = document.getElementById(`panel${selectedIndex}`);
-                    if (selectedPanel) selectedPanel.classList.add('active');
-                    
-                    // Update currentViewCode, currentDataset and overlay URL
-                    const label = iframeLabels.get(selectedIndex);
-                    currentViewCode = viewCodes[label] || label.toLowerCase();
-                    const dataset = iframeDatasets.get(selectedIndex);
-                    currentDataset = dataset;
-                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
-                    
-                    // Only reload if iframe is not already synced with current params
-                    const currentSyncKey = getSyncKey(currentMapParams);
-                    const iframeSyncKey = iframeSynced.get(selectedIndex);
-                    
-                    if (iframeSyncKey !== currentSyncKey && dataset && currentMapParams.lat && currentMapParams.lon && currentMapParams.zoom) {
-                        const newUrl = buildInsarmapsUrl(
-                            baseUrl,
-                            dataset,
-                            currentMapParams.lat,
-                            currentMapParams.lon,
-                            currentMapParams.zoom,
-                            currentMapParams
-                        );
-                        const iframe = document.getElementById(`iframe${selectedIndex}`);
-                        if (iframe) {
-                            // Set cooldown to prevent feedback loop
-                            lastSyncTime = Date.now();
-                            iframe.src = newUrl;
-                            iframeSynced.set(selectedIndex, currentSyncKey);
-                        }
-                    }
-                    // If already synced, just show it - no reload needed!
-                });
                 
                 // ===== IFRAME SYNCHRONIZATION =====
                 let syncTimeout = null;
@@ -563,6 +755,19 @@
                         // Update overlay.html's browser URL
                         updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
                         
+                        // Store the dataset's full date range (firstDate/lastDate from postMessage)
+                        // Note: firstDate/lastDate = full data range; startDate/endDate = currently selected display range
+                        if (event.data.firstDate && event.data.lastDate) {
+                            dataFirstDate = parseDate(event.data.firstDate);
+                            dataLastDate = parseDate(event.data.lastDate);
+                            console.log(`Dataset date range: ${event.data.firstDate} - ${event.data.lastDate}`);
+                        }
+                        
+                        // Update period header (always update when dates change)
+                        if (typeof timeControlsActive === 'undefined' || !timeControlsActive) {
+                            updatePeriodHeader();
+                        }
+                        
                         // Find sender iframe
                         let senderIndex = -1;
                         for (let i = 0; i < urlsList.length; i++) {
@@ -606,6 +811,415 @@
                     }, SYNC_DEBOUNCE_MS);
                 });
                 // ===== END IFRAME SYNCHRONIZATION =====
+                
+                // ===== TIME NAVIGATION CONTROLS =====
+                const timeControlsCheckbox = document.getElementById('time-controls-checkbox');
+                const timeControlsPanel = document.getElementById('time-controls-panel');
+                const periodInput = document.getElementById('period-value');
+                const sequentialCheckbox = document.getElementById('sequential-mode');
+                const btnBackward = document.getElementById('btn-backward');
+                const btnForward = document.getElementById('btn-forward');
+                const periodIndicator = document.getElementById('period-indicator');
+                const btnPlay = document.getElementById('btn-play');
+                const frameDelayInput = document.getElementById('frame-delay');
+                const memoryDisplay = document.getElementById('memory-display');
+                const containerEl = document.getElementById('container');
+                
+                // Time controls state
+                let timeControlsActive = false;
+                let periods = [];
+                let currentPeriodIndex = 0;
+                let periodPanels = new Map();  // periodIndex -> panel element
+                let movieInterval = null;
+                let loadedDatasetIdx = -1;  // Which dataset has periods loaded
+                let totalLoadedIframes = 0;
+                const ESTIMATED_MB_PER_IFRAME = 80;
+                
+                // Data date range (first and last date of the dataset)
+                let dataFirstDate = null;
+                let dataLastDate = null;
+                
+                // Get period in days
+                function getPeriodDays() {
+                    if (sequentialCheckbox.checked) {
+                        return 12;  // Sentinel-1 repeat cycle
+                    }
+                    const years = parseFloat(periodInput.value) || 2;
+                    return Math.round(years * 365.25);
+                }
+                
+                // Calculate all periods
+                function calculatePeriods() {
+                    if (!dataFirstDate || !dataLastDate) return [];
+                    
+                    const periodDays = getPeriodDays();
+                    const result = [];
+                    let periodStart = new Date(dataFirstDate);
+                    
+                    while (periodStart < dataLastDate) {
+                        let periodEnd = new Date(periodStart);
+                        periodEnd.setDate(periodEnd.getDate() + periodDays);
+                        
+                        if (periodEnd > dataLastDate) periodEnd = new Date(dataLastDate);
+                        
+                        result.push({
+                            startDate: formatDate(periodStart),
+                            endDate: formatDate(periodEnd)
+                        });
+                        
+                        periodStart = new Date(periodEnd);
+                    }
+                    return result;
+                }
+                
+                // Update memory display
+                function updateMemoryDisplay() {
+                    const estimatedMB = totalLoadedIframes * ESTIMATED_MB_PER_IFRAME;
+                    if (estimatedMB >= 1000) {
+                        memoryDisplay.textContent = `Mem: ${(estimatedMB / 1000).toFixed(1)} GB`;
+                    } else {
+                        memoryDisplay.textContent = `Mem: ${estimatedMB} MB`;
+                    }
+                }
+                
+                // Update period header in panel
+                function updatePeriodHeader() {
+                    const activePanel = document.querySelector('.panel.active');
+                    if (activePanel) {
+                        let periodSpan = activePanel.querySelector('.panel-header-period');
+                        if (!periodSpan) {
+                            periodSpan = document.createElement('span');
+                            periodSpan.className = 'panel-header-period';
+                            activePanel.querySelector('.panel-header').appendChild(periodSpan);
+                        }
+                        
+                        if (timeControlsActive && currentPeriodIndex >= 0 && periods[currentPeriodIndex]) {
+                            const p = periods[currentPeriodIndex];
+                            periodSpan.textContent = `${formatDateDisplay(p.startDate)} - ${formatDateDisplay(p.endDate)}`;
+                        } else if (currentMapParams.startDate && currentMapParams.endDate) {
+                            periodSpan.textContent = `${formatDateDisplay(currentMapParams.startDate)} - ${formatDateDisplay(currentMapParams.endDate)}`;
+                        } else {
+                            periodSpan.textContent = '';
+                        }
+                    }
+                }
+                
+                // Update controls state
+                function updateControls() {
+                    if (currentPeriodIndex >= 0 && periods.length > 0) {
+                        periodIndicator.textContent = `${currentPeriodIndex + 1}/${periods.length}`;
+                        btnBackward.disabled = currentPeriodIndex <= 0;
+                        btnForward.disabled = currentPeriodIndex >= periods.length - 1;
+                    } else {
+                        periodIndicator.textContent = '-/-';
+                        btnBackward.disabled = true;
+                        btnForward.disabled = true;
+                    }
+                }
+                
+                // Clear loaded periods and free memory
+                function clearPeriods() {
+                    // Stop any playing movie
+                    if (movieInterval) {
+                        clearInterval(movieInterval);
+                        movieInterval = null;
+                        btnPlay.textContent = '▶ Play';
+                        btnPlay.classList.remove('playing');
+                    }
+                    
+                    // Remove period panels from DOM
+                    periodPanels.forEach((panel) => {
+                        if (panel && panel.parentElement) {
+                            panel.parentElement.removeChild(panel);
+                        }
+                    });
+                    periodPanels.clear();
+                    periods = [];
+                    currentPeriodIndex = 0;
+                    loadedDatasetIdx = -1;
+                    totalLoadedIframes = iframeDatasets.size;  // Only original iframes
+                    updateMemoryDisplay();
+                }
+                
+                // Load periods for specified dataset
+                function loadPeriodsForDataset(datasetIdx) {
+                    // Get date range - use current params as the full data range
+                    if (!dataFirstDate || !dataLastDate) {
+                        if (currentMapParams.startDate && currentMapParams.endDate) {
+                            dataFirstDate = parseDate(currentMapParams.startDate);
+                            dataLastDate = parseDate(currentMapParams.endDate);
+                        } else {
+                            alert('Could not determine date range. Please interact with the map first to load date information.');
+                            return false;
+                        }
+                    }
+                    
+                    // Clear existing periods first
+                    clearPeriods();
+                    
+                    // Calculate periods
+                    periods = calculatePeriods();
+                    if (periods.length === 0) {
+                        alert('No periods to display.');
+                        return false;
+                    }
+                    
+                    console.log(`Loading ${periods.length} periods for dataset ${datasetIdx}`);
+                    console.log(`Date range: ${formatDate(dataFirstDate)} - ${formatDate(dataLastDate)}`);
+                    
+                    // Create panels for each period
+                    const container = document.getElementById('container');
+                    const dataset = iframeDatasets.get(datasetIdx);
+                    
+                    if (!dataset) {
+                        console.error(`Dataset not found for index ${datasetIdx}`);
+                        return false;
+                    }
+                    
+                    periods.forEach((period, periodIdx) => {
+                        const panel = document.createElement('div');
+                        panel.className = 'panel';
+                        panel.id = `period-panel-${datasetIdx}-${periodIdx}`;
+                        // Use visibility:visible but z-index:-1 so iframes load properly
+                        panel.style.visibility = 'visible';
+                        panel.style.zIndex = '-1';
+                        panel.style.pointerEvents = 'none';
+                        
+                        const header = document.createElement('div');
+                        header.className = 'panel-header';
+                        
+                        const title = document.createElement('span');
+                        title.className = 'panel-header-title';
+                        title.textContent = iframeLabels.get(datasetIdx);
+                        
+                        const periodSpan = document.createElement('span');
+                        periodSpan.className = 'panel-header-period';
+                        periodSpan.textContent = `${formatDateDisplay(period.startDate)} - ${formatDateDisplay(period.endDate)}`;
+                        
+                        header.appendChild(title);
+                        header.appendChild(periodSpan);
+                        
+                        // Build URL with this period's dates
+                        const periodParams = {
+                            lat: currentMapParams.lat,
+                            lon: currentMapParams.lon,
+                            zoom: currentMapParams.zoom,
+                            minScale: currentMapParams.minScale,
+                            maxScale: currentMapParams.maxScale,
+                            startDate: period.startDate,
+                            endDate: period.endDate,
+                            pixelSize: currentMapParams.pixelSize,
+                            background: currentMapParams.background,
+                            opacity: currentMapParams.opacity
+                        };
+                        
+                        const iframeSrc = buildInsarmapsUrl(
+                            baseUrl,
+                            dataset,
+                            currentMapParams.lat,
+                            currentMapParams.lon,
+                            currentMapParams.zoom,
+                            periodParams
+                        );
+                        
+                        console.log(`Period ${periodIdx}: ${period.startDate} - ${period.endDate}`);
+                        
+                        const iframe = document.createElement('iframe');
+                        iframe.id = `period-iframe-${datasetIdx}-${periodIdx}`;
+                        iframe.title = `${iframeLabels.get(datasetIdx)} - Period ${periodIdx + 1}`;
+                        iframe.src = iframeSrc;
+                        iframe.setAttribute('allowfullscreen', '');
+                        
+                        panel.appendChild(header);
+                        panel.appendChild(iframe);
+                        container.appendChild(panel);
+                        
+                        periodPanels.set(periodIdx, panel);
+                        totalLoadedIframes++;
+                    });
+                    
+                    loadedDatasetIdx = datasetIdx;
+                    updateMemoryDisplay();
+                    console.log(`Loaded ${periodPanels.size} period panels`);
+                    return true;
+                }
+                
+                // Show specific period
+                function showPeriod(periodIdx) {
+                    if (periodIdx < 0 || periodIdx >= periods.length) {
+                        console.warn(`Invalid period index: ${periodIdx}`);
+                        return;
+                    }
+                    
+                    console.log(`Showing period ${periodIdx} of ${periods.length}`);
+                    
+                    // Push all panels to back
+                    document.querySelectorAll('.panel').forEach(panel => {
+                        panel.style.zIndex = '-1';
+                        panel.style.pointerEvents = 'none';
+                        panel.classList.remove('active');
+                    });
+                    
+                    // Bring the selected period panel to front
+                    const panel = periodPanels.get(periodIdx);
+                    if (panel) {
+                        panel.style.visibility = 'visible';
+                        panel.style.zIndex = '10';
+                        panel.style.pointerEvents = 'auto';
+                        panel.classList.add('active');
+                    }
+                    
+                    currentPeriodIndex = periodIdx;
+                    
+                    // Update currentMapParams
+                    const period = periods[periodIdx];
+                    currentMapParams.startDate = period.startDate;
+                    currentMapParams.endDate = period.endDate;
+                    
+                    updateControls();
+                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
+                }
+                
+                // Open time controls
+                function openTimeControls() {
+                    timeControlsActive = true;
+                    timeControlsPanel.classList.add('visible');
+                    containerEl.classList.add('time-controls-open');
+                    
+                    // Load periods for current dataset if not already loaded
+                    if (loadedDatasetIdx !== activeDatasetIdx || periodPanels.size === 0) {
+                        if (!loadPeriodsForDataset(activeDatasetIdx)) {
+                            closeTimeControls();
+                            return;
+                        }
+                    }
+                    
+                    // Show first period
+                    showPeriod(currentPeriodIndex);
+                    updateControls();
+                }
+                
+                // Close time controls
+                function closeTimeControls() {
+                    // Stop any playing movie
+                    if (movieInterval) {
+                        clearInterval(movieInterval);
+                        movieInterval = null;
+                        btnPlay.textContent = '▶ Play';
+                        btnPlay.classList.remove('playing');
+                    }
+                    
+                    timeControlsActive = false;
+                    timeControlsCheckbox.checked = false;
+                    timeControlsPanel.classList.remove('visible');
+                    containerEl.classList.remove('time-controls-open');
+                    
+                    // Clear periods to free memory
+                    clearPeriods();
+                    
+                    // Show original panel for active dataset
+                    document.querySelectorAll('.panel').forEach(panel => {
+                        panel.style.visibility = 'hidden';
+                        panel.style.zIndex = '-1';
+                        panel.style.pointerEvents = 'none';
+                        panel.classList.remove('active');
+                    });
+                    
+                    const selectedPanel = document.getElementById(`panel${activeDatasetIdx}`);
+                    if (selectedPanel) {
+                        selectedPanel.style.visibility = 'visible';
+                        selectedPanel.style.zIndex = '10';
+                        selectedPanel.style.pointerEvents = 'auto';
+                        selectedPanel.classList.add('active');
+                    }
+                    
+                    updatePeriodHeader();
+                }
+                
+                // Handle dataset change while time controls are open
+                function handleDatasetChangeInTimeControls(newDatasetIdx) {
+                    if (!timeControlsActive) return;
+                    
+                    // Reload periods for new dataset
+                    if (loadPeriodsForDataset(newDatasetIdx)) {
+                        showPeriod(0);  // Start at first period
+                        updateControls();
+                    }
+                }
+                
+                // Play/Stop movie
+                function togglePlay() {
+                    if (movieInterval) {
+                        // Stop
+                        clearInterval(movieInterval);
+                        movieInterval = null;
+                        btnPlay.textContent = '▶ Play';
+                        btnPlay.classList.remove('playing');
+                    } else {
+                        // Start from current period
+                        btnPlay.textContent = '■ Stop';
+                        btnPlay.classList.add('playing');
+                        
+                        const delayMs = (parseFloat(frameDelayInput.value) || 2) * 1000;
+                        
+                        movieInterval = setInterval(() => {
+                            if (currentPeriodIndex < periods.length - 1) {
+                                showPeriod(currentPeriodIndex + 1);
+                            } else {
+                                // Reached end
+                                clearInterval(movieInterval);
+                                movieInterval = null;
+                                btnPlay.textContent = '▶ Play';
+                                btnPlay.classList.remove('playing');
+                            }
+                        }, delayMs);
+                    }
+                }
+                
+                // Event listeners
+                timeControlsCheckbox.addEventListener('change', () => {
+                    if (timeControlsCheckbox.checked) {
+                        openTimeControls();
+                    } else {
+                        closeTimeControls();
+                    }
+                });
+                
+                btnPlay.addEventListener('click', togglePlay);
+                
+                btnForward.addEventListener('click', () => {
+                    if (currentPeriodIndex < periods.length - 1) {
+                        showPeriod(currentPeriodIndex + 1);
+                    }
+                });
+                
+                btnBackward.addEventListener('click', () => {
+                    if (currentPeriodIndex > 0) {
+                        showPeriod(currentPeriodIndex - 1);
+                    }
+                });
+                
+                sequentialCheckbox.addEventListener('change', () => {
+                    periodInput.disabled = sequentialCheckbox.checked;
+                    // Rebuild periods if time controls active
+                    if (timeControlsActive) {
+                        loadPeriodsForDataset(activeDatasetIdx);
+                        showPeriod(0);
+                        updateControls();
+                    }
+                });
+                
+                periodInput.addEventListener('change', () => {
+                    if (timeControlsActive) {
+                        loadPeriodsForDataset(activeDatasetIdx);
+                        showPeriod(0);
+                        updateControls();
+                    }
+                });
+                
+                // Initialize
+                updateMemoryDisplay();
+                // ===== END TIME NAVIGATION CONTROLS =====
             })
             .catch(error => {
                 console.error('Error loading insarmaps.log:', error);
