@@ -88,6 +88,24 @@
     <div class="container" id="container"></div>
     
     <script>
+        // ===== CONFIGURATION (EDIT THIS LINE TO SWITCH BETWEEN FORMATS) =====
+        // To switch: comment out one line and uncomment the other
+        const USE_FULL_DATASET_IN_URL = false;  // Use short codes: view=desc/asc/vert/horz
+        // const USE_FULL_DATASET_IN_URL = true;   // Use full dataset names: startDataset=S1_desc_142_mintpy_...
+        
+        // ===== URL STATE MANAGEMENT =====
+        // Map view labels to short codes for URL
+        const viewCodes = {
+            'Descending': 'desc',
+            'Ascending': 'asc',
+            'Vertical': 'vert',
+            'Horizontal': 'horz'
+        };
+        
+        // Global state
+        let iframeDatasets = new Map();  // index -> dataset name
+        let iframeLabels = new Map();    // index -> label (Descending, etc.)
+        
         // Parse insarmaps.log and create iframes dynamically
         fetch('insarmaps.log')
             .then(response => response.text())
@@ -152,6 +170,17 @@
                 
                 // Create panels for each URL
                 urls.forEach((url, index) => {
+                    try {
+                        const urlObj = new URL(url);
+                        const dataset = urlObj.searchParams.get('startDataset');
+                        iframeDatasets.set(index, dataset);
+                    } catch (e) {
+                        console.warn('Could not parse URL:', url);
+                    }
+                    
+                    const label = getLabel(url);
+                    iframeLabels.set(index, label);
+                    
                     // Create panel
                     const panel = document.createElement('div');
                     panel.className = 'panel';
@@ -160,12 +189,12 @@
                     // Create header
                     const header = document.createElement('div');
                     header.className = 'panel-header';
-                    header.textContent = getLabel(url);
+                    header.textContent = label;
                     
                     // Create iframe
                     const iframe = document.createElement('iframe');
                     iframe.id = `iframe${index}`;
-                    iframe.title = getLabel(url);
+                    iframe.title = label;
                     iframe.src = url + (url.includes('?') ? '&' : '?') + 'hideAttributes=true&_t=' + Date.now();
                     iframe.setAttribute('allowfullscreen', '');
                     

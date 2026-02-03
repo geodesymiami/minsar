@@ -1,4 +1,10 @@
 <!DOCTYPE html>
+<!--
+  ╔═══════════════════════════════════════════════════════════════════════════════╗
+  ║  CONFIGURATION: To switch between URL formats (view=desc vs startDataset=...) ║
+  ║  Go to line 124 and comment/uncomment USE_FULL_DATASET_IN_URL                ║
+  ╚═══════════════════════════════════════════════════════════════════════════════╝
+-->
 <html>
 <head>
     <meta charset="UTF-8">
@@ -113,6 +119,11 @@
     <div class="container" id="container"></div>
     
     <script>
+        // ===== CONFIGURATION (EDIT THIS LINE TO SWITCH BETWEEN FORMATS) =====
+        // To switch: comment out one line and uncomment the other
+        //const USE_FULL_DATASET_IN_URL = false;  // Use short codes: view=desc/asc/vert/horz
+        const USE_FULL_DATASET_IN_URL = true;   // Use full dataset names: startDataset=S1_desc_142_mintpy_...
+        
         // ===== URL STATE MANAGEMENT =====
         // Map view labels to short codes for URL
         const viewCodes = {
@@ -123,12 +134,36 @@
         };
         const codeToLabel = { 'desc': 'Descending', 'asc': 'Ascending', 'vert': 'Vertical', 'horz': 'Horizontal' };
 
-        // Get URL parameters from overlay.html's URL (path format: /start/lat/lon/zoom?params)
+        // Get URL parameters from overlay.html's URL
+        // Supports both hash format: overlay.html#/start/lat/lon/zoom?params (preferred, shareable)
+        // and legacy path format: overlay.html/start/lat/lon/zoom?params (for backwards compatibility)
+        // Also supports both view=desc and startDataset=<full_name> formats
         function getOverlayUrlParams() {
-            const pathMatch = window.location.pathname.match(/\/start\/([^\/]+)\/([^\/]+)\/([^\/]+)/);
-            const params = new URLSearchParams(window.location.search);
+            let pathPart = '';
+            let queryPart = '';
+            
+            // Check hash first (preferred format for shareability)
+            if (window.location.hash) {
+                const hash = window.location.hash.substring(1); // Remove leading #
+                const queryIdx = hash.indexOf('?');
+                if (queryIdx !== -1) {
+                    pathPart = hash.substring(0, queryIdx);
+                    queryPart = hash.substring(queryIdx + 1);
+                } else {
+                    pathPart = hash;
+                }
+            } else {
+                // Fallback to pathname (legacy format)
+                pathPart = window.location.pathname;
+                queryPart = window.location.search.substring(1);
+            }
+            
+            const pathMatch = pathPart.match(/\/start\/([^\/]+)\/([^\/]+)\/([^\/?\#]+)/);
+            const params = new URLSearchParams(queryPart);
+            
             return {
                 view: params.get('view'),
+                startDataset: params.get('startDataset'),
                 lat: pathMatch ? pathMatch[1] : null,
                 lon: pathMatch ? pathMatch[2] : null,
                 zoom: pathMatch ? pathMatch[3] : null,
@@ -142,10 +177,18 @@
             };
         }
 
-        // Update overlay.html's browser URL with current state (path format like insarmaps)
-        function updateOverlayUrl(viewCode, mapParams) {
+        // Update overlay.html's browser URL with current state
+        // Uses hash-based URL format for shareability: overlay.html#/start/lat/lon/zoom?params
+        function updateOverlayUrl(viewCodeOrDataset, mapParams, currentDataset) {
             const params = new URLSearchParams();
-            if (viewCode) params.set('view', viewCode);
+            
+            // Choose which format to use based on configuration
+            if (USE_FULL_DATASET_IN_URL && currentDataset) {
+                params.set('startDataset', currentDataset);
+            } else if (viewCodeOrDataset) {
+                params.set('view', viewCodeOrDataset);
+            }
+            
             if (mapParams.minScale) params.set('minScale', mapParams.minScale);
             if (mapParams.maxScale) params.set('maxScale', mapParams.maxScale);
             if (mapParams.startDate) params.set('startDate', mapParams.startDate);
@@ -154,18 +197,14 @@
             if (mapParams.background) params.set('background', mapParams.background);
             if (mapParams.opacity) params.set('opacity', mapParams.opacity);
             
-            // Use path format: /start/lat/lon/zoom?params (like insarmaps)
-            let basePath = window.location.pathname.replace(/\/start\/[^?]*/, '');
-            if (!basePath.endsWith('/')) basePath = basePath.substring(0, basePath.lastIndexOf('/') + 1);
-            if (basePath === '/') basePath = window.location.pathname.split('/start/')[0] || '';
-            
-            let newUrl;
+            // Use hash-based URL format (shareable - browser requests just overlay.html)
+            let hashUrl;
             if (mapParams.lat && mapParams.lon && mapParams.zoom) {
-                newUrl = `${basePath}start/${mapParams.lat}/${mapParams.lon}/${mapParams.zoom}?${params.toString()}`;
+                hashUrl = `/start/${mapParams.lat}/${mapParams.lon}/${mapParams.zoom}?${params.toString()}`;
             } else {
-                newUrl = `${basePath}?${params.toString()}`;
+                hashUrl = `?${params.toString()}`;
             }
-            window.history.replaceState({}, '', newUrl);
+            window.history.replaceState({}, '', `#${hashUrl}`);
         }
 
         // Build insarmaps URL with given parameters
@@ -203,6 +242,7 @@
         let iframeLabels = new Map();    // index -> label (Descending, etc.)
         let baseUrl = '';
         let currentViewCode = 'desc';
+        let currentDataset = null;  // Current active dataset name
         let currentMapParams = {};
         let urlsList = [];
         
@@ -288,9 +328,10 @@
                 let initialActiveIndex = 0;
                 
                 urls.forEach((url, index) => {
+                    let dataset = null;  // Declare outside try block so it's accessible below
                     try {
                         const urlObj = new URL(url);
-                        const dataset = urlObj.searchParams.get('startDataset');
+                        dataset = urlObj.searchParams.get('startDataset');
                         iframeDatasets.set(index, dataset);
                         
                         // Extract base URL from first URL
@@ -306,9 +347,15 @@
                     const labelCode = viewCodes[label] || label.toLowerCase();
                     
                     // Check if this should be the active panel based on URL param
-                    if (initialParams.view && labelCode === initialParams.view) {
+                    // Support both view=desc and startDataset=<full_name>
+                    if (initialParams.startDataset && dataset === initialParams.startDataset) {
                         initialActiveIndex = index;
                         currentViewCode = labelCode;
+                        currentDataset = dataset;
+                    } else if (initialParams.view && labelCode === initialParams.view) {
+                        initialActiveIndex = index;
+                        currentViewCode = labelCode;
+                        currentDataset = dataset;
                     }
                     
                     // Add option to dropdown
@@ -318,10 +365,13 @@
                     frameSelect.appendChild(option);
                 });
                 
-                // Set default view code if not specified in URL
-                if (!initialParams.view) {
+                // Set default view code and dataset if not specified in URL
+                if (!initialParams.view && !initialParams.startDataset) {
                     const firstLabel = iframeLabels.get(0);
                     currentViewCode = viewCodes[firstLabel] || 'desc';
+                    currentDataset = iframeDatasets.get(0);
+                } else if (!currentDataset) {
+                    currentDataset = iframeDatasets.get(initialActiveIndex);
                 }
                 
                 // Create panels with potentially modified URLs
@@ -376,7 +426,7 @@
                 frameSelect.value = initialActiveIndex.toString();
                 
                 // Update overlay URL with initial state
-                updateOverlayUrl(currentViewCode, currentMapParams);
+                updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
                 
                 // Frame selector functionality - update URL and reload iframe when dataset changes
                 frameSelect.addEventListener('change', (e) => {
@@ -385,13 +435,14 @@
                     const selectedPanel = document.getElementById(`panel${selectedIndex}`);
                     if (selectedPanel) selectedPanel.classList.add('active');
                     
-                    // Update currentViewCode and overlay URL
+                    // Update currentViewCode, currentDataset and overlay URL
                     const label = iframeLabels.get(selectedIndex);
                     currentViewCode = viewCodes[label] || label.toLowerCase();
-                    updateOverlayUrl(currentViewCode, currentMapParams);
+                    const dataset = iframeDatasets.get(selectedIndex);
+                    currentDataset = dataset;
+                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
                     
                     // Always reload the selected iframe with current params
-                    const dataset = iframeDatasets.get(selectedIndex);
                     if (dataset && currentMapParams.lat && currentMapParams.lon && currentMapParams.zoom) {
                         const newUrl = buildInsarmapsUrl(
                             baseUrl,
@@ -470,7 +521,7 @@
                         };
                         
                         // Update overlay.html's browser URL
-                        updateOverlayUrl(currentViewCode, currentMapParams);
+                        updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
                         
                         // Find sender iframe
                         let senderIndex = -1;
