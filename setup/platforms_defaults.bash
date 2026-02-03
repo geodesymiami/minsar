@@ -50,13 +50,13 @@ then
   export SCRATCHDIR=/data/HDF5EOS
 fi
 ###############################################
-if  [[ ${HOSTNAME}} == *preceipvm* ]]
+if  [[ ${HOSTNAME}} =~ ^insarmaps[123]$ ]]
 then
-  export PLATFORM_NAME=precipvm
+  export PLATFORM_NAME="$HOSTNAME"
   export JOBSCHEDULER=NONE
   export QUEUENAME=NONE
-  export WORKDIR=~/insarlab
-  export SCRATCHDIR=/data
+  export WORKDIR=/data/$HOSTNAME/insarlab
+  export SCRATCHDIR=/data/HDF5EOS
 fi
 ###############################################
 if [[ ${HOSTNAME} == *stampede* ]] || [[ ${TACC_SYSTEM:-} == *stampede* ]]
