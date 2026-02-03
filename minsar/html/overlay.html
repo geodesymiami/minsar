@@ -44,14 +44,22 @@
             cursor: pointer;
             flex: 1;
             max-width: 300px;
+            overflow: auto;
         }
         .frame-selector select:focus {
             outline: none;
             border-color: #4a90e2;
         }
+        .frame-selector select option {
+            padding: 4px 8px;
+        }
+        .frame-selector select option:checked {
+            background-color: #4a90e2;
+            color: white;
+        }
         .container {
             width: 100%;
-            height: calc(100vh - 80px);
+            height: calc(100vh - 160px);  /* Adjusted for taller frame selector */
             max-width: 100%;
             position: relative;
         }
@@ -68,10 +76,13 @@
             height: 100%;
             cursor: pointer;
             transition: box-shadow 0.2s;
-            display: none;
+            /* Use visibility instead of display:none to keep iframes rendered */
+            visibility: hidden;
+            z-index: 0;
         }
         .panel.active {
-            display: block;
+            visibility: visible;
+            z-index: 1;
             box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.5);
         }
         .panel:hover {
@@ -240,6 +251,7 @@
         // Global state
         let iframeDatasets = new Map();  // index -> dataset name
         let iframeLabels = new Map();    // index -> label (Descending, etc.)
+        let iframeSynced = new Map();    // index -> sync key (tracks if iframe has current params)
         let baseUrl = '';
         let currentViewCode = 'desc';
         let currentDataset = null;  // Current active dataset name
@@ -249,6 +261,22 @@
         // Sync control - defined early so it's available everywhere
         let lastSyncTime = 0;
         const SYNC_COOLDOWN_MS = 3000;
+        
+        // Generate a sync key from current params
+        function getSyncKey(params) {
+            return JSON.stringify({
+                lat: params.lat,
+                lon: params.lon,
+                zoom: params.zoom,
+                minScale: params.minScale,
+                maxScale: params.maxScale,
+                startDate: params.startDate,
+                endDate: params.endDate,
+                pixelSize: params.pixelSize,
+                background: params.background,
+                opacity: params.opacity
+            });
+        }
 
         // Parse insarmaps.log and create iframes dynamically
         fetch('insarmaps.log')
@@ -413,6 +441,9 @@
                     iframe.src = iframeSrc;
                     iframe.setAttribute('allowfullscreen', '');
                     
+                    // Mark iframe as synced with initial params
+                    iframeSynced.set(index, getSyncKey(currentMapParams));
+                    
                     panel.appendChild(header);
                     panel.appendChild(iframe);
                     container.appendChild(panel);
@@ -421,6 +452,10 @@
                 // Show selector and hide loading
                 frameSelector.style.display = 'flex';
                 document.getElementById('loading').style.display = 'none';
+                
+                // Set select size to show all options (max 6 to avoid huge list)
+                const numOptions = frameSelect.options.length;
+                frameSelect.size = Math.min(numOptions, 6);
                 
                 // Set initial dropdown selection
                 frameSelect.value = initialActiveIndex.toString();
@@ -442,8 +477,11 @@
                     currentDataset = dataset;
                     updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
                     
-                    // Always reload the selected iframe with current params
-                    if (dataset && currentMapParams.lat && currentMapParams.lon && currentMapParams.zoom) {
+                    // Only reload if iframe is not already synced with current params
+                    const currentSyncKey = getSyncKey(currentMapParams);
+                    const iframeSyncKey = iframeSynced.get(selectedIndex);
+                    
+                    if (iframeSyncKey !== currentSyncKey && dataset && currentMapParams.lat && currentMapParams.lon && currentMapParams.zoom) {
                         const newUrl = buildInsarmapsUrl(
                             baseUrl,
                             dataset,
@@ -457,8 +495,10 @@
                             // Set cooldown to prevent feedback loop
                             lastSyncTime = Date.now();
                             iframe.src = newUrl;
+                            iframeSynced.set(selectedIndex, currentSyncKey);
                         }
                     }
+                    // If already synced, just show it - no reload needed!
                 });
                 
                 // ===== IFRAME SYNCHRONIZATION =====
@@ -536,6 +576,14 @@
                         // Set cooldown
                         lastSyncTime = Date.now();
                         
+                        // Get the sync key for the new params
+                        const newSyncKey = getSyncKey(currentMapParams);
+                        
+                        // Mark sender as synced
+                        if (senderIndex >= 0) {
+                            iframeSynced.set(senderIndex, newSyncKey);
+                        }
+                        
                         // Update all OTHER iframes
                         iframeDatasets.forEach((originalDataset, index) => {
                             if (index === senderIndex) return;
@@ -551,6 +599,8 @@
                             const iframe = document.getElementById(`iframe${index}`);
                             if (iframe) {
                                 iframe.src = newUrl;
+                                // Mark as synced with new params
+                                iframeSynced.set(index, newSyncKey);
                             }
                         });
                     }, SYNC_DEBOUNCE_MS);
