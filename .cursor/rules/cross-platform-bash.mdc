@@ -1,0 +1,34 @@
+---
+description: Bash and tests must work on both Mac (BSD) and Linux (GNU)
+globs: "**/*.bash,**/*.sh,tests/**"
+alwaysApply: false
+---
+
+# Cross-Platform Bash and Tests (Mac + Linux)
+
+All bash scripts and tests **must** run on both **macOS** (BSD tools) and **Linux** (GNU tools). Do not use GNU-only or BSD-only options.
+
+## Avoid These (Use Portable Alternatives)
+
+| Avoid | Reason | Use Instead |
+|-------|--------|-------------|
+| `grep -oP` / `grep -P` | BSD grep (macOS) has no `-P` (Perl regex) | `sed -E` or `awk` for extraction |
+| `ls -1v` | BSD ls: `-v` is not version sort | `ls … \| sort -V` (version sort) |
+| `sed -r` | BSD sed uses `-E` for extended regex | `sed -E` |
+| `shuf` | GNU coreutils only; not on macOS | `awk 'BEGIN{srand()}{print rand()"\t"$0}' \| sort -n \| cut -f2-` |
+| `date -d` | GNU date only | `date -j` (BSD) or avoid; use Python for complex parsing |
+| `head -n -1` | GNU head only; BSD reports "illegal line count" | `sed '$d'` (delete last line) |
+| `wc -l` output | BSD wc pads with leading spaces | Trim: `... \| wc -l \| tr -d ' \n'` when comparing counts |
+
+## Portable Patterns
+
+- **Version-sorted file list:** `ls run_files/run_*.job 2>/dev/null | sort -V`
+- **Extract run_XX from path:** `echo "$path" | sed -E 's/.*(run_[0-9][0-9]).*/\1/'`
+- **Strip trailing _N.job or .job:** `sed -E 's/_[0-9]+\.job$//; s/\.job$//'`
+- **Extended regex:** Always use `sed -E` (not `sed -r`)
+
+## When Adding or Editing Tests
+
+- Prefer `sort -V` for numeric/version ordering (supported on macOS 10.14+ and Linux).
+- Prefer `sed -E` for regex; avoid `grep -oP`.
+- If a command might be GNU-only, check [BSD vs GNU](https://wiki.ubuntu.com/DashAsBinSh) or test on both platforms.
