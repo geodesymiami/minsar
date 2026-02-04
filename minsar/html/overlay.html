@@ -767,13 +767,22 @@
                         panel.classList.remove('active');
                     });
                     
-                    // Show the selected panel (no reload – contour/state are synced via postMessage to all iframes)
+                    // Show the selected panel (no reload – contour applied when we switch, see below)
                     const selectedPanel = document.getElementById(`panel${index}`);
                     if (selectedPanel) {
                         selectedPanel.style.visibility = 'visible';
                         selectedPanel.style.zIndex = '10';
                         selectedPanel.style.pointerEvents = 'auto';
                         selectedPanel.classList.add('active');
+                    }
+                    
+                    // Send contour state to the newly visible iframe so it matches currentMapParams
+                    const contourOn = (currentMapParams.contour === 'true' || currentMapParams.contour === 'on');
+                    const visibleIframe = document.getElementById(`iframe${index}`);
+                    if (visibleIframe && visibleIframe.contentWindow) {
+                        try {
+                            visibleIframe.contentWindow.postMessage({ type: 'insarmaps-set-contour', value: contourOn }, '*');
+                        } catch (e) {}
                     }
                     
                     updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
@@ -918,6 +927,15 @@
                                 break;
                             }
                         }
+                        let senderPeriodIndex = -1;
+                        if ((typeof periodPanels !== 'undefined' && periodPanels && periodPanels.size > 0)) {
+                            periodPanels.forEach((panel, periodIdx) => {
+                                const iframe = panel.querySelector('iframe');
+                                if (iframe && event.source === iframe.contentWindow) {
+                                    senderPeriodIndex = periodIdx;
+                                }
+                            });
+                        }
                         
                         lastSyncTime = Date.now();
                         const newSyncKey = getSyncKey(currentMapParams);
@@ -926,23 +944,28 @@
                         }
                         
                         const contourOn = (contourValue === 'true' || contourValue === 'on');
+                        const contourMessage = { type: 'insarmaps-set-contour', value: contourOn };
                         
+                        // (1) When only contour changed: broadcast to all iframes so they stay in sync.
                         if (onlyContourChanged) {
-                            // No reload: tell every iframe to add or remove contours so they stay in sync when switching
                             iframeDatasets.forEach((_, index) => {
                                 const iframe = document.getElementById(`iframe${index}`);
                                 if (iframe && iframe.contentWindow) {
-                                    try {
-                                        iframe.contentWindow.postMessage({
-                                            type: 'insarmaps-set-contour',
-                                            value: contourOn
-                                        }, '*');
-                                    } catch (e) {}
+                                    try { iframe.contentWindow.postMessage(contourMessage, '*'); } catch (e) {}
                                 }
                                 iframeSynced.set(index, newSyncKey);
                             });
+                            if (typeof timeControlsActive !== 'undefined' && timeControlsActive &&
+                                typeof periodPanels !== 'undefined' && periodPanels && periodPanels.size > 0) {
+                                periodPanels.forEach((panel) => {
+                                    const iframe = panel.querySelector('iframe');
+                                    if (iframe && iframe.contentWindow) {
+                                        try { iframe.contentWindow.postMessage(contourMessage, '*'); } catch (e) {}
+                                    }
+                                });
+                            }
                         } else {
-                            // Other params changed: reload all other iframes
+                            // (2) Other params changed: reload iframes (same rule for period as for dataset – do not reload the sender).
                             iframeDatasets.forEach((originalDataset, index) => {
                                 if (index === senderIndex) return;
                                 const newUrl = buildInsarmapsUrl(
@@ -954,6 +977,63 @@
                                     iframeSynced.set(index, newSyncKey);
                                 }
                             });
+                            if (typeof timeControlsActive !== 'undefined' && timeControlsActive &&
+                                typeof periodPanels !== 'undefined' && periodPanels && periodPanels.size > 0 &&
+                                typeof loadedDatasetIdx !== 'undefined' && loadedDatasetIdx >= 0) {
+                                const dataset = iframeDatasets.get(loadedDatasetIdx);
+                                if (dataset) {
+                                    periodPanels.forEach((panel, periodIdx) => {
+                                        if (periodIdx === senderPeriodIndex) return;
+                                        const startDate = panel.dataset.startDate;
+                                        const endDate = panel.dataset.endDate;
+                                        if (!startDate || !endDate) return;
+                                        const periodParams = {
+                                            lat: currentMapParams.lat,
+                                            lon: currentMapParams.lon,
+                                            zoom: currentMapParams.zoom,
+                                            minScale: currentMapParams.minScale,
+                                            maxScale: currentMapParams.maxScale,
+                                            startDate: startDate,
+                                            endDate: endDate,
+                                            pixelSize: currentMapParams.pixelSize,
+                                            background: currentMapParams.background,
+                                            opacity: currentMapParams.opacity,
+                                            contour: currentMapParams.contour,
+                                            colorscale: currentMapParams.colorscale
+                                        };
+                                        const iframe = panel.querySelector('iframe');
+                                        if (iframe) {
+                                            iframe.src = buildInsarmapsUrl(
+                                                baseUrl, dataset,
+                                                currentMapParams.lat, currentMapParams.lon, currentMapParams.zoom,
+                                                periodParams,
+                                                `period_${periodIdx}`
+                                            );
+                                        }
+                                    });
+                                }
+                            }
+                            // After reload, iframes need time to load; then send contour so they apply it (URL contour may not apply when loaded hidden).
+                            setTimeout(function() {
+                                const msg = { type: 'insarmaps-set-contour', value: contourOn };
+                                iframeDatasets.forEach((_, index) => {
+                                    if (index === senderIndex) return;
+                                    const iframe = document.getElementById(`iframe${index}`);
+                                    if (iframe && iframe.contentWindow) {
+                                        try { iframe.contentWindow.postMessage(msg, '*'); } catch (e) {}
+                                    }
+                                });
+                                if (typeof timeControlsActive !== 'undefined' && timeControlsActive &&
+                                    typeof periodPanels !== 'undefined' && periodPanels && periodPanels.size > 0) {
+                                    periodPanels.forEach((panel, periodIdx) => {
+                                        if (periodIdx === senderPeriodIndex) return;
+                                        const iframe = panel.querySelector('iframe');
+                                        if (iframe && iframe.contentWindow) {
+                                            try { iframe.contentWindow.postMessage(msg, '*'); } catch (e) {}
+                                        }
+                                    });
+                                }
+                            }, 2500);
                         }
                     }, SYNC_DEBOUNCE_MS);
                 });
@@ -1200,6 +1280,14 @@
                         panel.style.zIndex = '10';
                         panel.style.pointerEvents = 'auto';
                         panel.classList.add('active');
+                        // Send contour state to the newly visible period iframe so it matches currentMapParams
+                        const contourOn = (currentMapParams.contour === 'true' || currentMapParams.contour === 'on');
+                        const periodIframe = panel.querySelector('iframe');
+                        if (periodIframe && periodIframe.contentWindow) {
+                            try {
+                                periodIframe.contentWindow.postMessage({ type: 'insarmaps-set-contour', value: contourOn }, '*');
+                            } catch (e) {}
+                        }
                     }
                     
                     currentPeriodIndex = periodIdx;
