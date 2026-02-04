@@ -213,7 +213,7 @@
         }
         .panel iframe {
             width: 100%;
-            height: calc(100% - 38px);
+            height: 100%;
             border: none;
             display: block;
         }
@@ -225,9 +225,56 @@
             color: #666;
             font-size: 14px;
         }
+        /* Loading overlay - shown until data loads */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        .loading-overlay.hidden {
+            display: none;
+        }
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #e0e0e0;
+            border-top: 4px solid #4a90e2;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .loading-overlay-text {
+            font-size: 18px;
+            color: #333;
+            font-weight: 500;
+        }
+        .loading-overlay-subtext {
+            font-size: 13px;
+            color: #666;
+            margin-top: 8px;
+        }
     </style>
 </head>
 <body>
+    <!-- Loading overlay - shown until first iframe data loads -->
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-overlay-text">Data loading...</div>
+        <div class="loading-overlay-subtext">Please wait while the map data is retrieved</div>
+    </div>
+    
     <div id="loading" class="loading">Loading insarmaps data...</div>
     <div class="controls-bar" id="controls-bar" style="display:none;">
         <div class="frame-selector" id="frame-selector">
@@ -255,6 +302,9 @@
                 <button class="nav-btn" id="btn-backward" title="Previous period" disabled>◀</button>
                 <span class="period-indicator" id="period-indicator">-/-</span>
                 <button class="nav-btn" id="btn-forward" title="Next period" disabled>▶</button>
+            </div>
+            <div class="time-control-group">
+                <span id="period-date-range" style="font-size: 12px; color: #555; min-width: 200px;"></span>
             </div>
             <div class="time-control-group">
                 <button class="play-btn" id="btn-play">▶ Play</button>
@@ -350,8 +400,18 @@
                 endDate: params.get('endDate'),
                 pixelSize: params.get('pixelSize'),
                 background: params.get('background'),
-                opacity: params.get('opacity')
+                opacity: params.get('opacity'),
+                contour: params.get('contour')
             };
+        }
+
+        // Normalize contour to "true"/"false" for URL (insarmaps accepts true/false/on/1 for enabled)
+        function normalizeContourValue(value) {
+            if (!value) return null;
+            const v = String(value).toLowerCase();
+            if (v === 'on' || v === 'true' || v === '1') return 'true';
+            if (v === 'off' || v === 'false' || v === '0') return 'false';
+            return value;
         }
 
         // Update overlay.html's browser URL with current state
@@ -373,6 +433,8 @@
             if (mapParams.pixelSize) params.set('pixelSize', mapParams.pixelSize);
             if (mapParams.background) params.set('background', mapParams.background);
             if (mapParams.opacity) params.set('opacity', mapParams.opacity);
+            const normalizedContour = normalizeContourValue(mapParams.contour);
+            if (normalizedContour) params.set('contour', normalizedContour);
             
             // Use hash-based URL format (shareable - browser requests just overlay.html)
             let hashUrl;
@@ -385,7 +447,9 @@
         }
 
         // Build insarmaps URL with given parameters
-        function buildInsarmapsUrl(baseUrl, dataset, lat, lon, zoom, mapParams) {
+        // uniqueId is optional - used to ensure unique cache-busting for multiple iframes
+        let urlCounter = 0;
+        function buildInsarmapsUrl(baseUrl, dataset, lat, lon, zoom, mapParams, uniqueId) {
             const params = new URLSearchParams();
             params.set('flyToDatasetCenter', 'false');
             params.set('startDataset', dataset);
@@ -396,7 +460,11 @@
             if (mapParams.pixelSize) params.set('pixelSize', mapParams.pixelSize);
             if (mapParams.background) params.set('background', mapParams.background);
             if (mapParams.opacity) params.set('opacity', mapParams.opacity);
-            params.set('_t', Date.now());
+            const normalizedContour = normalizeContourValue(mapParams.contour);
+            if (normalizedContour) params.set('contour', normalizedContour);
+            // Unique cache-buster: timestamp + counter + optional uniqueId
+            const cacheBuster = uniqueId !== undefined ? `${Date.now()}_${urlCounter++}_${uniqueId}` : `${Date.now()}_${urlCounter++}`;
+            params.set('_t', cacheBuster);
             
             return `${baseUrl}/start/${lat}/${lon}/${zoom}?${params.toString()}`;
         }
@@ -428,6 +496,18 @@
         let lastSyncTime = 0;
         const SYNC_COOLDOWN_MS = 3000;
         
+        // Loading overlay control
+        let dataLoaded = false;
+        function hideLoadingOverlay() {
+            if (!dataLoaded) {
+                dataLoaded = true;
+                const overlay = document.getElementById('loading-overlay');
+                if (overlay) {
+                    overlay.classList.add('hidden');
+                }
+            }
+        }
+        
         // Generate a sync key from current params
         function getSyncKey(params) {
             return JSON.stringify({
@@ -440,7 +520,8 @@
                 endDate: params.endDate,
                 pixelSize: params.pixelSize,
                 background: params.background,
-                opacity: params.opacity
+                opacity: params.opacity,
+                contour: params.contour
             });
         }
 
@@ -510,7 +591,8 @@
                     endDate: initialParams.endDate,
                     pixelSize: initialParams.pixelSize,
                     background: initialParams.background,
-                    opacity: initialParams.opacity
+                    opacity: initialParams.opacity,
+                    contour: initialParams.contour
                 };
                 
                 // Create panels for each URL
@@ -581,14 +663,6 @@
                         panel.style.pointerEvents = 'none';
                     }
                     
-                    // Create header
-                    const header = document.createElement('div');
-                    header.className = 'panel-header';
-                    const title = document.createElement('span');
-                    title.className = 'panel-header-title';
-                    title.textContent = iframeLabels.get(index);
-                    header.appendChild(title);
-                    
                     // Build iframe URL - use overlay params if available
                     let iframeSrc = url;
                     const dataset = iframeDatasets.get(index);
@@ -615,7 +689,6 @@
                     // Mark iframe as synced with initial params
                     iframeSynced.set(index, getSyncKey(currentMapParams));
                     
-                    panel.appendChild(header);
                     panel.appendChild(iframe);
                     container.appendChild(panel);
                 });
@@ -623,6 +696,18 @@
                 // Show controls bar and hide loading
                 document.getElementById('controls-bar').style.display = 'flex';
                 document.getElementById('loading').style.display = 'none';
+                
+                // Set a timeout to hide the loading overlay if no postMessage received
+                // This ensures the overlay eventually disappears even if insarmaps doesn't send messages
+                setTimeout(() => {
+                    hideLoadingOverlay();
+                }, 15000);  // 15 second fallback
+                
+                // Single-file mode: hide frame selector if only one dataset
+                const isSingleFileMode = urls.length === 1;
+                if (isSingleFileMode) {
+                    document.getElementById('frame-selector').style.display = 'none';
+                }
                 
                 // Create dropdown options
                 const frameSelect = document.getElementById('frame-select');
@@ -677,7 +762,7 @@
                         panel.classList.remove('active');
                     });
                     
-                    // Show the selected panel
+                    // Show the selected panel (no reload – contour/state are synced via postMessage to all iframes)
                     const selectedPanel = document.getElementById(`panel${index}`);
                     if (selectedPanel) {
                         selectedPanel.style.visibility = 'visible';
@@ -702,9 +787,26 @@
                 window.addEventListener('message', (event) => {
                     if (!event.data || event.data.type !== 'insarmaps-url-update') return;
                     
-                    // Ignore messages during cooldown
+                    // Debug: log full event.data to see what insarmaps sends
+                    console.log('postMessage received:', JSON.stringify(event.data, null, 2));
+                    
+                    // Hide loading overlay on first data received
+                    hideLoadingOverlay();
+                    
+                    // Check if message is from the active iframe
+                    let isFromActiveIframe = false;
+                    const activeIframe = document.getElementById(`iframe${activeDatasetIdx}`);
+                    if (activeIframe && event.source === activeIframe.contentWindow) {
+                        isFromActiveIframe = true;
+                    }
+                    
+                    // Only apply cooldown to messages from non-active iframes (prevents sync loops)
+                    // Active iframe messages are always processed (user actions)
                     const now = Date.now();
-                    if (now - lastSyncTime < SYNC_COOLDOWN_MS) return;
+                    if (!isFromActiveIframe && now - lastSyncTime < SYNC_COOLDOWN_MS) {
+                        console.log('Ignoring message from non-active iframe during cooldown');
+                        return;
+                    }
                     
                     if (syncTimeout) clearTimeout(syncTimeout);
                     
@@ -723,6 +825,22 @@
                             queryStart >= 0 ? newUrlPath.substring(queryStart) : ''
                         );
                         
+                        // Get contour value - insarmaps sends contour=on or contour=off; we normalize to true/false
+                        const getContourValue = () => {
+                            // First check URL params (primary source)
+                            if (params.has('contour')) return params.get('contour');
+                            // Check alternate names just in case
+                            if (params.has('contours')) return params.get('contours');
+                            // Then check event.data properties
+                            if (event.data.contour !== undefined) return String(event.data.contour);
+                            if (event.data.contours !== undefined) return String(event.data.contours);
+                            // Fall back to current value
+                            return currentMapParams.contour;
+                        };
+                        const rawContourValue = getContourValue();
+                        const contourValue = normalizeContourValue(rawContourValue);
+                        console.log('Contour value detected:', rawContourValue, '-> normalized:', contourValue);
+                        
                         // Create sync key with all sync-relevant params
                         const syncKey = JSON.stringify({
                             lat, lon, zoom,
@@ -732,10 +850,26 @@
                             endDate: params.get('endDate'),
                             pixelSize: params.get('pixelSize'),
                             background: params.get('background'),
-                            opacity: params.get('opacity')
+                            opacity: params.get('opacity'),
+                            contour: contourValue
                         });
                         
                         if (syncKey === lastSyncedKey) return;
+                        
+                        // Detect if only contour changed (no reload; we'll tell all iframes to add/remove contours)
+                        let onlyContourChanged = false;
+                        if (lastSyncedKey) {
+                            try {
+                                const prev = JSON.parse(lastSyncedKey);
+                                onlyContourChanged = (
+                                    prev.lat === lat && prev.lon === lon && prev.zoom === zoom &&
+                                    prev.minScale === params.get('minScale') && prev.maxScale === params.get('maxScale') &&
+                                    prev.startDate === params.get('startDate') && prev.endDate === params.get('endDate') &&
+                                    prev.pixelSize === params.get('pixelSize') && prev.background === params.get('background') &&
+                                    prev.opacity === params.get('opacity') && prev.contour !== contourValue
+                                );
+                            } catch (e) {}
+                        }
                         lastSyncedKey = syncKey;
                         
                         // Update current map params
@@ -749,26 +883,24 @@
                             endDate: params.get('endDate'),
                             pixelSize: params.get('pixelSize'),
                             background: params.get('background'),
-                            opacity: params.get('opacity')
+                            opacity: params.get('opacity'),
+                            contour: contourValue
                         };
                         
                         // Update overlay.html's browser URL
                         updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
                         
                         // Store the dataset's full date range (firstDate/lastDate from postMessage)
-                        // Note: firstDate/lastDate = full data range; startDate/endDate = currently selected display range
                         if (event.data.firstDate && event.data.lastDate) {
                             dataFirstDate = parseDate(event.data.firstDate);
                             dataLastDate = parseDate(event.data.lastDate);
                             console.log(`Dataset date range: ${event.data.firstDate} - ${event.data.lastDate}`);
                         }
                         
-                        // Update period header (always update when dates change)
                         if (typeof timeControlsActive === 'undefined' || !timeControlsActive) {
                             updatePeriodHeader();
                         }
                         
-                        // Find sender iframe
                         let senderIndex = -1;
                         for (let i = 0; i < urlsList.length; i++) {
                             const iframe = document.getElementById(`iframe${i}`);
@@ -778,36 +910,42 @@
                             }
                         }
                         
-                        // Set cooldown
                         lastSyncTime = Date.now();
-                        
-                        // Get the sync key for the new params
                         const newSyncKey = getSyncKey(currentMapParams);
-                        
-                        // Mark sender as synced
                         if (senderIndex >= 0) {
                             iframeSynced.set(senderIndex, newSyncKey);
                         }
                         
-                        // Update all OTHER iframes
-                        iframeDatasets.forEach((originalDataset, index) => {
-                            if (index === senderIndex) return;
-                            
-                            const newUrl = buildInsarmapsUrl(
-                                baseUrl, 
-                                originalDataset, 
-                                lat, 
-                                lon, 
-                                zoom, 
-                                currentMapParams
-                            );
-                            const iframe = document.getElementById(`iframe${index}`);
-                            if (iframe) {
-                                iframe.src = newUrl;
-                                // Mark as synced with new params
+                        const contourOn = (contourValue === 'true' || contourValue === 'on');
+                        
+                        if (onlyContourChanged) {
+                            // No reload: tell every iframe to add or remove contours so they stay in sync when switching
+                            iframeDatasets.forEach((_, index) => {
+                                const iframe = document.getElementById(`iframe${index}`);
+                                if (iframe && iframe.contentWindow) {
+                                    try {
+                                        iframe.contentWindow.postMessage({
+                                            type: 'insarmaps-set-contour',
+                                            value: contourOn
+                                        }, '*');
+                                    } catch (e) {}
+                                }
                                 iframeSynced.set(index, newSyncKey);
-                            }
-                        });
+                            });
+                        } else {
+                            // Other params changed: reload all other iframes
+                            iframeDatasets.forEach((originalDataset, index) => {
+                                if (index === senderIndex) return;
+                                const newUrl = buildInsarmapsUrl(
+                                    baseUrl, originalDataset, lat, lon, zoom, currentMapParams
+                                );
+                                const iframe = document.getElementById(`iframe${index}`);
+                                if (iframe) {
+                                    iframe.src = newUrl;
+                                    iframeSynced.set(index, newSyncKey);
+                                }
+                            });
+                        }
                     }, SYNC_DEBOUNCE_MS);
                 });
                 // ===== END IFRAME SYNCHRONIZATION =====
@@ -882,38 +1020,32 @@
                     }
                 }
                 
-                // Update period header in panel
+                // Update period display in controls (panel headers removed)
                 function updatePeriodHeader() {
-                    const activePanel = document.querySelector('.panel.active');
-                    if (activePanel) {
-                        let periodSpan = activePanel.querySelector('.panel-header-period');
-                        if (!periodSpan) {
-                            periodSpan = document.createElement('span');
-                            periodSpan.className = 'panel-header-period';
-                            activePanel.querySelector('.panel-header').appendChild(periodSpan);
-                        }
-                        
-                        if (timeControlsActive && currentPeriodIndex >= 0 && periods[currentPeriodIndex]) {
-                            const p = periods[currentPeriodIndex];
-                            periodSpan.textContent = `${formatDateDisplay(p.startDate)} - ${formatDateDisplay(p.endDate)}`;
-                        } else if (currentMapParams.startDate && currentMapParams.endDate) {
-                            periodSpan.textContent = `${formatDateDisplay(currentMapParams.startDate)} - ${formatDateDisplay(currentMapParams.endDate)}`;
-                        } else {
-                            periodSpan.textContent = '';
-                        }
-                    }
+                    // Period info is now shown in the period indicator area
+                    // This function is kept for compatibility but the display logic
+                    // is handled by updateControls() and the period indicator
                 }
                 
                 // Update controls state
                 function updateControls() {
+                    const periodDateRange = document.getElementById('period-date-range');
                     if (currentPeriodIndex >= 0 && periods.length > 0) {
                         periodIndicator.textContent = `${currentPeriodIndex + 1}/${periods.length}`;
                         btnBackward.disabled = currentPeriodIndex <= 0;
                         btnForward.disabled = currentPeriodIndex >= periods.length - 1;
+                        // Show current period's date range
+                        const p = periods[currentPeriodIndex];
+                        if (p && periodDateRange) {
+                            periodDateRange.textContent = `${formatDateDisplay(p.startDate)} - ${formatDateDisplay(p.endDate)}`;
+                        }
                     } else {
                         periodIndicator.textContent = '-/-';
                         btnBackward.disabled = true;
                         btnForward.disabled = true;
+                        if (periodDateRange) {
+                            periodDateRange.textContent = '';
+                        }
                     }
                 }
                 
@@ -980,24 +1112,13 @@
                         const panel = document.createElement('div');
                         panel.className = 'panel';
                         panel.id = `period-panel-${datasetIdx}-${periodIdx}`;
+                        // Store period info as data attributes for display
+                        panel.dataset.startDate = period.startDate;
+                        panel.dataset.endDate = period.endDate;
                         // Use visibility:visible but z-index:-1 so iframes load properly
                         panel.style.visibility = 'visible';
                         panel.style.zIndex = '-1';
                         panel.style.pointerEvents = 'none';
-                        
-                        const header = document.createElement('div');
-                        header.className = 'panel-header';
-                        
-                        const title = document.createElement('span');
-                        title.className = 'panel-header-title';
-                        title.textContent = iframeLabels.get(datasetIdx);
-                        
-                        const periodSpan = document.createElement('span');
-                        periodSpan.className = 'panel-header-period';
-                        periodSpan.textContent = `${formatDateDisplay(period.startDate)} - ${formatDateDisplay(period.endDate)}`;
-                        
-                        header.appendChild(title);
-                        header.appendChild(periodSpan);
                         
                         // Build URL with this period's dates
                         const periodParams = {
@@ -1010,7 +1131,8 @@
                             endDate: period.endDate,
                             pixelSize: currentMapParams.pixelSize,
                             background: currentMapParams.background,
-                            opacity: currentMapParams.opacity
+                            opacity: currentMapParams.opacity,
+                            contour: currentMapParams.contour
                         };
                         
                         const iframeSrc = buildInsarmapsUrl(
@@ -1019,10 +1141,12 @@
                             currentMapParams.lat,
                             currentMapParams.lon,
                             currentMapParams.zoom,
-                            periodParams
+                            periodParams,
+                            `period_${periodIdx}`  // Unique ID for cache-busting
                         );
                         
-                        console.log(`Period ${periodIdx}: ${period.startDate} - ${period.endDate}`);
+                        console.log(`Period ${periodIdx}: startDate=${period.startDate}, endDate=${period.endDate}`);
+                        console.log(`  URL: ${iframeSrc}`);
                         
                         const iframe = document.createElement('iframe');
                         iframe.id = `period-iframe-${datasetIdx}-${periodIdx}`;
@@ -1030,7 +1154,6 @@
                         iframe.src = iframeSrc;
                         iframe.setAttribute('allowfullscreen', '');
                         
-                        panel.appendChild(header);
                         panel.appendChild(iframe);
                         container.appendChild(panel);
                         
@@ -1166,7 +1289,9 @@
                             if (currentPeriodIndex < periods.length - 1) {
                                 showPeriod(currentPeriodIndex + 1);
                             } else {
-                                // Reached end
+                                // Reached end - go back to first period
+                                showPeriod(0);
+                                // Stop playing
                                 clearInterval(movieInterval);
                                 movieInterval = null;
                                 btnPlay.textContent = '▶ Play';

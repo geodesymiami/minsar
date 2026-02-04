@@ -39,7 +39,7 @@ So: **Trigger** = any insarmaps URL change in the active iframe. **Effect** = al
 
 ### 1.3 Dataset change (dropdown)
 
-- **Time Controls closed:** `selectDataset(index)` only switches visibility (hide all panels, show `panel${index}`, update overlay URL). **No `iframe.src` is set.** The newly visible iframe is not reloaded.
+- **Time Controls closed:** `selectDataset(index)` only switches visibility and updates overlay URL. No iframe reload; contour is kept in sync by postMessage to all iframes (§ 7).
 - **Time Controls open:** `selectDataset(index)` calls `handleDatasetChangeInTimeControls(index)` → `loadPeriodsForDataset(newDatasetIdx)`: **clears** period panels and **creates new** period panels (and iframes) for the new dataset. So “loading” here is **new period iframes**, not the main dataset iframes.
 
 ### 1.4 Time Controls: open and change period
@@ -54,7 +54,7 @@ So: **Trigger** = any insarmaps URL change in the active iframe. **Effect** = al
 |--------|------------|----------------|
 | Page load | Initial URL per dataset | All dataset iframes |
 | postMessage (any param in active iframe) | New URL on others | All dataset iframes **except** sender |
-| Dataset dropdown (Time Controls off) | Nothing | None |
+| Dataset dropdown (Time Controls off) | No reload; show/hide panel only | None |
 | Dataset dropdown (Time Controls on) | New period panels | New period iframes for selected dataset |
 | Open Time Controls | Period panels | All period iframes for current dataset |
 | Change period (◀/▶/Play) | Nothing | None |
@@ -86,7 +86,7 @@ Overlay does **not** cache tiles or API responses. It only keeps: **`currentMapP
 1. `frameSelect` change → `selectDataset(selectedIndex)`.
 2. All panels hidden; selected panel shown (visibility, z-index, pointer-events).
 3. `updateOverlayUrl(...)` updates overlay hash.
-4. **No iframe reload.** The newly visible iframe was last updated at init or by a previous sync.
+4. **No reload.** The newly visible iframe already has contour in sync (overlay sends `insarmaps-set-contour` to all iframes when contour changes).
 
 ### 3.2 Time Controls open
 
@@ -126,18 +126,37 @@ So both “dataset” and “period” are “which iframe to show.” Differenc
 
 ## 6. Difference in Actions Between User Options
 
-All changes **inside** the active insarmaps iframe (color limits, background, contour, time slider) use the **same** path: postMessage → debounce → update `currentMapParams` → reload **all other dataset iframes**. The **active** iframe is never reloaded.
+Changes **inside** the active insarmaps iframe trigger postMessage → debounce → update `currentMapParams`. **Contour** is then synced by posting to all iframes (no reload). **All other params** (color limits, background, time slider, etc.) are synced by reloading all other dataset iframes. The active iframe is never reloaded.
 
 | User action | Where | What overlay does | Iframes reloaded? |
 |-------------|--------|-------------------|--------------------|
 | **Color limits** (minScale/maxScale) | Insarmaps | postMessage → set `src` on other iframes | All except active |
 | **Background** | Insarmaps | Same | All except active |
-| **Contour** | Insarmaps | Same | All except active |
-| **Dataset** (dropdown) | Overlay | Show/hide panel; if Time Controls on, load periods for new dataset | None (or new period iframes only) |
+| **Contour** | Insarmaps | postMessage **to all iframes** `insarmaps-set-contour` (no reload) | None |
+| **Dataset** (dropdown) | Overlay | Show/hide panel only; if Time Controls on, load periods for new dataset | None (or new period iframes only when Time Controls on) |
 | **Period** via **time slider** | Insarmaps | postMessage → set `src` on other iframes | All except active |
 | **Period** via **Time Controls** (◀/▶/Play) | Overlay | `showPeriod(idx)` – change visible period panel | None |
 
-So: **Color limits, background, contour, time slider** → same mechanism (postMessage → reload all other dataset iframes). **Dataset dropdown** → no reload of dataset iframes; only visibility (and period panels when Time Controls on). **Period via Time Controls** → no reload; only which period panel is visible.
+So: **Color limits, background, time slider** → postMessage → reload all other dataset iframes. **Contour** → when **only** contour changes, overlay does **not** reload; it sends **postMessage** to **all** iframes to add/remove the contour layer (see § 7). **Dataset dropdown** → no reload; only show/hide panel. **Period via Time Controls** → no reload; only which period panel is visible.
+
+---
+
+## 7. Contour toggle – add/remove in all iframes (no reload)
+
+To avoid unnecessary reloads and to make contours show when switching iframes, contour is **not** synced by reloading. Instead:
+
+1. User toggles the contour button **inside** the active insarmaps iframe.
+2. Insarmaps updates its URL and sends `postMessage({ type: 'insarmaps-url-update', url: '...' })`.
+3. Overlay receives the message (after debounce), updates `currentMapParams.contour` and the overlay hash URL.
+4. Overlay checks whether **only** the contour param changed (same lat/lon/zoom, scale, dates, background, opacity; only `contour` differs from last sync).
+   - **If only contour changed:** Overlay does **not** reload any iframe. It sends a **postMessage** to **every** dataset iframe: `{ type: 'insarmaps-set-contour', value: true|false }`. Each iframe (when embedded) listens for this and calls `myMap.addContourLines()` or `myMap.removeContourLines()` and updates the contour button state. So all iframes get the same contour state without reload; when the user switches dataset, the newly visible iframe already has contours on or off.
+   - **If any other param changed:** Overlay behaves as before: reloads **all other** iframes with the new URL (which includes the current contour).
+
+Insarmaps (mainPage.js) listens for `insarmaps-set-contour`: it adds/removes the contour layer and the button “toggled” state so the UI stays in sync.
+
+### Parameter values
+
+- Overlay uses **`contour=true`** and **`contour=false`** in its hash and in built iframe URLs; it normalizes `on`/`off` from insarmaps to `true`/`false`.
 
 ---
 
@@ -180,8 +199,8 @@ So: **Color limits, background, contour, time slider** → same mechanism (postM
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │  Dropdown (frameSelect.change): show/hide panel only (no iframe.src). │  │
-│  │  If Time Controls open: loadPeriodsForDataset(newIdx) → new panels.   │  │
+│  │  Dropdown: show/hide panel only. Contour: postMessage to all iframes.      │  │
+│  │  If Time Controls open: loadPeriodsForDataset(newIdx) → new panels.       │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -207,7 +226,7 @@ So: **Color limits, background, contour, time slider** → same mechanism (postM
 | Trigger | What Happens | iframes Affected |
 |---------|--------------|------------------|
 | **Page Load** | All iframes get `src` set with initial params | ALL |
-| **Dropdown Change** | No reload; only show/hide panel. If Time Controls on: new period iframes for new dataset | None / new period only |
+| **Dropdown Change** | Show/hide panel only. If Time Controls on: new period iframes for new dataset | None / new period only |
 | **postMessage (any param in active iframe)** | Other iframes get new `src` after debounce | ALL EXCEPT sender |
 
 See **§ 1. What Triggers the Loading of Data** and **§ 6. Difference in Actions Between User Options** for full detail.
@@ -274,7 +293,7 @@ No iframe.src is set. The newly visible iframe is NOT reloaded.
 (If Time Controls open: handleDatasetChangeInTimeControls → loadPeriodsForDataset → new period iframes.)
 ```
 
-**Key point**: No dataset iframe is reloaded when switching via dropdown. Only visibility changes.
+**Key point**: No iframe is reloaded when switching via dropdown. Contour state is synced by overlay sending `insarmaps-set-contour` to all iframes when the user toggles contour.
 
 ### Time Slider Change (postMessage)
 ```
@@ -311,8 +330,9 @@ overlay.html receives message
 
 | Action | Reloaded iframes | Uses currentMapParams? |
 |--------|------------------|------------------------|
-| Dropdown switch | **None** (show/hide only) | N/A |
-| Pan/zoom / time slider / color scale / background / contour / opacity | All except sender | YES |
+| Dropdown switch | **None** (show/hide only; contour synced via postMessage) | N/A |
+| Contour only | **None** (postMessage `insarmaps-set-contour` to all iframes) | N/A |
+| Pan/zoom / time slider / color scale / background / opacity | All except sender | YES |
 
 ## Known Issues & Analysis
 
@@ -352,6 +372,44 @@ This was previously traced to `pointLat`, `pointLon`, `refPointLat`, `refPointLo
 **Symptom**: Nothing happens for several seconds on first load.
 
 **Solution implemented**: Added a loading overlay with spinner that shows "Loading InSAR Data..." until the first `postMessage` (insarmaps-url-update) is received from any iframe, or after a 15s fallback timeout.
+
+### Issue 4: Contour toggle – contours may not show when switching frames
+
+**Symptom**: After toggling contours, `contour=on` (or `contour=true`) appears in overlay.html’s URL, but the loaded map in the iframe does not show contour lines.
+
+**Current behaviour**: Overlay sends `insarmaps-set-contour` to all iframes (no reload). Contours still often do not show when switching frames. For the detailed reason, see **Known limitations** below.
+
+
+See **§ 7. Contour toggle** and **Known limitations** below.
+
+## Known limitations
+
+### Contours do not show when switching frames
+
+**Observed behaviour**: Contour lines do not reliably appear on the map when switching to another dataset (iframe) via the Dataset dropdown, even though the overlay URL shows `contour=true` and the overlay sends `insarmaps-set-contour` to all iframes.
+
+**Intended behaviour**: When the user turns contours on in one iframe, overlay sends a postMessage to every iframe to add the contour layer. Switching to another iframe should then show that iframe with contours already on.
+
+**Reasons this can fail (as far as we can tell)**:
+
+1. **postMessage timing and iframe readiness**  
+   Overlay sends `insarmaps-set-contour` as soon as it gets the URL-update message from the active iframe (after debounce). The other iframes may still be loading or their map may not be fully initialised. Insarmaps' listener runs `myMap.addContourLines()` only if `myMap` exists; if the target iframe's map is not ready yet, the call may do nothing or the layer may not attach correctly. So a frame that was hidden and never "ready" when the message was sent may never show contours.
+
+2. **Contour layer added only after map load in insarmaps**  
+   In insarmaps, contours are added on initial load from the URL via a `setTimeout(..., 1000)` so the map is ready first. When we later send `insarmaps-set-contour`, we call `addContourLines()` immediately. If the map in that iframe was loaded while **hidden** (e.g. it is not the active frame), Mapbox may not have finished layout or style loading for that document. Adding a layer in that state can fail or not render, and there is no retry. So frames that were never the active one when contours were toggled can end up without contours even after receiving the message.
+
+3. **Cross-origin and target of postMessage**  
+   Overlay does `iframe.contentWindow.postMessage(...)`. If the iframe is same-origin (same insarmaps origin), the message is delivered. If there is any cross-origin or security setup that blocks or alters messaging, the target iframe might not receive the message or might receive it in a context where `myMap` is not the same instance. That would also prevent contours from being added.
+
+4. **No reload on dataset switch**  
+   We deliberately avoid reloading the selected iframe when switching datasets (to avoid unnecessary data reloads). So the newly visible iframe is whatever state it was left in. If that iframe never successfully applied the contour layer (for the reasons above), it will still show no contours when made visible. The overlay URL and overlay-side logic are correct; the failure is in the target iframe actually applying the contour layer.
+
+5. **Single "fire once" message**  
+   Overlay sends one `insarmaps-set-contour` per contour toggle. If an iframe is not ready at that moment, it never gets a second chance unless the user toggles contour again (or we add retries / re-send when a frame becomes visible, which we do not do today).
+
+**Why background works**: The base map (e.g. `background=satellite`) is part of the initial map style and is applied when the iframe loads. It does not depend on a separate "add layer" call or a delayed init. So when we do reload other iframes (on pan/zoom/scale/background change), they load with the new background and it shows. Contours are a separate layer added later, so they are more sensitive to timing and readiness.
+
+**Summary**: Contours are a **known limitation**: they may not show when switching frames because (a) the non-active iframes may not be ready when the sync message is sent, (b) insarmaps adds the contour layer in a way that can fail when the map was loaded while hidden, and (c) we do not reload or re-send the contour state when the user switches dataset. The overlay URL and postMessage design are correct; the limitation is in reliably applying the contour layer in every iframe at the right time.
 
 ## Caching Behavior
 
@@ -404,7 +462,7 @@ overlay.html/start/0.7480/-77.9687/9.8000?view=desc&minScale=-3&maxScale=3
 | pixelSize | Point size | Pixel slider |
 | background | Map background | Layer selector |
 | opacity | Layer opacity | Opacity slider |
-| contour | Contour display | Contour toggle |
+| contour | Contour display (`contour=true` / `contour=false` in URL) | Contour toggle |
 
 ## NOT Synchronized (by design)
 
