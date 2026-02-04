@@ -457,6 +457,7 @@ overlay.html/start/0.7480/-77.9687/9.8000?view=desc&minScale=-3&maxScale=3
 | zoom | Map zoom level | Map position |
 | minScale | Color scale minimum | Scale slider |
 | maxScale | Color scale maximum | Scale slider |
+| colorscale | Color scale type (e.g. `velocity`, `displacement`); only in URL when set (no default – insarmaps uses its own default otherwise) | Scale type toggle in insarmaps |
 | startDate | Time range start | Time slider |
 | endDate | Time range end | Time slider |
 | pixelSize | Point size | Pixel slider |
