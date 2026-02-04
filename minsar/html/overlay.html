@@ -1334,8 +1334,15 @@
                     timeControlsPanel.classList.remove('visible');
                     containerEl.classList.remove('time-controls-open');
                     
-                    // Clear periods to free memory
-                    clearPeriods();
+                    // Keep period panels in DOM (hidden) so re-opening does not reload all iframes
+                    periodPanels.forEach((panel) => {
+                        if (panel) {
+                            panel.style.visibility = 'hidden';
+                            panel.style.zIndex = '-1';
+                            panel.style.pointerEvents = 'none';
+                            panel.classList.remove('active');
+                        }
+                    });
                     
                     // Show original panel for active dataset
                     document.querySelectorAll('.panel').forEach(panel => {
@@ -1351,6 +1358,14 @@
                         selectedPanel.style.zIndex = '10';
                         selectedPanel.style.pointerEvents = 'auto';
                         selectedPanel.classList.add('active');
+                    }
+                    
+                    // Restore full date range in state and URL so we're back to dataset view
+                    if (dataFirstDate && dataLastDate) {
+                        currentMapParams.startDate = formatDate(dataFirstDate);
+                        currentMapParams.endDate = formatDate(dataLastDate);
+                        lastSyncedKey = getSyncKey(currentMapParams);
+                        updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
                     }
                     
                     updatePeriodHeader();
