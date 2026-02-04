@@ -2,7 +2,144 @@
 
 ## Overview
 
-`overlay.html` is a multi-dataset InSAR map viewer that embeds multiple insarmaps instances (each showing a different dataset like Descending, Ascending, Vertical, Horizontal) in iframes and synchronizes their view state (position, zoom, display parameters).
+`overlay.html` is a multi-dataset InSAR map viewer that embeds multiple insarmaps instances (each showing a different dataset like Descending, Ascending, Vertical, Horizontal) in iframes and synchronizes their view state (position, zoom, display parameters). It also supports **Time Controls** mode: one iframe per time period for the active dataset (step-through or play).
+
+---
+
+## 1. What Triggers the Loading of Data
+
+“Loading” here means setting `iframe.src` (so the browser loads the insarmaps page) or creating new iframes and setting their `src`.
+
+### 1.1 Page load (initial)
+
+1. **Fetch `insarmaps.log`** – list of insarmaps URLs (one per dataset).
+2. **Parse and sort** – URLs sorted by dataset type (desc → asc → horz → vert).
+3. **Initial params** – `currentMapParams` from overlay URL (hash or query) or from the first insarmaps URL.
+4. **One panel per URL** – each gets a `.panel` and an **iframe**.
+5. **Initial iframe `src`** – each iframe gets `src` via `buildInsarmapsUrl(baseUrl, dataset, lat, lon, zoom, currentMapParams)`. So **all dataset iframes load once** with the same map params. Only one panel is visible; others use `visibility: hidden` but stay in the DOM, so their iframes still load.
+6. **Loading overlay** – hidden on first `postMessage` type `insarmaps-url-update`, or after 15s timeout.
+
+So the only trigger for **initial** load is **page load**: every dataset iframe gets one URL and loads once.
+
+### 1.2 postMessage from the active iframe (sync)
+
+When the user changes something **inside** the visible insarmaps iframe (pan, zoom, time slider, color scale, background, contour, etc.), insarmaps sends:
+
+`window.parent.postMessage({ type: 'insarmaps-url-update', url: '/start/...?params...' }, '*');`
+
+Overlay’s handler (debounced 1500 ms):
+
+1. Parses the URL and builds a **sync key** (lat, lon, zoom, minScale, maxScale, startDate, endDate, pixelSize, background, opacity, contour).
+2. If key equals `lastSyncedKey`, does nothing.
+3. Updates `currentMapParams` and overlay hash URL.
+4. Finds the **sender** iframe index.
+5. For **every other** dataset iframe, builds a new URL with `currentMapParams` and sets **`iframe.src = newUrl`** (reload).
+
+So: **Trigger** = any insarmaps URL change in the active iframe. **Effect** = all iframes **except the active one** are reloaded with the new params. The active iframe is **not** reloaded.
+
+### 1.3 Dataset change (dropdown)
+
+- **Time Controls closed:** `selectDataset(index)` only switches visibility (hide all panels, show `panel${index}`, update overlay URL). **No `iframe.src` is set.** The newly visible iframe is not reloaded.
+- **Time Controls open:** `selectDataset(index)` calls `handleDatasetChangeInTimeControls(index)` → `loadPeriodsForDataset(newDatasetIdx)`: **clears** period panels and **creates new** period panels (and iframes) for the new dataset. So “loading” here is **new period iframes**, not the main dataset iframes.
+
+### 1.4 Time Controls: open and change period
+
+- **Open Time Controls:** `openTimeControls()` → `loadPeriodsForDataset(activeDatasetIdx)`. Creates one panel per period, each with its own iframe (URL includes that period’s startDate/endDate). So **opening** triggers **loading of N period iframes**.
+- **Change period (◀/▶/Play):** `showPeriod(periodIdx)` only changes which period panel is visible. **No iframe reload.**
+- **Change period length or Sequential:** Calls `loadPeriodsForDataset(activeDatasetIdx)` again → period panels cleared and recreated → **all period iframes loaded again**.
+
+### 1.5 Summary: when is an iframe loaded?
+
+| Trigger | What loads | Which iframes |
+|--------|------------|----------------|
+| Page load | Initial URL per dataset | All dataset iframes |
+| postMessage (any param in active iframe) | New URL on others | All dataset iframes **except** sender |
+| Dataset dropdown (Time Controls off) | Nothing | None |
+| Dataset dropdown (Time Controls on) | New period panels | New period iframes for selected dataset |
+| Open Time Controls | Period panels | All period iframes for current dataset |
+| Change period (◀/▶/Play) | Nothing | None |
+| Change period length / Sequential | Rebuild periods | Period iframes recreated and loaded |
+
+---
+
+## 2. How Data Are Cached
+
+### 2.1 No application-level cache of “data”
+
+Overlay does **not** cache tiles or API responses. It only keeps: **`currentMapParams`**, **`iframeSynced`** (per-iframe sync key), **`lastSyncedKey`**. So “cache” here means “we don’t reload the sender iframe on sync” and “we don’t reload period iframes when stepping.”
+
+### 2.2 Cache-busting when building URLs
+
+`buildInsarmapsUrl()` adds `_t={timestamp}_{urlCounter}_{uniqueId?}`. So every URL we set is unique; the browser does not serve a cached page for that iframe. Period iframes get `uniqueId` (e.g. `period_${periodIdx}`).
+
+### 2.3 What is effectively “cached” (not reloaded)
+
+- **Sender iframe on sync** – we never set the active iframe’s `src` again.
+- **Period panels** – once created, their `src` is not updated by postMessage; we only **show** another panel when changing period.
+
+---
+
+## 3. What Happens When Switching Iframes (Dataset Dropdown)
+
+### 3.1 Time Controls closed
+
+1. `frameSelect` change → `selectDataset(selectedIndex)`.
+2. All panels hidden; selected panel shown (visibility, z-index, pointer-events).
+3. `updateOverlayUrl(...)` updates overlay hash.
+4. **No iframe reload.** The newly visible iframe was last updated at init or by a previous sync.
+
+### 3.2 Time Controls open
+
+1. `selectDataset(index)` sees `timeControlsActive` and index change → `handleDatasetChangeInTimeControls(index)` and return.
+2. `loadPeriodsForDataset(newDatasetIdx)`: **clearPeriods()** (remove period panels from DOM), then create new period panels/iframes for the new dataset.
+3. `showPeriod(0)`, `updateControls()`.
+
+So “switching iframe” (dataset) with Time Controls on = **replace** the set of period panels with that for the new dataset. Main dataset panels are unchanged.
+
+---
+
+## 4. What Happens When a New startDate/endDate Is Selected
+
+### 4.1 Via time slider (inside insarmaps)
+
+1. User drags time slider in active iframe → insarmaps sends postMessage with new URL (new startDate/endDate).
+2. Overlay (after debounce): update `currentMapParams`, overlay URL; for every **other** dataset iframe set **`iframe.src = newUrl`**.
+3. Active iframe is **not** reloaded; all other dataset iframes **reload** with new dates.
+
+### 4.2 Via Time Controls (overlay)
+
+1. Opening Time Controls creates one iframe **per period** (each URL has that period’s startDate/endDate).
+2. ◀/▶/Play → `showPeriod(periodIdx)`: only the selected period panel is shown; `currentMapParams.startDate`/`endDate` and overlay URL updated. **No iframe reload.**
+
+So: **Time slider** = one iframe per dataset; change dates → reload other dataset iframes. **Time Controls** = one iframe per period; change period → show that period’s iframe (no reload).
+
+---
+
+## 5. Same Behavior for Different Datasets vs Different Time Periods
+
+- **Different datasets:** One iframe per dataset. Switching dataset = show that panel (no reload). When one iframe sends postMessage, we reload **all other dataset iframes** so they share the same params (including startDate/endDate).
+- **Different time periods (Time Controls):** One iframe per period for the **active** dataset. Switching period = show that period panel (no reload).
+
+So both “dataset” and “period” are “which iframe to show.” Difference: dataset iframes are created at **page load** and **synced** on postMessage; period iframes are created when **Time Controls open** and are **not** updated by postMessage (sync only touches `iframeDatasets` indices).
+
+---
+
+## 6. Difference in Actions Between User Options
+
+All changes **inside** the active insarmaps iframe (color limits, background, contour, time slider) use the **same** path: postMessage → debounce → update `currentMapParams` → reload **all other dataset iframes**. The **active** iframe is never reloaded.
+
+| User action | Where | What overlay does | Iframes reloaded? |
+|-------------|--------|-------------------|--------------------|
+| **Color limits** (minScale/maxScale) | Insarmaps | postMessage → set `src` on other iframes | All except active |
+| **Background** | Insarmaps | Same | All except active |
+| **Contour** | Insarmaps | Same | All except active |
+| **Dataset** (dropdown) | Overlay | Show/hide panel; if Time Controls on, load periods for new dataset | None (or new period iframes only) |
+| **Period** via **time slider** | Insarmaps | postMessage → set `src` on other iframes | All except active |
+| **Period** via **Time Controls** (◀/▶/Play) | Overlay | `showPeriod(idx)` – change visible period panel | None |
+
+So: **Color limits, background, contour, time slider** → same mechanism (postMessage → reload all other dataset iframes). **Dataset dropdown** → no reload of dataset iframes; only visibility (and period panels when Time Controls on). **Period via Time Controls** → no reload; only which period panel is visible.
+
+---
 
 ## Data Flow Diagram
 
@@ -43,12 +180,8 @@
 │  └──────────────────────────────────────────────────────────────────────┘  │
 │                                                                             │
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                  Dropdown Handler (frameSelect.change)                │  │
-│  │                                                                       │  │
-│  │  1. Switch active panel (CSS display:none/block)                      │  │
-│  │  2. Update currentViewCode and currentDataset                         │  │
-│  │  3. Update overlay.html URL                                           │  │
-│  │  4. Reload SELECTED iframe with currentMapParams                      │  │
+│  │  Dropdown (frameSelect.change): show/hide panel only (no iframe.src). │  │
+│  │  If Time Controls open: loadPeriodsForDataset(newIdx) → new panels.   │  │
 │  └──────────────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -66,17 +199,18 @@
 7. Create iframe for each URL entry
 8. Set initial active iframe based on URL params
 9. Show dropdown selector (only if multiple datasets)
-10. Hide loading overlay when first iframe loads
+10. Hide loading overlay on first postMessage (insarmaps-url-update) or after 15s timeout
 ```
 
-### 2. What Triggers Data Loading
+### 2. What Triggers Data Loading (summary)
 
 | Trigger | What Happens | iframes Affected |
 |---------|--------------|------------------|
 | **Page Load** | All iframes get `src` set with initial params | ALL |
-| **Dropdown Change** | Selected iframe reloaded with current params | SELECTED only |
-| **postMessage (map pan/zoom)** | Other iframes reloaded after debounce | ALL EXCEPT sender |
-| **postMessage (slider change)** | Other iframes reloaded after debounce | ALL EXCEPT sender |
+| **Dropdown Change** | No reload; only show/hide panel. If Time Controls on: new period iframes for new dataset | None / new period only |
+| **postMessage (any param in active iframe)** | Other iframes get new `src` after debounce | ALL EXCEPT sender |
+
+See **§ 1. What Triggers the Loading of Data** and **§ 6. Difference in Actions Between User Options** for full detail.
 
 ## Key Functions
 
@@ -129,23 +263,18 @@ if (syncKey === lastSyncedKey) return; // Skip if no actual change
 User selects "Ascending" in dropdown
     │
     ▼
-1. Hide current panel (CSS display:none)
-2. Show selected panel (CSS display:block)
-3. Update currentViewCode = 'asc'
-4. Update currentDataset = 'S1_asc_...'
-5. Update overlay.html hash URL
-6. Build new insarmaps URL with currentMapParams
-7. Set lastSyncTime = Date.now() (cooldown)
-8. Set iframe.src = newUrl  ← IFRAME RELOADS
+1. Hide all panels (visibility, z-index, pointer-events)
+2. Show selected panel (panel${index})
+3. Update currentViewCode, currentDataset
+4. Update overlay.html hash URL
+5. updatePeriodHeader()
     │
     ▼
-iframe loads, insarmaps renders, sends postMessage
-    │
-    ▼
-postMessage ignored (within cooldown period)
+No iframe.src is set. The newly visible iframe is NOT reloaded.
+(If Time Controls open: handleDatasetChangeInTimeControls → loadPeriodsForDataset → new period iframes.)
 ```
 
-**Key point**: Only the SELECTED iframe is reloaded. Other iframes are not touched.
+**Key point**: No dataset iframe is reloaded when switching via dropdown. Only visibility changes.
 
 ### Time Slider Change (postMessage)
 ```
@@ -182,13 +311,8 @@ overlay.html receives message
 
 | Action | Reloaded iframes | Uses currentMapParams? |
 |--------|------------------|------------------------|
-| Dropdown switch | Selected only | YES |
-| Pan/zoom | All except sender | YES |
-| Time slider | All except sender | YES |
-| Color scale | All except sender | YES |
-| Pixel size | All except sender | YES |
-| Background | All except sender | YES |
-| Opacity | All except sender | YES |
+| Dropdown switch | **None** (show/hide only) | N/A |
+| Pan/zoom / time slider / color scale / background / contour / opacity | All except sender | YES |
 
 ## Known Issues & Analysis
 
@@ -227,9 +351,11 @@ This was previously traced to `pointLat`, `pointLon`, `refPointLat`, `refPointLo
 
 **Symptom**: Nothing happens for several seconds on first load.
 
-**Solution implemented**: Added a loading overlay with spinner that shows "Loading InSAR Data..." until the first iframe fires its `load` event.
+**Solution implemented**: Added a loading overlay with spinner that shows "Loading InSAR Data..." until the first `postMessage` (insarmaps-url-update) is received from any iframe, or after a 15s fallback timeout.
 
 ## Caching Behavior
+
+See **§ 2. How Data Are Cached** for the full description.
 
 ### Browser Cache
 - The `_t={timestamp}` parameter in iframe URLs forces browser to bypass cache
