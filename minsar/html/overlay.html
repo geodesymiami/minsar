@@ -856,51 +856,47 @@
                         console.log('Contour value detected:', rawContourValue, '-> normalized:', contourValue);
                         
                         const colorscaleValue = params.get('colorscale') || currentMapParams.colorscale;
-                        // Create sync key with all sync-relevant params
+                        // Resolve params from URL with fallback to currentMapParams so contour-only messages
+                        // (insarmaps often omits minScale, startDate, etc.) are detected and don't trigger reloads
+                        const minScale = params.get('minScale') ?? currentMapParams.minScale;
+                        const maxScale = params.get('maxScale') ?? currentMapParams.maxScale;
+                        const startDate = params.get('startDate') ?? currentMapParams.startDate;
+                        const endDate = params.get('endDate') ?? currentMapParams.endDate;
+                        const pixelSize = params.get('pixelSize') ?? currentMapParams.pixelSize;
+                        const background = params.get('background') ?? currentMapParams.background;
+                        const opacity = params.get('opacity') ?? currentMapParams.opacity;
                         const syncKey = JSON.stringify({
                             lat, lon, zoom,
-                            minScale: params.get('minScale'),
-                            maxScale: params.get('maxScale'),
-                            startDate: params.get('startDate'),
-                            endDate: params.get('endDate'),
-                            pixelSize: params.get('pixelSize'),
-                            background: params.get('background'),
-                            opacity: params.get('opacity'),
+                            minScale, maxScale, startDate, endDate,
+                            pixelSize, background, opacity,
                             contour: contourValue,
                             colorscale: colorscaleValue
                         });
                         
                         if (syncKey === lastSyncedKey) return;
                         
-                        // Detect if only contour changed (no reload; we'll tell all iframes to add/remove contours)
+                        // Detect if only contour changed → broadcast contour message only, no reload
                         let onlyContourChanged = false;
                         if (lastSyncedKey) {
                             try {
                                 const prev = JSON.parse(lastSyncedKey);
                                 onlyContourChanged = (
                                     prev.lat === lat && prev.lon === lon && prev.zoom === zoom &&
-                                    prev.minScale === params.get('minScale') && prev.maxScale === params.get('maxScale') &&
-                                    prev.startDate === params.get('startDate') && prev.endDate === params.get('endDate') &&
-                                    prev.pixelSize === params.get('pixelSize') && prev.background === params.get('background') &&
-                                    prev.opacity === params.get('opacity') && prev.colorscale === colorscaleValue &&
+                                    prev.minScale === minScale && prev.maxScale === maxScale &&
+                                    prev.startDate === startDate && prev.endDate === endDate &&
+                                    prev.pixelSize === pixelSize && prev.background === background &&
+                                    prev.opacity === opacity && prev.colorscale === colorscaleValue &&
                                     prev.contour !== contourValue
                                 );
                             } catch (e) {}
                         }
                         lastSyncedKey = syncKey;
                         
-                        // Update current map params
+                        // Update current map params (use resolved values so state is consistent)
                         currentMapParams = {
-                            lat: lat,
-                            lon: lon,
-                            zoom: zoom,
-                            minScale: params.get('minScale'),
-                            maxScale: params.get('maxScale'),
-                            startDate: params.get('startDate'),
-                            endDate: params.get('endDate'),
-                            pixelSize: params.get('pixelSize'),
-                            background: params.get('background'),
-                            opacity: params.get('opacity'),
+                            lat, lon, zoom,
+                            minScale, maxScale, startDate, endDate,
+                            pixelSize, background, opacity,
                             contour: contourValue,
                             colorscale: colorscaleValue
                         };
@@ -1296,6 +1292,9 @@
                     const period = periods[periodIdx];
                     currentMapParams.startDate = period.startDate;
                     currentMapParams.endDate = period.endDate;
+                    
+                    // So contour toggle in this period is detected as "only contour changed" (message only, no reload)
+                    lastSyncedKey = getSyncKey(currentMapParams);
                     
                     updateControls();
                     updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
