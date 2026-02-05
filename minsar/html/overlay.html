@@ -966,9 +966,9 @@
                                 });
                             }
                         } else {
-                            // (2) Other params changed: reload iframes (same rule for period as for dataset – do not reload the sender).
+                            // (2) Other params changed: reload iframes. Never reload the active iframe or the sender.
                             iframeDatasets.forEach((originalDataset, index) => {
-                                if (index === senderIndex) return;
+                                if (index === senderIndex || index === activeDatasetIdx) return;
                                 const newUrl = buildInsarmapsUrl(
                                     baseUrl, originalDataset, lat, lon, zoom, currentMapParams
                                 );
