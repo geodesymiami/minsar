@@ -1351,7 +1351,8 @@
                     updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
                 }
                 
-                // Restore to BASELINE STATE (after first load, before Time Controls)
+                // When closing Time Controls: keep startDate/endDate from the last viewed period
+                // and apply that date range (and all other params) to all dataset iframes and overlay URL.
                 function restoreToBaselineState() {
                     if (movieInterval) {
                         clearInterval(movieInterval);
@@ -1377,15 +1378,24 @@
                         selectedPanel.style.pointerEvents = 'auto';
                         selectedPanel.classList.add('active');
                     }
-                    const stored = datasetDateRanges.get(activeDatasetIdx);
-                    if (stored && stored.firstDate && stored.lastDate) {
-                        currentMapParams.startDate = formatDate(stored.firstDate);
-                        currentMapParams.endDate = formatDate(stored.lastDate);
-                    } else if (dataFirstDate && dataLastDate) {
-                        currentMapParams.startDate = formatDate(dataFirstDate);
-                        currentMapParams.endDate = formatDate(dataLastDate);
-                    }
+                    // Do NOT reset startDate/endDate to full range: keep the period from the last view in TC.
                     lastSyncedKey = getSyncKey(currentMapParams);
+                    // Reload every dataset iframe with current params (including startDate/endDate from last view)
+                    // so all frames and the overlay URL reflect the same date range.
+                    if (currentMapParams.lat && currentMapParams.lon && currentMapParams.zoom) {
+                        iframeDatasets.forEach((dataset, idx) => {
+                            const iframe = document.getElementById(`iframe${idx}`);
+                            if (iframe && dataset) {
+                                iframe.src = buildInsarmapsUrl(
+                                    baseUrl, dataset,
+                                    currentMapParams.lat, currentMapParams.lon, currentMapParams.zoom,
+                                    currentMapParams,
+                                    idx === activeDatasetIdx ? 'baseline' : `frame${idx}`
+                                );
+                                iframeSynced.set(idx, lastSyncedKey);
+                            }
+                        });
+                    }
                     updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
                     updatePeriodHeader();
                 }

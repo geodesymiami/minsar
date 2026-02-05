@@ -47,6 +47,7 @@ So: **Trigger** = any insarmaps URL change in the active iframe. **Effect** = al
 - **Open Time Controls:** `openTimeControls()` → `loadPeriodsForDataset(activeDatasetIdx)`. Creates one panel per period, each with its own iframe (URL includes that period’s startDate/endDate). So **opening** triggers **loading of N period iframes**.
 - **Change period (◀/▶/Play):** `showPeriod(periodIdx)` only changes which period panel is visible. **No iframe reload.**
 - **Change period length or Sequential:** Calls `loadPeriodsForDataset(activeDatasetIdx)` again → period panels cleared and recreated → **all period iframes loaded again**.
+- **Close Time Controls (uncheck):** `restoreToBaselineState()` clears period panels and shows the active dataset panel. **startDate/endDate are not reset**: the last-viewed period’s range (e.g. the 2-year window you had selected in TC) is kept in `currentMapParams`. **All dataset iframes** are reloaded with that same `currentMapParams` (lat, lon, zoom, colorscale, pixelSize, minScale, maxScale, background, opacity, contour, startDate, endDate), and the overlay URL is updated so the parent/URL reflects the same date range.
 
 ### 1.5 Summary: when is an iframe loaded?
 
