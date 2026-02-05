@@ -749,13 +749,8 @@
                     const isTimeControlsActive = (typeof timeControlsActive !== 'undefined' && timeControlsActive);
                     
                     if (isTimeControlsActive && previousIdx !== index) {
-                        // Time controls active and dataset changed - reload periods for new dataset
-                        updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
-                        
-                        // Call handleDatasetChangeInTimeControls if it exists
-                        if (typeof handleDatasetChangeInTimeControls === 'function') {
-                            handleDatasetChangeInTimeControls(index);
-                        }
+                        // Time controls active and dataset changed → restore to BASELINE STATE for the new dataset
+                        restoreToBaselineState();
                         return;
                     }
                     
@@ -904,17 +899,7 @@
                         // Update overlay.html's browser URL
                         updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
                         
-                        // Store the dataset's full date range (firstDate/lastDate from postMessage)
-                        if (event.data.firstDate && event.data.lastDate) {
-                            dataFirstDate = parseDate(event.data.firstDate);
-                            dataLastDate = parseDate(event.data.lastDate);
-                            console.log(`Dataset date range: ${event.data.firstDate} - ${event.data.lastDate}`);
-                        }
-                        
-                        if (typeof timeControlsActive === 'undefined' || !timeControlsActive) {
-                            updatePeriodHeader();
-                        }
-                        
+                        // Identify sender (dataset or period iframe) before using it below
                         let senderIndex = -1;
                         for (let i = 0; i < urlsList.length; i++) {
                             const iframe = document.getElementById(`iframe${i}`);
@@ -931,6 +916,22 @@
                                     senderPeriodIndex = periodIdx;
                                 }
                             });
+                        }
+                        
+                        // Store the dataset's full date range (firstDate/lastDate from postMessage)
+                        if (event.data.firstDate && event.data.lastDate) {
+                            const first = parseDate(event.data.firstDate);
+                            const last = parseDate(event.data.lastDate);
+                            dataFirstDate = first;
+                            dataLastDate = last;
+                            if (senderIndex >= 0) {
+                                datasetDateRanges.set(senderIndex, { firstDate: first, lastDate: last });
+                            }
+                            console.log(`Dataset date range: ${event.data.firstDate} - ${event.data.lastDate}`);
+                        }
+                        
+                        if (typeof timeControlsActive === 'undefined' || !timeControlsActive) {
+                            updatePeriodHeader();
                         }
                         
                         lastSyncTime = Date.now();
@@ -1061,6 +1062,14 @@
                 // Data date range (first and last date of the dataset)
                 let dataFirstDate = null;
                 let dataLastDate = null;
+                // Per-dataset date range so Time Controls uses the correct range when switching datasets
+                const datasetDateRanges = new Map();  // datasetIdx -> { firstDate: Date, lastDate: Date }
+                
+                // ═══ BASELINE STATE ═══
+                // State right after first load of the URL, before Time Controls are selected:
+                // - Time Controls closed (checkbox unchecked, panel hidden, no period panels)
+                // - Only the selected dataset panel visible; URL/state show that dataset's full date range
+                // We restore to this state when: (1) Time Controls are unchecked, (2) user selects a different dataset while TC is open
                 
                 // Get period in days
                 function getPeriodDays() {
@@ -1160,8 +1169,12 @@
                 
                 // Load periods for specified dataset
                 function loadPeriodsForDataset(datasetIdx) {
-                    // Get date range - use current params as the full data range
-                    if (!dataFirstDate || !dataLastDate) {
+                    // Use this dataset's stored date range when available (so switching back to a dataset uses its range)
+                    const stored = datasetDateRanges.get(datasetIdx);
+                    if (stored && stored.firstDate && stored.lastDate) {
+                        dataFirstDate = stored.firstDate;
+                        dataLastDate = stored.lastDate;
+                    } else if (!dataFirstDate || !dataLastDate) {
                         if (currentMapParams.startDate && currentMapParams.endDate) {
                             dataFirstDate = parseDate(currentMapParams.startDate);
                             dataLastDate = parseDate(currentMapParams.endDate);
@@ -1300,6 +1313,45 @@
                     updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
                 }
                 
+                // Restore to BASELINE STATE (after first load, before Time Controls)
+                function restoreToBaselineState() {
+                    if (movieInterval) {
+                        clearInterval(movieInterval);
+                        movieInterval = null;
+                        btnPlay.textContent = '▶ Play';
+                        btnPlay.classList.remove('playing');
+                    }
+                    timeControlsActive = false;
+                    timeControlsCheckbox.checked = false;
+                    timeControlsPanel.classList.remove('visible');
+                    containerEl.classList.remove('time-controls-open');
+                    clearPeriods();
+                    document.querySelectorAll('.panel').forEach(panel => {
+                        panel.style.visibility = 'hidden';
+                        panel.style.zIndex = '-1';
+                        panel.style.pointerEvents = 'none';
+                        panel.classList.remove('active');
+                    });
+                    const selectedPanel = document.getElementById(`panel${activeDatasetIdx}`);
+                    if (selectedPanel) {
+                        selectedPanel.style.visibility = 'visible';
+                        selectedPanel.style.zIndex = '10';
+                        selectedPanel.style.pointerEvents = 'auto';
+                        selectedPanel.classList.add('active');
+                    }
+                    const stored = datasetDateRanges.get(activeDatasetIdx);
+                    if (stored && stored.firstDate && stored.lastDate) {
+                        currentMapParams.startDate = formatDate(stored.firstDate);
+                        currentMapParams.endDate = formatDate(stored.lastDate);
+                    } else if (dataFirstDate && dataLastDate) {
+                        currentMapParams.startDate = formatDate(dataFirstDate);
+                        currentMapParams.endDate = formatDate(dataLastDate);
+                    }
+                    lastSyncedKey = getSyncKey(currentMapParams);
+                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
+                    updatePeriodHeader();
+                }
+                
                 // Open time controls
                 function openTimeControls() {
                     timeControlsActive = true;
@@ -1314,61 +1366,15 @@
                         }
                     }
                     
-                    // Show first period
+                    // Always open at first period (original state)
+                    currentPeriodIndex = 0;
                     showPeriod(currentPeriodIndex);
                     updateControls();
                 }
                 
-                // Close time controls
+                // Close time controls → restore to BASELINE STATE
                 function closeTimeControls() {
-                    // Stop any playing movie
-                    if (movieInterval) {
-                        clearInterval(movieInterval);
-                        movieInterval = null;
-                        btnPlay.textContent = '▶ Play';
-                        btnPlay.classList.remove('playing');
-                    }
-                    
-                    timeControlsActive = false;
-                    timeControlsCheckbox.checked = false;
-                    timeControlsPanel.classList.remove('visible');
-                    containerEl.classList.remove('time-controls-open');
-                    
-                    // Keep period panels in DOM (hidden) so re-opening does not reload all iframes
-                    periodPanels.forEach((panel) => {
-                        if (panel) {
-                            panel.style.visibility = 'hidden';
-                            panel.style.zIndex = '-1';
-                            panel.style.pointerEvents = 'none';
-                            panel.classList.remove('active');
-                        }
-                    });
-                    
-                    // Show original panel for active dataset
-                    document.querySelectorAll('.panel').forEach(panel => {
-                        panel.style.visibility = 'hidden';
-                        panel.style.zIndex = '-1';
-                        panel.style.pointerEvents = 'none';
-                        panel.classList.remove('active');
-                    });
-                    
-                    const selectedPanel = document.getElementById(`panel${activeDatasetIdx}`);
-                    if (selectedPanel) {
-                        selectedPanel.style.visibility = 'visible';
-                        selectedPanel.style.zIndex = '10';
-                        selectedPanel.style.pointerEvents = 'auto';
-                        selectedPanel.classList.add('active');
-                    }
-                    
-                    // Restore full date range in state and URL so we're back to dataset view
-                    if (dataFirstDate && dataLastDate) {
-                        currentMapParams.startDate = formatDate(dataFirstDate);
-                        currentMapParams.endDate = formatDate(dataLastDate);
-                        lastSyncedKey = getSyncKey(currentMapParams);
-                        updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
-                    }
-                    
-                    updatePeriodHeader();
+                    restoreToBaselineState();
                 }
                 
                 // Handle dataset change while time controls are open
