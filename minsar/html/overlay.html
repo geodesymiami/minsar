@@ -286,7 +286,7 @@
         </div>
         <!-- Time controls panel - shown when checkbox checked -->
         <div class="time-controls-panel" id="time-controls-panel">
-            <div class="time-control-group">
+            <div class="time-control-group" id="period-input-group">
                 <label for="period-value">Period:</label>
                 <input type="number" id="period-value" value="2" min="0.1" step="0.1">
                 <span class="unit">years</span>
@@ -404,8 +404,32 @@
                 contour: params.get('contour'),
                 colorscale: params.get('colorscale'),
                 refPointLat: params.get('refPointLat'),
-                refPointLon: params.get('refPointLon')
+                refPointLon: params.get('refPointLon'),
+                pointLat: params.get('pointLat'),
+                pointLon: params.get('pointLon'),
+                timeControls: params.get('timeControls'),
+                periods: params.get('periods')
             };
+        }
+
+        // Periods URL format: periods=20140902:20151003,20151003:20163110,20163110:20251231
+        // (start:end,start:end,...) - comma separates periods, : separates start from end within each
+        // Also accepts @ as separator for backwards compatibility
+        function serializePeriods(periodsArray) {
+            if (!periodsArray || periodsArray.length === 0) return null;
+            return periodsArray.map(p => `${p.startDate}:${p.endDate}`).join(',');
+        }
+        function parsePeriodsFromUrl(periodsStr) {
+            if (!periodsStr || typeof periodsStr !== 'string') return null;
+            const parts = periodsStr.trim().split(/[,@]/).filter(Boolean);
+            const result = [];
+            for (const part of parts) {
+                const [start, end] = part.split(':').map(s => (s || '').trim());
+                if (start && end && start.length === 8 && end.length === 8) {
+                    result.push({ startDate: start, endDate: end });
+                }
+            }
+            return result.length > 0 ? result : null;
         }
 
         // Normalize contour to "true"/"false" for URL (insarmaps accepts true/false/on/1 for enabled)
@@ -419,7 +443,8 @@
 
         // Update overlay.html's browser URL with current state
         // Uses hash-based URL format for shareability: overlay.html#/start/lat/lon/zoom?params
-        function updateOverlayUrl(viewCodeOrDataset, mapParams, currentDataset) {
+        // Optional: timeControlsActive (bool), periodsArray (array of {startDate,endDate})
+        function updateOverlayUrl(viewCodeOrDataset, mapParams, currentDataset, timeControlsActive, periodsArray) {
             const params = new URLSearchParams();
             
             // Choose which format to use based on configuration
@@ -441,6 +466,12 @@
             if (mapParams.colorscale) params.set('colorscale', mapParams.colorscale);
             if (mapParams.refPointLat) params.set('refPointLat', mapParams.refPointLat);
             if (mapParams.refPointLon) params.set('refPointLon', mapParams.refPointLon);
+            if (mapParams.pointLat) params.set('pointLat', mapParams.pointLat);
+            if (mapParams.pointLon) params.set('pointLon', mapParams.pointLon);
+            if (timeControlsActive && periodsArray && periodsArray.length > 0) {
+                params.set('timeControls', 'true');
+                params.set('periods', serializePeriods(periodsArray));
+            }
             
             // Use hash-based URL format (shareable - browser requests just overlay.html)
             let hashUrl;
@@ -591,6 +622,17 @@
                 // Get initial params from overlay.html URL
                 const initialParams = getOverlayUrlParams();
                 
+                // When URL has timeControls=true and periods, startDate/endDate come from first period
+                let initialStartDate = initialParams.startDate;
+                let initialEndDate = initialParams.endDate;
+                if (initialParams.timeControls === 'true') {
+                    const urlPeriods = parsePeriodsFromUrl(initialParams.periods);
+                    if (urlPeriods && urlPeriods.length > 0) {
+                        initialStartDate = urlPeriods[0].startDate;
+                        initialEndDate = urlPeriods[0].endDate;
+                    }
+                }
+                
                 // Initialize current map params from overlay URL or first insarmaps URL
                 const firstUrlCoords = parseInsarmapsUrl(urls[0]);
                 currentMapParams = {
@@ -599,8 +641,8 @@
                     zoom: initialParams.zoom || (firstUrlCoords ? firstUrlCoords.zoom : null),
                     minScale: initialParams.minScale,
                     maxScale: initialParams.maxScale,
-                    startDate: initialParams.startDate,
-                    endDate: initialParams.endDate,
+                    startDate: initialStartDate,
+                    endDate: initialEndDate,
                     pixelSize: initialParams.pixelSize,
                     background: initialParams.background,
                     opacity: initialParams.opacity,
@@ -790,12 +832,17 @@
                         } catch (e) {}
                     }
                     
-                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
+                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, false);
                     updatePeriodHeader();
                 }
                 
-                // Update overlay URL with initial state
-                updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
+                // Update overlay URL with initial state. Preserve timeControls and periods from URL when present
+                // (avoids wiping shared links; auto-open will use them)
+                const currentUrl = getOverlayUrlParams();
+                const urlHasTC = currentUrl.timeControls === 'true';
+                const urlPeriods = parsePeriodsFromUrl(currentUrl.periods);
+                const preserveTC = urlHasTC && urlPeriods && urlPeriods.length > 0;
+                updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, preserveTC, preserveTC ? urlPeriods : undefined);
                 
                 // ===== IFRAME SYNCHRONIZATION =====
                 let syncTimeout = null;
@@ -912,7 +959,8 @@
                         };
                         
                         // Update overlay.html's browser URL
-                        updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
+                        const inTC = (typeof timeControlsActive !== 'undefined' && timeControlsActive);
+                        updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, inTC, inTC && typeof periods !== 'undefined' ? periods : undefined);
                         
                         // Identify sender (dataset or period iframe) before using it below
                         let senderIndex = -1;
@@ -933,10 +981,12 @@
                             });
                         }
                         
-                        // Store the dataset's full date range (firstDate/lastDate or first_date/last_date from postMessage)
+                        // Store the dataset's full date range (firstDate/lastDate or first_date/last_date from postMessage).
+                        // Only from dataset iframes: period iframes send their period's range, which would corrupt
+                        // the dataset range and cause periods to be recalculated incorrectly.
                         const firstDateVal = event.data.firstDate || event.data.first_date;
                         const lastDateVal = event.data.lastDate || event.data.last_date;
-                        if (firstDateVal && lastDateVal) {
+                        if (firstDateVal && lastDateVal && senderPeriodIndex < 0) {
                             const first = parseDate(firstDateVal);
                             const last = parseDate(lastDateVal);
                             if (first && last) {
@@ -1194,7 +1244,8 @@
                 }
                 
                 // Load periods for specified dataset
-                function loadPeriodsForDataset(datasetIdx) {
+                // forceUsePeriodInput: when true (e.g. user changed Period input), use calculatePeriods and ignore URL periods
+                function loadPeriodsForDataset(datasetIdx, forceUsePeriodInput) {
                     // Use this dataset's stored date range when available (so switching back to a dataset uses its range)
                     const stored = datasetDateRanges.get(datasetIdx);
                     if (stored && stored.firstDate && stored.lastDate) {
@@ -1231,18 +1282,29 @@
                             }
                         } catch (e) {}
                     }
-                    if (!dataFirstDate || !dataLastDate) {
-                        alert('Could not determine date range. Please interact with the map first to load date information.');
-                        return false;
-                    }
-                    // Cache resolved range for this dataset so switching back works
-                    datasetDateRanges.set(datasetIdx, { firstDate: dataFirstDate, lastDate: dataLastDate });
-                    
                     // Clear existing periods first
                     clearPeriods();
                     
-                    // Calculate periods
-                    periods = calculatePeriods();
+                    // Use URL periods only when not forcing period input (e.g. loaded from shared link)
+                    const urlPeriods = forceUsePeriodInput ? null : parsePeriodsFromUrl(getOverlayUrlParams().periods);
+                    if (urlPeriods && urlPeriods.length > 0) {
+                        // Use URL periods; derive date range from first/last period
+                        periods = urlPeriods;
+                        dataFirstDate = parseDate(periods[0].startDate);
+                        dataLastDate = parseDate(periods[periods.length - 1].endDate);
+                        datasetDateRanges.set(datasetIdx, { firstDate: dataFirstDate, lastDate: dataLastDate });
+                        const periodInputGroup = document.getElementById('period-input-group');
+                        if (periodInputGroup) periodInputGroup.style.display = 'none';
+                    } else {
+                        if (!dataFirstDate || !dataLastDate) {
+                            alert('Could not determine date range. Please interact with the map first to load date information.');
+                            return false;
+                        }
+                        datasetDateRanges.set(datasetIdx, { firstDate: dataFirstDate, lastDate: dataLastDate });
+                        const periodInputGroup = document.getElementById('period-input-group');
+                        if (periodInputGroup) periodInputGroup.style.display = '';
+                        periods = calculatePeriods();
+                    }
                     if (periods.length === 0) {
                         alert('No periods to display.');
                         return false;
@@ -1367,7 +1429,7 @@
                     lastSyncedKey = getSyncKey(currentMapParams);
                     
                     updateControls();
-                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
+                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, true, periods);
                 }
                 
                 // When closing Time Controls: keep startDate/endDate from the last viewed period
@@ -1415,7 +1477,7 @@
                             }
                         });
                     }
-                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset);
+                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, false);
                     updatePeriodHeader();
                 }
                 
@@ -1512,7 +1574,7 @@
                 
                 periodInput.addEventListener('change', () => {
                     if (timeControlsActive) {
-                        loadPeriodsForDataset(activeDatasetIdx);
+                        loadPeriodsForDataset(activeDatasetIdx, true);  // Force use period input, ignore URL
                         showPeriod(0);
                         updateControls();
                     }
@@ -1520,6 +1582,17 @@
                 
                 // Initialize
                 updateMemoryDisplay();
+                // Auto-open Time Controls if URL has timeControls=true and periods.
+                // All period iframes are created with src set and load in background; first period is shown.
+                // Delay allows initial map load; forward/backward arrows work without reloading.
+                if (initialParams.timeControls === 'true' && parsePeriodsFromUrl(initialParams.periods)) {
+                    setTimeout(() => {
+                        if (!timeControlsActive) {
+                            timeControlsCheckbox.checked = true;
+                            openTimeControls();
+                        }
+                    }, 1200);
+                }
                 // ===== END TIME NAVIGATION CONTROLS =====
             })
             .catch(error => {
