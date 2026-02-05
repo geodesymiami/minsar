@@ -918,16 +918,20 @@
                             });
                         }
                         
-                        // Store the dataset's full date range (firstDate/lastDate from postMessage)
-                        if (event.data.firstDate && event.data.lastDate) {
-                            const first = parseDate(event.data.firstDate);
-                            const last = parseDate(event.data.lastDate);
-                            dataFirstDate = first;
-                            dataLastDate = last;
-                            if (senderIndex >= 0) {
-                                datasetDateRanges.set(senderIndex, { firstDate: first, lastDate: last });
+                        // Store the dataset's full date range (firstDate/lastDate or first_date/last_date from postMessage)
+                        const firstDateVal = event.data.firstDate || event.data.first_date;
+                        const lastDateVal = event.data.lastDate || event.data.last_date;
+                        if (firstDateVal && lastDateVal) {
+                            const first = parseDate(firstDateVal);
+                            const last = parseDate(lastDateVal);
+                            if (first && last) {
+                                dataFirstDate = first;
+                                dataLastDate = last;
+                                if (senderIndex >= 0) {
+                                    datasetDateRanges.set(senderIndex, { firstDate: first, lastDate: last });
+                                }
+                                console.log(`Dataset date range: ${firstDateVal} - ${lastDateVal}`);
                             }
-                            console.log(`Dataset date range: ${event.data.firstDate} - ${event.data.lastDate}`);
                         }
                         
                         if (typeof timeControlsActive === 'undefined' || !timeControlsActive) {
@@ -1174,15 +1178,43 @@
                     if (stored && stored.firstDate && stored.lastDate) {
                         dataFirstDate = stored.firstDate;
                         dataLastDate = stored.lastDate;
-                    } else if (!dataFirstDate || !dataLastDate) {
-                        if (currentMapParams.startDate && currentMapParams.endDate) {
-                            dataFirstDate = parseDate(currentMapParams.startDate);
-                            dataLastDate = parseDate(currentMapParams.endDate);
-                        } else {
-                            alert('Could not determine date range. Please interact with the map first to load date information.');
-                            return false;
+                    } else if (dataFirstDate && dataLastDate) {
+                        // Global date range from any prior postMessage (e.g. another dataset with same AOI)
+                        // already set; no action needed
+                    } else if (currentMapParams.startDate && currentMapParams.endDate) {
+                        dataFirstDate = parseDate(currentMapParams.startDate);
+                        dataLastDate = parseDate(currentMapParams.endDate);
+                    } else {
+                        // Fallback: use date range from any other dataset (same AOI often shares range)
+                        for (const [, r] of datasetDateRanges) {
+                            if (r && r.firstDate && r.lastDate) {
+                                dataFirstDate = r.firstDate;
+                                dataLastDate = r.lastDate;
+                                break;
+                            }
                         }
                     }
+                    if (!dataFirstDate || !dataLastDate) {
+                        // Last resort: try parsing startDate/endDate from the raw URL in urlsList
+                        try {
+                            const url = urlsList[datasetIdx];
+                            if (url) {
+                                const urlObj = new URL(url);
+                                const start = urlObj.searchParams.get('startDate');
+                                const end = urlObj.searchParams.get('endDate');
+                                if (start && end) {
+                                    dataFirstDate = parseDate(start);
+                                    dataLastDate = parseDate(end);
+                                }
+                            }
+                        } catch (e) {}
+                    }
+                    if (!dataFirstDate || !dataLastDate) {
+                        alert('Could not determine date range. Please interact with the map first to load date information.');
+                        return false;
+                    }
+                    // Cache resolved range for this dataset so switching back works
+                    datasetDateRanges.set(datasetIdx, { firstDate: dataFirstDate, lastDate: dataLastDate });
                     
                     // Clear existing periods first
                     clearPeriods();
@@ -1357,6 +1389,7 @@
                     timeControlsActive = true;
                     timeControlsPanel.classList.add('visible');
                     containerEl.classList.add('time-controls-open');
+                    periodInput.value = 2;  // Always reset period to 2 years when opening
                     
                     // Load periods for current dataset if not already loaded
                     if (loadedDatasetIdx !== activeDatasetIdx || periodPanels.size === 0) {
