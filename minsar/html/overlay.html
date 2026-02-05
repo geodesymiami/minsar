@@ -56,6 +56,13 @@
             outline: none;
             border-color: #4a90e2;
         }
+        .time-controls-column {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 4px;
+            margin-left: auto;
+        }
         .time-controls-toggle {
             display: flex;
             align-items: center;
@@ -72,21 +79,16 @@
             color: #333;
             cursor: pointer;
         }
-        /* Time controls panel - hidden by default */
+        /* Time controls inline - same row as dropdown, no box */
         .time-controls-panel {
             display: none;
-            width: 100%;
-            margin-top: 10px;
-            padding: 10px;
-            background-color: #f8f9fa;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            flex-wrap: wrap;
             align-items: center;
             gap: 15px;
+            flex-wrap: wrap;
         }
         .time-controls-panel.visible {
             display: flex;
+            margin-left: auto;
         }
         .time-control-group {
             display: flex;
@@ -115,8 +117,8 @@
             cursor: pointer;
         }
         .nav-btn {
-            padding: 6px 12px;
-            font-size: 16px;
+            padding: 4px 8px;
+            font-size: 12px;
             border: 1px solid #ddd;
             border-radius: 4px;
             background-color: #f8f8f8;
@@ -138,8 +140,8 @@
             text-align: center;
         }
         .play-btn {
-            padding: 6px 14px;
-            font-size: 13px;
+            padding: 4px 8px;
+            font-size: 11px;
             font-weight: bold;
             border: 1px solid #27ae60;
             border-radius: 4px;
@@ -161,15 +163,16 @@
             background-color: #fff3e0;
             border-radius: 4px;
             font-family: monospace;
+            display: none;
+        }
+        .memory-display.visible {
+            display: block;
         }
         .container {
             width: 100%;
             height: calc(100vh - 120px);
             max-width: 100%;
             position: relative;
-        }
-        .container.time-controls-open {
-            height: calc(100vh - 200px);
         }
         .panel {
             background-color: white;
@@ -281,12 +284,6 @@
             <label for="frame-select">Dataset:</label>
             <select id="frame-select"></select>
         </div>
-        <div class="time-controls-toggle">
-            <input type="checkbox" id="time-controls-checkbox">
-            <label for="time-controls-checkbox">Time Controls</label>
-        </div>
-        <span class="memory-display" id="memory-display" title="Estimated memory usage">Mem: 0 MB</span>
-        
         <!-- Time controls panel - shown when checkbox checked -->
         <div class="time-controls-panel" id="time-controls-panel">
             <div class="time-control-group">
@@ -295,16 +292,12 @@
                 <span class="unit">years</span>
             </div>
             <div class="time-control-group">
-                <input type="checkbox" id="sequential-mode">
-                <label for="sequential-mode">Sequential</label>
-            </div>
-            <div class="time-control-group">
                 <button class="nav-btn" id="btn-backward" title="Previous period" disabled>◀</button>
                 <span class="period-indicator" id="period-indicator">-/-</span>
                 <button class="nav-btn" id="btn-forward" title="Next period" disabled>▶</button>
             </div>
             <div class="time-control-group">
-                <span id="period-date-range" style="font-size: 12px; color: #555; min-width: 200px;"></span>
+                <span id="period-date-range" style="font-size: 15px; color: #333; min-width: 220px; font-weight: 500;"></span>
             </div>
             <div class="time-control-group">
                 <button class="play-btn" id="btn-play">▶ Play</button>
@@ -314,6 +307,13 @@
                 <input type="number" id="frame-delay" value="2" min="0.5" step="0.5">
                 <span class="unit">secs</span>
             </div>
+        </div>
+        <div class="time-controls-column">
+            <div class="time-controls-toggle">
+                <input type="checkbox" id="time-controls-checkbox">
+                <label for="time-controls-checkbox">Time Controls</label>
+            </div>
+            <span class="memory-display" id="memory-display" title="Estimated memory usage">Mem: 0 MB</span>
         </div>
     </div>
     <div class="container" id="container"></div>
@@ -1044,14 +1044,12 @@
                 const timeControlsCheckbox = document.getElementById('time-controls-checkbox');
                 const timeControlsPanel = document.getElementById('time-controls-panel');
                 const periodInput = document.getElementById('period-value');
-                const sequentialCheckbox = document.getElementById('sequential-mode');
                 const btnBackward = document.getElementById('btn-backward');
                 const btnForward = document.getElementById('btn-forward');
                 const periodIndicator = document.getElementById('period-indicator');
                 const btnPlay = document.getElementById('btn-play');
                 const frameDelayInput = document.getElementById('frame-delay');
                 const memoryDisplay = document.getElementById('memory-display');
-                const containerEl = document.getElementById('container');
                 
                 // Time controls state
                 let timeControlsActive = false;
@@ -1077,9 +1075,6 @@
                 
                 // Get period in days
                 function getPeriodDays() {
-                    if (sequentialCheckbox.checked) {
-                        return 12;  // Sentinel-1 repeat cycle
-                    }
                     const years = parseFloat(periodInput.value) || 2;
                     return Math.round(years * 365.25);
                 }
@@ -1356,7 +1351,7 @@
                     timeControlsActive = false;
                     timeControlsCheckbox.checked = false;
                     timeControlsPanel.classList.remove('visible');
-                    containerEl.classList.remove('time-controls-open');
+                    memoryDisplay.classList.remove('visible');
                     clearPeriods();
                     document.querySelectorAll('.panel').forEach(panel => {
                         panel.style.visibility = 'hidden';
@@ -1387,9 +1382,9 @@
                 // Open time controls
                 function openTimeControls() {
                     timeControlsActive = true;
+                    periodInput.value = 2;
                     timeControlsPanel.classList.add('visible');
-                    containerEl.classList.add('time-controls-open');
-                    periodInput.value = 2;  // Always reset period to 2 years when opening
+                    memoryDisplay.classList.add('visible');
                     
                     // Load periods for current dataset if not already loaded
                     if (loadedDatasetIdx !== activeDatasetIdx || periodPanels.size === 0) {
@@ -1472,16 +1467,6 @@
                 btnBackward.addEventListener('click', () => {
                     if (currentPeriodIndex > 0) {
                         showPeriod(currentPeriodIndex - 1);
-                    }
-                });
-                
-                sequentialCheckbox.addEventListener('change', () => {
-                    periodInput.disabled = sequentialCheckbox.checked;
-                    // Rebuild periods if time controls active
-                    if (timeControlsActive) {
-                        loadPeriodsForDataset(activeDatasetIdx);
-                        showPeriod(0);
-                        updateControls();
                     }
                 });
                 
