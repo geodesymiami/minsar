@@ -402,7 +402,9 @@
                 background: params.get('background'),
                 opacity: params.get('opacity'),
                 contour: params.get('contour'),
-                colorscale: params.get('colorscale')
+                colorscale: params.get('colorscale'),
+                refPointLat: params.get('refPointLat'),
+                refPointLon: params.get('refPointLon')
             };
         }
 
@@ -437,6 +439,8 @@
             const normalizedContour = normalizeContourValue(mapParams.contour);
             if (normalizedContour) params.set('contour', normalizedContour);
             if (mapParams.colorscale) params.set('colorscale', mapParams.colorscale);
+            if (mapParams.refPointLat) params.set('refPointLat', mapParams.refPointLat);
+            if (mapParams.refPointLon) params.set('refPointLon', mapParams.refPointLon);
             
             // Use hash-based URL format (shareable - browser requests just overlay.html)
             let hashUrl;
@@ -465,6 +469,8 @@
             const normalizedContour = normalizeContourValue(mapParams.contour);
             if (normalizedContour) params.set('contour', normalizedContour);
             if (mapParams.colorscale) params.set('colorscale', mapParams.colorscale);
+            if (mapParams.refPointLat) params.set('refPointLat', mapParams.refPointLat);
+            if (mapParams.refPointLon) params.set('refPointLon', mapParams.refPointLon);
             // Unique cache-buster: timestamp + counter + optional uniqueId
             const cacheBuster = uniqueId !== undefined ? `${Date.now()}_${urlCounter++}_${uniqueId}` : `${Date.now()}_${urlCounter++}`;
             params.set('_t', cacheBuster);
@@ -525,7 +531,9 @@
                 background: params.background,
                 opacity: params.opacity,
                 contour: params.contour,
-                colorscale: params.colorscale
+                colorscale: params.colorscale,
+                refPointLat: params.refPointLat,
+                refPointLon: params.refPointLon
             });
         }
 
@@ -597,7 +605,9 @@
                     background: initialParams.background,
                     opacity: initialParams.opacity,
                     contour: initialParams.contour,
-                    colorscale: initialParams.colorscale
+                    colorscale: initialParams.colorscale,
+                    refPointLat: initialParams.refPointLat,
+                    refPointLon: initialParams.refPointLon
                 };
                 
                 // Create panels for each URL
@@ -851,6 +861,8 @@
                         console.log('Contour value detected:', rawContourValue, '-> normalized:', contourValue);
                         
                         const colorscaleValue = params.get('colorscale') || currentMapParams.colorscale;
+                        const refPointLat = params.get('refPointLat') ?? currentMapParams.refPointLat ?? null;
+                        const refPointLon = params.get('refPointLon') ?? currentMapParams.refPointLon ?? null;
                         // Resolve params from URL with fallback to currentMapParams so contour-only messages
                         // (insarmaps often omits minScale, startDate, etc.) are detected and don't trigger reloads
                         const minScale = params.get('minScale') ?? currentMapParams.minScale;
@@ -865,7 +877,8 @@
                             minScale, maxScale, startDate, endDate,
                             pixelSize, background, opacity,
                             contour: contourValue,
-                            colorscale: colorscaleValue
+                            colorscale: colorscaleValue,
+                            refPointLat, refPointLon
                         });
                         
                         if (syncKey === lastSyncedKey) return;
@@ -881,6 +894,7 @@
                                     prev.startDate === startDate && prev.endDate === endDate &&
                                     prev.pixelSize === pixelSize && prev.background === background &&
                                     prev.opacity === opacity && prev.colorscale === colorscaleValue &&
+                                    prev.refPointLat === refPointLat && prev.refPointLon === refPointLon &&
                                     prev.contour !== contourValue
                                 );
                             } catch (e) {}
@@ -893,7 +907,8 @@
                             minScale, maxScale, startDate, endDate,
                             pixelSize, background, opacity,
                             contour: contourValue,
-                            colorscale: colorscaleValue
+                            colorscale: colorscaleValue,
+                            refPointLat, refPointLon
                         };
                         
                         // Update overlay.html's browser URL
@@ -1005,7 +1020,9 @@
                                             background: currentMapParams.background,
                                             opacity: currentMapParams.opacity,
                                             contour: currentMapParams.contour,
-                                            colorscale: currentMapParams.colorscale
+                                            colorscale: currentMapParams.colorscale,
+                                            refPointLat: currentMapParams.refPointLat,
+                                            refPointLon: currentMapParams.refPointLon
                                         };
                                         const iframe = panel.querySelector('iframe');
                                         if (iframe) {
@@ -1268,7 +1285,9 @@
                             background: currentMapParams.background,
                             opacity: currentMapParams.opacity,
                             contour: currentMapParams.contour,
-                            colorscale: currentMapParams.colorscale
+                            colorscale: currentMapParams.colorscale,
+                            refPointLat: currentMapParams.refPointLat,
+                            refPointLon: currentMapParams.refPointLon
                         };
                         
                         const iframeSrc = buildInsarmapsUrl(
