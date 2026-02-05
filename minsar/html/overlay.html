@@ -978,9 +978,11 @@
                                     iframeSynced.set(index, newSyncKey);
                                 }
                             });
-                            // Only reload period iframes when the message is from a dataset iframe (user action).
-                            // When the message is from a period iframe (e.g. its initial load), skip reload to avoid double load.
-                            if (senderPeriodIndex < 0 &&
+                            // Reload period iframes with new params (lat, lon, zoom, minScale, maxScale, pixelSize, background, opacity, colorscale).
+                            // When message is from a period iframe, only reload others after cooldown to avoid double load on TC open.
+                            const periodSyncAllowed = senderPeriodIndex < 0 ||
+                                (Date.now() - (typeof periodPanelsCreatedAt !== 'undefined' ? periodPanelsCreatedAt : 0) > PERIOD_SYNC_COOLDOWN_MS);
+                            if (periodSyncAllowed &&
                                 typeof timeControlsActive !== 'undefined' && timeControlsActive &&
                                 typeof periodPanels !== 'undefined' && periodPanels && periodPanels.size > 0 &&
                                 typeof loadedDatasetIdx !== 'undefined' && loadedDatasetIdx >= 0) {
@@ -1017,8 +1019,9 @@
                                     });
                                 }
                             }
-                            // After reload, iframes need time to load; then send contour so they apply it (URL contour may not apply when loaded hidden).
-                            setTimeout(function() {
+                            // After reload, iframes need time to load; send contour so they apply it (URL contour may not apply when loaded hidden).
+                            // Send twice (2.5s and 6s) so slow-loading iframes and late-drawn data layers still get contours on top.
+                            const sendContourToReloaded = () => {
                                 const msg = { type: 'insarmaps-set-contour', value: contourOn };
                                 iframeDatasets.forEach((_, index) => {
                                     if (index === senderIndex) return;
@@ -1037,7 +1040,9 @@
                                         }
                                     });
                                 }
-                            }, 2500);
+                            };
+                            setTimeout(sendContourToReloaded, 2500);
+                            setTimeout(sendContourToReloaded, 6000);
                         }
                     }, SYNC_DEBOUNCE_MS);
                 });
@@ -1059,6 +1064,8 @@
                 let periods = [];
                 let currentPeriodIndex = 0;
                 let periodPanels = new Map();  // periodIndex -> panel element
+                let periodPanelsCreatedAt = 0;  // Timestamp when period panels were created (avoids reload on initial load)
+                const PERIOD_SYNC_COOLDOWN_MS = 5000;  // Don't reload other periods on message from a period iframe within this window
                 let movieInterval = null;
                 let loadedDatasetIdx = -1;  // Which dataset has periods loaded
                 let totalLoadedIframes = 0;
@@ -1291,6 +1298,7 @@
                     });
                     
                     loadedDatasetIdx = datasetIdx;
+                    periodPanelsCreatedAt = Date.now();
                     updateMemoryDisplay();
                     console.log(`Loaded ${periodPanels.size} period panels`);
                     return true;
