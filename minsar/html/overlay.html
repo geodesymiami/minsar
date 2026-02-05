@@ -978,7 +978,10 @@
                                     iframeSynced.set(index, newSyncKey);
                                 }
                             });
-                            if (typeof timeControlsActive !== 'undefined' && timeControlsActive &&
+                            // Only reload period iframes when the message is from a dataset iframe (user action).
+                            // When the message is from a period iframe (e.g. its initial load), skip reload to avoid double load.
+                            if (senderPeriodIndex < 0 &&
+                                typeof timeControlsActive !== 'undefined' && timeControlsActive &&
                                 typeof periodPanels !== 'undefined' && periodPanels && periodPanels.size > 0 &&
                                 typeof loadedDatasetIdx !== 'undefined' && loadedDatasetIdx >= 0) {
                                 const dataset = iframeDatasets.get(loadedDatasetIdx);
