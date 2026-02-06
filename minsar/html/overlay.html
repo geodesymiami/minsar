@@ -944,6 +944,12 @@
                     if (!event.data) return;
                     // Time series dot click: insarmaps sends { type: 'insarmaps-timeseries-date', date: 'YYYYMMDD' } or date: 'YYYY-MM-DD'
                     if (event.data.type === 'insarmaps-timeseries-date' && event.data.date) {
+                        // Tell insarmaps to keep charts open (click must not minimize timeseries)
+                        try {
+                            if (event.source && event.source.postMessage) {
+                                event.source.postMessage({ type: 'insarmaps-keep-charts-open' }, '*');
+                            }
+                        } catch (err) {}
                         let dateStr = String(event.data.date).trim().replace(/-/g, '');
                         if (dateStr.length === 8) {
                             console.log('[overlay] insarmaps-timeseries-date received', dateStr, 'addPeriodState:', addPeriodState);
@@ -1355,6 +1361,17 @@
                     }
                 }
                 
+                // Send insarmaps-keep-charts-open to the currently visible iframe (mode change must not close timeseries)
+                function sendKeepChartsOpenToVisibleIframe() {
+                    const activePanel = document.querySelector('.panel.active');
+                    const iframe = activePanel && activePanel.querySelector('iframe');
+                    if (iframe && iframe.contentWindow) {
+                        try {
+                            iframe.contentWindow.postMessage({ type: 'insarmaps-keep-charts-open' }, '*');
+                        } catch (err) {}
+                    }
+                }
+                
                 // Show the main dataset panel (no reload). Use when entering period selection so time series stays visible.
                 function showMainDatasetPanel() {
                     document.querySelectorAll('.panel').forEach(panel => {
@@ -1416,8 +1433,9 @@
                     if (addEndDateInput) { addEndDateInput.disabled = true; addEndDateInput.classList.add('greyed'); }
                     updateAddPeriodButton();
                     updateControls();
-                    // Rebuild period panels (e.g. after + reset cleared them) so this period is shown
-                    if (periodPanels.size === 0 && periods.length > 0 && loadPeriodsForDataset(activeDatasetIdx, false, periods)) {
+                    // Rebuild period panels only when NOT in period selection mode.
+                    // When in period selection mode, stay on main panel so timeseries stays open for picking more periods.
+                    if (!periodSelectionModeActive && periodPanels.size === 0 && periods.length > 0 && loadPeriodsForDataset(activeDatasetIdx, false, periods)) {
                         showPeriod(currentPeriodIndex);
                     }
                     return true;
@@ -1748,6 +1766,8 @@
                 // Open time controls
                 function openTimeControls() {
                     timeControlsActive = true;
+                    periodSelectionModeActive = false;  // Never start in period selection mode
+                    addPeriodState = 'idle';
                     periodInput.value = 2;
                     timeControlsPanel.classList.add('visible');
                     memoryDisplay.classList.add('visible');
@@ -1865,6 +1885,11 @@
                 });
                 
                 // Add period (+/−) button: toggle period selection mode, or enter add-period flow when opening.
+                // Stop mousedown/click from propagating so same click is not seen in iframe (avoids closing timeseries).
+                addPeriodBtn.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                });
                 addPeriodBtn.addEventListener('click', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
@@ -1872,23 +1897,41 @@
                     if (periodSelectionModeActive) {
                         periodSelectionModeActive = false;
                         updateAddPeriodButton();
+                        // Tell insarmaps to keep time series open (mode change must not affect it)
+                        sendKeepChartsOpenToVisibleIframe();
+                        // Load period frames in background if needed (do not reload in foreground)
+                        if (periodPanels.size === 0 || periodPanels.size !== periods.length) {
+                            const urlPeriods = parsePeriodsFromUrl(getOverlayUrlParams().periods);
+                            const periodsToLoad = (periods.length > 0) ? periods : ((urlPeriods && urlPeriods.length > 0) ? urlPeriods : null);
+                            if (periodsToLoad && periodsToLoad.length > 0) {
+                                setTimeout(() => {
+                                    if (loadPeriodsForDataset(activeDatasetIdx, false, periodsToLoad)) {
+                                        showPeriod(currentPeriodIndex >= 0 ? currentPeriodIndex : 0);
+                                        updateControls();
+                                    }
+                                }, 0);
+                            } else if (dataFirstDate && dataLastDate) {
+                                setTimeout(() => {
+                                    if (loadPeriodsForDataset(activeDatasetIdx, true)) {
+                                        showPeriod(0);
+                                        updateControls();
+                                    }
+                                }, 0);
+                            } else {
+                                updateControls();
+                            }
+                        } else {
+                            updateControls();
+                        }
                         return;
                     }
                     periodSelectionModeActive = true;
-                    // Reset periods when entering period selection: clear list and URL so next selection replaces
-                    clearPeriods();
                     replaceNextPeriodWithNew = true;
                     updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, true, undefined);
                     updateControls();
-                    // Show main dataset panel (no reload) so time series stays open for picking start/end dates
-                    showMainDatasetPanel();
-                    // Tell insarmaps to keep time series window open (parent click must not minimize it)
-                    const mainIframe = document.getElementById(`iframe${activeDatasetIdx}`);
-                    if (mainIframe && mainIframe.contentWindow) {
-                        try {
-                            mainIframe.contentWindow.postMessage({ type: 'insarmaps-keep-charts-open' }, '*');
-                        } catch (err) {}
-                    }
+                    updateAddPeriodButton();
+                    // Do not switch panels or clear – mode change must have no effect on what is shown
+                    sendKeepChartsOpenToVisibleIframe();
                     if (!pointSelected()) {
                         addPeriodState = 'need_point';
                         if (addStartDateInput) { addStartDateInput.value = ''; addStartDateInput.disabled = true; addStartDateInput.classList.add('greyed'); }
