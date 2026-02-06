@@ -188,6 +188,10 @@ assert_equals "expected" "$result" "Description"
 3. **NESD vs geometry**: 16 steps vs 11 steps based on `topsStack.coregistration`
 4. **MiaplPy directory varies**: `miaplpy/network_<type>/run_files/`
 
+## Backward Compatibility
+
+**Always ask before implementing backward compatibility.** Do not add dual-format parsing, legacy fallbacks, or "also accepts X" behavior without explicit user approval.
+
 ## Configuration Files
 
 - `minsar/defaults/job_defaults.cfg` - Walltime, memory per job
