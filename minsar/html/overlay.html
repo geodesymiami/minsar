@@ -173,6 +173,14 @@
             align-items: center;
             gap: 6px;
         }
+        .add-period-boxes {
+            display: none;
+            align-items: center;
+            gap: 6px;
+        }
+        .add-period-group.expanded .add-period-boxes {
+            display: flex;
+        }
         .add-period-group label {
             font-size: 13px;
             color: #333;
@@ -231,6 +239,13 @@
         }
         .add-period-btn.state-need-end:hover {
             background-color: #f9e79f;
+        }
+        .add-period-btn.mode-close {
+            background-color: #e74c3c;
+            border-color: #c0392b;
+        }
+        .add-period-btn.mode-close:hover {
+            background-color: #c0392b;
         }
         .container {
             width: 100%;
@@ -371,12 +386,14 @@
                 <input type="number" id="frame-delay" value="2" min="0.5" step="0.5">
                 <span class="unit">secs</span>
             </div>
-            <div class="time-control-group add-period-group">
-                <label for="add-start-date">Start:</label>
-                <input type="text" id="add-start-date" class="date-input" placeholder="YYYYMMDD" maxlength="8">
-                <label for="add-end-date">End:</label>
-                <input type="text" id="add-end-date" class="date-input" placeholder="YYYYMMDD" maxlength="8">
-                <button type="button" class="add-period-btn" id="add-period-btn" title="Add current date range as a period">+</button>
+            <div class="time-control-group add-period-group" id="add-period-group">
+                <span class="add-period-boxes">
+                    <label for="add-start-date">Start:</label>
+                    <input type="text" id="add-start-date" class="date-input" placeholder="YYYYMMDD" maxlength="8">
+                    <label for="add-end-date">End:</label>
+                    <input type="text" id="add-end-date" class="date-input" placeholder="YYYYMMDD" maxlength="8">
+                </span>
+                <button type="button" class="add-period-btn" id="add-period-btn" title="Click to select periods">+</button>
             </div>
         </div>
         <div class="time-controls-column">
@@ -971,6 +988,8 @@
                         // Identify sender first. Ignore postMessages from period iframes entirely -
                         // they drive reload/update loops that cause full-page reloads. Period state is
                         // controlled by the overlay; we don't sync from period iframes.
+                        // Exception: accept point selection (pointLat/pointLon or refPointLat/refPointLon) from period iframes
+                        // so the + button title updates correctly when user selects a point in Time Controls mode.
                         let senderPeriodIdx = -1;
                         if (typeof periodPanels !== 'undefined' && periodPanels && periodPanels.size > 0) {
                             periodPanels.forEach((panel, idx) => {
@@ -978,9 +997,35 @@
                                 if (ifr && event.source === ifr.contentWindow) senderPeriodIdx = idx;
                             });
                         }
-                        if (senderPeriodIdx >= 0) return;
-
+                        
                         const newUrlPath = event.data.url;
+                        
+                        // Parse query parameters to check for point selection
+                        const queryStart = newUrlPath.indexOf('?');
+                        const params = queryStart >= 0 ? new URLSearchParams(newUrlPath.substring(queryStart)) : new URLSearchParams();
+                        const hasPointSelection = params.has('pointLat') || params.has('pointLon') || params.has('refPointLat') || params.has('refPointLon');
+                        
+                        // If from period iframe, only process if it has point selection; otherwise ignore
+                        if (senderPeriodIdx >= 0) {
+                            if (hasPointSelection) {
+                                // Extract and update point selection from period iframe
+                                const pointLat = params.get('pointLat') ?? currentMapParams.pointLat ?? null;
+                                const pointLon = params.get('pointLon') ?? currentMapParams.pointLon ?? null;
+                                const refPointLat = params.get('refPointLat') ?? currentMapParams.refPointLat ?? null;
+                                const refPointLon = params.get('refPointLon') ?? currentMapParams.refPointLon ?? null;
+                                if (pointLat != null || pointLon != null || refPointLat != null || refPointLon != null) {
+                                    currentMapParams.pointLat = pointLat;
+                                    currentMapParams.pointLon = pointLon;
+                                    currentMapParams.refPointLat = refPointLat;
+                                    currentMapParams.refPointLon = refPointLon;
+                                    if (typeof updateAddPeriodButton === 'function') updateAddPeriodButton();
+                                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, 
+                                        (typeof timeControlsActive !== 'undefined' && timeControlsActive),
+                                        (typeof timeControlsActive !== 'undefined' && timeControlsActive && typeof periods !== 'undefined' && periods.length > 0) ? periods : undefined);
+                                }
+                            }
+                            return;
+                        }
                         
                         // Parse path: /start/{lat}/{lon}/{zoom}?params...
                         const pathMatch = newUrlPath.match(/^\/start\/([^\/]+)\/([^\/]+)\/([^?]+)/);
@@ -988,13 +1033,8 @@
                         
                         const [, lat, lon, zoom] = pathMatch;
                         
-                        // Parse query parameters
-                        const queryStart = newUrlPath.indexOf('?');
-                        const params = new URLSearchParams(
-                            queryStart >= 0 ? newUrlPath.substring(queryStart) : ''
-                        );
-                        
                         // Get contour value - insarmaps sends contour=on or contour=off; we normalize to true/false
+                        // (params already parsed above)
                         const getContourValue = () => {
                             // First check URL params (primary source)
                             if (params.has('contour')) return params.get('contour');
@@ -1191,6 +1231,7 @@
                 const addStartDateInput = document.getElementById('add-start-date');
                 const addEndDateInput = document.getElementById('add-end-date');
                 const addPeriodBtn = document.getElementById('add-period-btn');
+                const addPeriodGroup = document.getElementById('add-period-group');
                 
                 // Time controls state
                 let timeControlsActive = false;
@@ -1212,6 +1253,8 @@
                 let addPeriodState = 'idle';
                 // True when + has been clicked and we have not yet committed a period (first period replaces; then we append)
                 let replaceNextPeriodWithNew = true;
+                // When false: Start/End boxes hidden, button "+" and "Click to select periods". When true: boxes visible, button "−" and "Close period selection mode".
+                let periodSelectionModeActive = false;
                 
                 // Data date range (first and last date of the dataset)
                 let dataFirstDate = null;
@@ -1284,25 +1327,22 @@
                     return !!fromUrl;
                 }
                 
-                // Update + button appearance, title, and Start/End box grey state
-                // Greyed boxes count as "no date"; title uses addPeriodState and point selection only
+                // Update +/− button appearance, title, and Start/End box visibility/grey state
+                // When periodSelectionModeActive is false: button "+", title "Click to select periods". When true: button "−", title "Close period selection mode". Greyed boxes count as no date.
                 function updateAddPeriodButton() {
                     if (!addPeriodBtn) return;
-                    const hasPoint = pointSelected();
-                    let title;
-                    if (!hasPoint) {
-                        title = 'Select a point to select a period';
-                    } else if (addPeriodState === 'need_end') {
-                        title = 'Select end date';
-                    } else {
-                        title = 'Select start date';
+                    if (addPeriodGroup) addPeriodGroup.classList.toggle('expanded', periodSelectionModeActive);
+                    if (!periodSelectionModeActive) {
+                        addPeriodBtn.textContent = '+';
+                        addPeriodBtn.title = 'Click to select periods';
+                        addPeriodBtn.classList.remove('state-need-point', 'state-need-start', 'state-need-end', 'mode-close');
+                        return;
                     }
-                    addPeriodBtn.title = title;
+                    addPeriodBtn.textContent = '−';
+                    addPeriodBtn.title = 'Close period selection mode';
+                    addPeriodBtn.classList.add('mode-close');
                     addPeriodBtn.classList.remove('state-need-point', 'state-need-start', 'state-need-end');
-                    if (addPeriodState !== 'idle') {
-                        addPeriodBtn.classList.add('state-' + addPeriodState);
-                    }
-                    // Grey out Start/End: need_start or idle = both greyed; need_end = only End greyed
+                    // Grey out Start/End: need_start or idle or need_point = both greyed; need_end = only End greyed. Keep dates in boxes when greyed.
                     if (addStartDateInput) {
                         const startGreyed = addPeriodState === 'need_start' || addPeriodState === 'idle' || addPeriodState === 'need_point';
                         addStartDateInput.disabled = startGreyed;
@@ -1315,15 +1355,8 @@
                     }
                 }
                 
-                // Reset the visible iframe to full date range (first_date to last_date) so user can use slider/dots
-                function resetVisibleIframeToFullRange() {
-                    if (!dataFirstDate || !dataLastDate) return;
-                    const firstStr = formatDate(dataFirstDate);
-                    const lastStr = formatDate(dataLastDate);
-                    currentMapParams.startDate = firstStr;
-                    currentMapParams.endDate = lastStr;
-                    lastSyncedKey = getSyncKey(currentMapParams);
-                    // Show the main dataset panel (not a period panel) so time series with dots is visible
+                // Show the main dataset panel (no reload). Use when entering period selection so time series stays visible.
+                function showMainDatasetPanel() {
                     document.querySelectorAll('.panel').forEach(panel => {
                         panel.style.zIndex = '-1';
                         panel.style.pointerEvents = 'none';
@@ -1336,6 +1369,17 @@
                         mainPanel.style.pointerEvents = 'auto';
                         mainPanel.classList.add('active');
                     }
+                }
+                
+                // Reset the visible iframe to full date range (first_date to last_date) so user can use slider/dots
+                function resetVisibleIframeToFullRange() {
+                    if (!dataFirstDate || !dataLastDate) return;
+                    const firstStr = formatDate(dataFirstDate);
+                    const lastStr = formatDate(dataLastDate);
+                    currentMapParams.startDate = firstStr;
+                    currentMapParams.endDate = lastStr;
+                    lastSyncedKey = getSyncKey(currentMapParams);
+                    showMainDatasetPanel();
                     const iframe = document.getElementById(`iframe${activeDatasetIdx}`);
                     if (iframe && iframeDatasets.get(activeDatasetIdx)) {
                         iframe.src = buildInsarmapsUrl(
@@ -1367,10 +1411,15 @@
                     updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, true, periods);
                     currentPeriodIndex = periods.length - 1;
                     addPeriodState = 'idle';
-                    if (addStartDateInput) { addStartDateInput.value = ''; addStartDateInput.disabled = true; addStartDateInput.classList.add('greyed'); }
-                    if (addEndDateInput) { addEndDateInput.value = ''; addEndDateInput.disabled = true; addEndDateInput.classList.add('greyed'); }
+                    // Keep dates in boxes but grey them out (greyed = count as no start/end for next flow)
+                    if (addStartDateInput) { addStartDateInput.disabled = true; addStartDateInput.classList.add('greyed'); }
+                    if (addEndDateInput) { addEndDateInput.disabled = true; addEndDateInput.classList.add('greyed'); }
                     updateAddPeriodButton();
                     updateControls();
+                    // Rebuild period panels (e.g. after + reset cleared them) so this period is shown
+                    if (periodPanels.size === 0 && periods.length > 0 && loadPeriodsForDataset(activeDatasetIdx, false, periods)) {
+                        showPeriod(currentPeriodIndex);
+                    }
                     return true;
                 }
                 
@@ -1815,19 +1864,41 @@
                     updateAddPeriodButton();
                 });
                 
-                // Add period (+) button: enter add-period flow. Requires point selected; then reset to full range and wait for two dot clicks.
-                addPeriodBtn.addEventListener('click', () => {
+                // Add period (+/−) button: toggle period selection mode, or enter add-period flow when opening.
+                addPeriodBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     if (!timeControlsActive) return;
+                    if (periodSelectionModeActive) {
+                        periodSelectionModeActive = false;
+                        updateAddPeriodButton();
+                        return;
+                    }
+                    periodSelectionModeActive = true;
+                    // Reset periods when entering period selection: clear list and URL so next selection replaces
+                    clearPeriods();
+                    replaceNextPeriodWithNew = true;
+                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, true, undefined);
+                    updateControls();
+                    // Show main dataset panel (no reload) so time series stays open for picking start/end dates
+                    showMainDatasetPanel();
+                    // Tell insarmaps to keep time series window open (parent click must not minimize it)
+                    const mainIframe = document.getElementById(`iframe${activeDatasetIdx}`);
+                    if (mainIframe && mainIframe.contentWindow) {
+                        try {
+                            mainIframe.contentWindow.postMessage({ type: 'insarmaps-keep-charts-open' }, '*');
+                        } catch (err) {}
+                    }
                     if (!pointSelected()) {
                         addPeriodState = 'need_point';
+                        if (addStartDateInput) { addStartDateInput.value = ''; addStartDateInput.disabled = true; addStartDateInput.classList.add('greyed'); }
+                        if (addEndDateInput) { addEndDateInput.value = ''; addEndDateInput.disabled = true; addEndDateInput.classList.add('greyed'); }
                         updateAddPeriodButton();
                         return;
                     }
                     addPeriodState = 'need_start';
-                    replaceNextPeriodWithNew = (periods.length === 0);
                     if (addStartDateInput) { addStartDateInput.value = ''; addStartDateInput.disabled = true; addStartDateInput.classList.add('greyed'); }
                     if (addEndDateInput) { addEndDateInput.value = ''; addEndDateInput.disabled = true; addEndDateInput.classList.add('greyed'); }
-                    resetVisibleIframeToFullRange();
                     updateAddPeriodButton();
                 });
                 
