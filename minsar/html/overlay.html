@@ -1179,8 +1179,10 @@
                             }
                             // Reload period iframes with new params (lat, lon, zoom, minScale, maxScale, pixelSize, background, opacity, colorscale).
                             // When message is from a period iframe, only reload others after cooldown to avoid double load on TC open.
-                            const periodSyncAllowed = senderPeriodIndex < 0 ||
-                                (Date.now() - (typeof periodPanelsCreatedAt !== 'undefined' ? periodPanelsCreatedAt : 0) > PERIOD_SYNC_COOLDOWN_MS);
+                            // Also suppress reloads right after exiting period selection mode (clicking - can cause blur/resize -> postMessage).
+                            const exitSuppressActive = typeof periodSelectionModeExitSuppressUntil !== 'undefined' && Date.now() < periodSelectionModeExitSuppressUntil;
+                            const periodSyncAllowed = !exitSuppressActive && (senderPeriodIndex < 0 ||
+                                (Date.now() - (typeof periodPanelsCreatedAt !== 'undefined' ? periodPanelsCreatedAt : 0) > PERIOD_SYNC_COOLDOWN_MS));
                             if (periodSyncAllowed &&
                                 typeof timeControlsActive !== 'undefined' && timeControlsActive &&
                                 typeof periodPanels !== 'undefined' && periodPanels && periodPanels.size > 0 &&
@@ -1246,6 +1248,7 @@
                 let periodPanels = new Map();  // periodIndex -> panel element
                 let periodPanelsCreatedAt = 0;  // Timestamp when period panels were created (avoids reload on initial load)
                 const PERIOD_SYNC_COOLDOWN_MS = 5000;  // Don't reload other periods on message from a period iframe within this window
+                let periodSelectionModeExitSuppressUntil = 0;  // Suppress reloads after exiting period selection mode (blur/resize can trigger postMessage)
                 let movieInterval = null;
                 let loadedDatasetIdx = -1;  // Which dataset has periods loaded
                 let totalLoadedIframes = 0;
@@ -1895,34 +1898,11 @@
                     e.stopPropagation();
                     if (!timeControlsActive) return;
                     if (periodSelectionModeActive) {
+                        // Exit period selection mode: no reload, no panel switch – same as entering
                         periodSelectionModeActive = false;
+                        periodSelectionModeExitSuppressUntil = Date.now() + 2000;  // Suppress postMessage-driven reloads (blur/resize can trigger them)
                         updateAddPeriodButton();
-                        // Tell insarmaps to keep time series open (mode change must not affect it)
                         sendKeepChartsOpenToVisibleIframe();
-                        // Load period frames in background if needed (do not reload in foreground)
-                        if (periodPanels.size === 0 || periodPanels.size !== periods.length) {
-                            const urlPeriods = parsePeriodsFromUrl(getOverlayUrlParams().periods);
-                            const periodsToLoad = (periods.length > 0) ? periods : ((urlPeriods && urlPeriods.length > 0) ? urlPeriods : null);
-                            if (periodsToLoad && periodsToLoad.length > 0) {
-                                setTimeout(() => {
-                                    if (loadPeriodsForDataset(activeDatasetIdx, false, periodsToLoad)) {
-                                        showPeriod(currentPeriodIndex >= 0 ? currentPeriodIndex : 0);
-                                        updateControls();
-                                    }
-                                }, 0);
-                            } else if (dataFirstDate && dataLastDate) {
-                                setTimeout(() => {
-                                    if (loadPeriodsForDataset(activeDatasetIdx, true)) {
-                                        showPeriod(0);
-                                        updateControls();
-                                    }
-                                }, 0);
-                            } else {
-                                updateControls();
-                            }
-                        } else {
-                            updateControls();
-                        }
                         return;
                     }
                     periodSelectionModeActive = true;
