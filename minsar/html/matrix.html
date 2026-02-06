@@ -90,8 +90,8 @@
     <script>
         // ===== CONFIGURATION (EDIT THIS LINE TO SWITCH BETWEEN FORMATS) =====
         // To switch: comment out one line and uncomment the other
-        const USE_FULL_DATASET_IN_URL = false;  // Use short codes: view=desc/asc/vert/horz
-        // const USE_FULL_DATASET_IN_URL = true;   // Use full dataset names: startDataset=S1_desc_142_mintpy_...
+        // const USE_FULL_DATASET_IN_URL = false;  // Use short codes: view=desc/asc/vert/horz
+        const USE_FULL_DATASET_IN_URL = true;   // Use full dataset names: startDataset=S1_desc_142_mintpy_...
         
         // ===== URL STATE MANAGEMENT =====
         // Map view labels to short codes for URL
@@ -105,6 +105,68 @@
         // Global state
         let iframeDatasets = new Map();  // index -> dataset name
         let iframeLabels = new Map();    // index -> label (Descending, etc.)
+        let baseUrl = '';
+        let urlsList = [];
+        let currentMapParams = {};
+        let lastSyncedKey = '';
+        let lastSyncTime = 0;
+        let activePanelIndex = 0;
+        const SYNC_DEBOUNCE_MS = 1500;
+        const SYNC_COOLDOWN_MS = 3000;
+        
+        // Normalize contour for URL
+        function normalizeContourValue(value) {
+            if (!value) return null;
+            const v = String(value).toLowerCase();
+            if (v === 'on' || v === 'true' || v === '1') return 'true';
+            if (v === 'off' || v === 'false' || v === '0') return 'false';
+            return value;
+        }
+        
+        // Extract lat/lon/zoom from insarmaps URL
+        function parseInsarmapsUrl(url) {
+            try {
+                const urlObj = new URL(url);
+                const pathMatch = urlObj.pathname.match(/\/start\/([^\/]+)\/([^\/]+)\/([^\/]+)/);
+                if (pathMatch) return { lat: pathMatch[1], lon: pathMatch[2], zoom: pathMatch[3] };
+            } catch (e) {}
+            return null;
+        }
+        
+        // Build insarmaps URL with given parameters
+        let urlCounter = 0;
+        function buildInsarmapsUrl(baseUrl, dataset, lat, lon, zoom, mapParams) {
+            const params = new URLSearchParams();
+            params.set('flyToDatasetCenter', 'false');
+            params.set('startDataset', dataset);
+            params.set('hideAttributes', 'true');
+            if (mapParams.minScale) params.set('minScale', mapParams.minScale);
+            if (mapParams.maxScale) params.set('maxScale', mapParams.maxScale);
+            if (mapParams.startDate) params.set('startDate', mapParams.startDate);
+            if (mapParams.endDate) params.set('endDate', mapParams.endDate);
+            if (mapParams.pixelSize) params.set('pixelSize', mapParams.pixelSize);
+            if (mapParams.background) params.set('background', mapParams.background);
+            if (mapParams.opacity) params.set('opacity', mapParams.opacity);
+            const nc = normalizeContourValue(mapParams.contour);
+            if (nc) params.set('contours', nc);
+            if (mapParams.colorscale) params.set('colorscale', mapParams.colorscale);
+            if (mapParams.refPointLat) params.set('refPointLat', mapParams.refPointLat);
+            if (mapParams.refPointLon) params.set('refPointLon', mapParams.refPointLon);
+            params.set('_t', `${Date.now()}_${urlCounter++}`);
+            return `${baseUrl}/start/${lat}/${lon}/${zoom}?${params.toString()}`;
+        }
+        
+        function getSyncKey(params) {
+            return JSON.stringify({
+                lat: params.lat, lon: params.lon, zoom: params.zoom,
+                minScale: params.minScale, maxScale: params.maxScale,
+                startDate: params.startDate, endDate: params.endDate,
+                pixelSize: params.pixelSize, background: params.background,
+                opacity: params.opacity, contour: params.contour,
+                colorscale: params.colorscale,
+                refPointLat: params.refPointLat, refPointLon: params.refPointLon
+            });
+        }
         
         // Parse insarmaps.log and create iframes dynamically
         fetch('insarmaps.log')
@@ -119,6 +181,8 @@
                     document.getElementById('loading').textContent = 'No URLs found in insarmaps.log';
                     return;
                 }
+                
+                urlsList = urls;
                 
                 // Sort URLs by dataset type: desc (0), asc (1), horz (2), vert (3), others (4)
                 urls.sort((a, b) => {
@@ -168,12 +232,40 @@
                     return;
                 }
                 
+                // Initialize currentMapParams and baseUrl from first URL
+                try {
+                    const firstUrl = new URL(urls[0]);
+                    baseUrl = firstUrl.origin;
+                    const coords = parseInsarmapsUrl(urls[0]);
+                    const q = firstUrl.searchParams;
+                    currentMapParams = {
+                        lat: coords ? coords.lat : null,
+                        lon: coords ? coords.lon : null,
+                        zoom: coords ? coords.zoom : null,
+                        minScale: q.get('minScale'),
+                        maxScale: q.get('maxScale'),
+                        startDate: q.get('startDate'),
+                        endDate: q.get('endDate'),
+                        pixelSize: q.get('pixelSize'),
+                        background: q.get('background'),
+                        opacity: q.get('opacity'),
+                        contour: q.get('contour'),
+                        colorscale: q.get('colorscale'),
+                        refPointLat: q.get('refPointLat'),
+                        refPointLon: q.get('refPointLon')
+                    };
+                } catch (e) {
+                    console.warn('Could not parse first URL for initial params');
+                }
+                
                 // Create panels for each URL
                 urls.forEach((url, index) => {
+                    let dataset = null;
                     try {
                         const urlObj = new URL(url);
-                        const dataset = urlObj.searchParams.get('startDataset');
+                        dataset = urlObj.searchParams.get('startDataset');
                         iframeDatasets.set(index, dataset);
+                        if (!baseUrl) baseUrl = urlObj.origin;
                     } catch (e) {
                         console.warn('Could not parse URL:', url);
                     }
@@ -191,27 +283,146 @@
                     header.className = 'panel-header';
                     header.textContent = label;
                     
-                    // Create iframe
+                    // Build iframe URL - use buildInsarmapsUrl when we have coords, else append params to original URL
+                    let iframeSrc;
+                    if (currentMapParams.lat && currentMapParams.lon && currentMapParams.zoom && dataset) {
+                        iframeSrc = buildInsarmapsUrl(baseUrl, dataset, currentMapParams.lat, currentMapParams.lon, currentMapParams.zoom, currentMapParams);
+                    } else {
+                        const sep = url.includes('?') ? '&' : '?';
+                        iframeSrc = url + sep + 'flyToDatasetCenter=false&hideAttributes=true&_t=' + Date.now();
+                    }
+                    
                     const iframe = document.createElement('iframe');
                     iframe.id = `iframe${index}`;
                     iframe.title = label;
-                    iframe.src = url + (url.includes('?') ? '&' : '?') + 'hideAttributes=true&_t=' + Date.now();
+                    iframe.src = iframeSrc;
                     iframe.setAttribute('allowfullscreen', '');
                     
                     panel.appendChild(header);
                     panel.appendChild(iframe);
                     container.appendChild(panel);
                     
-                    // Click to activate panel
+                    // Click to activate panel (this is the "active" one for sync - we process its postMessages, ignore others during cooldown)
                     panel.addEventListener('click', () => {
                         document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
                         panel.classList.add('active');
+                        activePanelIndex = index;
                         iframe.focus();
                     });
+                    
+                    if (index === 0) panel.classList.add('active');
                 });
                 
-                // Hide loading message
-                document.getElementById('loading').style.display = 'none';
+                // Hide loading on first postMessage from any iframe, or after 15s
+                let loadingHidden = false;
+                function hideLoading() {
+                    if (!loadingHidden) {
+                        loadingHidden = true;
+                        document.getElementById('loading').style.display = 'none';
+                    }
+                }
+                
+                // ===== IFRAME SYNCHRONIZATION (same logic as overlay.html) =====
+                let syncTimeout = null;
+                window.addEventListener('message', (event) => {
+                    if (!event.data || event.data.type !== 'insarmaps-url-update') return;
+                    hideLoading();
+                    
+                    const isFromActiveIframe = (event.source === document.getElementById(`iframe${activePanelIndex}`)?.contentWindow);
+                    const now = Date.now();
+                    if (!isFromActiveIframe && now - lastSyncTime < SYNC_COOLDOWN_MS) return;
+                    
+                    if (syncTimeout) clearTimeout(syncTimeout);
+                    syncTimeout = setTimeout(() => {
+                        const newUrlPath = event.data.url;
+                        const pathMatch = newUrlPath.match(/^\/start\/([^\/]+)\/([^\/]+)\/([^?]+)/);
+                        if (!pathMatch) return;
+                        
+                        const [, lat, lon, zoom] = pathMatch;
+                        const queryStart = newUrlPath.indexOf('?');
+                        const params = new URLSearchParams(queryStart >= 0 ? newUrlPath.substring(queryStart) : '');
+                        
+                        const getContourValue = () => {
+                            if (params.has('contour')) return params.get('contour');
+                            if (params.has('contours')) return params.get('contours');
+                            if (event.data.contour !== undefined) return String(event.data.contour);
+                            if (event.data.contours !== undefined) return String(event.data.contours);
+                            return currentMapParams.contour;
+                        };
+                        const contourValue = normalizeContourValue(getContourValue());
+                        const colorscaleValue = params.get('colorscale') || currentMapParams.colorscale;
+                        const refPointLat = params.get('refPointLat') ?? currentMapParams.refPointLat ?? null;
+                        const refPointLon = params.get('refPointLon') ?? currentMapParams.refPointLon ?? null;
+                        const minScale = params.get('minScale') ?? currentMapParams.minScale;
+                        const maxScale = params.get('maxScale') ?? currentMapParams.maxScale;
+                        const startDate = params.get('startDate') ?? currentMapParams.startDate;
+                        const endDate = params.get('endDate') ?? currentMapParams.endDate;
+                        const pixelSize = params.get('pixelSize') ?? currentMapParams.pixelSize;
+                        const background = params.get('background') ?? currentMapParams.background;
+                        const opacity = params.get('opacity') ?? currentMapParams.opacity;
+                        
+                        const syncKey = JSON.stringify({
+                            lat, lon, zoom, minScale, maxScale, startDate, endDate,
+                            pixelSize, background, opacity, contour: contourValue,
+                            colorscale: colorscaleValue, refPointLat, refPointLon
+                        });
+                        if (syncKey === lastSyncedKey) return;
+                        
+                        let onlyContourChanged = false;
+                        if (lastSyncedKey) {
+                            try {
+                                const prev = JSON.parse(lastSyncedKey);
+                                onlyContourChanged = (
+                                    prev.lat === lat && prev.lon === lon && prev.zoom === zoom &&
+                                    prev.minScale === minScale && prev.maxScale === maxScale &&
+                                    prev.startDate === startDate && prev.endDate === endDate &&
+                                    prev.pixelSize === pixelSize && prev.background === background &&
+                                    prev.opacity === opacity && prev.colorscale === colorscaleValue &&
+                                    prev.refPointLat === refPointLat && prev.refPointLon === refPointLon &&
+                                    prev.contour !== contourValue
+                                );
+                            } catch (e) {}
+                        }
+                        lastSyncedKey = syncKey;
+                        
+                        currentMapParams = {
+                            lat, lon, zoom, minScale, maxScale, startDate, endDate,
+                            pixelSize, background, opacity, contour: contourValue,
+                            colorscale: colorscaleValue, refPointLat, refPointLon
+                        };
+                        
+                        let senderIndex = -1;
+                        for (let i = 0; i < urlsList.length; i++) {
+                            const ifr = document.getElementById(`iframe${i}`);
+                            if (ifr && event.source === ifr.contentWindow) {
+                                senderIndex = i;
+                                break;
+                            }
+                        }
+                        
+                        lastSyncTime = Date.now();
+                        const contourOn = (contourValue === 'true' || contourValue === 'on');
+                        const contourMessage = { type: 'insarmaps-set-contour', value: contourOn };
+                        
+                        if (onlyContourChanged) {
+                            // Contour only: add/remove layer via postMessage, no reload (same as insarmaps standalone)
+                            iframeDatasets.forEach((_, idx) => {
+                                const ifr = document.getElementById(`iframe${idx}`);
+                                if (ifr && ifr.contentWindow) {
+                                    try { ifr.contentWindow.postMessage(contourMessage, '*'); } catch (e) {}
+                                }
+                            });
+                        } else {
+                            iframeDatasets.forEach((dataset, idx) => {
+                                if (idx === senderIndex) return;
+                                const newUrl = buildInsarmapsUrl(baseUrl, dataset, lat, lon, zoom, currentMapParams);
+                                const ifr = document.getElementById(`iframe${idx}`);
+                                if (ifr) ifr.src = newUrl;
+                            });
+                        }
+                    }, SYNC_DEBOUNCE_MS);
+                });
+                setTimeout(hideLoading, 15000);
             })
             .catch(error => {
                 console.error('Error loading insarmaps.log:', error);
