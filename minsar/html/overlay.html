@@ -446,14 +446,8 @@
         // Optional: timeControlsActive (bool), periodsArray (array of {startDate,endDate})
         function updateOverlayUrl(viewCodeOrDataset, mapParams, currentDataset, timeControlsActive, periodsArray) {
             const params = new URLSearchParams();
-            
-            // Choose which format to use based on configuration
-            if (USE_FULL_DATASET_IN_URL && currentDataset) {
-                params.set('startDataset', currentDataset);
-            } else if (viewCodeOrDataset) {
-                params.set('view', viewCodeOrDataset);
-            }
-            
+            if (USE_FULL_DATASET_IN_URL && currentDataset) params.set('startDataset', currentDataset);
+            else if (viewCodeOrDataset) params.set('view', viewCodeOrDataset);
             if (mapParams.minScale) params.set('minScale', mapParams.minScale);
             if (mapParams.maxScale) params.set('maxScale', mapParams.maxScale);
             if (mapParams.startDate) params.set('startDate', mapParams.startDate);
@@ -461,8 +455,8 @@
             if (mapParams.pixelSize) params.set('pixelSize', mapParams.pixelSize);
             if (mapParams.background) params.set('background', mapParams.background);
             if (mapParams.opacity) params.set('opacity', mapParams.opacity);
-            const normalizedContour = normalizeContourValue(mapParams.contour);
-            if (normalizedContour) params.set('contour', normalizedContour);
+            const nc = normalizeContourValue(mapParams.contour);
+            if (nc) params.set('contour', nc);
             if (mapParams.colorscale) params.set('colorscale', mapParams.colorscale);
             if (mapParams.refPointLat) params.set('refPointLat', mapParams.refPointLat);
             if (mapParams.refPointLon) params.set('refPointLon', mapParams.refPointLon);
@@ -472,15 +466,16 @@
                 params.set('timeControls', 'true');
                 params.set('periods', serializePeriods(periodsArray));
             }
-            
-            // Use hash-based URL format (shareable - browser requests just overlay.html)
             let hashUrl;
             if (mapParams.lat && mapParams.lon && mapParams.zoom) {
                 hashUrl = `/start/${mapParams.lat}/${mapParams.lon}/${mapParams.zoom}?${params.toString()}`;
             } else {
                 hashUrl = `?${params.toString()}`;
             }
-            window.history.replaceState({}, '', `#${hashUrl}`);
+            const newHash = `#${hashUrl}`;
+            if (window.location.hash !== newHash) {
+                window.history.replaceState({}, '', newHash);
+            }
         }
 
         // Build insarmaps URL with given parameters
@@ -498,7 +493,7 @@
             if (mapParams.background) params.set('background', mapParams.background);
             if (mapParams.opacity) params.set('opacity', mapParams.opacity);
             const normalizedContour = normalizeContourValue(mapParams.contour);
-            if (normalizedContour) params.set('contour', normalizedContour);
+            if (normalizedContour) params.set('contours', normalizedContour);
             if (mapParams.colorscale) params.set('colorscale', mapParams.colorscale);
             if (mapParams.refPointLat) params.set('refPointLat', mapParams.refPointLat);
             if (mapParams.refPointLon) params.set('refPointLon', mapParams.refPointLon);
@@ -877,6 +872,18 @@
                     if (syncTimeout) clearTimeout(syncTimeout);
                     
                     syncTimeout = setTimeout(() => {
+                        // Identify sender first. Ignore postMessages from period iframes entirely -
+                        // they drive reload/update loops that cause full-page reloads. Period state is
+                        // controlled by the overlay; we don't sync from period iframes.
+                        let senderPeriodIdx = -1;
+                        if (typeof periodPanels !== 'undefined' && periodPanels && periodPanels.size > 0) {
+                            periodPanels.forEach((panel, idx) => {
+                                const ifr = panel && panel.querySelector('iframe');
+                                if (ifr && event.source === ifr.contentWindow) senderPeriodIdx = idx;
+                            });
+                        }
+                        if (senderPeriodIdx >= 0) return;
+
                         const newUrlPath = event.data.url;
                         
                         // Parse path: /start/{lat}/{lon}/{zoom}?params...
@@ -929,23 +936,6 @@
                         });
                         
                         if (syncKey === lastSyncedKey) return;
-                        
-                        // Detect if only contour changed → broadcast contour message only, no reload
-                        let onlyContourChanged = false;
-                        if (lastSyncedKey) {
-                            try {
-                                const prev = JSON.parse(lastSyncedKey);
-                                onlyContourChanged = (
-                                    prev.lat === lat && prev.lon === lon && prev.zoom === zoom &&
-                                    prev.minScale === minScale && prev.maxScale === maxScale &&
-                                    prev.startDate === startDate && prev.endDate === endDate &&
-                                    prev.pixelSize === pixelSize && prev.background === background &&
-                                    prev.opacity === opacity && prev.colorscale === colorscaleValue &&
-                                    prev.refPointLat === refPointLat && prev.refPointLon === refPointLon &&
-                                    prev.contour !== contourValue
-                                );
-                            } catch (e) {}
-                        }
                         lastSyncedKey = syncKey;
                         
                         // Update current map params (use resolved values so state is consistent)
@@ -996,6 +986,18 @@
                                     datasetDateRanges.set(senderIndex, { firstDate: first, lastDate: last });
                                 }
                                 console.log(`Dataset date range: ${firstDateVal} - ${lastDateVal}`);
+                                // If Time Controls are open but waiting for date range, try loading periods now
+                                if (typeof waitingForDateRangeForTC !== 'undefined' && waitingForDateRangeForTC) {
+                                    if (dateRangeWaitTimer) { clearTimeout(dateRangeWaitTimer); dateRangeWaitTimer = null; }
+                                    waitingForDateRangeForTC = false;
+                                    if (typeof loadPeriodsForDataset === 'function' && loadPeriodsForDataset(activeDatasetIdx)) {
+                                        if (typeof showPeriod === 'function') showPeriod(0);
+                                        if (typeof updateControls === 'function') updateControls();
+                                    } else {
+                                        periodIndicator.textContent = '-/-';
+                                        if (typeof closeTimeControls === 'function') closeTimeControls();
+                                    }
+                                }
                             }
                         }
                         
@@ -1009,40 +1011,24 @@
                             iframeSynced.set(senderIndex, newSyncKey);
                         }
                         
-                        const contourOn = (contourValue === 'true' || contourValue === 'on');
-                        const contourMessage = { type: 'insarmaps-set-contour', value: contourOn };
-                        
-                        // (1) When only contour changed: broadcast to all iframes so they stay in sync.
-                        if (onlyContourChanged) {
-                            iframeDatasets.forEach((_, index) => {
-                                const iframe = document.getElementById(`iframe${index}`);
-                                if (iframe && iframe.contentWindow) {
-                                    try { iframe.contentWindow.postMessage(contourMessage, '*'); } catch (e) {}
-                                }
-                                iframeSynced.set(index, newSyncKey);
-                            });
-                            if (typeof timeControlsActive !== 'undefined' && timeControlsActive &&
-                                typeof periodPanels !== 'undefined' && periodPanels && periodPanels.size > 0) {
-                                periodPanels.forEach((panel) => {
-                                    const iframe = panel.querySelector('iframe');
-                                    if (iframe && iframe.contentWindow) {
-                                        try { iframe.contentWindow.postMessage(contourMessage, '*'); } catch (e) {}
+                        // Reload other iframes with new params (including contour). Reload ensures contours apply
+                        // reliably via URL (contours=true) instead of postMessage, which often fails when
+                        // target iframes are not ready. Also fixes contours-below-data ordering.
+                            // When message is from a period iframe, skip reloading dataset iframes (they're hidden in TC mode;
+                            // avoids cascade of reloads -> postMessage -> reload that can trigger full-page reload in Safari).
+                            if (senderPeriodIndex < 0) {
+                                iframeDatasets.forEach((originalDataset, index) => {
+                                    if (index === senderIndex || index === activeDatasetIdx) return;
+                                    const newUrl = buildInsarmapsUrl(
+                                        baseUrl, originalDataset, lat, lon, zoom, currentMapParams
+                                    );
+                                    const iframe = document.getElementById(`iframe${index}`);
+                                    if (iframe) {
+                                        iframe.src = newUrl;
+                                        iframeSynced.set(index, newSyncKey);
                                     }
                                 });
                             }
-                        } else {
-                            // (2) Other params changed: reload iframes. Never reload the active iframe or the sender.
-                            iframeDatasets.forEach((originalDataset, index) => {
-                                if (index === senderIndex || index === activeDatasetIdx) return;
-                                const newUrl = buildInsarmapsUrl(
-                                    baseUrl, originalDataset, lat, lon, zoom, currentMapParams
-                                );
-                                const iframe = document.getElementById(`iframe${index}`);
-                                if (iframe) {
-                                    iframe.src = newUrl;
-                                    iframeSynced.set(index, newSyncKey);
-                                }
-                            });
                             // Reload period iframes with new params (lat, lon, zoom, minScale, maxScale, pixelSize, background, opacity, colorscale).
                             // When message is from a period iframe, only reload others after cooldown to avoid double load on TC open.
                             const periodSyncAllowed = senderPeriodIndex < 0 ||
@@ -1086,31 +1072,6 @@
                                     });
                                 }
                             }
-                            // After reload, iframes need time to load; send contour so they apply it (URL contour may not apply when loaded hidden).
-                            // Send twice (2.5s and 6s) so slow-loading iframes and late-drawn data layers still get contours on top.
-                            const sendContourToReloaded = () => {
-                                const msg = { type: 'insarmaps-set-contour', value: contourOn };
-                                iframeDatasets.forEach((_, index) => {
-                                    if (index === senderIndex) return;
-                                    const iframe = document.getElementById(`iframe${index}`);
-                                    if (iframe && iframe.contentWindow) {
-                                        try { iframe.contentWindow.postMessage(msg, '*'); } catch (e) {}
-                                    }
-                                });
-                                if (typeof timeControlsActive !== 'undefined' && timeControlsActive &&
-                                    typeof periodPanels !== 'undefined' && periodPanels && periodPanels.size > 0) {
-                                    periodPanels.forEach((panel, periodIdx) => {
-                                        if (periodIdx === senderPeriodIndex) return;
-                                        const iframe = panel.querySelector('iframe');
-                                        if (iframe && iframe.contentWindow) {
-                                            try { iframe.contentWindow.postMessage(msg, '*'); } catch (e) {}
-                                        }
-                                    });
-                                }
-                            };
-                            setTimeout(sendContourToReloaded, 2500);
-                            setTimeout(sendContourToReloaded, 6000);
-                        }
                     }, SYNC_DEBOUNCE_MS);
                 });
                 // ===== END IFRAME SYNCHRONIZATION =====
@@ -1137,6 +1098,9 @@
                 let loadedDatasetIdx = -1;  // Which dataset has periods loaded
                 let totalLoadedIframes = 0;
                 const ESTIMATED_MB_PER_IFRAME = 80;
+                let waitingForDateRangeForTC = false;
+                let dateRangeWaitTimer = null;
+                const DATE_RANGE_WAIT_MS = 5000;
                 
                 // Data date range (first and last date of the dataset)
                 let dataFirstDate = null;
@@ -1435,6 +1399,8 @@
                 // When closing Time Controls: keep startDate/endDate from the last viewed period
                 // and apply that date range (and all other params) to all dataset iframes and overlay URL.
                 function restoreToBaselineState() {
+                    if (dateRangeWaitTimer) { clearTimeout(dateRangeWaitTimer); dateRangeWaitTimer = null; }
+                    waitingForDateRangeForTC = false;
                     if (movieInterval) {
                         clearInterval(movieInterval);
                         movieInterval = null;
@@ -1491,7 +1457,18 @@
                     // Load periods for current dataset if not already loaded
                     if (loadedDatasetIdx !== activeDatasetIdx || periodPanels.size === 0) {
                         if (!loadPeriodsForDataset(activeDatasetIdx)) {
-                            closeTimeControls();
+                            // Date range not yet available; wait for postMessage from insarmaps instead of alerting immediately
+                            waitingForDateRangeForTC = true;
+                            periodIndicator.textContent = 'Waiting for map data…';
+                            if (dateRangeWaitTimer) clearTimeout(dateRangeWaitTimer);
+                            dateRangeWaitTimer = setTimeout(() => {
+                                dateRangeWaitTimer = null;
+                                if (waitingForDateRangeForTC && (!dataFirstDate || !dataLastDate)) {
+                                    waitingForDateRangeForTC = false;
+                                    alert('Could not determine date range. Please interact with the map first to load date information.');
+                                    closeTimeControls();
+                                }
+                            }, DATE_RANGE_WAIT_MS);
                             return;
                         }
                     }

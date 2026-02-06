@@ -152,6 +152,36 @@ Contour is synced by **reloading** other iframes with `contours=true` or `contou
 
 ---
 
+## 8. matrix.html sync – reload on any change
+
+`matrix.html` shows 2 or 4 frames in a grid (all visible at once). When the user changes **any** parameter in one frame (pan, zoom, scale, contour, colorscale, background, opacity, etc.), the other frames are **reloaded** with the new URL. There is no postMessage path for display params; sync is always by reload.
+
+**Why reload:** All frames stay in sync with identical display parameters. Reloading ensures each frame loads with the full `currentMapParams` in the URL, so insarmaps applies them correctly on init. The sender iframe is never reloaded.
+
+**Same logic as overlay** for dataset-frame sync: any `currentMapParams` change → reload other iframes.
+
+---
+
+## 9. currentMapParams
+
+Both overlay and matrix maintain `currentMapParams`, the shared state of all map controls:
+
+| Property | Description |
+|----------|-------------|
+| lat, lon, zoom | Map center and zoom level |
+| minScale, maxScale | Color scale limits |
+| startDate, endDate | Time range (YYYYMMDD) |
+| pixelSize | Point size for InSAR data |
+| background | Map background (`streets`, `satellite`, `hillshade`) |
+| opacity | Layer opacity (0–100) |
+| contour | Contour lines (`true`/`false`) |
+| colorscale | Color scale type (`velocity`, `displacement`) |
+| refPointLat, refPointLon | Reference point |
+
+When any of these change (from postMessage), overlay and matrix update `currentMapParams` and reload other iframes with a new URL built from it.
+
+---
+
 ## Data Flow Diagram
 
 ```

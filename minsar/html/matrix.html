@@ -367,22 +367,6 @@
                             colorscale: colorscaleValue, refPointLat, refPointLon
                         });
                         if (syncKey === lastSyncedKey) return;
-                        
-                        let onlyContourChanged = false;
-                        if (lastSyncedKey) {
-                            try {
-                                const prev = JSON.parse(lastSyncedKey);
-                                onlyContourChanged = (
-                                    prev.lat === lat && prev.lon === lon && prev.zoom === zoom &&
-                                    prev.minScale === minScale && prev.maxScale === maxScale &&
-                                    prev.startDate === startDate && prev.endDate === endDate &&
-                                    prev.pixelSize === pixelSize && prev.background === background &&
-                                    prev.opacity === opacity && prev.colorscale === colorscaleValue &&
-                                    prev.refPointLat === refPointLat && prev.refPointLon === refPointLon &&
-                                    prev.contour !== contourValue
-                                );
-                            } catch (e) {}
-                        }
                         lastSyncedKey = syncKey;
                         
                         currentMapParams = {
@@ -401,25 +385,14 @@
                         }
                         
                         lastSyncTime = Date.now();
-                        const contourOn = (contourValue === 'true' || contourValue === 'on');
-                        const contourMessage = { type: 'insarmaps-set-contour', value: contourOn };
                         
-                        if (onlyContourChanged) {
-                            // Contour only: add/remove layer via postMessage, no reload (same as insarmaps standalone)
-                            iframeDatasets.forEach((_, idx) => {
-                                const ifr = document.getElementById(`iframe${idx}`);
-                                if (ifr && ifr.contentWindow) {
-                                    try { ifr.contentWindow.postMessage(contourMessage, '*'); } catch (e) {}
-                                }
-                            });
-                        } else {
-                            iframeDatasets.forEach((dataset, idx) => {
-                                if (idx === senderIndex) return;
-                                const newUrl = buildInsarmapsUrl(baseUrl, dataset, lat, lon, zoom, currentMapParams);
-                                const ifr = document.getElementById(`iframe${idx}`);
-                                if (ifr) ifr.src = newUrl;
-                            });
-                        }
+                        // Reload other iframes whenever any currentMapParams change; all frames stay in sync
+                        iframeDatasets.forEach((dataset, idx) => {
+                            if (idx === senderIndex) return;
+                            const newUrl = buildInsarmapsUrl(baseUrl, dataset, lat, lon, zoom, currentMapParams);
+                            const ifr = document.getElementById(`iframe${idx}`);
+                            if (ifr) ifr.src = newUrl;
+                        });
                     }, SYNC_DEBOUNCE_MS);
                 });
                 setTimeout(hideLoading, 15000);
