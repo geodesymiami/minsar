@@ -168,6 +168,70 @@
         .memory-display.visible {
             display: block;
         }
+        .add-period-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .add-period-group label {
+            font-size: 13px;
+            color: #333;
+            white-space: nowrap;
+        }
+        .add-period-group input[type="text"].date-input {
+            width: 90px;
+            padding: 4px 6px;
+            font-size: 13px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .add-period-group input[type="text"].date-input.greyed {
+            background-color: #e9ecef;
+            color: #6c757d;
+            cursor: not-allowed;
+        }
+        .add-period-btn {
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            font-size: 18px;
+            font-weight: bold;
+            line-height: 1;
+            border: 2px solid #27ae60;
+            border-radius: 4px;
+            background-color: #27ae60;
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s;
+        }
+        .add-period-btn:hover {
+            background-color: #219a52;
+        }
+        .add-period-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background-color: #999;
+            border-color: #999;
+        }
+        .add-period-btn.state-need-point {
+            background-color: #95a5a6;
+            border-color: #7f8c8d;
+        }
+        .add-period-btn.state-need-start {
+            background-color: #f39c12;
+            border-color: #e67e22;
+        }
+        .add-period-btn.state-need-end {
+            background-color: #f5b041;
+            border-color: #f8c471;
+        }
+        .add-period-btn.state-need-end:hover {
+            background-color: #f9e79f;
+        }
         .container {
             width: 100%;
             height: calc(100vh - 120px);
@@ -307,6 +371,13 @@
                 <input type="number" id="frame-delay" value="2" min="0.5" step="0.5">
                 <span class="unit">secs</span>
             </div>
+            <div class="time-control-group add-period-group">
+                <label for="add-start-date">Start:</label>
+                <input type="text" id="add-start-date" class="date-input" placeholder="YYYYMMDD" maxlength="8">
+                <label for="add-end-date">End:</label>
+                <input type="text" id="add-end-date" class="date-input" placeholder="YYYYMMDD" maxlength="8">
+                <button type="button" class="add-period-btn" id="add-period-btn" title="Add current date range as a period">+</button>
+            </div>
         </div>
         <div class="time-controls-column">
             <div class="time-controls-toggle">
@@ -444,6 +515,7 @@
         // Update overlay.html's browser URL with current state
         // Uses hash-based URL format for shareability: overlay.html#/start/lat/lon/zoom?params
         // Optional: timeControlsActive (bool), periodsArray (array of {startDate,endDate})
+        // When periodsArray is not provided but current URL has timeControls and periods, preserve them (e.g. before TC open)
         function updateOverlayUrl(viewCodeOrDataset, mapParams, currentDataset, timeControlsActive, periodsArray) {
             const params = new URLSearchParams();
             if (USE_FULL_DATASET_IN_URL && currentDataset) params.set('startDataset', currentDataset);
@@ -465,6 +537,12 @@
             if (timeControlsActive && periodsArray && periodsArray.length > 0) {
                 params.set('timeControls', 'true');
                 params.set('periods', serializePeriods(periodsArray));
+            } else {
+                const cur = getOverlayUrlParams();
+                if (cur.timeControls === 'true' && cur.periods) {
+                    params.set('timeControls', 'true');
+                    params.set('periods', cur.periods);
+                }
             }
             let hashUrl;
             if (mapParams.lat && mapParams.lon && mapParams.zoom) {
@@ -844,9 +922,27 @@
                 const SYNC_DEBOUNCE_MS = 1500;
                 let lastSyncedKey = '';
                 
-                // Listen for URL updates from any iframe
+                // Listen for URL updates and time-series date clicks from any iframe
                 window.addEventListener('message', (event) => {
-                    if (!event.data || event.data.type !== 'insarmaps-url-update') return;
+                    if (!event.data) return;
+                    // Time series dot click: insarmaps sends { type: 'insarmaps-timeseries-date', date: 'YYYYMMDD' } or date: 'YYYY-MM-DD'
+                    if (event.data.type === 'insarmaps-timeseries-date' && event.data.date) {
+                        let dateStr = String(event.data.date).trim().replace(/-/g, '');
+                        if (dateStr.length === 8) {
+                            console.log('[overlay] insarmaps-timeseries-date received', dateStr, 'addPeriodState:', addPeriodState);
+                            // Accept as start date when waiting for start (need_start, or idle/need_point so we're forgiving)
+                            if (addPeriodState === 'need_start' || addPeriodState === 'need_point' || addPeriodState === 'idle') {
+                                if (addStartDateInput) { addStartDateInput.value = dateStr; addStartDateInput.disabled = false; addStartDateInput.classList.remove('greyed'); }
+                                addPeriodState = 'need_end';
+                                updateAddPeriodButton();
+                            } else if (addPeriodState === 'need_end') {
+                                if (addEndDateInput) addEndDateInput.value = dateStr;
+                                commitPeriodFromDotSelection();
+                            }
+                        }
+                        return;
+                    }
+                    if (event.data.type !== 'insarmaps-url-update') return;
                     
                     // Debug: log full event.data to see what insarmaps sends
                     console.log('postMessage received:', JSON.stringify(event.data, null, 2));
@@ -917,6 +1013,8 @@
                         const colorscaleValue = params.get('colorscale') || currentMapParams.colorscale;
                         const refPointLat = params.get('refPointLat') ?? currentMapParams.refPointLat ?? null;
                         const refPointLon = params.get('refPointLon') ?? currentMapParams.refPointLon ?? null;
+                        const pointLat = params.get('pointLat') ?? currentMapParams.pointLat ?? null;
+                        const pointLon = params.get('pointLon') ?? currentMapParams.pointLon ?? null;
                         // Resolve params from URL with fallback to currentMapParams so contour-only messages
                         // (insarmaps often omits minScale, startDate, etc.) are detected and don't trigger reloads
                         const minScale = params.get('minScale') ?? currentMapParams.minScale;
@@ -932,7 +1030,8 @@
                             pixelSize, background, opacity,
                             contour: contourValue,
                             colorscale: colorscaleValue,
-                            refPointLat, refPointLon
+                            refPointLat, refPointLon,
+                            pointLat, pointLon
                         });
                         
                         if (syncKey === lastSyncedKey) return;
@@ -945,8 +1044,11 @@
                             pixelSize, background, opacity,
                             contour: contourValue,
                             colorscale: colorscaleValue,
-                            refPointLat, refPointLon
+                            refPointLat, refPointLon,
+                            pointLat, pointLon
                         };
+                        
+                        if (typeof updateAddPeriodButton === 'function') updateAddPeriodButton();
                         
                         // Update overlay.html's browser URL
                         const inTC = (typeof timeControlsActive !== 'undefined' && timeControlsActive);
@@ -1086,6 +1188,9 @@
                 const btnPlay = document.getElementById('btn-play');
                 const frameDelayInput = document.getElementById('frame-delay');
                 const memoryDisplay = document.getElementById('memory-display');
+                const addStartDateInput = document.getElementById('add-start-date');
+                const addEndDateInput = document.getElementById('add-end-date');
+                const addPeriodBtn = document.getElementById('add-period-btn');
                 
                 // Time controls state
                 let timeControlsActive = false;
@@ -1101,6 +1206,12 @@
                 let waitingForDateRangeForTC = false;
                 let dateRangeWaitTimer = null;
                 const DATE_RANGE_WAIT_MS = 5000;
+                
+                // Add-period flow: user must select point, then +, then click dot (start), then dot (end)
+                // States: 'idle' | 'need_point' | 'need_start' | 'need_end'
+                let addPeriodState = 'idle';
+                // True when + has been clicked and we have not yet committed a period (first period replaces; then we append)
+                let replaceNextPeriodWithNew = true;
                 
                 // Data date range (first and last date of the dataset)
                 let dataFirstDate = null;
@@ -1161,6 +1272,132 @@
                     // is handled by updateControls() and the period indicator
                 }
                 
+                // True if user has selected a point on the map (required before adding a period via +)
+                // Checks currentMapParams (from postMessage) and overlay URL as fallback
+                function pointSelected() {
+                    const fromParams = (currentMapParams.pointLat != null && currentMapParams.pointLon != null) ||
+                        (currentMapParams.refPointLat != null && currentMapParams.refPointLon != null);
+                    if (fromParams) return true;
+                    const urlParams = getOverlayUrlParams();
+                    const fromUrl = (urlParams.pointLat != null && urlParams.pointLon != null) ||
+                        (urlParams.refPointLat != null && urlParams.refPointLon != null);
+                    return !!fromUrl;
+                }
+                
+                // Update + button appearance, title, and Start/End box grey state
+                // Greyed boxes count as "no date"; title uses addPeriodState and point selection only
+                function updateAddPeriodButton() {
+                    if (!addPeriodBtn) return;
+                    const hasPoint = pointSelected();
+                    let title;
+                    if (!hasPoint) {
+                        title = 'Select a point to select a period';
+                    } else if (addPeriodState === 'need_end') {
+                        title = 'Select end date';
+                    } else {
+                        title = 'Select start date';
+                    }
+                    addPeriodBtn.title = title;
+                    addPeriodBtn.classList.remove('state-need-point', 'state-need-start', 'state-need-end');
+                    if (addPeriodState !== 'idle') {
+                        addPeriodBtn.classList.add('state-' + addPeriodState);
+                    }
+                    // Grey out Start/End: need_start or idle = both greyed; need_end = only End greyed
+                    if (addStartDateInput) {
+                        const startGreyed = addPeriodState === 'need_start' || addPeriodState === 'idle' || addPeriodState === 'need_point';
+                        addStartDateInput.disabled = startGreyed;
+                        addStartDateInput.classList.toggle('greyed', startGreyed);
+                    }
+                    if (addEndDateInput) {
+                        const endGreyed = addPeriodState !== 'need_end';
+                        addEndDateInput.disabled = endGreyed;
+                        addEndDateInput.classList.toggle('greyed', endGreyed);
+                    }
+                }
+                
+                // Reset the visible iframe to full date range (first_date to last_date) so user can use slider/dots
+                function resetVisibleIframeToFullRange() {
+                    if (!dataFirstDate || !dataLastDate) return;
+                    const firstStr = formatDate(dataFirstDate);
+                    const lastStr = formatDate(dataLastDate);
+                    currentMapParams.startDate = firstStr;
+                    currentMapParams.endDate = lastStr;
+                    lastSyncedKey = getSyncKey(currentMapParams);
+                    // Show the main dataset panel (not a period panel) so time series with dots is visible
+                    document.querySelectorAll('.panel').forEach(panel => {
+                        panel.style.zIndex = '-1';
+                        panel.style.pointerEvents = 'none';
+                        panel.classList.remove('active');
+                    });
+                    const mainPanel = document.getElementById(`panel${activeDatasetIdx}`);
+                    if (mainPanel) {
+                        mainPanel.style.visibility = 'visible';
+                        mainPanel.style.zIndex = '10';
+                        mainPanel.style.pointerEvents = 'auto';
+                        mainPanel.classList.add('active');
+                    }
+                    const iframe = document.getElementById(`iframe${activeDatasetIdx}`);
+                    if (iframe && iframeDatasets.get(activeDatasetIdx)) {
+                        iframe.src = buildInsarmapsUrl(
+                            baseUrl, iframeDatasets.get(activeDatasetIdx),
+                            currentMapParams.lat, currentMapParams.lon, currentMapParams.zoom,
+                            currentMapParams,
+                            'fullrange'
+                        );
+                        iframeSynced.set(activeDatasetIdx, lastSyncedKey);
+                    }
+                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, timeControlsActive, periods.length > 0 ? periods : undefined);
+                }
+                
+                // Commit the current Start/End as one period: first after + replaces, subsequent append; update URL only (no reload)
+                function commitPeriodFromDotSelection() {
+                    const startStr = addStartDateInput && addStartDateInput.value ? addStartDateInput.value.trim() : '';
+                    const endStr = addEndDateInput && addEndDateInput.value ? addEndDateInput.value.trim() : '';
+                    if (!isValidYyyymmdd(startStr) || !isValidYyyymmdd(endStr)) return false;
+                    const startD = parseDate(startStr);
+                    const endD = parseDate(endStr);
+                    if (startD > endD) return false;
+                    const newPeriod = { startDate: startStr, endDate: endStr };
+                    if (replaceNextPeriodWithNew) {
+                        periods = [newPeriod];
+                        replaceNextPeriodWithNew = false;  // next completion will append
+                    } else {
+                        periods = [...periods, newPeriod];
+                    }
+                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, true, periods);
+                    currentPeriodIndex = periods.length - 1;
+                    addPeriodState = 'idle';
+                    if (addStartDateInput) { addStartDateInput.value = ''; addStartDateInput.disabled = true; addStartDateInput.classList.add('greyed'); }
+                    if (addEndDateInput) { addEndDateInput.value = ''; addEndDateInput.disabled = true; addEndDateInput.classList.add('greyed'); }
+                    updateAddPeriodButton();
+                    updateControls();
+                    return true;
+                }
+                
+                // Sync Start/End inputs for "Add period" from current period or map params
+                // When idle/need_start/need_point the boxes are greyed and count as empty - do not fill them
+                function syncAddPeriodInputs() {
+                    if (!addStartDateInput || !addEndDateInput) return;
+                    if (addPeriodState === 'need_start' || addPeriodState === 'need_end' || addPeriodState === 'idle' || addPeriodState === 'need_point') return;
+                    if (periods.length > 0 && currentPeriodIndex >= 0 && periods[currentPeriodIndex]) {
+                        const p = periods[currentPeriodIndex];
+                        addStartDateInput.value = p.startDate || '';
+                        addEndDateInput.value = p.endDate || '';
+                    } else if (currentMapParams.startDate && currentMapParams.endDate) {
+                        addStartDateInput.value = currentMapParams.startDate;
+                        addEndDateInput.value = currentMapParams.endDate;
+                    }
+                }
+                
+                // Validate YYYYMMDD string
+                function isValidYyyymmdd(s) {
+                    if (!s || typeof s !== 'string') return false;
+                    const t = s.trim();
+                    if (t.length !== 8) return false;
+                    const d = parseDate(t);
+                    return d !== null;
+                }
+                
                 // Update controls state
                 function updateControls() {
                     const periodDateRange = document.getElementById('period-date-range');
@@ -1181,6 +1418,7 @@
                             periodDateRange.textContent = '';
                         }
                     }
+                    syncAddPeriodInputs();
                 }
                 
                 // Clear loaded periods and free memory
@@ -1209,7 +1447,8 @@
                 
                 // Load periods for specified dataset
                 // forceUsePeriodInput: when true (e.g. user changed Period input), use calculatePeriods and ignore URL periods
-                function loadPeriodsForDataset(datasetIdx, forceUsePeriodInput) {
+                // customPeriods: optional array of { startDate, endDate }; when provided, use it instead of URL or calculated periods
+                function loadPeriodsForDataset(datasetIdx, forceUsePeriodInput, customPeriods) {
                     // Use this dataset's stored date range when available (so switching back to a dataset uses its range)
                     const stored = datasetDateRanges.get(datasetIdx);
                     if (stored && stored.firstDate && stored.lastDate) {
@@ -1249,6 +1488,15 @@
                     // Clear existing periods first
                     clearPeriods();
                     
+                    // Custom periods (e.g. from "+" button) take precedence
+                    if (customPeriods && customPeriods.length > 0) {
+                        periods = customPeriods;
+                        dataFirstDate = parseDate(periods[0].startDate);
+                        dataLastDate = parseDate(periods[periods.length - 1].endDate);
+                        datasetDateRanges.set(datasetIdx, { firstDate: dataFirstDate, lastDate: dataLastDate });
+                        const periodInputGroup = document.getElementById('period-input-group');
+                        if (periodInputGroup) periodInputGroup.style.display = 'none';
+                    } else {
                     // Use URL periods only when not forcing period input (e.g. loaded from shared link)
                     const urlPeriods = forceUsePeriodInput ? null : parsePeriodsFromUrl(getOverlayUrlParams().periods);
                     if (urlPeriods && urlPeriods.length > 0) {
@@ -1268,6 +1516,7 @@
                         const periodInputGroup = document.getElementById('period-input-group');
                         if (periodInputGroup) periodInputGroup.style.display = '';
                         periods = calculatePeriods();
+                    }
                     }
                     if (periods.length === 0) {
                         alert('No periods to display.');
@@ -1454,6 +1703,13 @@
                     timeControlsPanel.classList.add('visible');
                     memoryDisplay.classList.add('visible');
                     
+                    // Unset point selection when entering time controls so + shows "Select a point..." until user selects again
+                    currentMapParams.pointLat = null;
+                    currentMapParams.pointLon = null;
+                    currentMapParams.refPointLat = null;
+                    currentMapParams.refPointLon = null;
+                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, true, periods.length > 0 ? periods : undefined);
+                    
                     // Load periods for current dataset if not already loaded
                     if (loadedDatasetIdx !== activeDatasetIdx || periodPanels.size === 0) {
                         if (!loadPeriodsForDataset(activeDatasetIdx)) {
@@ -1477,10 +1733,15 @@
                     currentPeriodIndex = 0;
                     showPeriod(currentPeriodIndex);
                     updateControls();
+                    syncAddPeriodInputs();
+                    addPeriodState = 'idle';
+                    updateAddPeriodButton();
                 }
                 
                 // Close time controls → restore to BASELINE STATE
                 function closeTimeControls() {
+                    addPeriodState = 'idle';
+                    updateAddPeriodButton();
                     restoreToBaselineState();
                 }
                 
@@ -1549,6 +1810,27 @@
                     }
                 });
                 
+                // On hover over +, re-check status (point selected, start/end date) so title is always correct
+                addPeriodBtn.addEventListener('mouseenter', () => {
+                    updateAddPeriodButton();
+                });
+                
+                // Add period (+) button: enter add-period flow. Requires point selected; then reset to full range and wait for two dot clicks.
+                addPeriodBtn.addEventListener('click', () => {
+                    if (!timeControlsActive) return;
+                    if (!pointSelected()) {
+                        addPeriodState = 'need_point';
+                        updateAddPeriodButton();
+                        return;
+                    }
+                    addPeriodState = 'need_start';
+                    replaceNextPeriodWithNew = (periods.length === 0);
+                    if (addStartDateInput) { addStartDateInput.value = ''; addStartDateInput.disabled = true; addStartDateInput.classList.add('greyed'); }
+                    if (addEndDateInput) { addEndDateInput.value = ''; addEndDateInput.disabled = true; addEndDateInput.classList.add('greyed'); }
+                    resetVisibleIframeToFullRange();
+                    updateAddPeriodButton();
+                });
+                
                 periodInput.addEventListener('change', () => {
                     if (timeControlsActive) {
                         loadPeriodsForDataset(activeDatasetIdx, true);  // Force use period input, ignore URL
@@ -1559,6 +1841,7 @@
                 
                 // Initialize
                 updateMemoryDisplay();
+                updateAddPeriodButton();
                 // Auto-open Time Controls if URL has timeControls=true and periods.
                 // All period iframes are created with src set and load in background; first period is shown.
                 // Delay allows initial map load; forward/backward arrows work without reloading.
