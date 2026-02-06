@@ -86,7 +86,7 @@ Overlay does **not** cache tiles or API responses. It only keeps: **`currentMapP
 1. `frameSelect` change → `selectDataset(selectedIndex)`.
 2. All panels hidden; selected panel shown (visibility, z-index, pointer-events).
 3. `updateOverlayUrl(...)` updates overlay hash.
-4. **No reload.** The newly visible iframe was last reloaded with current params (including contour) when it was synced.
+4. **No reload.** The newly visible iframe already has contour in sync (overlay sends `insarmaps-set-contour` to all iframes when contour changes).
 
 ### 3.2 Time Controls open
 
@@ -126,59 +126,37 @@ So both “dataset” and “period” are “which iframe to show.” Differenc
 
 ## 6. Difference in Actions Between User Options
 
-Changes **inside** the active insarmaps iframe trigger postMessage → debounce → update `currentMapParams`. **All params** (including contour, color limits, background, time slider, etc.) are synced by reloading all other dataset iframes. The active iframe is never reloaded.
+Changes **inside** the active insarmaps iframe trigger postMessage → debounce → update `currentMapParams`. **Contour** is then synced by posting to all iframes (no reload). **All other params** (color limits, background, time slider, etc.) are synced by reloading all other dataset iframes. The active iframe is never reloaded.
 
 | User action | Where | What overlay does | Iframes reloaded? |
 |-------------|--------|-------------------|--------------------|
 | **Color limits** (minScale/maxScale) | Insarmaps | postMessage → set `src` on other iframes | All except active |
 | **Background** | Insarmaps | Same | All except active |
-| **Contour** | Insarmaps | Reload other iframes with `contours=true/false` in URL | All except sender |
+| **Contour** | Insarmaps | postMessage **to all iframes** `insarmaps-set-contour` (no reload) | None |
 | **Dataset** (dropdown) | Overlay | Show/hide panel only; if Time Controls on, load periods for new dataset | None (or new period iframes only when Time Controls on) |
 | **Period** via **time slider** | Insarmaps | postMessage → set `src` on other iframes | All except active |
 | **Period** via **Time Controls** (◀/▶/Play) | Overlay | `showPeriod(idx)` – change visible period panel | None |
 
-So: **Color limits, background, time slider, contour** → postMessage → reload all other dataset iframes. **Dataset dropdown** → no reload; only show/hide panel. **Period via Time Controls** → no reload; only which period panel is visible.
+So: **Color limits, background, time slider** → postMessage → reload all other dataset iframes. **Contour** → when **only** contour changes, overlay does **not** reload; it sends **postMessage** to **all** iframes to add/remove the contour layer (see § 7). **Dataset dropdown** → no reload; only show/hide panel. **Period via Time Controls** → no reload; only which period panel is visible.
 
 ---
 
-## 7. Contour toggle – synced by reload (same as other params)
+## 7. Contour toggle – add/remove in all iframes (no reload)
 
-Contour is synced by **reloading** other iframes with `contours=true` or `contours=false` in the URL. This is more reliable than the previous postMessage approach, which often failed when target iframes were not ready. Insarmaps applies contour on load via `getUrlVar("contours")`.
+To avoid unnecessary reloads and to make contours show when switching iframes, contour is **not** synced by reloading. Instead:
 
+1. User toggles the contour button **inside** the active insarmaps iframe.
+2. Insarmaps updates its URL and sends `postMessage({ type: 'insarmaps-url-update', url: '...' })`.
+3. Overlay receives the message (after debounce), updates `currentMapParams.contour` and the overlay hash URL.
+4. Overlay checks whether **only** the contour param changed (same lat/lon/zoom, scale, dates, background, opacity; only `contour` differs from last sync).
+   - **If only contour changed:** Overlay does **not** reload any iframe. It sends a **postMessage** to **every** dataset iframe: `{ type: 'insarmaps-set-contour', value: true|false }`. Each iframe (when embedded) listens for this and calls `myMap.addContourLines()` or `myMap.removeContourLines()` and updates the contour button state. So all iframes get the same contour state without reload; when the user switches dataset, the newly visible iframe already has contours on or off.
+   - **If any other param changed:** Overlay behaves as before: reloads **all other** iframes with the new URL (which includes the current contour).
+
+Insarmaps (mainPage.js) listens for `insarmaps-set-contour`: it adds/removes the contour layer and the button “toggled” state so the UI stays in sync.
 
 ### Parameter values
 
-- Overlay and matrix use **`contours`** (with 's') in iframe URLs to match insarmaps. Overlay's own hash may use `contour` for brevity.
-
----
-
-## 8. matrix.html sync – reload on any change
-
-`matrix.html` shows 2 or 4 frames in a grid (all visible at once). When the user changes **any** parameter in one frame (pan, zoom, scale, contour, colorscale, background, opacity, etc.), the other frames are **reloaded** with the new URL. There is no postMessage path for display params; sync is always by reload.
-
-**Why reload:** All frames stay in sync with identical display parameters. Reloading ensures each frame loads with the full `currentMapParams` in the URL, so insarmaps applies them correctly on init. The sender iframe is never reloaded.
-
-**Same logic as overlay** for dataset-frame sync: any `currentMapParams` change → reload other iframes.
-
----
-
-## 9. currentMapParams
-
-Both overlay and matrix maintain `currentMapParams`, the shared state of all map controls:
-
-| Property | Description |
-|----------|-------------|
-| lat, lon, zoom | Map center and zoom level |
-| minScale, maxScale | Color scale limits |
-| startDate, endDate | Time range (YYYYMMDD) |
-| pixelSize | Point size for InSAR data |
-| background | Map background (`streets`, `satellite`, `hillshade`) |
-| opacity | Layer opacity (0–100) |
-| contour | Contour lines (`true`/`false`) |
-| colorscale | Color scale type (`velocity`, `displacement`) |
-| refPointLat, refPointLon | Reference point |
-
-When any of these change (from postMessage), overlay and matrix update `currentMapParams` and reload other iframes with a new URL built from it.
+- Overlay uses **`contour=true`** and **`contour=false`** in its hash and in built iframe URLs; it normalizes `on`/`off` from insarmaps to `true`/`false`.
 
 ---
 
@@ -211,7 +189,6 @@ When any of these change (from postMessage), overlay and matrix update `currentM
 │  ┌──────────────────────────────────────────────────────────────────────┐  │
 │  │                  Message Handler (window.addEventListener)            │  │
 │  │                                                                       │  │
-│  │  0. If sender is a period iframe → return (ignore; prevents reload)   │  │
 │  │  1. Parse incoming URL from sender iframe                             │  │
 │  │  2. Extract lat/lon/zoom and query params                             │  │
 │  │  3. Create syncKey (JSON of all sync-relevant params)                 │  │
@@ -254,24 +231,6 @@ When any of these change (from postMessage), overlay and matrix update `currentM
 
 See **§ 1. What Triggers the Loading of Data** and **§ 6. Difference in Actions Between User Options** for full detail.
 
-### 11.3 insarmaps sending postMessage on dataset load
-
-To avoid the "Could not determine date range" alert when opening Time Controls before any user interaction, insarmaps sends a postMessage as soon as a dataset loads. In `mainMap.js`, when `currentArea = feature` is set in `loadDatasetFromFeature`, it calls `notifyParentOfUrlState()`. That sends the same `insarmaps-url-update` message format with `firstDate` and `lastDate` from the dataset’s `attributekeys`/`attributevalues`, so the overlay has the date range for Time Controls without requiring interaction. **Timing**: this can arrive several seconds after page load (insarmaps must load area markers, find the dataset, and set `currentArea`). If the user clicks Time Controls before that, the overlay uses the wait mechanism (§ 11.4).
-
-### 11.4 Overlay wait-for-postMessage when date range is missing
-
-When the user opens Time Controls and the overlay has no `dataFirstDate`/`dataLastDate` (no URL periods, no prior postMessage), instead of immediately alerting and closing, the overlay:
-
-1. Shows the Time Controls panel with "Waiting for map data…" in the period indicator.
-2. Starts a 5-second timer (`DATE_RANGE_WAIT_MS`).
-3. Waits for a postMessage with `firstDate`/`lastDate` from insarmaps.
-4. If a postMessage arrives with dates: clears the timer, calls `loadPeriodsForDataset(activeDatasetIdx)`, shows the first period, and updates controls.
-5. If the 5-second timer fires and dates are still missing: shows the alert and closes Time Controls.
-
-This handles the case where insarmaps is still loading or the deployed insarmaps does not yet include `notifyParentOfUrlState`. It does not require changes to insarmaps.
-
----
-
 ## Key Functions
 
 ### `getOverlayUrlParams()`
@@ -279,7 +238,6 @@ Parses overlay.html's URL (hash-based or legacy path-based) and extracts:
 - `view` or `startDataset` (which dataset to show)
 - `lat`, `lon`, `zoom` (map position)
 - Display params: `minScale`, `maxScale`, `startDate`, `endDate`, `pixelSize`, `background`, `opacity`, `contour`
-- `timeControls`, `periods` (when Time Controls are in the URL; see § 11.1)
 
 ### `buildInsarmapsUrl(baseUrl, dataset, lat, lon, zoom, mapParams)`
 Constructs a full insarmaps URL with:
@@ -288,8 +246,8 @@ Constructs a full insarmaps URL with:
 
 The `_t` timestamp parameter forces browser to reload the iframe (cache-busting).
 
-### `updateOverlayUrl(viewCodeOrDataset, mapParams, currentDataset, timeControlsActive, periodsArray)`
-Updates the browser URL (hash-based) to reflect current state for bookmarking/sharing. When `timeControlsActive` and `periodsArray` are provided, adds `timeControls=true` and `periods=...` to the URL.
+### `updateOverlayUrl(viewCodeOrDataset, mapParams, currentDataset)`
+Updates the browser URL (hash-based) to reflect current state for bookmarking/sharing.
 
 ## Synchronization Mechanism
 
@@ -303,12 +261,8 @@ window.parent.postMessage({
 ```
 
 ### Debounce & Cooldown
-
-See **§ 10. Wait and Cooldown Periods** for full detail.
-
-- **SYNC_DEBOUNCE_MS = 1500ms**: Debounce – wait for user to stop before processing postMessage
-- **SYNC_COOLDOWN_MS = 3000ms**: Ignore messages from non-active iframes for 3s after a sync
-- **PERIOD_SYNC_COOLDOWN_MS = 5000ms**: Don’t reload period iframes on period-iframe message within 5s of TC open (now moot: we ignore all period-iframe messages)
+- **SYNC_DEBOUNCE_MS = 1500ms**: Wait for user to stop interacting before syncing
+- **SYNC_COOLDOWN_MS = 3000ms**: Ignore incoming messages for 3s after syncing (prevents feedback loops)
 
 ### syncKey Comparison
 ```javascript
@@ -320,59 +274,6 @@ const syncKey = JSON.stringify({
 });
 if (syncKey === lastSyncedKey) return; // Skip if no actual change
 ```
-
----
-
-## 10. Wait and Cooldown Periods
-
-The overlay uses two timing mechanisms to prevent sync loops and batch rapid user input.
-
-### 10.1 Debounce (SYNC_DEBOUNCE_MS = 1500 ms)
-
-**What it does**: When a `postMessage` arrives, the overlay does **not** process it immediately. It clears any pending timeout and starts a new 1500 ms timer. Processing runs only after 1500 ms pass with no new message.
-
-**Purpose**: Batch rapid changes (e.g. user dragging time slider or panning). A single sync is performed after the user pauses.
-
-**User interaction during debounce**: The site **fully accepts** user interaction. The user can keep panning, zooming, or changing sliders. The overlay simply delays when it applies the sync (update params, reload other iframes). Nothing is blocked.
-
-### 10.2 Cooldown (SYNC_COOLDOWN_MS = 3000 ms)
-
-**What it does**: After a sync is applied, the overlay sets `lastSyncTime`. For the next 3000 ms, postMessages from **non-active** iframes are **ignored**. Messages from the **active** iframe are **always processed**.
-
-**Purpose**: Avoid feedback loops. When we reload other iframes, they load and may send their own postMessage. Ignoring those for 3 s prevents a cascade of reloads.
-
-**User interaction during cooldown**: The user **can still interact** with the active iframe (the one they’re viewing). Those messages are processed. Only messages from background/hidden iframes are ignored.
-
-### 10.3 Period sync cooldown (PERIOD_SYNC_COOLDOWN_MS = 5000 ms)
-
-**What it does**: Used when deciding whether to reload period iframes on a sync. Reload of other period iframes is skipped if the message came from a period iframe and it has been less than 5 s since Time Controls opened.
-
-**Note**: The overlay now **ignores all postMessages from period iframes** (see § 11), so this cooldown is largely redundant for that path.
-
----
-
-## 11. Time Controls URL and Full-Page Reload Fix
-
-### 11.1 Time Controls in the URL
-
-When Time Controls are active, the overlay adds `timeControls=true` and `periods=...` to the hash URL:
-
-```
-overlay.html#/start/0.7480/-77.9687/9.8?startDataset=...&timeControls=true&periods=20141027:20161027,20161027:20181028,...
-```
-
-- **Period format**: `periods=start1:end1,start2:end2,...` (comma-separated; `@` also accepted).
-- **When generated**: When the user enables Time Controls, periods are derived from the default period length (years) and the dataset’s `first_date`/`last_date` via `calculatePeriods()`.
-- **When used**: If the URL already has `timeControls=true` and `periods`, the overlay uses those periods and does not recalculate. The Period input is hidden. Auto-open runs after ~1.2 s.
-- **startDate/endDate**: When the URL has Time Controls, overlay `startDate` and `endDate` are taken from the first period.
-
-### 11.2 Full-page reload bug and solution
-
-**Symptom**: The overlay page sometimes reloaded repeatedly (especially in Safari, and always showing the first period). Reloads could continue until one browser was closed.
-
-**Root cause**: Period iframes send `postMessage` when they load (e.g. via `notifyParentOfUrlState` in insarmaps). The overlay treated these like dataset-iframe messages: it updated `currentMapParams`, called `updateOverlayUrl` (replaceState), and sometimes reloaded other iframes. That produced a loop: period iframe loads → postMessage → overlay updates and reloads → period iframe reloads → postMessage → …
-
-**Solution**: The overlay **ignores postMessages from period iframes entirely**. At the start of the postMessage handler, it detects whether the sender is a period iframe. If so, it returns immediately—no `currentMapParams` update, no `updateOverlayUrl`, no iframe reloads. Period state is driven only by overlay logic (arrows, Play, etc.), not by period iframe messages.
 
 ## Comparison: Dataset Switch vs Time Slider Change
 
@@ -540,11 +441,6 @@ When `insarmaps.log` contains only ONE URL:
 ### Hash-based (preferred, shareable):
 ```
 overlay.html#/start/0.7480/-77.9687/9.8000?startDataset=S1_desc_...&minScale=-3&maxScale=3
-```
-
-With Time Controls:
-```
-overlay.html#/start/0.7480/-77.9687/9.8000?startDataset=...&timeControls=true&periods=20141027:20161027,20161027:20181028,...
 ```
 
 ### Legacy path-based (backwards compatible):

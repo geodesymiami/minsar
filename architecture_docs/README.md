@@ -167,6 +167,31 @@ run_workflow.bash --start mintpy        # By name
 
 Check `topsStack.coregistration` in template.
 
+## Open Issues: matrix.html Time Controls
+
+### Problem (as reported)
+
+When using Time Controls in `minsar/html/matrix.html`:
+- **Periods 2 and 3 do not display** — they remain blank
+- **Loading does not happen in the background** — unlike `overlay.html`, where period 1 is shown and other periods load in the background, matrix.html does not load other periods while displaying the current one
+- Periods 2 and 3 appear to be handled differently somewhere in the code
+
+### Attempts made (unsuccessful)
+
+1. **Ignore postMessage from period iframes** — Period iframes send `insarmaps-url-update` when they load; processing these caused the active grid to reload. Added `isFromPeriodIframe()` check to ignore period-iframe messages. Did not fix blank periods 2 and 3.
+
+2. **Show period 0 earlier** — Reduced initial wait from ~28s to 5s so period 0 appears sooner; other periods still loaded via stagger. Did not fix the issue.
+
+3. **Match overlay.html behavior** — Removed stagger; create all period grids at once (like overlay.html). Use `visibility: visible` and `z-index: -1` for inactive grids so iframes load in background. Show period 0 immediately with no delay. Still did not solve the problem.
+
+### Current state
+
+`minsar/html/matrix.html` has been reverted to the last committed version. The Time Controls issue remains open.
+
+### Reference
+
+`overlay.html` successfully loads periods in the background — it creates all period panels in one loop, uses `visibility: visible` + `z-index: -1` for inactive panels, and shows period 0 immediately.
+
 ## Related Files
 
 - Existing detailed docs: `minsar/bin/ARCHITECTURE.md` (run_workflow.bash specific)
