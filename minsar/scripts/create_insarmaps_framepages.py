@@ -3677,20 +3677,24 @@ def main(iargs=None):
             if num_urls == 2:
                 matrix_path = os.path.join(inps.out_dir, 'matrix.html')
                 create_webpage_2frames(urls[:2], labels[:2], matrix_path, zoom_factor=inps.zoom, layout='matrix')
+                column_path = os.path.join(inps.out_dir, 'column.html')
+                create_webpage_2frames(urls[:2], labels[:2], column_path, zoom_factor=inps.zoom, layout='column')
                 row_path = os.path.join(inps.out_dir, 'row.html')
                 create_webpage_2frames(urls[:2], labels[:2], row_path, zoom_factor=inps.zoom, layout='row')
-                print(f"Created layout files: overlay.html, matrix.html, row.html")
+                print(f"Created layout files: overlay.html, matrix.html, column.html, row.html")
             elif num_urls >= 4:
                 matrix_path = os.path.join(inps.out_dir, 'matrix.html')
                 create_webpage_4frames(urls[:4], labels[:4], matrix_path, zoom_factor=inps.zoom, layout='matrix')
-                print(f"Created layout files: overlay.html, matrix.html")
+                column_path = os.path.join(inps.out_dir, 'column.html')
+                create_webpage_4frames(urls[:4], labels[:4], column_path, zoom_factor=inps.zoom, layout='column')
+                print(f"Created layout files: overlay.html, matrix.html, column.html")
             else:
                 print(f"Note: Found {num_urls} URLs. Need exactly 2 or at least 4 URLs for matrix/column layouts.")
                 print(f"Created overlay.html with all {num_urls} frames.")
         else:
             # Copy template files to output directory
             import shutil
-            templates = ['overlay.html', 'matrix.html']
+            templates = ['overlay.html', 'matrix.html', 'column.html']
             for template_name in templates:
                 src = os.path.join(template_dir, template_name)
                 dst = os.path.join(inps.out_dir, template_name)
@@ -3711,11 +3715,11 @@ def main(iargs=None):
             print(f"To change URLs, simply edit {inps.log_path} and refresh the browser.")
             
             if num_urls == 2:
-                print(f"\nCreated layout files: overlay.html, matrix.html, row.html")
+                print(f"\nCreated layout files: overlay.html, matrix.html, column.html, row.html")
                 print(f"All layouts support 2 frames.")
             elif num_urls >= 4:
-                print(f"\nCreated layout files: overlay.html, matrix.html, row.html")
-                print(f"Matrix layout will use first 4 frames.")
+                print(f"\nCreated layout files: overlay.html, matrix.html, column.html, row.html")
+                print(f"Matrix and column layouts will use first 4 frames.")
                 print(f"Overlay layout supports all {num_urls} frames.")
             else:
                 print(f"\nNote: Found {num_urls} URLs. Matrix/column views require 2 or 4 URLs.")
