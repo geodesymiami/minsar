@@ -47,6 +47,7 @@ So: **Trigger** = any insarmaps URL change in the active iframe. **Effect** = al
 - **Open Time Controls:** `openTimeControls()` → `loadPeriodsForDataset(activeDatasetIdx)`. Creates one panel per period, each with its own iframe (URL includes that period’s startDate/endDate). So **opening** triggers **loading of N period iframes**.
 - **Change period (◀/▶/Play):** `showPeriod(periodIdx)` only changes which period panel is visible. **No iframe reload.**
 - **Change period length or Sequential:** Calls `loadPeriodsForDataset(activeDatasetIdx)` again → period panels cleared and recreated → **all period iframes loaded again**.
+- **Period selection mode (+/−):** See **§ 8. Period Selection Mode** – entering or exiting this mode does **not** trigger any reload or panel switch.
 
 ### 1.5 Summary: when is an iframe loaded?
 
@@ -464,6 +465,43 @@ overlay.html/start/0.7480/-77.9687/9.8000?view=desc&minScale=-3&maxScale=3
 | background | Map background | Layer selector |
 | opacity | Layer opacity | Opacity slider |
 | contour | Contour display (`contour=true` / `contour=false` in URL) | Contour toggle |
+
+## 8. Period Selection Mode
+
+Period selection mode (the +/− button) allows the user to register start and end dates for a new time period. The mode is a pure UI toggle: it enables or disables the Start/End date inputs and the ability to pick dates from the timeseries chart.
+
+### 8.1 What happens when entering period selection mode (+)
+
+1. `periodSelectionModeActive = true`
+2. `replaceNextPeriodWithNew = true` (next committed period replaces; subsequent ones append)
+3. `updateOverlayUrl(...)` – URL keeps existing periods if present
+4. `updateControls()` – updates period indicator, arrow state, etc.
+5. `updateAddPeriodButton()` – button shows "−", title "Close period selection mode", Start/End boxes visible
+6. `sendKeepChartsOpenToVisibleIframe()` – tells insarmaps to keep the timeseries open
+7. If no point selected: `addPeriodState = 'need_point'`, grey inputs, return
+8. Otherwise: `addPeriodState = 'need_start'`, grey inputs
+
+**No reload. No panel switch. No clearPeriods().** The same view (period panel or main dataset panel) stays visible. The timeseries window is not affected.
+
+### 8.2 What happens when exiting period selection mode (−)
+
+1. `periodSelectionModeActive = false`
+2. `periodSelectionModeExitSuppressUntil = Date.now() + 2000` – suppress postMessage-driven reloads for 2 seconds (clicking − can cause iframe blur/resize → insarmaps sends postMessage → overlay would reload other period iframes)
+3. `updateAddPeriodButton()` – button shows "+", title "Click to select periods", Start/End boxes collapse
+4. `sendKeepChartsOpenToVisibleIframe()` – tells insarmaps to keep the timeseries open
+
+**No reload. No panel switch. No loadPeriodsForDataset().** The same view stays visible. The timeseries window is not affected. Any postMessage that arrives shortly after exiting (e.g. from iframe blur or layout resize) is suppressed from triggering period iframe reloads.
+
+### 8.3 When are period panels created or updated?
+
+- Period panels are created when **Time Controls are opened** (`openTimeControls()` → `loadPeriodsForDataset()`)
+- Period panels are updated when the user **commits a period** from dot selection (`commitPeriodFromDotSelection()`) – but only when **not** in period selection mode (so committing updates panels only after the user has exited the mode)
+- Changing period length or Sequential input triggers `loadPeriodsForDataset()` again
+- Switching dataset while Time Controls are open triggers `loadPeriodsForDataset()` for the new dataset
+
+The +/− button itself never triggers loading or reloading.
+
+---
 
 ## NOT Synchronized (by design)
 

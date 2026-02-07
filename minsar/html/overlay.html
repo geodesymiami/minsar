@@ -32,6 +32,15 @@
             gap: 15px;
             flex-wrap: wrap;
         }
+        @media (max-width: 900px) {
+            .controls-bar { gap: 2px; padding: 6px; }
+            .time-controls-panel.visible { gap: 6px; }
+            .time-controls-panel.visible .play-btn-group { margin-left: -12px; }
+            .time-control-group { gap: 3px; }
+            .frame-selector { gap: 6px; }
+            .period-date-range { min-width: 160px; font-size: 14px; }
+            .add-period-group { gap: 4px; }
+        }
         .frame-selector {
             display: flex;
             align-items: center;
@@ -101,12 +110,13 @@
             white-space: nowrap;
         }
         .time-control-group input[type="number"] {
-            width: 50px;
-            padding: 4px 6px;
+            width: 38px;
+            padding: 4px 3px;
             font-size: 13px;
             border: 1px solid #ddd;
             border-radius: 4px;
             text-align: center;
+            box-sizing: border-box;
         }
         .time-control-group .unit {
             font-size: 13px;
@@ -117,7 +127,7 @@
             cursor: pointer;
         }
         .nav-btn {
-            padding: 4px 8px;
+            padding: 4px 5px;
             font-size: 12px;
             border: 1px solid #ddd;
             border-radius: 4px;
@@ -136,8 +146,17 @@
             font-size: 12px;
             font-weight: bold;
             color: #333;
-            min-width: 40px;
+            min-width: 36px;
             text-align: center;
+        }
+        .time-control-group.nav-buttons {
+            gap: 2px;
+        }
+        .period-date-range {
+            font-size: 15px;
+            color: #333;
+            min-width: 220px;
+            font-weight: 500;
         }
         .play-btn {
             padding: 4px 8px;
@@ -187,7 +206,7 @@
             white-space: nowrap;
         }
         .add-period-group input[type="text"].date-input {
-            width: 90px;
+            width: 63px;
             padding: 4px 6px;
             font-size: 13px;
             border: 1px solid #ddd;
@@ -200,13 +219,11 @@
             cursor: not-allowed;
         }
         .add-period-btn {
-            width: 32px;
-            height: 32px;
-            padding: 0;
+            padding: 4px 8px;
             font-size: 18px;
             font-weight: bold;
             line-height: 1;
-            border: 2px solid #27ae60;
+            border: 1px solid #27ae60;
             border-radius: 4px;
             background-color: #27ae60;
             color: white;
@@ -241,11 +258,13 @@
             background-color: #f9e79f;
         }
         .add-period-btn.mode-close {
-            background-color: #e74c3c;
-            border-color: #c0392b;
+            background-color: #a8e6a1;
+            border-color: #7fdb7f;
+            color: #2d5a2d;
         }
         .add-period-btn.mode-close:hover {
-            background-color: #c0392b;
+            background-color: #7fdb7f;
+            color: #1e3d1e;
         }
         .container {
             width: 100%;
@@ -368,17 +387,17 @@
             <div class="time-control-group" id="period-input-group">
                 <label for="period-value">Period:</label>
                 <input type="number" id="period-value" value="2" min="0.1" step="0.1">
-                <span class="unit">years</span>
+                <span class="unit">yrs</span>
             </div>
-            <div class="time-control-group">
+            <div class="time-control-group nav-buttons">
                 <button class="nav-btn" id="btn-backward" title="Previous period" disabled>◀</button>
                 <span class="period-indicator" id="period-indicator">-/-</span>
                 <button class="nav-btn" id="btn-forward" title="Next period" disabled>▶</button>
             </div>
             <div class="time-control-group">
-                <span id="period-date-range" style="font-size: 15px; color: #333; min-width: 220px; font-weight: 500;"></span>
+                <span id="period-date-range" class="period-date-range"></span>
             </div>
-            <div class="time-control-group">
+            <div class="time-control-group play-btn-group">
                 <button class="play-btn" id="btn-play">▶ Play</button>
             </div>
             <div class="time-control-group">
@@ -387,13 +406,13 @@
                 <span class="unit">secs</span>
             </div>
             <div class="time-control-group add-period-group" id="add-period-group">
+                <button type="button" class="add-period-btn" id="add-period-btn" title="Select periods for URL from timeseries">+</button>
                 <span class="add-period-boxes">
                     <label for="add-start-date">Start:</label>
                     <input type="text" id="add-start-date" class="date-input" placeholder="YYYYMMDD" maxlength="8">
                     <label for="add-end-date">End:</label>
                     <input type="text" id="add-end-date" class="date-input" placeholder="YYYYMMDD" maxlength="8">
                 </span>
-                <button type="button" class="add-period-btn" id="add-period-btn" title="Click to select periods">+</button>
             </div>
         </div>
         <div class="time-controls-column">
@@ -1343,12 +1362,12 @@
                     if (addPeriodGroup) addPeriodGroup.classList.toggle('expanded', periodSelectionModeActive);
                     if (!periodSelectionModeActive) {
                         addPeriodBtn.textContent = '+';
-                        addPeriodBtn.title = 'Click to select periods';
+                        addPeriodBtn.title = 'Select periods for URL';
                         addPeriodBtn.classList.remove('state-need-point', 'state-need-start', 'state-need-end', 'mode-close');
                         return;
                     }
                     addPeriodBtn.textContent = '−';
-                    addPeriodBtn.title = 'Close period selection mode';
+                    addPeriodBtn.title = 'Close periods selection mode';
                     addPeriodBtn.classList.add('mode-close');
                     addPeriodBtn.classList.remove('state-need-point', 'state-need-start', 'state-need-end');
                     // Grey out Start/End: need_start or idle or need_point = both greyed; need_end = only End greyed. Keep dates in boxes when greyed.
