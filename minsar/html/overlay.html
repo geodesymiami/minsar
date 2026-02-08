@@ -1032,10 +1032,15 @@
                         const params = queryStart >= 0 ? new URLSearchParams(newUrlPath.substring(queryStart)) : new URLSearchParams();
                         const hasPointSelection = params.has('pointLat') || params.has('pointLon') || params.has('refPointLat') || params.has('refPointLon');
                         
-                        // If from period iframe, only process if it has point selection; otherwise ignore
+                        // If from period iframe: process point selection only (return), or display params (fall through to sync).
+                        // Display params (lat, lon, zoom, minScale, maxScale, etc.) must apply to all period iframes—same as dataset mode.
                         if (senderPeriodIdx >= 0) {
-                            if (hasPointSelection) {
-                                // Extract and update point selection from period iframe
+                            const pathMatchForPeriod = newUrlPath.match(/^\/start\/([^\/]+)\/([^\/]+)\/([^?]+)/);
+                            if (pathMatchForPeriod) {
+                                // Has display params—fall through to full sync logic (will reload all period iframes)
+                                // (senderPeriodIndex set below; period sync block will run)
+                            } else if (hasPointSelection) {
+                                // Point selection only—update and return
                                 const pointLat = params.get('pointLat') ?? currentMapParams.pointLat ?? null;
                                 const pointLon = params.get('pointLon') ?? currentMapParams.pointLon ?? null;
                                 const refPointLat = params.get('refPointLat') ?? currentMapParams.refPointLat ?? null;
@@ -1050,8 +1055,10 @@
                                         (typeof timeControlsActive !== 'undefined' && timeControlsActive),
                                         (typeof timeControlsActive !== 'undefined' && timeControlsActive && typeof periods !== 'undefined' && periods.length > 0) ? periods : undefined);
                                 }
+                                return;
+                            } else {
+                                return;
                             }
-                            return;
                         }
                         
                         // Parse path: /start/{lat}/{lon}/{zoom}?params...
@@ -1558,6 +1565,8 @@
                 // customPeriods: optional array of { startDate, endDate }; when provided, use it instead of URL or calculated periods
                 function loadPeriodsForDataset(datasetIdx, forceUsePeriodInput, customPeriods) {
                     // Use this dataset's stored date range when available (so switching back to a dataset uses its range)
+                    const urlParams = getOverlayUrlParams();
+                    const tcInUrl = urlParams.timeControls === 'true';
                     const stored = datasetDateRanges.get(datasetIdx);
                     if (stored && stored.firstDate && stored.lastDate) {
                         dataFirstDate = stored.firstDate;
@@ -1565,7 +1574,10 @@
                     } else if (dataFirstDate && dataLastDate) {
                         // Global date range from any prior postMessage (e.g. another dataset with same AOI)
                         // already set; no action needed
-                    } else if (currentMapParams.startDate && currentMapParams.endDate) {
+                    } else if (tcInUrl && currentMapParams.startDate && currentMapParams.endDate) {
+                        // Only use URL/currentMapParams startDate/endDate when timeControls=true (restoring from TC link).
+                        // When timeControls is absent or false, startDate/endDate are display params (current view)—
+                        // they may be a subset; use Period input with dataset's full range instead.
                         dataFirstDate = parseDate(currentMapParams.startDate);
                         dataLastDate = parseDate(currentMapParams.endDate);
                     } else {
@@ -1578,8 +1590,9 @@
                             }
                         }
                     }
-                    if (!dataFirstDate || !dataLastDate) {
-                        // Last resort: try parsing startDate/endDate from the raw URL in urlsList
+                    if ((!dataFirstDate || !dataLastDate) && tcInUrl) {
+                        // Last resort only when restoring from TC link: try parsing from urlsList
+                        // (when tc not in URL, urlsList may have display subset—prefer postMessage full range)
                         try {
                             const url = urlsList[datasetIdx];
                             if (url) {
