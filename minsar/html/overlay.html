@@ -1093,8 +1093,13 @@
                         // (insarmaps often omits minScale, startDate, etc.) are detected and don't trigger reloads
                         const minScale = params.get('minScale') ?? currentMapParams.minScale;
                         const maxScale = params.get('maxScale') ?? currentMapParams.maxScale;
-                        const startDate = params.get('startDate') ?? currentMapParams.startDate;
-                        const endDate = params.get('endDate') ?? currentMapParams.endDate;
+                        // When from period iframe: use visible period's dates, not message's (each period sends its own dates—would change syncKey and cause reload cascade)
+                        let startDate = params.get('startDate') ?? currentMapParams.startDate;
+                        let endDate = params.get('endDate') ?? currentMapParams.endDate;
+                        if (senderPeriodIdx >= 0 && typeof periods !== 'undefined' && periods.length > 0 && typeof currentPeriodIndex !== 'undefined' && currentPeriodIndex >= 0 && currentPeriodIndex < periods.length) {
+                            startDate = periods[currentPeriodIndex].startDate;
+                            endDate = periods[currentPeriodIndex].endDate;
+                        }
                         const pixelSize = params.get('pixelSize') ?? currentMapParams.pixelSize;
                         const background = params.get('background') ?? currentMapParams.background;
                         const opacity = params.get('opacity') ?? currentMapParams.opacity;
@@ -1232,8 +1237,9 @@
                                 typeof loadedDatasetIdx !== 'undefined' && loadedDatasetIdx >= 0) {
                                 const dataset = iframeDatasets.get(loadedDatasetIdx);
                                 if (dataset) {
-                                    // Reload every period iframe (including sender) so forward/backward show same display params
+                                    // Reload non-sender period iframes only—sender already has correct display params; reloading it triggers another postMessage and cascade
                                     periodPanels.forEach((panel, periodIdx) => {
+                                        if (periodIdx === senderPeriodIndex) return;
                                         const startDate = panel.dataset.startDate;
                                         const endDate = panel.dataset.endDate;
                                         if (!startDate || !endDate) return;
