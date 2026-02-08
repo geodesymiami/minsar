@@ -573,13 +573,15 @@
             if (timeControlsActive && periodsArray && periodsArray.length > 0) {
                 params.set('timeControls', 'true');
                 params.set('periods', serializePeriods(periodsArray));
-            } else {
+            } else if (timeControlsActive !== false) {
+                // Preserve timeControls/periods from current URL only when not explicitly turning off
                 const cur = getOverlayUrlParams();
                 if (cur.timeControls === 'true' && cur.periods) {
                     params.set('timeControls', 'true');
                     params.set('periods', cur.periods);
                 }
             }
+            // When timeControlsActive === false, do not add timeControls or periods so they are removed from the URL
             let hashUrl;
             if (mapParams.lat && mapParams.lon && mapParams.zoom) {
                 hashUrl = `/start/${mapParams.lat}/${mapParams.lon}/${mapParams.zoom}?${params.toString()}`;
@@ -1102,6 +1104,18 @@
                         if (syncKey === lastSyncedKey) return;
                         lastSyncedKey = syncKey;
                         
+                        // Detect display-param change (minScale, maxScale, contour, etc.) so we can reload ALL period iframes
+                        const prevContourNorm = normalizeContourValue(currentMapParams.contour);
+                        const displayParamsChanged = (
+                            minScale !== currentMapParams.minScale ||
+                            maxScale !== currentMapParams.maxScale ||
+                            contourValue !== prevContourNorm ||
+                            colorscaleValue !== currentMapParams.colorscale ||
+                            pixelSize !== currentMapParams.pixelSize ||
+                            background !== currentMapParams.background ||
+                            opacity !== currentMapParams.opacity
+                        );
+                        
                         // Update current map params (use resolved values so state is consistent)
                         currentMapParams = {
                             lat, lon, zoom,
@@ -1156,6 +1170,7 @@
                                 // If Time Controls are open but waiting for date range, try loading periods now
                                 if (typeof waitingForDateRangeForTC !== 'undefined' && waitingForDateRangeForTC) {
                                     if (dateRangeWaitTimer) { clearTimeout(dateRangeWaitTimer); dateRangeWaitTimer = null; }
+                                    if (dateRangePollTimer) { clearInterval(dateRangePollTimer); dateRangePollTimer = null; }
                                     waitingForDateRangeForTC = false;
                                     if (typeof loadPeriodsForDataset === 'function' && loadPeriodsForDataset(activeDatasetIdx)) {
                                         if (typeof showPeriod === 'function') showPeriod(0);
@@ -1197,19 +1212,21 @@
                                 });
                             }
                             // Reload period iframes with new params (lat, lon, zoom, minScale, maxScale, pixelSize, background, opacity, colorscale).
-                            // When message is from a period iframe, only reload others after cooldown to avoid double load on TC open.
+                            // When message is from a period iframe, only reload after cooldown to avoid double load on TC open—
+                            // unless display params (minScale, maxScale, contour, etc.) changed, then reload all immediately so forward/back show same settings.
                             // Also suppress reloads right after exiting period selection mode (clicking - can cause blur/resize -> postMessage).
                             const exitSuppressActive = typeof periodSelectionModeExitSuppressUntil !== 'undefined' && Date.now() < periodSelectionModeExitSuppressUntil;
                             const periodSyncAllowed = !exitSuppressActive && (senderPeriodIndex < 0 ||
-                                (Date.now() - (typeof periodPanelsCreatedAt !== 'undefined' ? periodPanelsCreatedAt : 0) > PERIOD_SYNC_COOLDOWN_MS));
+                                (Date.now() - (typeof periodPanelsCreatedAt !== 'undefined' ? periodPanelsCreatedAt : 0) > PERIOD_SYNC_COOLDOWN_MS) ||
+                                (typeof displayParamsChanged !== 'undefined' && displayParamsChanged));
                             if (periodSyncAllowed &&
                                 typeof timeControlsActive !== 'undefined' && timeControlsActive &&
                                 typeof periodPanels !== 'undefined' && periodPanels && periodPanels.size > 0 &&
                                 typeof loadedDatasetIdx !== 'undefined' && loadedDatasetIdx >= 0) {
                                 const dataset = iframeDatasets.get(loadedDatasetIdx);
                                 if (dataset) {
+                                    // Reload every period iframe (including sender) so forward/backward show same display params
                                     periodPanels.forEach((panel, periodIdx) => {
-                                        if (periodIdx === senderPeriodIndex) return;
                                         const startDate = panel.dataset.startDate;
                                         const endDate = panel.dataset.endDate;
                                         if (!startDate || !endDate) return;
@@ -1274,7 +1291,9 @@
                 const ESTIMATED_MB_PER_IFRAME = 80;
                 let waitingForDateRangeForTC = false;
                 let dateRangeWaitTimer = null;
-                const DATE_RANGE_WAIT_MS = 5000;
+                let dateRangePollTimer = null;
+                const DATE_RANGE_WAIT_MS = 20000;  // Total wait: 20s (polls every 1s)
+                const DATE_RANGE_POLL_MS = 1000;   // Poll interval: 1s
                 
                 // Add-period flow: user must select point, then +, then click dot (start), then dot (end)
                 // States: 'idle' | 'need_point' | 'need_start' | 'need_end'
@@ -1738,6 +1757,7 @@
                 // and apply that date range (and all other params) to all dataset iframes and overlay URL.
                 function restoreToBaselineState() {
                     if (dateRangeWaitTimer) { clearTimeout(dateRangeWaitTimer); dateRangeWaitTimer = null; }
+                    if (dateRangePollTimer) { clearInterval(dateRangePollTimer); dateRangePollTimer = null; }
                     waitingForDateRangeForTC = false;
                     if (movieInterval) {
                         clearInterval(movieInterval);
@@ -1804,12 +1824,37 @@
                     // Load periods for current dataset if not already loaded
                     if (loadedDatasetIdx !== activeDatasetIdx || periodPanels.size === 0) {
                         if (!loadPeriodsForDataset(activeDatasetIdx)) {
-                            // Date range not yet available; wait for postMessage from insarmaps instead of alerting immediately
+                            // Date range not yet available; actively poll insarmaps iframe for date range
+                            // instead of passively waiting for a postMessage that may not have been sent yet.
                             waitingForDateRangeForTC = true;
                             periodIndicator.textContent = 'Waiting for map data…';
                             if (dateRangeWaitTimer) clearTimeout(dateRangeWaitTimer);
+                            if (dateRangePollTimer) clearInterval(dateRangePollTimer);
+                            
+                            // Actively request date range from the insarmaps iframe every poll interval.
+                            // insarmaps responds with notifyParentOfUrlState() once currentArea is loaded.
+                            const requestDateRange = () => {
+                                const activeIframe = document.getElementById(`iframe${activeDatasetIdx}`);
+                                if (activeIframe && activeIframe.contentWindow) {
+                                    try {
+                                        activeIframe.contentWindow.postMessage({ type: 'insarmaps-request-date-range' }, '*');
+                                    } catch (e) {}
+                                }
+                            };
+                            requestDateRange();  // Request immediately
+                            dateRangePollTimer = setInterval(() => {
+                                if (!waitingForDateRangeForTC) {
+                                    clearInterval(dateRangePollTimer);
+                                    dateRangePollTimer = null;
+                                    return;
+                                }
+                                requestDateRange();
+                            }, DATE_RANGE_POLL_MS);
+                            
+                            // Final timeout: give up after DATE_RANGE_WAIT_MS
                             dateRangeWaitTimer = setTimeout(() => {
                                 dateRangeWaitTimer = null;
+                                if (dateRangePollTimer) { clearInterval(dateRangePollTimer); dateRangePollTimer = null; }
                                 if (waitingForDateRangeForTC && (!dataFirstDate || !dataLastDate)) {
                                     waitingForDateRangeForTC = false;
                                     alert('Could not determine date range. Please interact with the map first to load date information.');
