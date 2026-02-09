@@ -575,7 +575,7 @@ if [[ $ifgram_flag == "1" ]]; then
     else
        echo "topsStack.workflow: <${template[topsStack.workflow]}>"
        if [[ ${template[topsStack.workflow]} == "slc" ]] || [[ $mintpy_flag == 0 ]]; then
-          isce_stopstep=7
+          isce_stopstep=12
        fi
 
        run_command "run_workflow.bash --start $isce_startstep --stop $isce_stopstep"
