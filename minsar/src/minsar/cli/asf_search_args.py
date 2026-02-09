@@ -95,7 +95,10 @@ def create_parser(iargs=None, namespace=None):
 
     if any(platform in inps.platform for platform in ['SENTINEL1', 'SENTINEL-1', 'S1', 'S-1', 'SENTINEL-1A', 'SENTINEL-1B']):
         inps.platform = asf.PLATFORM.SENTINEL1
-        if hasattr(inps, 'dataset'):
+        # CSLC is OPERA-S1 (Coregistered SLC); use OPERA_S1 dataset so we get only CSLC-S1, not SLC/GRD/OCN/RAW
+        if inps.processing_level == asf.PRODUCT_TYPE.CSLC:
+            inps.dataset = [asf.DATASET.OPERA_S1]
+        elif hasattr(inps, 'dataset'):
             inps.dataset.append(asf.DATASET.SENTINEL1)
         else:
             inps.dataset = [asf.DATASET.SENTINEL1]
