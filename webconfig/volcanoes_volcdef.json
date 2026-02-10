@@ -1,6 +1,118 @@
 {
     "volcanoes": [
         {
+            "id": 211040,
+            "name": "Stromboli",
+            "country": "Italy",
+            "type": "Stratovolcano",
+            "activity_evidence": "Eruption Observed",
+            "last_known_eruption": "2023 CE",
+            "region": "Mediterranean and Western Asia",
+            "subregion": "Italy",
+            "latitude": 38.789,
+            "longitude": 15.213,
+            "elevation": 924,
+            "dominant_rock_type": "Trachyandesite / Basaltic Trachyandesite",
+            "tectonic_setting": "Subduction zone / Continental crust (>25 km)",
+            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/Stromboli/miaplpy"
+        },
+        {
+            "id": 211050,
+            "name": "Vulcano",
+            "country": "Italy",
+            "type": "Stratovolcano(es)",
+            "activity_evidence": "Eruption Observed",
+            "last_known_eruption": "1890 CE",
+            "region": "Mediterranean and Western Asia",
+            "subregion": "Italy",
+            "latitude": 38.404,
+            "longitude": 14.962,
+            "elevation": 500,
+            "dominant_rock_type": "Trachybasalt / Tephrite Basanite",
+            "tectonic_setting": "Subduction zone / Continental crust (>25 km)",
+            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/Volcano/miaplpy"
+        },
+        {
+            "id": 211060,
+            "name": "Etna",
+            "country": "Italy",
+            "type": "Stratovolcano(es)",
+            "activity_evidence": "Eruption Observed",
+            "last_known_eruption": "2023 CE",
+            "region": "Mediterranean and Western Asia",
+            "subregion": "Italy",
+            "latitude": 37.748,
+            "longitude": 14.999,
+            "elevation": 3357,
+            "dominant_rock_type": "Trachybasalt / Tephrite Basanite",
+            "tectonic_setting": "Subduction zone / Continental crust (>25 km)",
+            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/Etna/mintpy"
+        },
+        {
+            "id": 211060,
+            "name": "Etna (miaplpy)",
+            "country": "Italy",
+            "type": "Stratovolcano(es)",
+            "activity_evidence": "Eruption Observed",
+            "last_known_eruption": "2023 CE",
+            "region": "Mediterranean and Western Asia",
+            "subregion": "Italy",
+            "latitude": 37.738,
+            "longitude": 14.999,
+            "elevation": 3357,
+            "dominant_rock_type": "Trachybasalt / Tephrite Basanite",
+            "tectonic_setting": "Subduction zone / Continental crust (>25 km)",
+            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/Etna/miaplpy"
+        },
+        {
+            "id": 212050,
+            "name": "Nisyros",
+            "country": "Greece",
+            "type": "Stratovolcano",
+            "activity_evidence": "Eruption Observed",
+            "last_known_eruption": "1888 CE",
+            "region": "Mediterranean and Western Asia",
+            "subregion": "Greece",
+            "latitude": 36.586,
+            "longitude": 27.16,
+            "elevation": 698,
+            "dominant_rock_type": "Dacite",
+            "tectonic_setting": "Subduction zone / Continental crust (>25 km)",
+            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/Nisyros/miaplpy"
+        },
+        {
+            "id": 212050,
+            "name": "Amorgos",
+            "country": "Greece",
+            "type": "Island",
+            "activity_evidence": "No Eruption",
+            "last_known_eruption": "1888 CE",
+            "region": "Mediterranean and Western Asia",
+            "subregion": "Greece",
+            "latitude": 36.84,
+            "longitude": 25.98,
+            "elevation": 698,
+            "dominant_rock_type": "Dacite",
+            "tectonic_setting": "Subduction zone / Continental crust (>25 km)",
+            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/Karpathos"
+        },
+        {
+            "id": 212050,
+            "name": "Amorgos",
+            "country": "Greece",
+            "type": "Island",
+            "activity_evidence": "No Eruption",
+            "last_known_eruption": "1888 CE",
+            "region": "Mediterranean and Western Asia",
+            "subregion": "Greece",
+            "latitude": 35.6972,
+            "longitude": 27.161,
+            "elevation": 698,
+            "dominant_rock_type": "Dacite",
+            "tectonic_setting": "Subduction zone / Continental crust (>25 km)",
+            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/Amorgos"
+        },
+        {
             "id": 351110,
             "name": "Chiles-Cerro Negro",
             "country": "Colombia-Ecuador",
@@ -30,7 +142,7 @@
             "elevation": 1476,
             "dominant_rock_type": "Basalt / Picro-Basalt",
             "tectonic_setting": "Rift zone / Oceanic crust (< 15 km)",
-            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/Fernandina/miaplpy"
+            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/Fernandina/miaplpy/overlay.html"
         },
         {
             "id": 353010,
@@ -46,7 +158,7 @@
             "elevation": 1476,
             "dominant_rock_type": "Basalt / Picro-Basalt",
             "tectonic_setting": "Rift zone / Oceanic crust (< 15 km)",
-            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/Fernandina/mintpy"
+            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/Fernandina/mintpy/overlay.html"
         },
         {
             "id": 353040,
@@ -62,7 +174,7 @@
             "elevation": 1130,
             "dominant_rock_type": "Basalt / Picro-Basalt",
             "tectonic_setting": "Rift zone / Oceanic crust (< 15 km)",
-            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/Alcedo/miaplpy"
+            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/Alcedo/miaplpy/overlay.html"
         },
         {
             "id": 353050,
@@ -78,7 +190,39 @@
             "elevation": 1124,
             "dominant_rock_type": "Basalt / Picro-Basalt",
             "tectonic_setting": "Rift zone / Oceanic crust (< 15 km)",
-            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/hvGalapagos/mintpy"
+            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/SierraNegra/mintpy/overlay.html"
+        },
+        {
+            "id": 353060,
+            "name": "Cerro Azul",
+            "country": "Ecuador",
+            "type": "Shield",
+            "activity_evidence": "Eruption Observed",
+            "last_known_eruption": "2008 CE",
+            "region": "South America",
+            "subregion": "Galapagos Islands",
+            "latitude": -0.92,
+            "longitude": -91.408,
+            "elevation": 1640,
+            "dominant_rock_type": "Basalt / Picro-Basalt",
+            "tectonic_setting": "Rift zone / Oceanic crust (< 15 km)",
+            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/CerroAzul/miaplpy/overlay.html"
+        },
+        {
+            "id": 353060,
+            "name": "Cerro Azul (mintpy)",
+            "country": "Ecuador",
+            "type": "Shield",
+            "activity_evidence": "Eruption Observed",
+            "last_known_eruption": "2008 CE",
+            "region": "South America",
+            "subregion": "Galapagos Islands",
+            "latitude": -0.93,
+            "longitude": -91.408,
+            "elevation": 1640,
+            "dominant_rock_type": "Basalt / Picro-Basalt",
+            "tectonic_setting": "Rift zone / Oceanic crust (< 15 km)",
+            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/CerroAzul/mintpy/overlay.html"
         }
     ]
 }
