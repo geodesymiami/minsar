@@ -35,23 +35,23 @@ get_path_without_scratchdir() {
 # Function to normalize coordinates in insarmaps.log using vert coordinates
 normalize_insarmaps_coordinates() {
     local log_file="$1"
-    
+
     echo "Normalizing coordinates in insarmaps.log to use vert coordinates..."
-    
+
     # Extract lat/lon from the line containing "vert"
     local vert_lat=$(grep "vert" "$log_file" | head -n 1 | cut -d/ -f5)
     local vert_lon=$(grep "vert" "$log_file" | head -n 1 | cut -d/ -f6)
-    
+
     echo "Using vert coordinates: $vert_lat, $vert_lon"
-    
+
     # Update all lines to use vert coordinates
     sed -i.bak -E "s|(/start/)[^/]+/[^/]+/|\1${vert_lat}/${vert_lon}/|" "$log_file"
-    
+
     # Set flyToDatasetCenter=false to prevent auto-recentering when data loads
     sed -i.bak -E "s|flyToDatasetCenter=true|flyToDatasetCenter=false|g" "$log_file"
-    
+
     rm -f "${log_file}.bak"
-    
+
     echo "Updated all coordinates in insarmaps.log and disabled flyToDatasetCenter"
 }
 
@@ -245,7 +245,7 @@ HORZ_FILE=$(ls -t *horz*.he5 2>/dev/null | head -1)
 echo "Found vert file: $VERT_FILE"
 echo "Found horz file: $HORZ_FILE"
 
-# Skip insarmaps ingestion for --no-insarmaps 
+# Skip insarmaps ingestion for --no-insarmaps
 if [[ $ingest_insarmaps_flag == "0" ]]; then
     exit 0
 fi
@@ -262,16 +262,25 @@ ingest_insarmaps.bash "$HORZ_FILE"
 echo "$ORIGINAL_DIR/$HORZVERT_DIR$HORZ_FILE" >> $DATA_FILES_TXT
 
 # Ingest original input files, stay in HORZVERT_DIR so all entries go to the same insarmaps.log
+# Choose --dataset for ingest: miaplpy dirs have PS/DS/filt*DS, not geo; mintpy uses default geo.
+get_ingest_dataset_opt() {
+    local path="$1"
+    if [[ "$path" == *"/miaplpy/"* || "$path" == *"/miaplpy" ]]; then
+        echo "--dataset PS,DS,filt*DS"
+    else
+        echo ""
+    fi
+}
 if [[ $ingest_los_flag == "1" ]]; then
     # DIR_OR_FILE1 and DIR_OR_FILE2 are relative to ORIGINAL_DIR
     cd "$ORIGINAL_DIR/$HORZVERT_DIR"
     echo "##############################################"
-    ingest_insarmaps.bash "$ORIGINAL_DIR/$DIR_OR_FILE1" --ref-lalo "${ref_lalo[@]}"
+    ingest_insarmaps.bash "$ORIGINAL_DIR/$DIR_OR_FILE1" --ref-lalo "${ref_lalo[@]}" $(get_ingest_dataset_opt "$DIR_OR_FILE1")
     FILE1_HE5=$(ls -t "$ORIGINAL_DIR/$DIR_OR_FILE1"/*.he5 2>/dev/null | head -n 1) || FILE1_HE5="$ORIGINAL_DIR/$DIR_OR_FILE1"
     echo "$FILE1_HE5" >> $DATA_FILES_TXT
 
     echo "##############################################"
-    ingest_insarmaps.bash "$ORIGINAL_DIR/$DIR_OR_FILE2" --ref-lalo "${ref_lalo[@]}"
+    ingest_insarmaps.bash "$ORIGINAL_DIR/$DIR_OR_FILE2" --ref-lalo "${ref_lalo[@]}" $(get_ingest_dataset_opt "$DIR_OR_FILE2")
     FILE2_HE5=$(ls -t "$ORIGINAL_DIR/$DIR_OR_FILE2"/*.he5 2>/dev/null | head -n 1) || FILE2_HE5="$ORIGINAL_DIR/$DIR_OR_FILE2"
     echo "$FILE2_HE5" >> $DATA_FILES_TXT
 
