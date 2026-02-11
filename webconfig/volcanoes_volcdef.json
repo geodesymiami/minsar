@@ -126,7 +126,7 @@
             "elevation": 1222,
             "dominant_rock_type": "Basalt / Picro-Basalt",
             "tectonic_setting": "Intraplate / Oceanic crust (< 15 km)",
-            "volcdef_link": "149.165.154.65/data/HDF5EOS/Kilauea/mintpy/"
+            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/Kilauea/mintpy/"
         },
         {
             "id": 351110,
