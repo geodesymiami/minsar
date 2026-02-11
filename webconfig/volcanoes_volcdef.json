@@ -113,6 +113,22 @@
             "volcdef_link": "http://149.165.154.65/data/HDF5EOS/Amorgos"
         },
         {
+            "id": 332010,
+            "name": "Kilauea",
+            "country": "United States",
+            "type": "Shield",
+            "activity_evidence": "Eruption Observed",
+            "last_known_eruption": "2023 CE",
+            "region": "Hawaii and Pacific Ocean",
+            "subregion": "Hawaiian Islands",
+            "latitude": 19.421,
+            "longitude": -155.287,
+            "elevation": 1222,
+            "dominant_rock_type": "Basalt / Picro-Basalt",
+            "tectonic_setting": "Intraplate / Oceanic crust (< 15 km)",
+            "volcdef_link": "149.165.154.65/data/HDF5EOS/Kilauea/mintpy/"
+        },
+        {
             "id": 351110,
             "name": "Chiles-Cerro Negro",
             "country": "Colombia-Ecuador",
@@ -130,6 +146,22 @@
         },
         {
             "id": 353010,
+            "name": "Galapagaos",
+            "country": "Ecuador",
+            "type": "Shield",
+            "activity_evidence": "Eruption Observed",
+            "last_known_eruption": "2020 CE",
+            "region": "South America",
+            "subregion": "Galapagos Islands",
+            "latitude": 0.3,
+            "longitude": -91.027,
+            "elevation": 1476,
+            "dominant_rock_type": "Basalt / Picro-Basalt",
+            "tectonic_setting": "Rift zone / Oceanic crust (< 15 km)",
+            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/Galapagos"
+        },
+        {
+            "id": 353010,
             "name": "Fernandina",
             "country": "Ecuador",
             "type": "Shield",
@@ -142,7 +174,7 @@
             "elevation": 1476,
             "dominant_rock_type": "Basalt / Picro-Basalt",
             "tectonic_setting": "Rift zone / Oceanic crust (< 15 km)",
-            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/Fernandina/miaplpy/overlay.html"
+            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/Fernandina/miaplpy"
         },
         {
             "id": 353010,
@@ -158,7 +190,23 @@
             "elevation": 1476,
             "dominant_rock_type": "Basalt / Picro-Basalt",
             "tectonic_setting": "Rift zone / Oceanic crust (< 15 km)",
-            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/Fernandina/mintpy/overlay.html"
+            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/Fernandina/mintpy/"
+        },
+        {
+            "id": 353020,
+            "name": "Wolf",
+            "country": "Ecuador",
+            "type": "Shield",
+            "activity_evidence": "Eruption Observed",
+            "last_known_eruption": "2022 CE",
+            "region": "South America",
+            "subregion": "Galapagos Islands",
+            "latitude": 0.02,
+            "longitude": -91.35,
+            "elevation": 1710,
+            "dominant_rock_type": "Basalt / Picro-Basalt",
+            "tectonic_setting": "Rift zone / Oceanic crust (< 15 km)",
+            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/Wolf/mintpy/"
         },
         {
             "id": 353040,
@@ -174,7 +222,7 @@
             "elevation": 1130,
             "dominant_rock_type": "Basalt / Picro-Basalt",
             "tectonic_setting": "Rift zone / Oceanic crust (< 15 km)",
-            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/Alcedo/miaplpy/overlay.html"
+            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/Alcedo/miaplpy"
         },
         {
             "id": 353050,
@@ -190,7 +238,7 @@
             "elevation": 1124,
             "dominant_rock_type": "Basalt / Picro-Basalt",
             "tectonic_setting": "Rift zone / Oceanic crust (< 15 km)",
-            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/SierraNegra/mintpy/overlay.html"
+            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/SierraNegra/mintpy/"
         },
         {
             "id": 353060,
@@ -206,7 +254,7 @@
             "elevation": 1640,
             "dominant_rock_type": "Basalt / Picro-Basalt",
             "tectonic_setting": "Rift zone / Oceanic crust (< 15 km)",
-            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/CerroAzul/miaplpy/overlay.html"
+            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/CerroAzul/miaplpy"
         },
         {
             "id": 353060,
@@ -222,7 +270,7 @@
             "elevation": 1640,
             "dominant_rock_type": "Basalt / Picro-Basalt",
             "tectonic_setting": "Rift zone / Oceanic crust (< 15 km)",
-            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/CerroAzul/mintpy/overlay.html"
+            "volcdef_link": "http://149.165.154.65/data/HDF5EOS/CerroAzul/mintpy"
         }
     ]
 }
