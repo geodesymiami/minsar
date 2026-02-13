@@ -70,6 +70,12 @@ If unit tests don't exist for what you're changing:
 
 Make the planned changes following the execution plan.
 
+**When presenting code modifications:** Before giving a summary of changes, always show a short before/after: a few lines of the **old code** and then the **new code** for each substantive edit. This makes reviews and history easier to follow.
+
+**When deleting files:** Always ask for permission before deleting any file. Do not delete files without explicit user approval.
+
+**At the end of the summary:** Always list which files have been modified (e.g. "Files modified: path/to/a.bash, path/to/b.py").
+
 **Refactoring for testability is OK** if:
 - It makes critical code paths testable
 - Changes are localized (not "refactoring the world")
@@ -143,6 +149,7 @@ For `run_workflow.bash` internals: `minsar/bin/ARCHITECTURE.md`
 - Use `$(command)` not backticks
 - Include `--help` handling for user-facing scripts
 - Source shared libs: `source "${SCRIPT_DIR}/../lib/workflow_utils.sh"`
+- **CLI validation**: Reject unknown options immediately (use `-?*|--*` case before `*)`). Validate types for named args (e.g. `--ref-lalo` must be numeric); exit with error on invalid syntax.
 
 ### Python Scripts
 - Use `argparse` for CLI arguments
@@ -180,6 +187,15 @@ class TestFoo(unittest.TestCase):
 source "$(dirname "$0")/test_helpers.bash"
 assert_equals "expected" "$result" "Description"
 ```
+
+## Execution Environments (Infrastructure)
+
+| Environment | Type | Notes |
+|-------------|------|-------|
+| **Jetstream** | Regular Linux server | No SLURM. Jobs run directly on the node; no `sbatch`/`srun`. Use `free -h`, `dmesg` may be restricted. |
+| **Stampede** | Stampede3, SLURM | Use `sbatch`/`srun`; check `#SBATCH --mem`, `sacct`, `scontrol show job` for OOM or limits. |
+
+When debugging "Killed" or resource issues, consider which environment the job ran on (SLURM vs direct Linux).
 
 ## Important Nuances
 

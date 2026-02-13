@@ -33,12 +33,19 @@ fi
 
 ## Argument Parsing Pattern
 
+**Always reject unknown options immediately.** Use a case branch for options starting with `-` before the default positional handler:
+
 ```bash
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --option)
             value="$2"
             shift 2
+            ;;
+        -?*|--*)
+            echo "Error: Unknown option: $1"
+            echo "Use $SCRIPT_NAME --help for available options"
+            exit 1
             ;;
         *)
             POSITIONAL+=("$1")
@@ -48,6 +55,8 @@ while [[ $# -gt 0 ]]; do
 done
 set -- "${POSITIONAL[@]}"
 ```
+
+**Validate types for named arguments** (e.g. `--ref-lalo` must be numeric lat,lon). Add validation functions after parsing and exit with error on invalid type.
 
 ## Shared Utilities (workflow_utils.sh)
 

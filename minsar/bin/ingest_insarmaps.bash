@@ -11,13 +11,17 @@ source ${SCRIPT_DIR}/../lib/minsarApp_specifics.sh
 echo "sourcing ${SCRIPT_DIR}/../lib/utils.sh ..."
 source ${SCRIPT_DIR}/../lib/utils.sh
 
+# Dependencies (PATH): reference_point_hdfeos5.bash, hdfeos5_2json_mbtiles.py, json_mbtiles2insarmaps.py,
+#   get_data_footprint_centroid.py, get_zoomfactor_from_data_footprint.py. Sourced: minsarApp_specifics.sh, utils.sh.
+# Output: With --ref-lalo the selected .he5 in the input dir is modified in place. insarmaps.log appended. No backup files.
+
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     helptext="
 Examples:
     $SCRIPT_NAME mintpy
     $SCRIPT_NAME miaplpy/network_single_reference
     $SCRIPT_NAME S1_IW1_128_20180303_XXXXXXXX__S00878_S00791_W091201_W091113.he5
-    $SCRIPT_NAME hvGalapagosSenD128/mintpy -ref-lalo -0.81,-91.190
+    $SCRIPT_NAME hvGalapagosSenD128/mintpy --ref-lalo -0.81,-91.190
     $SCRIPT_NAME hvGalapagosSenD128/miaplpy/network_single_reference
     $SCRIPT_NAME miaplpy/network_single_reference --dataset geo
     $SCRIPT_NAME miaplpy/network_single_reference --dataset PS
@@ -30,6 +34,10 @@ Examples:
       --dataset {PS,DS,filtDS,filt*DS,geo} or comma-separated {PS,DS,filt*DS}  Dataset to upload (default: geo)
                                           Use comma-separated values to ingest multiple types: --dataset PS,DS or --dataset PS,DS,filt*DS
       --debug                         Enable debug mode (set -x)
+
+  Output: With --ref-lalo the selected .he5 in the input dir is modified in place. insarmaps.log appended. No backup files.
+
+  Memory: If the HDF5 conversion is killed (OOM), set HDFEOS_NUM_WORKERS=2 or 1 before running, or run with fewer workers.
     "
     printf "$helptext"
     exit 0
@@ -89,6 +97,11 @@ do
             debug_flag=1
             shift
             ;;
+        -?*|--*)
+            echo "Error: Unknown option: $1"
+            echo "Use $SCRIPT_NAME --help for available options"
+            exit 1
+            ;;
         *)
             positional+=("$1")
             shift
@@ -97,6 +110,46 @@ do
 done
 
 set -- "${positional[@]}"
+
+# Validate --ref-lalo type if provided
+validate_ref_lalo() {
+    local arr=("$@")
+    [[ ${#arr[@]} -eq 0 ]] && return 0
+    local lat lon
+    if [[ ${#arr[@]} -eq 1 ]]; then
+        [[ "${arr[0]}" != *","* ]] && { echo "Error: --ref-lalo must be LAT,LON or LAT LON (e.g. --ref-lalo 36.87,25.94)"; exit 1; }
+        IFS=',' read -ra parts <<< "${arr[0]}"
+        [[ ${#parts[@]} -ne 2 ]] && { echo "Error: --ref-lalo must be LAT,LON or LAT LON"; exit 1; }
+        lat="${parts[0]}" lon="${parts[1]}"
+    else
+        lat="${arr[0]}" lon="${arr[1]}"
+    fi
+    if ! [[ "$lat" =~ ^-?[0-9]+\.?[0-9]*$ ]] || ! [[ "$lon" =~ ^-?[0-9]+\.?[0-9]*$ ]]; then
+        echo "Error: --ref-lalo requires numeric lat,lon (e.g. --ref-lalo 36.87 25.94)"
+        exit 1
+    fi
+}
+validate_ref_lalo "${ref_lalo[@]}"
+
+# Validate --dataset if provided
+validate_dataset() {
+    local ds="$1"
+    [[ -z "$ds" ]] && return 0
+    IFS=',' read -ra tokens <<< "$ds"
+    for t in "${tokens[@]}"; do
+        t=$(echo "$t" | xargs)
+        [[ -z "$t" ]] && continue
+        case "$t" in
+            PS|DS|geo) ;;
+            filtDS|filt*DS) ;;
+            *)
+                echo "Error: --dataset '$t' not valid. Allowed: PS, DS, filtDS, filt*DS, geo (or comma-separated)"
+                exit 1
+                ;;
+        esac
+    done
+}
+validate_dataset "$dataset"
 
 # Check for required positional arguments
 if [[ ${#positional[@]} -lt 1 ]]; then
@@ -190,8 +243,9 @@ if [[ -n "$SSARAHOME" ]]; then
     DB_PASS=$(python3 -c "import sys; sys.path.insert(0, '$SSARAHOME'); import password_config; print(password_config.docker_databasepass)" 2>/dev/null || echo "")
 fi
 
-HDFEOS_NUM_WORKERS=6
-MBTILES_NUM_WORKERS=6
+# Reduce on memory-limited nodes (e.g. Jetstream); override with env if needed (OOM → try HDFEOS_NUM_WORKERS=2 or 1)
+HDFEOS_NUM_WORKERS="${HDFEOS_NUM_WORKERS:-6}"
+MBTILES_NUM_WORKERS="${MBTILES_NUM_WORKERS:-6}"
 
 # Process each he5 file
 for he5_file in "${he5_files[@]}"; do

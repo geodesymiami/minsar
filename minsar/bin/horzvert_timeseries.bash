@@ -13,6 +13,11 @@ SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
 # echo "sourcing ${SCRIPT_DIR}/../lib/utils.sh ..."
 source ${SCRIPT_DIR}/../lib/utils.sh
 
+# Dependencies: utils.sh [get_base_projectname], horzvert_timeseries.py (external),
+#   write_insarmaps_framepage_urls.py, create_data_download_commands.py, ingest_insarmaps.bash.
+# Output (project/mintpy or project/miaplpy): data_files.txt, *vert*.he5, *horz*.he5, maskTempCoh.h5, image_pairs.txt, geometryRadar.h5 in Sen*.
+#   overlay.html, index.html (copy of overlay), matrix.html, insarmaps.log, urls.log, download_commands.txt. Overwritten/recreated; no backups.
+
 # Function to get absolute path with SCRATCHDIR removed
 # Resolves symlinks to handle OneDrive path variations on Mac
 get_path_without_scratchdir() {
@@ -81,6 +86,9 @@ Examples:
       --no-ingest-los                 Skip ingesting both input files with --ref-lalo (default: ingest-los is enabled)
       --no-insarmaps                  Skip running ingest_insarmaps.bash (default: insarmaps ingestion is enabled)
       --debug                         Enable debug mode (set -x)
+
+  Output: data_files.txt, *vert*.he5, *horz*.he5, maskTempCoh.h5, image_pairs.txt, geometryRadar.h5 (in Sen*).
+  Other: overlay.html, index.html (copy of overlay), matrix.html, insarmaps.log, urls.log, download_commands.txt. Overwritten/recreated; no backups.
     "
     printf "$helptext"
     exit 0
@@ -177,6 +185,11 @@ do
             debug_flag=1
             shift
             ;;
+        -?*|--*)
+            echo "Error: Unknown option: $1"
+            echo "Use $SCRIPT_NAME --help for available options"
+            exit 1
+            ;;
         *)
             positional+=("$1")
             shift
@@ -185,6 +198,26 @@ do
 done
 
 set -- "${positional[@]}"
+
+# Validate --ref-lalo type if provided
+validate_ref_lalo() {
+    local arr=("$@")
+    [[ ${#arr[@]} -eq 0 ]] && return 0
+    local lat lon
+    if [[ ${#arr[@]} -eq 1 ]]; then
+        [[ "${arr[0]}" != *","* ]] && { echo "Error: --ref-lalo must be LAT,LON or LAT LON (e.g. --ref-lalo 36.87,25.94)"; exit 1; }
+        IFS=',' read -ra parts <<< "${arr[0]}"
+        [[ ${#parts[@]} -ne 2 ]] && { echo "Error: --ref-lalo must be LAT,LON or LAT LON"; exit 1; }
+        lat="${parts[0]}" lon="${parts[1]}"
+    else
+        lat="${arr[0]}" lon="${arr[1]}"
+    fi
+    if ! [[ "$lat" =~ ^-?[0-9]+\.?[0-9]*$ ]] || ! [[ "$lon" =~ ^-?[0-9]+\.?[0-9]*$ ]]; then
+        echo "Error: --ref-lalo requires numeric lat,lon (e.g. --ref-lalo 36.87 25.94)"
+        exit 1
+    fi
+}
+validate_ref_lalo "${ref_lalo[@]}"
 
 # Check for required positional arguments
 if [[ ${#positional[@]} -lt 2 ]]; then
@@ -254,43 +287,71 @@ fi
 # copy_data_footprint.py "$VERT_FILE" "$HORZ_FILE" "$ORIGINAL_DIR/$DIR_OR_FILE1" "$ORIGINAL_DIR/$DIR_OR_FILE2"
 
 echo "##############################################"
+echo "ingest_insarmaps.bash $VERT_FILE"
 ingest_insarmaps.bash "$VERT_FILE"
 echo "$ORIGINAL_DIR/$HORZVERT_DIR/$VERT_FILE" >> $DATA_FILES_TXT
 
 echo "##############################################"
+echo "ingest_insarmaps.bash $HORZ_FILE"
 ingest_insarmaps.bash "$HORZ_FILE"
 echo "$ORIGINAL_DIR/$HORZVERT_DIR$HORZ_FILE" >> $DATA_FILES_TXT
 
 # Ingest original input files, stay in HORZVERT_DIR so all entries go to the same insarmaps.log
-# Choose --dataset for ingest: miaplpy dirs have PS/DS/filt*DS, not geo; mintpy uses default geo.
+# Infer --dataset from *.he5 filename: PS, DS, or filt*DS (use filt*DS with * for codebase consistency)
 get_ingest_dataset_opt() {
     local path="$1"
-    if [[ "$path" == *"/miaplpy/"* || "$path" == *"/miaplpy" ]]; then
-        echo "--dataset PS,DS,filt*DS"
-    else
-        echo ""
+    local abs_path="$ORIGINAL_DIR/$path"
+    local he5_basename=""
+    if [[ -f "$abs_path" && "$abs_path" == *.he5 ]]; then
+        he5_basename=$(basename "$abs_path")
+    elif [[ -d "$abs_path" ]]; then
+        he5_basename=$(basename "$(ls -t "$abs_path"/*.he5 2>/dev/null | head -n 1)")
+    fi
+    [[ -z "$he5_basename" ]] && return
+    if [[ "$he5_basename" == *"PS"* ]]; then
+        echo "PS"
+    elif [[ "$he5_basename" == *"filt"* && "$he5_basename" == *"DS"* ]]; then
+        echo "filt*DS"
+    elif [[ "$he5_basename" == *"DS"* ]]; then
+        echo "DS"
     fi
 }
 if [[ $ingest_los_flag == "1" ]]; then
     # DIR_OR_FILE1 and DIR_OR_FILE2 are relative to ORIGINAL_DIR
     cd "$ORIGINAL_DIR/$HORZVERT_DIR"
     echo "##############################################"
-    ingest_insarmaps.bash "$ORIGINAL_DIR/$DIR_OR_FILE1" --ref-lalo "${ref_lalo[@]}" $(get_ingest_dataset_opt "$DIR_OR_FILE1")
+    ingest_dataset_opt1=$(get_ingest_dataset_opt "$DIR_OR_FILE1")
+    if [[ -n "$ingest_dataset_opt1" ]]; then
+        echo "ingest_insarmaps.bash $ORIGINAL_DIR/$DIR_OR_FILE1 --ref-lalo ${ref_lalo[*]} --dataset $ingest_dataset_opt1"
+        ingest_insarmaps.bash "$ORIGINAL_DIR/$DIR_OR_FILE1" --ref-lalo "${ref_lalo[@]}" --dataset "$ingest_dataset_opt1"
+    else
+        echo "ingest_insarmaps.bash $ORIGINAL_DIR/$DIR_OR_FILE1 --ref-lalo ${ref_lalo[*]}"
+        ingest_insarmaps.bash "$ORIGINAL_DIR/$DIR_OR_FILE1" --ref-lalo "${ref_lalo[@]}"
+    fi
     FILE1_HE5=$(ls -t "$ORIGINAL_DIR/$DIR_OR_FILE1"/*.he5 2>/dev/null | head -n 1) || FILE1_HE5="$ORIGINAL_DIR/$DIR_OR_FILE1"
     echo "$FILE1_HE5" >> $DATA_FILES_TXT
 
     echo "##############################################"
-    ingest_insarmaps.bash "$ORIGINAL_DIR/$DIR_OR_FILE2" --ref-lalo "${ref_lalo[@]}" $(get_ingest_dataset_opt "$DIR_OR_FILE2")
+    ingest_dataset_opt2=$(get_ingest_dataset_opt "$DIR_OR_FILE2")
+    if [[ -n "$ingest_dataset_opt2" ]]; then
+        echo "ingest_insarmaps.bash $ORIGINAL_DIR/$DIR_OR_FILE2 --ref-lalo ${ref_lalo[*]} --dataset $ingest_dataset_opt2"
+        ingest_insarmaps.bash "$ORIGINAL_DIR/$DIR_OR_FILE2" --ref-lalo "${ref_lalo[@]}" --dataset "$ingest_dataset_opt2"
+    else
+        echo "ingest_insarmaps.bash $ORIGINAL_DIR/$DIR_OR_FILE2 --ref-lalo ${ref_lalo[*]}"
+        ingest_insarmaps.bash "$ORIGINAL_DIR/$DIR_OR_FILE2" --ref-lalo "${ref_lalo[@]}"
+    fi
     FILE2_HE5=$(ls -t "$ORIGINAL_DIR/$DIR_OR_FILE2"/*.he5 2>/dev/null | head -n 1) || FILE2_HE5="$ORIGINAL_DIR/$DIR_OR_FILE2"
     echo "$FILE2_HE5" >> $DATA_FILES_TXT
 
     # Normalize coordinates in insarmaps.log to use vert coordinates (we're already in HORZVERT_DIR)
     normalize_insarmaps_coordinates "insarmaps.log"
 
-    # Create insarmaps framepage (using absolute paths since we're back in ORIGINAL_DIR)
+    # Copy HTML templates and create framepage URLs
     echo "##############################################"
     cd "$ORIGINAL_DIR"
-    create_insarmaps_framepages.py "$HORZVERT_DIR/insarmaps.log" --outdir "$HORZVERT_DIR"
+    HTML_SOURCE="${SCRIPT_DIR}/../html"
+    cp "$HTML_SOURCE"/*.html "$ORIGINAL_DIR/$HORZVERT_DIR/"
+    cp "$ORIGINAL_DIR/$HORZVERT_DIR/overlay.html" "$ORIGINAL_DIR/$HORZVERT_DIR/index.html"
     write_insarmaps_framepage_urls.py "$HORZVERT_DIR" --outdir "$HORZVERT_DIR"
     create_data_download_commands.py "$DATA_FILES_TXT"
 

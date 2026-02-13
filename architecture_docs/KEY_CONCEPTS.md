@@ -256,11 +256,23 @@ mintpy/
 
 ## Platform-Specific Notes
 
-### Stampede2/3
+Execution environment type matters for debugging (e.g. "Killed" / OOM):
+
+| Environment | Type | Notes |
+|-------------|------|-------|
+| **Jetstream** | Regular Linux server | No SLURM; jobs run directly on the node. No `sbatch`/`srun`. `dmesg` may be restricted for users. |
+| **Stampede (Stampede3)** | SLURM | Use `sbatch`/`srun`; check `#SBATCH --mem`, `sacct`, `scontrol show job` for memory limits. |
+
+### Stampede2/3 (SLURM)
 
 - Queue: `skx` (Skylake), `icx` (Ice Lake)
 - Scratch: `$SCRATCH`
 - Work: `$WORK`
+
+### Jetstream (regular Linux)
+
+- No job scheduler; run commands directly on the allocation.
+- No `sacct`/job IDs; use `free -h`, process memory, or reduce worker counts (e.g. `HDFEOS_NUM_WORKERS`) if processes are killed.
 
 ### Frontera
 
