@@ -81,10 +81,28 @@
             color: #666;
             font-size: 14px;
         }
+        .loading-indicator {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            font-size: 11px;
+            color: #e65100;
+            padding: 4px 8px;
+            background-color: #ffe0b2;
+            border: 1px solid #ffb74d;
+            border-radius: 4px;
+            font-family: monospace;
+            display: none;
+            z-index: 1000;
+        }
+        .loading-indicator.visible {
+            display: block;
+        }
     </style>
 </head>
 <body>
     <div id="loading" class="loading">Loading insarmaps data...</div>
+    <span class="loading-indicator" id="loading-indicator" title="Frames syncing">Loading...</span>
     <div class="container" id="container"></div>
     
     <script>
@@ -113,6 +131,18 @@
         let activePanelIndex = 0;
         const SYNC_DEBOUNCE_MS = 1500;
         const SYNC_COOLDOWN_MS = 3000;
+        
+        let loadingIframeIndices = new Set();
+        function updateLoadingIndicator() {
+            const el = document.getElementById('loading-indicator');
+            if (!el) return;
+            if (loadingIframeIndices.size > 0) {
+                el.textContent = `Loading... (${loadingIframeIndices.size})`;
+                el.classList.add('visible');
+            } else {
+                el.classList.remove('visible');
+            }
+        }
         
         // Normalize contour for URL
         function normalizeContourValue(value) {
@@ -391,7 +421,12 @@
                             if (idx === senderIndex) return;
                             const newUrl = buildInsarmapsUrl(baseUrl, dataset, lat, lon, zoom, currentMapParams);
                             const ifr = document.getElementById(`iframe${idx}`);
-                            if (ifr) ifr.src = newUrl;
+                            if (ifr) {
+                                loadingIframeIndices.add(idx);
+                                updateLoadingIndicator();
+                                ifr.onload = () => { loadingIframeIndices.delete(idx); updateLoadingIndicator(); };
+                                ifr.src = newUrl;
+                            }
                         });
                     }, SYNC_DEBOUNCE_MS);
                 });

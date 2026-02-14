@@ -510,3 +510,22 @@ The +/− button itself never triggers loading or reloading.
 | pointLat/pointLon | Causes rectangle cut-off bug |
 | refPointLat/refPointLon | Causes rectangle cut-off bug |
 | startDataset | Each iframe has its own dataset |
+
+---
+
+## Known issue: Reference point in Time Controls mode (unresolved)
+
+**Date:** 2026-02-13
+
+**Problem:** In Time Controls mode, when the user changes the reference point in the visible period iframe, only that iframe reloads with the new reference point applied to the data. The other (background) period iframes show the black dot at the new reference point location but their data remain referred to the previous reference point. When the user steps to another period (◀/▶), that period’s data are not reprocessed with the new reference point. The desired behaviour is the same as for minScale/maxScale: changing the reference point should reload all period iframes so every period’s data uses the new reference point.
+
+**What was tried:**
+
+1. **Treat visible period iframe as “active”** so its postMessages bypass the 3s cooldown and are always processed.
+2. **Include lat/lon/zoom in display-params change detection** so map view changes trigger background period iframe reloads within the 5s period sync cooldown.
+3. **Include refPointLat/refPointLon in displayParamsChanged** so reference-point-only changes trigger reload of all period iframes.
+4. **Point-only message path:** when a period iframe sends only refPoint (no full path), update state and reload all non-sender period iframes with the new refPoint in the URL.
+5. **Display-time reload in `showPeriod`:** store a sync key per period panel (params it was loaded with); when showing a period, if its sync key differs from current params (e.g. refPoint changed), reload that iframe so insarmaps applies the new reference point while the iframe is visible.
+6. **Orange “Loading…” indicator** to show when background period iframes are reloading (so the user knows to wait).
+
+**Result:** Did not resolve the issue. Background period iframes still did not apply the new reference point to their data; only the visible iframe did. Changes were reverted. To be retried when tooling/models improve.

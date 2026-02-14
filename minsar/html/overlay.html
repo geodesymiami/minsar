@@ -32,15 +32,6 @@
             gap: 15px;
             flex-wrap: wrap;
         }
-        @media (max-width: 900px) {
-            .controls-bar { gap: 2px; padding: 6px; }
-            .time-controls-panel.visible { gap: 6px; }
-            .time-controls-panel.visible .play-btn-group { margin-left: -12px; }
-            .time-control-group { gap: 3px; }
-            .frame-selector { gap: 6px; }
-            .period-date-range { min-width: 160px; font-size: 14px; }
-            .add-period-group { gap: 4px; }
-        }
         .frame-selector {
             display: flex;
             align-items: center;
@@ -110,13 +101,12 @@
             white-space: nowrap;
         }
         .time-control-group input[type="number"] {
-            width: 38px;
-            padding: 4px 3px;
+            width: 50px;
+            padding: 4px 6px;
             font-size: 13px;
             border: 1px solid #ddd;
             border-radius: 4px;
             text-align: center;
-            box-sizing: border-box;
         }
         .time-control-group .unit {
             font-size: 13px;
@@ -127,7 +117,7 @@
             cursor: pointer;
         }
         .nav-btn {
-            padding: 4px 5px;
+            padding: 4px 8px;
             font-size: 12px;
             border: 1px solid #ddd;
             border-radius: 4px;
@@ -146,17 +136,8 @@
             font-size: 12px;
             font-weight: bold;
             color: #333;
-            min-width: 36px;
+            min-width: 40px;
             text-align: center;
-        }
-        .time-control-group.nav-buttons {
-            gap: 2px;
-        }
-        .period-date-range {
-            font-size: 15px;
-            color: #333;
-            min-width: 220px;
-            font-weight: 500;
         }
         .play-btn {
             padding: 4px 8px;
@@ -187,6 +168,19 @@
         .memory-display.visible {
             display: block;
         }
+        .loading-indicator {
+            font-size: 11px;
+            color: #e65100;
+            padding: 4px 8px;
+            background-color: #ffe0b2;
+            border: 1px solid #ffb74d;
+            border-radius: 4px;
+            font-family: monospace;
+            display: none;
+        }
+        .loading-indicator.visible {
+            display: block;
+        }
         .add-period-group {
             display: flex;
             align-items: center;
@@ -206,7 +200,7 @@
             white-space: nowrap;
         }
         .add-period-group input[type="text"].date-input {
-            width: 63px;
+            width: 90px;
             padding: 4px 6px;
             font-size: 13px;
             border: 1px solid #ddd;
@@ -219,11 +213,13 @@
             cursor: not-allowed;
         }
         .add-period-btn {
-            padding: 4px 8px;
+            width: 32px;
+            height: 32px;
+            padding: 0;
             font-size: 18px;
             font-weight: bold;
             line-height: 1;
-            border: 1px solid #27ae60;
+            border: 2px solid #27ae60;
             border-radius: 4px;
             background-color: #27ae60;
             color: white;
@@ -258,13 +254,11 @@
             background-color: #f9e79f;
         }
         .add-period-btn.mode-close {
-            background-color: #a8e6a1;
-            border-color: #7fdb7f;
-            color: #2d5a2d;
+            background-color: #e74c3c;
+            border-color: #c0392b;
         }
         .add-period-btn.mode-close:hover {
-            background-color: #7fdb7f;
-            color: #1e3d1e;
+            background-color: #c0392b;
         }
         .container {
             width: 100%;
@@ -387,17 +381,17 @@
             <div class="time-control-group" id="period-input-group">
                 <label for="period-value">Period:</label>
                 <input type="number" id="period-value" value="2" min="0.1" step="0.1">
-                <span class="unit">yrs</span>
+                <span class="unit">years</span>
             </div>
-            <div class="time-control-group nav-buttons">
+            <div class="time-control-group">
                 <button class="nav-btn" id="btn-backward" title="Previous period" disabled>◀</button>
                 <span class="period-indicator" id="period-indicator">-/-</span>
                 <button class="nav-btn" id="btn-forward" title="Next period" disabled>▶</button>
             </div>
             <div class="time-control-group">
-                <span id="period-date-range" class="period-date-range"></span>
+                <span id="period-date-range" style="font-size: 15px; color: #333; min-width: 220px; font-weight: 500;"></span>
             </div>
-            <div class="time-control-group play-btn-group">
+            <div class="time-control-group">
                 <button class="play-btn" id="btn-play">▶ Play</button>
             </div>
             <div class="time-control-group">
@@ -406,13 +400,13 @@
                 <span class="unit">secs</span>
             </div>
             <div class="time-control-group add-period-group" id="add-period-group">
-                <button type="button" class="add-period-btn" id="add-period-btn" title="Select periods for URL from timeseries">+</button>
                 <span class="add-period-boxes">
                     <label for="add-start-date">Start:</label>
                     <input type="text" id="add-start-date" class="date-input" placeholder="YYYYMMDD" maxlength="8">
                     <label for="add-end-date">End:</label>
                     <input type="text" id="add-end-date" class="date-input" placeholder="YYYYMMDD" maxlength="8">
                 </span>
+                <button type="button" class="add-period-btn" id="add-period-btn" title="Click to select periods">+</button>
             </div>
         </div>
         <div class="time-controls-column">
@@ -421,6 +415,7 @@
                 <label for="time-controls-checkbox">Time Controls</label>
             </div>
             <span class="memory-display" id="memory-display" title="Estimated memory usage">Mem: 0 MB</span>
+            <span class="loading-indicator" id="loading-indicator" title="Background frames loading">Loading...</span>
         </div>
     </div>
     <div class="container" id="container"></div>
@@ -573,15 +568,13 @@
             if (timeControlsActive && periodsArray && periodsArray.length > 0) {
                 params.set('timeControls', 'true');
                 params.set('periods', serializePeriods(periodsArray));
-            } else if (timeControlsActive !== false) {
-                // Preserve timeControls/periods from current URL only when not explicitly turning off
+            } else {
                 const cur = getOverlayUrlParams();
                 if (cur.timeControls === 'true' && cur.periods) {
                     params.set('timeControls', 'true');
                     params.set('periods', cur.periods);
                 }
             }
-            // When timeControlsActive === false, do not add timeControls or periods so they are removed from the URL
             let hashUrl;
             if (mapParams.lat && mapParams.lon && mapParams.zoom) {
                 hashUrl = `/start/${mapParams.lat}/${mapParams.lon}/${mapParams.zoom}?${params.toString()}`;
@@ -646,6 +639,19 @@
         // Sync control - defined early so it's available everywhere
         let lastSyncTime = 0;
         const SYNC_COOLDOWN_MS = 3000;
+        
+        // Background period iframe loading tracker
+        let loadingPeriodIndices = new Set();
+        function updateLoadingIndicator() {
+            const el = document.getElementById('loading-indicator');
+            if (!el) return;
+            if (loadingPeriodIndices.size > 0) {
+                el.textContent = `Loading... (${loadingPeriodIndices.size})`;
+                el.classList.add('visible');
+            } else {
+                el.classList.remove('visible');
+            }
+        }
         
         // Loading overlay control
         let dataLoaded = false;
@@ -965,12 +971,6 @@
                     if (!event.data) return;
                     // Time series dot click: insarmaps sends { type: 'insarmaps-timeseries-date', date: 'YYYYMMDD' } or date: 'YYYY-MM-DD'
                     if (event.data.type === 'insarmaps-timeseries-date' && event.data.date) {
-                        // Tell insarmaps to keep charts open (click must not minimize timeseries)
-                        try {
-                            if (event.source && event.source.postMessage) {
-                                event.source.postMessage({ type: 'insarmaps-keep-charts-open' }, '*');
-                            }
-                        } catch (err) {}
                         let dateStr = String(event.data.date).trim().replace(/-/g, '');
                         if (dateStr.length === 8) {
                             console.log('[overlay] insarmaps-timeseries-date received', dateStr, 'addPeriodState:', addPeriodState);
@@ -995,10 +995,25 @@
                     hideLoadingOverlay();
                     
                     // Check if message is from the active iframe
+                    // In Time Controls mode, the visible period iframe is the active one
                     let isFromActiveIframe = false;
                     const activeIframe = document.getElementById(`iframe${activeDatasetIdx}`);
                     if (activeIframe && event.source === activeIframe.contentWindow) {
                         isFromActiveIframe = true;
+                    }
+                    // Also treat the visible period iframe as active (in Time Controls mode)
+                    // so user interactions (pan/zoom/param changes) bypass the cooldown
+                    if (!isFromActiveIframe &&
+                        typeof timeControlsActive !== 'undefined' && timeControlsActive &&
+                        typeof periodPanels !== 'undefined' && periodPanels && periodPanels.size > 0 &&
+                        typeof currentPeriodIndex !== 'undefined') {
+                        const visiblePeriodPanel = periodPanels.get(currentPeriodIndex);
+                        if (visiblePeriodPanel) {
+                            const visiblePeriodIframe = visiblePeriodPanel.querySelector('iframe');
+                            if (visiblePeriodIframe && event.source === visiblePeriodIframe.contentWindow) {
+                                isFromActiveIframe = true;
+                            }
+                        }
                     }
                     
                     // Only apply cooldown to messages from non-active iframes (prevents sync loops)
@@ -1032,15 +1047,10 @@
                         const params = queryStart >= 0 ? new URLSearchParams(newUrlPath.substring(queryStart)) : new URLSearchParams();
                         const hasPointSelection = params.has('pointLat') || params.has('pointLon') || params.has('refPointLat') || params.has('refPointLon');
                         
-                        // If from period iframe: process point selection only (return), or display params (fall through to sync).
-                        // Display params (lat, lon, zoom, minScale, maxScale, etc.) must apply to all period iframes—same as dataset mode.
+                        // If from period iframe, only process if it has point selection; otherwise ignore
                         if (senderPeriodIdx >= 0) {
-                            const pathMatchForPeriod = newUrlPath.match(/^\/start\/([^\/]+)\/([^\/]+)\/([^?]+)/);
-                            if (pathMatchForPeriod) {
-                                // Has display params—fall through to full sync logic (will reload all period iframes)
-                                // (senderPeriodIndex set below; period sync block will run)
-                            } else if (hasPointSelection) {
-                                // Point selection only—update and return
+                            if (hasPointSelection) {
+                                // Extract and update point selection from period iframe
                                 const pointLat = params.get('pointLat') ?? currentMapParams.pointLat ?? null;
                                 const pointLon = params.get('pointLon') ?? currentMapParams.pointLon ?? null;
                                 const refPointLat = params.get('refPointLat') ?? currentMapParams.refPointLat ?? null;
@@ -1055,10 +1065,8 @@
                                         (typeof timeControlsActive !== 'undefined' && timeControlsActive),
                                         (typeof timeControlsActive !== 'undefined' && timeControlsActive && typeof periods !== 'undefined' && periods.length > 0) ? periods : undefined);
                                 }
-                                return;
-                            } else {
-                                return;
                             }
+                            return;
                         }
                         
                         // Parse path: /start/{lat}/{lon}/{zoom}?params...
@@ -1093,13 +1101,8 @@
                         // (insarmaps often omits minScale, startDate, etc.) are detected and don't trigger reloads
                         const minScale = params.get('minScale') ?? currentMapParams.minScale;
                         const maxScale = params.get('maxScale') ?? currentMapParams.maxScale;
-                        // When from period iframe: use visible period's dates, not message's (each period sends its own dates—would change syncKey and cause reload cascade)
-                        let startDate = params.get('startDate') ?? currentMapParams.startDate;
-                        let endDate = params.get('endDate') ?? currentMapParams.endDate;
-                        if (senderPeriodIdx >= 0 && typeof periods !== 'undefined' && periods.length > 0 && typeof currentPeriodIndex !== 'undefined' && currentPeriodIndex >= 0 && currentPeriodIndex < periods.length) {
-                            startDate = periods[currentPeriodIndex].startDate;
-                            endDate = periods[currentPeriodIndex].endDate;
-                        }
+                        const startDate = params.get('startDate') ?? currentMapParams.startDate;
+                        const endDate = params.get('endDate') ?? currentMapParams.endDate;
                         const pixelSize = params.get('pixelSize') ?? currentMapParams.pixelSize;
                         const background = params.get('background') ?? currentMapParams.background;
                         const opacity = params.get('opacity') ?? currentMapParams.opacity;
@@ -1116,9 +1119,13 @@
                         if (syncKey === lastSyncedKey) return;
                         lastSyncedKey = syncKey;
                         
-                        // Detect display-param change (minScale, maxScale, contour, etc.) so we can reload ALL period iframes
+                        // Detect display-param change (lat, lon, zoom, minScale, maxScale, etc.) so we can reload ALL period iframes
+                        // Includes lat/lon/zoom so map view changes override the period sync cooldown
                         const prevContourNorm = normalizeContourValue(currentMapParams.contour);
                         const displayParamsChanged = (
+                            lat !== currentMapParams.lat ||
+                            lon !== currentMapParams.lon ||
+                            zoom !== currentMapParams.zoom ||
                             minScale !== currentMapParams.minScale ||
                             maxScale !== currentMapParams.maxScale ||
                             contourValue !== prevContourNorm ||
@@ -1182,7 +1189,6 @@
                                 // If Time Controls are open but waiting for date range, try loading periods now
                                 if (typeof waitingForDateRangeForTC !== 'undefined' && waitingForDateRangeForTC) {
                                     if (dateRangeWaitTimer) { clearTimeout(dateRangeWaitTimer); dateRangeWaitTimer = null; }
-                                    if (dateRangePollTimer) { clearInterval(dateRangePollTimer); dateRangePollTimer = null; }
                                     waitingForDateRangeForTC = false;
                                     if (typeof loadPeriodsForDataset === 'function' && loadPeriodsForDataset(activeDatasetIdx)) {
                                         if (typeof showPeriod === 'function') showPeriod(0);
@@ -1224,9 +1230,7 @@
                                 });
                             }
                             // Reload period iframes with new params (lat, lon, zoom, minScale, maxScale, pixelSize, background, opacity, colorscale).
-                            // When message is from a period iframe, only reload after cooldown to avoid double load on TC open—
-                            // unless display params (minScale, maxScale, contour, etc.) changed, then reload all immediately so forward/back show same settings.
-                            // Also suppress reloads right after exiting period selection mode (clicking - can cause blur/resize -> postMessage).
+                            // When message is from a period iframe, only reload after cooldown unless display params changed.
                             const exitSuppressActive = typeof periodSelectionModeExitSuppressUntil !== 'undefined' && Date.now() < periodSelectionModeExitSuppressUntil;
                             const periodSyncAllowed = !exitSuppressActive && (senderPeriodIndex < 0 ||
                                 (Date.now() - (typeof periodPanelsCreatedAt !== 'undefined' ? periodPanelsCreatedAt : 0) > PERIOD_SYNC_COOLDOWN_MS) ||
@@ -1237,7 +1241,6 @@
                                 typeof loadedDatasetIdx !== 'undefined' && loadedDatasetIdx >= 0) {
                                 const dataset = iframeDatasets.get(loadedDatasetIdx);
                                 if (dataset) {
-                                    // Reload non-sender period iframes only—sender already has correct display params; reloading it triggers another postMessage and cascade
                                     periodPanels.forEach((panel, periodIdx) => {
                                         if (periodIdx === senderPeriodIndex) return;
                                         const startDate = panel.dataset.startDate;
@@ -1261,6 +1264,9 @@
                                         };
                                         const iframe = panel.querySelector('iframe');
                                         if (iframe) {
+                                            loadingPeriodIndices.add(periodIdx);
+                                            updateLoadingIndicator();
+                                            iframe.onload = () => { loadingPeriodIndices.delete(periodIdx); updateLoadingIndicator(); };
                                             iframe.src = buildInsarmapsUrl(
                                                 baseUrl, dataset,
                                                 currentMapParams.lat, currentMapParams.lon, currentMapParams.zoom,
@@ -1297,16 +1303,13 @@
                 let periodPanels = new Map();  // periodIndex -> panel element
                 let periodPanelsCreatedAt = 0;  // Timestamp when period panels were created (avoids reload on initial load)
                 const PERIOD_SYNC_COOLDOWN_MS = 5000;  // Don't reload other periods on message from a period iframe within this window
-                let periodSelectionModeExitSuppressUntil = 0;  // Suppress reloads after exiting period selection mode (blur/resize can trigger postMessage)
                 let movieInterval = null;
                 let loadedDatasetIdx = -1;  // Which dataset has periods loaded
                 let totalLoadedIframes = 0;
                 const ESTIMATED_MB_PER_IFRAME = 80;
                 let waitingForDateRangeForTC = false;
                 let dateRangeWaitTimer = null;
-                let dateRangePollTimer = null;
-                const DATE_RANGE_WAIT_MS = 20000;  // Total wait: 20s (polls every 1s)
-                const DATE_RANGE_POLL_MS = 1000;   // Poll interval: 1s
+                const DATE_RANGE_WAIT_MS = 5000;
                 
                 // Add-period flow: user must select point, then +, then click dot (start), then dot (end)
                 // States: 'idle' | 'need_point' | 'need_start' | 'need_end'
@@ -1394,12 +1397,12 @@
                     if (addPeriodGroup) addPeriodGroup.classList.toggle('expanded', periodSelectionModeActive);
                     if (!periodSelectionModeActive) {
                         addPeriodBtn.textContent = '+';
-                        addPeriodBtn.title = 'Select periods for URL';
+                        addPeriodBtn.title = 'Click to select periods';
                         addPeriodBtn.classList.remove('state-need-point', 'state-need-start', 'state-need-end', 'mode-close');
                         return;
                     }
                     addPeriodBtn.textContent = '−';
-                    addPeriodBtn.title = 'Close periods selection mode';
+                    addPeriodBtn.title = 'Close period selection mode';
                     addPeriodBtn.classList.add('mode-close');
                     addPeriodBtn.classList.remove('state-need-point', 'state-need-start', 'state-need-end');
                     // Grey out Start/End: need_start or idle or need_point = both greyed; need_end = only End greyed. Keep dates in boxes when greyed.
@@ -1412,17 +1415,6 @@
                         const endGreyed = addPeriodState !== 'need_end';
                         addEndDateInput.disabled = endGreyed;
                         addEndDateInput.classList.toggle('greyed', endGreyed);
-                    }
-                }
-                
-                // Send insarmaps-keep-charts-open to the currently visible iframe (mode change must not close timeseries)
-                function sendKeepChartsOpenToVisibleIframe() {
-                    const activePanel = document.querySelector('.panel.active');
-                    const iframe = activePanel && activePanel.querySelector('iframe');
-                    if (iframe && iframe.contentWindow) {
-                        try {
-                            iframe.contentWindow.postMessage({ type: 'insarmaps-keep-charts-open' }, '*');
-                        } catch (err) {}
                     }
                 }
                 
@@ -1487,9 +1479,8 @@
                     if (addEndDateInput) { addEndDateInput.disabled = true; addEndDateInput.classList.add('greyed'); }
                     updateAddPeriodButton();
                     updateControls();
-                    // Rebuild period panels only when NOT in period selection mode.
-                    // When in period selection mode, stay on main panel so timeseries stays open for picking more periods.
-                    if (!periodSelectionModeActive && periodPanels.size === 0 && periods.length > 0 && loadPeriodsForDataset(activeDatasetIdx, false, periods)) {
+                    // Rebuild period panels (e.g. after + reset cleared them) so this period is shown
+                    if (periodPanels.size === 0 && periods.length > 0 && loadPeriodsForDataset(activeDatasetIdx, false, periods)) {
                         showPeriod(currentPeriodIndex);
                     }
                     return true;
@@ -1562,6 +1553,8 @@
                     periods = [];
                     currentPeriodIndex = 0;
                     loadedDatasetIdx = -1;
+                    loadingPeriodIndices.clear();
+                    updateLoadingIndicator();
                     totalLoadedIframes = iframeDatasets.size;  // Only original iframes
                     updateMemoryDisplay();
                 }
@@ -1571,8 +1564,6 @@
                 // customPeriods: optional array of { startDate, endDate }; when provided, use it instead of URL or calculated periods
                 function loadPeriodsForDataset(datasetIdx, forceUsePeriodInput, customPeriods) {
                     // Use this dataset's stored date range when available (so switching back to a dataset uses its range)
-                    const urlParams = getOverlayUrlParams();
-                    const tcInUrl = urlParams.timeControls === 'true';
                     const stored = datasetDateRanges.get(datasetIdx);
                     if (stored && stored.firstDate && stored.lastDate) {
                         dataFirstDate = stored.firstDate;
@@ -1580,10 +1571,7 @@
                     } else if (dataFirstDate && dataLastDate) {
                         // Global date range from any prior postMessage (e.g. another dataset with same AOI)
                         // already set; no action needed
-                    } else if (tcInUrl && currentMapParams.startDate && currentMapParams.endDate) {
-                        // Only use URL/currentMapParams startDate/endDate when timeControls=true (restoring from TC link).
-                        // When timeControls is absent or false, startDate/endDate are display params (current view)—
-                        // they may be a subset; use Period input with dataset's full range instead.
+                    } else if (currentMapParams.startDate && currentMapParams.endDate) {
                         dataFirstDate = parseDate(currentMapParams.startDate);
                         dataLastDate = parseDate(currentMapParams.endDate);
                     } else {
@@ -1596,9 +1584,8 @@
                             }
                         }
                     }
-                    if ((!dataFirstDate || !dataLastDate) && tcInUrl) {
-                        // Last resort only when restoring from TC link: try parsing from urlsList
-                        // (when tc not in URL, urlsList may have display subset—prefer postMessage full range)
+                    if (!dataFirstDate || !dataLastDate) {
+                        // Last resort: try parsing startDate/endDate from the raw URL in urlsList
                         try {
                             const url = urlsList[datasetIdx];
                             if (url) {
@@ -1711,6 +1698,12 @@
                         iframe.src = iframeSrc;
                         iframe.setAttribute('allowfullscreen', '');
                         
+                        // Track loading for background period iframes (not the first one which is shown immediately)
+                        if (periodIdx > 0) {
+                            loadingPeriodIndices.add(periodIdx);
+                            iframe.onload = () => { loadingPeriodIndices.delete(periodIdx); updateLoadingIndicator(); };
+                        }
+                        
                         panel.appendChild(iframe);
                         container.appendChild(panel);
                         
@@ -1720,6 +1713,7 @@
                     
                     loadedDatasetIdx = datasetIdx;
                     periodPanelsCreatedAt = Date.now();
+                    updateLoadingIndicator();
                     updateMemoryDisplay();
                     console.log(`Loaded ${periodPanels.size} period panels`);
                     return true;
@@ -1776,7 +1770,6 @@
                 // and apply that date range (and all other params) to all dataset iframes and overlay URL.
                 function restoreToBaselineState() {
                     if (dateRangeWaitTimer) { clearTimeout(dateRangeWaitTimer); dateRangeWaitTimer = null; }
-                    if (dateRangePollTimer) { clearInterval(dateRangePollTimer); dateRangePollTimer = null; }
                     waitingForDateRangeForTC = false;
                     if (movieInterval) {
                         clearInterval(movieInterval);
@@ -1827,8 +1820,6 @@
                 // Open time controls
                 function openTimeControls() {
                     timeControlsActive = true;
-                    periodSelectionModeActive = false;  // Never start in period selection mode
-                    addPeriodState = 'idle';
                     periodInput.value = 2;
                     timeControlsPanel.classList.add('visible');
                     memoryDisplay.classList.add('visible');
@@ -1843,37 +1834,12 @@
                     // Load periods for current dataset if not already loaded
                     if (loadedDatasetIdx !== activeDatasetIdx || periodPanels.size === 0) {
                         if (!loadPeriodsForDataset(activeDatasetIdx)) {
-                            // Date range not yet available; actively poll insarmaps iframe for date range
-                            // instead of passively waiting for a postMessage that may not have been sent yet.
+                            // Date range not yet available; wait for postMessage from insarmaps instead of alerting immediately
                             waitingForDateRangeForTC = true;
                             periodIndicator.textContent = 'Waiting for map data…';
                             if (dateRangeWaitTimer) clearTimeout(dateRangeWaitTimer);
-                            if (dateRangePollTimer) clearInterval(dateRangePollTimer);
-                            
-                            // Actively request date range from the insarmaps iframe every poll interval.
-                            // insarmaps responds with notifyParentOfUrlState() once currentArea is loaded.
-                            const requestDateRange = () => {
-                                const activeIframe = document.getElementById(`iframe${activeDatasetIdx}`);
-                                if (activeIframe && activeIframe.contentWindow) {
-                                    try {
-                                        activeIframe.contentWindow.postMessage({ type: 'insarmaps-request-date-range' }, '*');
-                                    } catch (e) {}
-                                }
-                            };
-                            requestDateRange();  // Request immediately
-                            dateRangePollTimer = setInterval(() => {
-                                if (!waitingForDateRangeForTC) {
-                                    clearInterval(dateRangePollTimer);
-                                    dateRangePollTimer = null;
-                                    return;
-                                }
-                                requestDateRange();
-                            }, DATE_RANGE_POLL_MS);
-                            
-                            // Final timeout: give up after DATE_RANGE_WAIT_MS
                             dateRangeWaitTimer = setTimeout(() => {
                                 dateRangeWaitTimer = null;
-                                if (dateRangePollTimer) { clearInterval(dateRangePollTimer); dateRangePollTimer = null; }
                                 if (waitingForDateRangeForTC && (!dataFirstDate || !dataLastDate)) {
                                     waitingForDateRangeForTC = false;
                                     alert('Could not determine date range. Please interact with the map first to load date information.');
@@ -1971,30 +1937,30 @@
                 });
                 
                 // Add period (+/−) button: toggle period selection mode, or enter add-period flow when opening.
-                // Stop mousedown/click from propagating so same click is not seen in iframe (avoids closing timeseries).
-                addPeriodBtn.addEventListener('mousedown', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                });
                 addPeriodBtn.addEventListener('click', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     if (!timeControlsActive) return;
                     if (periodSelectionModeActive) {
-                        // Exit period selection mode: no reload, no panel switch – same as entering
                         periodSelectionModeActive = false;
-                        periodSelectionModeExitSuppressUntil = Date.now() + 2000;  // Suppress postMessage-driven reloads (blur/resize can trigger them)
                         updateAddPeriodButton();
-                        sendKeepChartsOpenToVisibleIframe();
                         return;
                     }
                     periodSelectionModeActive = true;
+                    // Reset periods when entering period selection: clear list and URL so next selection replaces
+                    clearPeriods();
                     replaceNextPeriodWithNew = true;
                     updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, true, undefined);
                     updateControls();
-                    updateAddPeriodButton();
-                    // Do not switch panels or clear – mode change must have no effect on what is shown
-                    sendKeepChartsOpenToVisibleIframe();
+                    // Show main dataset panel (no reload) so time series stays open for picking start/end dates
+                    showMainDatasetPanel();
+                    // Tell insarmaps to keep time series window open (parent click must not minimize it)
+                    const mainIframe = document.getElementById(`iframe${activeDatasetIdx}`);
+                    if (mainIframe && mainIframe.contentWindow) {
+                        try {
+                            mainIframe.contentWindow.postMessage({ type: 'insarmaps-keep-charts-open' }, '*');
+                        } catch (err) {}
+                    }
                     if (!pointSelected()) {
                         addPeriodState = 'need_point';
                         if (addStartDateInput) { addStartDateInput.value = ''; addStartDateInput.disabled = true; addStartDateInput.classList.add('greyed'); }

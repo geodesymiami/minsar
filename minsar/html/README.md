@@ -31,3 +31,7 @@ http://insarmaps.miami.edu/start/-0.81/-91.19/12?startDataset=FernandinaSenDT128
 
 URLs are automatically sorted by dataset type: desc, asc, horz, vert.
 
+## Known issues
+
+See **overlay.html** in `ARCHITECTURE.md` for detailed behaviour and known limitations. As of 2026-02-13: **Reference point in Time Controls mode** — changing the reference point in the visible period iframe does not apply to other period iframes’ data (only the visible iframe is updated). Documented in ARCHITECTURE.md; to be retried when tooling improves.
+
