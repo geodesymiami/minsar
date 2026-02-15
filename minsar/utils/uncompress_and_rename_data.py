@@ -45,6 +45,8 @@ def detect_sensor_type(data_file):
     # Check for different sensor patterns
     if basename.startswith('ASA'):
         return 'Envisat'
+    elif basename.startswith('SAR_'):
+        return 'ERS'
     elif basename.startswith('CSK') or basename.startswith('EL'):
         return 'CSK'
     elif basename.startswith('TSX') or basename.startswith('TDX') or 'dims_op' in basename:
@@ -73,6 +75,8 @@ def get_date_from_folder(data_folder, sensor):
         return get_TSX_TDX_date(data_folder)
     elif 'Envisat' in sensor:
         return get_ENVISAT_date(data_folder)
+    elif 'ERS' in sensor:
+        return get_ERS_date(data_folder)
     else:
         return False, 'FAIL'
 
@@ -138,6 +142,14 @@ def get_ENVISAT_date(ENVISAT_folder):
     ENVISAT_file = os.path.basename(ENVISAT_folder)
     if len(ENVISAT_file) > 0:
         parts = ENVISAT_file.split('_')
+        acquisitionDate = parts[2][6:]
+        return True, acquisitionDate
+    return False, 'FAIL'
+
+def get_ERS_date(folder):
+    file = os.path.basename(folder)
+    if len(file) > 0:
+        parts = file.split('_')
         acquisitionDate = parts[2][6:]
         return True, acquisitionDate
     return False, 'FAIL'
