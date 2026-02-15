@@ -105,9 +105,9 @@ def generate_download_command(template,inps):
         f.write(' '.join(['asf_download.sh'] + asf_burst_download_opts + ['--download','2>asf_burst_download1.e']) + '\n')
         f.write(' '.join(['asf_download.sh'] + asf_burst_download_opts + ['--download','2>asf_burst_download2.e']) + '\n')
         f.write(' '.join(['bursts_to_burst2safe_jobfile.py','SLC']) + '\n')
-        f.write(' '.join(['run_workflow.bash',f'{template}','--jobfile',f'{inps.work_dir}/SLC/run_01_burst2safe','--no-check-job-outputs']) + '\n')
+        f.write(' '.join(['run_workflow.bash','--jobfile',f'{inps.work_dir}/SLC/run_01_burst2safe','--no-check-job-outputs']) + '\n')
         f.write(' '.join(['check_burst2safe_job_outputs.py','SLC']) + '\n')
-        f.write(f'if [[ -s SLC/run_01_burst2safe_timeouts_0 ]]; then\n    rerun_burst2safe.sh {template}\nfi\n')
+        f.write('if [[ -s SLC/run_01_burst2safe_rerun_0 ]]; then\n    rerun_burst2safe.sh SLC/run_01_burst2safe_rerun_0.job\nfi\n')
 
     
     os.chmod('download_asf.sh', 0o755)
