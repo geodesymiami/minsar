@@ -40,6 +40,18 @@ if [[ $PLATFORM_NAME == "stampede3" ]] ; then
 fi
 }
 ###########################################
+function changequeuepvc() {
+if [[ "$1" == "--help" || "$1" == "-h" ]]; then
+   echo "  Usage: changequeuepvc run_10*.job"; return
+fi
+if [[ $PLATFORM_NAME == "stampede3" ]] ; then
+          sed -i "s|skx-dev|pvc|g" "$@" ;
+          sed -i "s|skx|pvc|g" "$@" ;
+          sed -i "s/^#SBATCH -n \s*[0-9]\+/#SBATCH -n ${cpus_per_node_icx}/" "$@"
+fi
+}
+###########################################
+###########################################
 scancel_jobs() {
     if [ -z "$1" ] || [ "$1" == "--help" ]; then
         echo
