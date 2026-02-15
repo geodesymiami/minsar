@@ -4,6 +4,7 @@
 #######################
 import argparse
 import os
+import re
 import shutil
 import sys
 import minsar.utils.process_utilities as putils
@@ -13,6 +14,30 @@ import shutil
 import glob
 from pathlib import Path
 from minsar.job_submission import check_words_in_file
+
+
+def _date_from_stderr_filename(filepath):
+    """Extract 8-digit date (YYYYMMDD) from run_01_burst2safe_*_<date>_*.e filename."""
+    base = os.path.basename(filepath).replace(".e", "")
+    match = re.search(r"\d{8}", base)
+    return match.group(0) if match else None
+
+
+def _date_and_task_index_from_stderr_filename(filepath):
+    """
+    Extract date and launcher task index from .e filename.
+    Pattern: run_01_burst2safe_0_YYYYMMDD_<JID>.e -> (date, 0-based line index).
+    Returns (date_str or None, task_index or None). task_index is None if not in filename.
+    """
+    base = os.path.basename(filepath)
+    # Match _YYYYMMDD.e or _YYYYMMDD_JID.e at end
+    match = re.search(r"(\d{8})(?:_(\d+))?\.e$", base)
+    if not match:
+        return None, None
+    date_str = match.group(1)
+    jid_str = match.group(2)
+    task_index = int(jid_str) if jid_str is not None else None
+    return date_str, task_index
 
 def cmd_line_parser(iargs=None):
 
@@ -29,31 +54,6 @@ Examples:
     inps = parser.parse_args(args=iargs)
 
     return inps
-
-def write_burst2safe_file_for_timeouts(input_file, timeout_dates):
-    """
-    Extracts lines from input_file that contain any of the timeout_dates
-    and writes them to a new file, overwriting if it already exists.
-    """
-    dirname, basename = os.path.split(input_file)
-    outname = basename.replace("burst2safe_", "burst2safe_timeouts_")
-    output_file = os.path.join(dirname, outname)
-
-    # Remove output file if it exists
-    if os.path.exists(output_file):
-        os.remove(output_file)
-
-    # Read and filter lines
-    with open(input_file, "r") as fin:
-        lines = fin.readlines()
-
-    matching_lines = [line for line in lines if any(date in line for date in timeout_dates)]
-
-    with open(output_file, "w") as fout:
-        fout.writelines(matching_lines)
-
-    #print(f"Wrote {len(matching_lines)} matching lines to {output_file}")
-    return output_file
 
 def copy_burst2safe_jobfile(jobfile, new_tag):
     """
@@ -91,33 +91,93 @@ def main(iargs=None):
     files = glob.glob(os.path.join(inps.slc_dir, 'run_01*'))
     stderr_files = [f for f in files if f.endswith(".e")]
 
-    # identify dates with download/connection timeout
-    timeout_dates= []
+    # Remove zero-size *.e files first
+    for f in stderr_files:
+        try:
+            if os.path.getsize(f) == 0:
+                os.remove(f)
+        except OSError:
+            pass
+    stderr_files = [f for f in glob.glob(os.path.join(inps.slc_dir, 'run_01*')) if f.endswith(".e")]
+
+    dirname = os.path.dirname(stderr_files[0]) if stderr_files else inps.slc_dir
+    run_file = os.path.join(dirname, "run_01_burst2safe_0")
+    if not os.path.isfile(run_file):
+        run_file = os.path.join(dirname, "run_01_burst2safe")
+    job_file = run_file + ".job" if os.path.isfile(run_file + ".job") else os.path.join(dirname, "run_01_burst2safe_0.job")
+
+    run_lines = []
+    if os.path.isfile(run_file):
+        with open(run_file, "r") as f:
+            run_lines = f.readlines()
+
+    def line_index_for_stderr_file(stderr_path):
+        """One run-file line index for this .e file: use task index from filename, else first line containing date."""
+        date_str, task_index = _date_and_task_index_from_stderr_filename(stderr_path)
+        if date_str is None:
+            return None
+        if task_index is not None and 0 <= task_index < len(run_lines):
+            return task_index
+        for i, line in enumerate(run_lines):
+            if date_str in line:
+                return i
+        return None
+
+    # One entry per non-zero .e file: collect line indices (by task index in filename or date match)
+    error_line_indices = []
+    for f in stderr_files:
+        idx = line_index_for_stderr_file(f)
+        if idx is not None:
+            error_line_indices.append(idx)
+
+    # Timeouts: one entry per .e file that contains a timeout string
+    timeout_line_indices = []
     for file in stderr_files:
-        ## preprocess *.e files
-        #  putils.remove_zero_size_or_length_error_files(run_file=job_name)      
         for string in timeout_strings:
             if check_words_in_file(file, string):
-                date = file.split("_")[-2]
-                timeout_dates.append(date)
+                idx = line_index_for_stderr_file(file)
+                if idx is not None:
+                    timeout_line_indices.append(idx)
                 print('Timeout detected:' + file)
-                print ('QQQQ FA 10/2025:','Timed out burst downloads (need script to re-download):') 
+                print('Timed out burst downloads (need script to re-download):')
+                break
 
-    if timeout_dates:
-       dirname = os.path.dirname(stderr_files[0])
-       write_burst2safe_file_for_timeouts(dirname + "/run_01_burst2safe_0", timeout_dates)
-       copy_burst2safe_jobfile(dirname + "/run_01_burst2safe_0.job", new_tag="burst2safe_timeouts")
-        
-    # identify problem dates and remove *tiff amd *SAFE files
-    problem_dates= []
+    # Write timeout.txt with run-file lines that were timeouts (for reference)
+    timeout_txt = os.path.join(dirname, "timeout.txt")
+    if timeout_line_indices and run_lines:
+        timeout_indices = sorted(set(timeout_line_indices))
+        with open(timeout_txt, "w") as fout:
+            for i in timeout_indices:
+                if 0 <= i < len(run_lines):
+                    fout.write(run_lines[i])
+        print("Wrote {} ({} timeout entries)".format(timeout_txt, len(timeout_indices)))
+    elif os.path.isfile(timeout_txt):
+        open(timeout_txt, "w").close()  # clear if no timeouts
+
+    # Rerun: only run_01_burst2safe_rerun_0 and run_01_burst2safe_rerun_0.job (merge timeouts + errors)
+    rerun_file = os.path.join(dirname, "run_01_burst2safe_rerun_0")
+    rerun_line_indices = sorted(set(timeout_line_indices) | set(error_line_indices))
+    if rerun_line_indices and run_lines:
+        selected = [run_lines[i] for i in rerun_line_indices]
+        with open(rerun_file, "w") as fout:
+            fout.writelines(selected)
+        print("Wrote {} ({} rerun entries)".format(rerun_file, len(rerun_line_indices)))
+        if os.path.isfile(job_file):
+            copy_burst2safe_jobfile(job_file, new_tag="burst2safe_rerun")
+    else:
+        # No errors/timeouts: empty rerun file so rerun_burst2safe.sh loop exits
+        with open(rerun_file, "w") as fout:
+            pass
+        print("No errors/timeouts; {} is empty.".format(rerun_file))
+
+    # identify problem dates and remove *tiff and *SAFE files
+    problem_dates = []
     for file in stderr_files:
-        #print('checking *.e, *.o from ' + file)
-        ## preprocess *.e files
-        #  putils.remove_zero_size_or_length_error_files(run_file=job_name)      
         for string in data_problem_strings_stderr:
             if check_words_in_file(file, string):
-                date = file.split("_")[-2]
-                problem_dates.append(date)
+                date = _date_from_stderr_filename(file)
+                if date:
+                    problem_dates.append(date)
                 print('Match:' + file)
 
     log_index = 1

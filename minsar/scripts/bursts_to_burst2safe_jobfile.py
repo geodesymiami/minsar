@@ -51,6 +51,22 @@ def clean_path(f):
         # Return only the filename (i.e., remove the "SLC/" part)
         return p.name
 
+
+def burst_hash(burst_basename):
+    """Extract hash from burst filename, e.g. S1_185679_IW1_20251112T161529_VV_8864-BURST -> 8864."""
+    return burst_basename.split('_')[-1].replace('-BURST', '')
+
+
+def burst_subswath(burst_basename):
+    """Extract subswath from burst filename, e.g. S1_185679_IW1_20251112T161529_VV_8864-BURST -> IW1."""
+    return burst_basename.split('_')[2]
+
+
+def sort_bursts_by_hash_subswath(bursts):
+    """Sort burst basenames by (hash, subswath) for deterministic burst2safe command order."""
+    return sorted(bursts, key=lambda b: (burst_hash(b), burst_subswath(b)))
+
+
 ###############################################
 
 def main(iargs=None):
@@ -93,7 +109,8 @@ def main(iargs=None):
     with open(run_01_burst2safe_path, "w") as f:
         for date, bursts in sorted(filtered_bursts_by_date.items()):
             output_dir = str(Path(inps.work_dir) / inps.burst_dir_path)
-            f.write("burst2safe " + ' '.join(bursts) + " --keep-files --output-dir " + output_dir + "\n")
+            sorted_bursts = sort_bursts_by_hash_subswath(bursts)
+            f.write("burst2safe " + ' '.join(sorted_bursts) + " --keep-files --output-dir " + output_dir + "\n")
 
     print("Created: ", run_01_burst2safe_path)
     
