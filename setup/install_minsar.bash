@@ -16,6 +16,7 @@ git clone git@github.com:geodesymiami/PlotDataFA tools/PlotDataFA
 git clone git@github.com:geodesymiami/precip tools/Precip
 git clone git@github.com:geodesymiami/Precip_web tools/Precip_web
 git clone git@github.com:geodesymiami/VolcDef_web tools/VolcDef_web
+git clone git@github.com:geodesymiami/webconfig tools/webconfig
 git clone git@github.com:scottstanie/sardem tools/sardem
 git clone git@github.com:luhipi/sarvey tools/sarvey
 git clone git@github.com:falkamelung/sarplotter-main.git tools/sarplotter-main
