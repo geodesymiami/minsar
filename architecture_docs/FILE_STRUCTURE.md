@@ -101,9 +101,11 @@ Mixed Python and Bash utilities:
 | Category | Examples |
 |----------|----------|
 | Data handling | `uncompress_and_rename_data.py`, `check_download.py` |
-| Template management | `generate_template_files.py`, `create_insar_template.py` |
+| Template management | `generate_template_files.py`, `create_insar_template.py`, `create_annual_template_files.bash` |
 | Job utilities | `examine_job_stdout_files.py`, `summarize_job_run_times.py` |
 | Geospatial | `convert_boundingbox.py`, `get_boundingBox_from_kml.py` |
+
+`create_annual_template_files.bash` generates year-shifted template copies from a base template and writes `$SCRATCHDIR/run_templates.sh` (overwritten each run; not version-controlled) to batch-run minsarApp.bash on those templates. See [burst_testing.md](burst_testing.md).
 
 ### `minsar/src/minsar/cli/` - CLI Commands
 

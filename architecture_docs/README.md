@@ -53,6 +53,7 @@ minsarApp.bash
 | [WORKFLOW_ARCHITECTURE.md](./WORKFLOW_ARCHITECTURE.md) | Job submission system details | Modifying job handling |
 | [KEY_CONCEPTS.md](./KEY_CONCEPTS.md) | Terminology, template files, data structures | Understanding terminology |
 | [DEVELOPMENT_GUIDE.md](./DEVELOPMENT_GUIDE.md) | Coding conventions, testing, debugging | Contributing code |
+| [burst_testing.md](./burst_testing.md) | Annual template generation, run_templates.sh, testing bursts | Testing burst processing across years |
 
 ## Quick Lookup Tables
 

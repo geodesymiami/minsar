@@ -381,6 +381,10 @@ EOF
 # Add "test_my_feature.bash" to the TEST_SUITES array
 ```
 
+### Testing burst processing with annual templates
+
+To test burst-processing behavior (e.g. `bursts_to_burst2safe_jobfile.py`) across multiple years: run `create_annual_template_files.bash` with a base template (e.g. `burstsg0HawaiiSenD87.template`) and `--years N`. It creates annual template variants and writes `$SCRATCHDIR/run_templates.sh`. Source the minsar environment, set `$TE` to your template directory, then run `$SCRATCHDIR/run_templates.sh` to run minsarApp.bash on each template (0..N) with `--no-mintpy --no-insarmaps --no-upload`; the script stops on first failure. See [burst_testing.md](burst_testing.md).
+
 ## Debugging
 
 ### Common Debug Techniques

@@ -103,3 +103,4 @@ SLC Download → DEM → Create JobFiles → Run ISCE Jobs (run_01-16)
 - [Development Guide](./DEVELOPMENT_GUIDE.md) - Developer guidelines
 - [File Structure](./FILE_STRUCTURE.md) - Repository structure
 - [Key Concepts](./KEY_CONCEPTS.md) - Core concepts and terminology
+- [Burst testing](./burst_testing.md) - Annual template generation and run_templates.sh for testing burst processing
