@@ -185,6 +185,8 @@ do
             shift
             ;;
         --miaplpy-start)
+            miaplpy_flag=1
+            [[ -z "$startstep" ]] && startstep="miaplpy"
             miaplpy_startstep="$2"
             shift
             shift
@@ -478,7 +480,7 @@ if [[ $download_flag == "1" ]]; then
 fi
 
 # Unpack SLCs for non-Sentinel-1 platforms
-if [[ $platform_str != *"Sentinel-1"* ]] && [[ $unpack_flag == "1" ]]; then
+if [[ $platform_str != *"SENTINEL-1"* ]] && [[ $unpack_flag == "1" ]]; then
     run_command "unpack_SLCs.py $download_dir --queue $QUEUENAME"
 fi
 
