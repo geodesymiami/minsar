@@ -14,7 +14,7 @@ Search order:
 Outputs:
   - For each line: line_number date subswath burst_count
   - Writes results to number_bursts.txt
-  - Summary: distribution of counts and total bursts
+  - Summary: distribution of counts, total bursts, and number of dates
 
 Options:
   -h, --help    Show this help and exit
@@ -76,11 +76,15 @@ NR > 0 {
     count = $4
     freq[count]++
     total += count
+    date_seen[$2] = 1
 }
 END {
+    n_dates = 0
+    for (d in date_seen) { n_dates++ }
     for (n in freq) {
         printf "%d bursts: %d line(s)\n", n, freq[n]
     }
     printf "Total: %d bursts in %d line(s)\n", total, NR
+    printf "Dates: %d\n", n_dates
 }
 ' "$outfile"

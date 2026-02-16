@@ -108,8 +108,8 @@ def generate_download_command(template,inps):
         f.write(' '.join(['run_workflow.bash','--jobfile',f'{inps.work_dir}/SLC/run_01_burst2safe','--no-check-job-outputs']) + '\n')
         f.write(' '.join(['check_burst2safe_job_outputs.py','SLC']) + '\n')
         f.write('if [[ -s SLC/run_01_burst2safe_rerun_0 ]]; then\n    rerun_burst2safe.sh SLC/run_01_burst2safe_rerun_0.job\nfi\n')
+        f.write(' '.join(['check_SAFE_completeness.py','SLC']) + '\n')
 
-    
     os.chmod('download_asf.sh', 0o755)
     os.chmod('download_asf_burst.sh', 0o755)
 
