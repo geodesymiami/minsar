@@ -53,6 +53,7 @@ minsarApp.bash
 | [WORKFLOW_ARCHITECTURE.md](./WORKFLOW_ARCHITECTURE.md) | Job submission system details | Modifying job handling |
 | [KEY_CONCEPTS.md](./KEY_CONCEPTS.md) | Terminology, template files, data structures | Understanding terminology |
 | [DEVELOPMENT_GUIDE.md](./DEVELOPMENT_GUIDE.md) | Coding conventions, testing, debugging | Contributing code |
+| [minsar_download_and_unpack.md](./minsar_download_and_unpack.md) | Download and unpack steps, asf-burst flow, DATES_REMOVED.txt | Understanding download/unpack pipeline |
 | [burst_testing.md](./burst_testing.md) | Annual template generation, run_templates.sh, testing bursts | Testing burst processing across years |
 
 ## Quick Lookup Tables
@@ -61,7 +62,7 @@ minsarApp.bash
 
 | Step | Flag | Script/Job | Description |
 |------|------|------------|-------------|
-| download | `--dostep download` | download_asf_burst.sh | Download SLC data |
+| download | `--dostep download` | asf_burst_download.bash (burst) / ssara (SLC) | Download SLC data |
 | dem | `--dostep dem` | makedem_sardem.sh | Download DEM |
 | jobfiles | `--dostep jobfiles` | create_runfiles.py | Create SLURM jobs |
 | ifgram | `--dostep ifgram` | run_01 - run_11/16 | ISCE processing |

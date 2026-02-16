@@ -213,83 +213,63 @@ class Sentinel1(Component):
 
         polid = self.polarization
 
+        # When multiple SAFEs are given (e.g. one per subswath), only SAFEs that
+        # contain this swath's annotation are used; skip others instead of failing.
         if len(self.xml) == 0:
-            match = None
             for dirname in self.safe:
                 match = None
-
                 if dirname.endswith('.zip'):
                     pattern = os.path.join('*SAFE','annotation', swathid) + '-slc-' + polid + '*.xml'
                     zf = zipfile.ZipFile(dirname, 'r')
                     match = fnmatch.filter(zf.namelist(), pattern)
                     zf.close()
-
-                    if (len(match) == 0):
-                        raise Exception('No annotation xml file found in zip file: {0}'.format(dirname))
-
-                    ####Add /vsizip at the start to make it a zip file
-                    self.xml.append('/vsizip/'+os.path.join(dirname, match[0]) )
-
                 else:
-                    pattern = os.path.join('annotation',swathid)+'-slc-'+polid+'*.xml'
-                    match = glob.glob( os.path.join(dirname, pattern))
+                    pattern = os.path.join('annotation', swathid) + '-slc-' + polid + '*.xml'
+                    match = glob.glob(os.path.join(dirname, pattern))
 
-                    if (len(match) == 0):
-                        raise Exception('No annotation xml file found in {0}'.format(dirname))
-            
+                if (len(match) == 0):
+                    continue  # this SAFE does not have this swath (e.g. one SAFE per subswath)
+
+                if dirname.endswith('.zip'):
+                    self.xml.append('/vsizip/' + os.path.join(dirname, match[0]))
+                else:
                     self.xml.append(match[0])
 
-        if len(self.xml) == 0:
-            raise Exception('No annotation files found')
-
-        print('Input XML files: ', self.xml)
-
-        ####Find TIFF file
-        if (len(self.tiff) == 0) and (len(self.safe) != 0 ):
-            for dirname in self.safe:
-                match = None
+                # TIFF and manifest for this SAFE (same dirname)
                 if dirname.endswith('.zip'):
                     pattern = os.path.join('*SAFE','measurement', swathid) + '-slc-' + polid + '*.tiff'
                     zf = zipfile.ZipFile(dirname, 'r')
-                    match = fnmatch.filter(zf.namelist(), pattern)
+                    tmatch = fnmatch.filter(zf.namelist(), pattern)
                     zf.close()
-
-                    if (len(match) == 0):
+                    if len(tmatch) == 0:
                         raise Exception('No tiff file found in zip file: {0}'.format(dirname))
-
-                    ####Add /vsizip at the start to make it a zip file
-                    self.tiff.append('/vsizip/' + os.path.join(dirname, match[0]) )
-
-
+                    self.tiff.append('/vsizip/' + os.path.join(dirname, tmatch[0]))
+                    pattern = '*SAFE/manifest.safe'
+                    zf = zipfile.ZipFile(dirname, 'r')
+                    mmatch = fnmatch.filter(zf.namelist(), pattern)
+                    zf.close()
+                    if len(mmatch) != 0:
+                        self.manifest.append('/vsizip/' + os.path.join(dirname, mmatch[0]))
                 else:
                     pattern = os.path.join('measurement', swathid) + '-slc-' + polid + '*.tiff'
-                    match = glob.glob(os.path.join(dirname, pattern))
-
-                    if len(match) == 0 :
+                    tmatch = glob.glob(os.path.join(dirname, pattern))
+                    if len(tmatch) == 0:
                         raise Exception('No tiff file found in directory: {0}'.format(dirname))
+                    self.tiff.append(tmatch[0])
+                    self.manifest.append(os.path.join(dirname, 'manifest.safe'))
 
-                    self.tiff.append(match[0])
+        if len(self.xml) == 0:
+            raise Exception('No annotation files found for swath IW{0} in any SAFE. '
+                            'Check that each SAFE has annotation/ and measurement/ for this subswath.'.format(self.swathNumber))
 
-        print('Input TIFF files: ', self.tiff)
+        print('Input XML files: ', self.xml)
 
-
-        if len(self.tiff) != 0 :
+        if len(self.tiff) != 0:
+            print('Input TIFF files: ', self.tiff)
             if len(self.tiff) != len(self.xml):
                 raise Exception('Number of XML and TIFF files dont match')
 
-
-        ####Find manifest files
-        if len(self.safe) != 0:
-            for dirname in self.safe:
-                if dirname.endswith('.zip'):
-                    pattern='*SAFE/manifest.safe'
-                    zf = zipfile.ZipFile(dirname, 'r')
-                    match = fnmatch.filter(zf.namelist(), pattern)
-                    zf.close()
-                    self.manifest.append('/vsizip/' + os.path.join(dirname, match[0]))
-                else:
-                    self.manifest.append(os.path.join(dirname, 'manifest.safe'))
-    
+        if len(self.manifest) != 0:
             print('Manifest files: ', self.manifest)
 
 

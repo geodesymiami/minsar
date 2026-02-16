@@ -20,10 +20,9 @@ DOCS_README = "docs/README_burst_download.md"
 EXAMPLE = """example:
     bursts_to_burst2safe_jobfile.py SLC
 
-    Creates runfile for burst2safe: one line per (date, hash, subswath) so that:
-    - Bursts from different SLCs (different hashes) are never mixed.
-    - Bursts from different subswaths (IW1/IW2/IW3) are in separate SAFEs, avoiding
-      burst2safe "Products from subswaths ... do not overlap" errors.
+    Creates runfile for burst2safe. Prefers one SAFE per (date, hash) when subswaths
+    overlap (one product with IW1+IW2+IW3 for ISCE). Splits by subswath only when
+    burst2safe would fail with "Products from subswaths ... do not overlap".
     See %s for details.
 """ % DOCS_README
 
@@ -65,12 +64,38 @@ def burst_hash(burst_basename):
 
 
 def burst_subswath(burst_basename):
-    """Extract subswath from burst filename, e.g. S1_185679_IW1_20251112T161529_VV_8864-BURST -> IW1.
-    One burst2safe call per subswath avoids 'Products from subswaths IW2 and IW3 do not overlap' errors
-    when burst ID ranges of adjacent subswaths do not satisfy burst2safe's overlap rule.
-    """
-    # Pattern: S1_<id>_<IW1|IW2|IW3>_<datetime>_VV_<hash>-BURST
+    """Extract subswath from burst filename, e.g. S1_185679_IW1_20251112T161529_VV_8864-BURST -> IW1."""
     return burst_basename.split('_')[2]
+
+
+def burst_id_from_name(burst_basename):
+    """Extract relative burst ID from filename, e.g. S1_185682_IW1_... -> 185682."""
+    return int(burst_basename.split('_')[1])
+
+
+def subswaths_overlap(bursts_by_swath):
+    """
+    Return True if adjacent subswaths (IW1-IW2, IW2-IW3) satisfy burst2safe's overlap rule:
+    |min_burst_id difference| <= 1 and |max_burst_id difference| <= 1.
+    bursts_by_swath: dict mapping subswath name (e.g. 'IW1') to list of burst basenames.
+    """
+    order = ['IW1', 'IW2', 'IW3']
+    ranges = {}
+    for sw in order:
+        if sw not in bursts_by_swath or not bursts_by_swath[sw]:
+            continue
+        ids = [burst_id_from_name(b) for b in bursts_by_swath[sw]]
+        ranges[sw] = (min(ids), max(ids))
+    if len(ranges) <= 1:
+        return True
+    for i in range(len(order) - 1):
+        s1, s2 = order[i], order[i + 1]
+        if s1 not in ranges or s2 not in ranges:
+            continue
+        (min1, max1), (min2, max2) = ranges[s1], ranges[s2]
+        if abs(min1 - min2) > 1 or abs(max1 - max2) > 1:
+            return False
+    return True
 
 
 ###############################################
@@ -93,36 +118,44 @@ def main(iargs=None):
     burst_list_fullpath = glob.glob(inps.burst_dir_path + '/*.tiff')
     burst_list = [clean_path(f) for f in burst_list_fullpath ]
 
-    # Group by (date, hash, subswath): one burst2safe call per group.
-    # - Same hash = same source SLC; mixing hashes causes burst2safe errors.
-    # - One call per subswath avoids "Products from subswaths IW2 and IW3 do not overlap"
-    #   when adjacent subswaths' burst ID ranges don't satisfy burst2safe's overlap rule.
-    bursts_by_date_hash_swath = defaultdict(list)
+    # Group by (date, hash) then by subswath.
+    bursts_by_date_hash = defaultdict(lambda: defaultdict(list))
     for burst in burst_list:
         date_str = burst.split('_')[3][:8]  # YYYYMMDD
         h = burst_hash(burst)
         swath = burst_subswath(burst)
-        bursts_by_date_hash_swath[(date_str, h, swath)].append(burst)
+        bursts_by_date_hash[(date_str, h)][swath].append(burst)
 
     date_to_remove = ['20250429', '20250430', '20250501', '20250313']
-    # One jobfile line per (date, hash, subswath) group with >1 burst; skip excluded dates.
-    groups = [
-        ((date_str, h, swath), bursts)
-        for (date_str, h, swath), bursts in bursts_by_date_hash_swath.items()
-        if len(bursts) > 1 and date_str not in date_to_remove
-    ]
+    # Prefer one burst2safe call per (date, hash) when subswaths overlap (one SAFE = all subswaths, ISCE-compatible).
+    # Only split by subswath when overlap rule would fail (multiple SAFEs per date then require ISCE to handle per-subswath SAFEs).
+    groups = []
+    for (date_str, h), swath_dict in sorted(bursts_by_date_hash.items()):
+        if date_str in date_to_remove:
+            continue
+        if subswaths_overlap(swath_dict):
+            all_bursts = []
+            for sw in ['IW1', 'IW2', 'IW3']:
+                all_bursts.extend(swath_dict.get(sw, []))
+            if len(all_bursts) > 1:
+                groups.append((None, (date_str, h), all_bursts))  # one line for whole (date, hash)
+        else:
+            for swath, bursts in sorted(swath_dict.items()):
+                if len(bursts) > 1:
+                    groups.append((swath, (date_str, h), bursts))
+
     if not groups:
         raise RuntimeError(
-            "USER ERROR: no (date, hash, subswath) group has more than 1 burst. "
+            "USER ERROR: no (date, hash) or (date, hash, subswath) group has more than 1 burst. "
             "Need more than 1 burst per SLC for ISCE processing (run_07_merge* step)."
         )
 
     output_dir = str(Path(inps.work_dir) / inps.burst_dir_path)
     with open(run_01_burst2safe_path, "w") as f:
-        for (date_str, h, swath), bursts in sorted(groups):
+        for key, (date_str, h), bursts in sorted(groups, key=lambda x: (x[1], x[0] or '')):
             f.write("burst2safe " + ' '.join(sorted(bursts)) + " --keep-files --output-dir " + output_dir + "\n")
 
-    print("Created: ", run_01_burst2safe_path, "(%d lines, one SAFE per date+hash+subswath)" % len(groups))
+    print("Created: ", run_01_burst2safe_path, "(%d lines)" % len(groups))
     
     # find *template file (needed currently for run_workflow.bash)
     current_directory = Path(os.getcwd())

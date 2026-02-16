@@ -46,6 +46,7 @@ These are the main executable scripts users interact with:
 | `sbatch_conditional.bash` | Resource-checked sbatch wrapper |
 | `ingest_insarmaps.bash` | InsarMaps ingestion |
 | `download_data.sh` | Data download helper |
+| `asf_burst_download.bash` | ASF burst download (listing, retry, size check); reads `download_asf_burst.cmd` |
 | `run_clean_dir.bash` | Directory cleanup |
 
 ### `minsar/lib/` - Shared Libraries
@@ -68,6 +69,7 @@ Python scripts called by bash entry points:
 | `generate_download_command.py` | Generate data download commands |
 | `generate_makedem_command.py` | Generate DEM creation commands |
 | `check_job_outputs.py` | Validate job outputs after completion |
+| `check_SAFE_completeness.py` | Check SAFE dirs for required files; remove incomplete; log to DATES_REMOVED.txt |
 | `update_walltime_queuename.py` | Update job walltime after TIMEOUT |
 | `create_ingest_insarmaps_jobfile.py` | Create InsarMaps ingestion job |
 | `create_save_hdfeos5_jobfile.py` | Create HDF-EOS5 save job |

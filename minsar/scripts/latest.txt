@@ -1,0 +1,9 @@
+git checkout -b bursts_to_burst2safe-bursts0
+git add minsar/scripts/bursts_to_burst2safe_jobfile.py
+git commit -m "bursts_to_burst2safe_jobfile: version for bursts0"
+git checkout main
+
+git checkout -b bursts_to_burst2safe-bursts1
+git add minsar/scripts/bursts_to_burst2safe_jobfile.py
+git commit -m "bursts_to_burst2safe_jobfile: version for bursts1"
+git checkout main

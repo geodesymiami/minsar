@@ -30,6 +30,8 @@ class Sensors:
         self.file_list = sorted(glob.glob(os.path.join(self.input_dir, '*.zip')) + \
                                 glob.glob(os.path.join(self.input_dir, '*.tar')) + \
                                 glob.glob(os.path.join(self.input_dir, '*.gz')) + \
+                                glob.glob(os.path.join(self.input_dir, '*.E1')) + \
+                                glob.glob(os.path.join(self.input_dir, '*.E2')) + \
                                 glob.glob(os.path.join(self.input_dir, '*.N1')))
 
         return
@@ -57,6 +59,7 @@ class Sensors:
         ENV_str = 'ASA*'            # Envisat
         ERS_CEOS_str = 'ER*CEOS*'   # ERS in CEOS format
         ERS_ENV_str = 'ER*ESA*'     # ERS in Envisat format
+        ERS_ENV_str2 = 'SAR*'     # ERS in Envisat format
         ALOS1_str = 'ALPSRP*'       # ALOS-1 Palsar, zip files and extracted files
         ALOS2_str = '00*ALOS2*'       # ALOS-2, zip files and extracted files
         CSK_str = 'EL*'             # CSK, zip files
@@ -65,8 +68,8 @@ class Sensors:
         TSX_TDX_str = 'T*X1*'          # TSX/TDX zip files
         RSAT2_str = 'RS2*SLC*'       # RSAT2 zip files
 
-        sensor_str_list = (ENV_str, ERS_CEOS_str, ERS_ENV_str, ALOS1_str, ALOS2_str, CSK_str, CSK_str2, TSX_TDX_DLR_str, TSX_TDX_str, RSAT2_str)
-        sensor_list = ('Envisat', 'ERS_CEOS', 'ERS_ENV', 'ALOS1', 'ALOS2', 'CSK', 'CSK', 'TSX/TDX', 'TSX/TDX', 'RSAT2')
+        sensor_str_list = (ENV_str, ERS_CEOS_str, ERS_ENV_str, ERS_ENV_str2, ALOS1_str, ALOS2_str, CSK_str, CSK_str2, TSX_TDX_DLR_str, TSX_TDX_str, RSAT2_str)
+        sensor_list = ('Envisat', 'ERS_CEOS', 'ERS_ENV', 'ERS_ENV', 'ALOS1', 'ALOS2', 'CSK', 'CSK', 'TSX/TDX', 'TSX/TDX', 'RSAT2')
         #sensor_str_list = (TSX_TDX_DLR_str, TSX_TDX_str, RSAT2_str)
         #sensor_list = ('TSX/TDX', 'TSX/TDX', 'RSAT2')
 

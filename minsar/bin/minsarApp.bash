@@ -441,7 +441,10 @@ if [[ $download_flag == "1" ]]; then
     mkdir -p $download_dir
 
     if [[ $download_method == "asf-burst" ]]; then
-        run_command "./download_asf_burst.sh  2>out_download_asf_burst.e 1>out_download_asf_burst.o"
+        cd $download_dir
+        cmd=$(sed -n '1p' ../download_asf_burst.cmd)
+        run_command "$cmd"
+        cd ..
     elif [[ "$download_method" == "asf-slc" ]]; then
         run_command "./download_asf.sh 2>out_download_asf.e 1>out_download_asf.o"
     elif [[ $download_method == "ssara-python" ]]; then
@@ -482,6 +485,22 @@ fi
 # Unpack SLCs for non-Sentinel-1 platforms
 if [[ $platform_str != *"SENTINEL-1"* ]] && [[ $unpack_flag == "1" ]]; then
     run_command "unpack_SLCs.py $download_dir --queue $QUEUENAME"
+fi
+
+# Sentinel-1 burst: burst2safe runs in unpack step (download step only downloads)
+if [[ $platform_str == *"SENTINEL-1"* ]] && [[ $download_method == "asf-burst" ]] && [[ $unpack_flag == "1" ]]; then
+    run_command "bursts_to_burst2safe_jobfile.py SLC"
+    run_command "run_workflow.bash --jobfile $WORK_DIR/SLC/run_01_burst2safe --no-check-job-outputs"
+    run_command "check_burst2safe_job_outputs.py SLC"
+    if [[ -s SLC/run_01_burst2safe_rerun_0 ]]; then
+        run_command "rerun_burst2safe.sh SLC/run_01_burst2safe_rerun_0.job"
+    fi
+    run_command "check_SAFE_completeness.py SLC"
+    # move burst2safe stdout files out of SLC/ for cleanliness
+    mkdir -p SLC/stdout_run_01_burst2safe
+    for ofile in SLC/run_01*.o; do
+        [[ -f "$ofile" ]] && mv "$ofile" SLC/stdout_run_01_burst2safe/
+    done
 fi
 
 if [[ $dem_flag == "1" ]]; then
