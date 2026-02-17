@@ -64,16 +64,30 @@ usage: run_workflow.bash [custom_template_file] [OPTIONS]\n\
     exit 0;
 fi
 
+# Set WORKDIR before parsing so we can log the full command line
+WORKDIR=$(pwd)
+cd $WORKDIR
+# Log the full command line with SCRATCHDIR/SAMPLESDIR/TE simplified to env var form (as in minsarApp.bash)
+simplified_args=()
+for arg in "$@"; do
+    if [[ -n "${SCRATCHDIR:-}" && "$arg" == "$SCRATCHDIR"* ]]; then
+        simplified_args+=("\$SCRATCHDIR${arg#$SCRATCHDIR}")
+    elif [[ -n "${SAMPLESDIR:-}" && "$arg" == "$SAMPLESDIR"* ]]; then
+        simplified_args+=("\$SAMPLESDIR${arg#$SAMPLESDIR}")
+    elif [[ -n "${TE:-}" && "$arg" == "$TE"* ]]; then
+        simplified_args+=("\$TE${arg#$TE}")
+    else
+        simplified_args+=("$arg")
+    fi
+done
+echo "$(date +"%Y%m%d:%H-%M") + run_workflow.bash ${simplified_args[*]}" >> "${WORKDIR}"/log
+
 # Parse optional template file (if first argument doesn't start with --)
 template_file=""
 if [[ -n "$1" && "$1" != --* ]]; then
     template_file=$1
     shift  # Remove template file from arguments
 fi
-
-# Set WORKDIR to current directory
-WORKDIR=$(pwd)
-cd $WORKDIR
 
 # Set PROJECT_NAME from current directory if no template provided
 if [[ -n "$template_file" ]]; then
@@ -183,23 +197,6 @@ fi
 if [[ $miaplpy_flag == "true" && -z "$template_file" ]]; then
     echo "ERROR: --miaplpy option requires a template file argument. Exiting."
     exit 1
-fi
-
-# Log the command invocation with full command line
-if [[ -n "$template_file" ]]; then
-    # Create a nice print name for the template file
-    template_file_dir=$(dirname "$template_file")
-    if  [[ $template_file_dir == $TE ]]; then
-        template_print_name="\$TE/$(basename $template_file)"
-    elif [[ $template_file_dir == $SAMPLESDIR ]]; then
-        template_print_name="\$SAMPLESDIR/$(basename $template_file)"
-    else
-        template_print_name="$template_file"
-    fi
-    echo "$(date +"%Y%m%d:%H-%M") + run_workflow.bash $template_print_name $@" >> "${WORKDIR}"/log
-else
-    # Log without template file
-    echo "$(date +"%Y%m%d:%H-%M") + run_workflow.bash $@" >> "${WORKDIR}"/log
 fi
 
 # Print the collected job files for confirmation
