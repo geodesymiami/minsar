@@ -53,3 +53,56 @@ The script groups bursts so that **each burst2safe call receives a valid set of 
   `bursts_to_burst2safe_jobfile.py --help`
 
 The script creates `SLC/run_01_burst2safe` and (via job submission) the corresponding `.job` files for running burst2safe on the cluster.
+
+---
+
+## check_burst2safe_job_outputs.py
+
+**When to run:** After the burst2safe job(s) have run (e.g. via `run_workflow.bash --jobfile .../run_01_burst2safe`). The script inspects non-zero `run_01_burst2safe_*.e` stderr files in the SLC directory and classifies failures.
+
+**What it does:**
+
+1. **Preserves the original run file**  
+   Copies `run_01_burst2safe` (or `run_01_burst2safe_0`) to **run_01_burst2safe_0_orig** before any changes.
+
+2. **Classifies errors**  
+   Each non-zero `.e` file is classified as:
+   - **Timeout** (e.g. CMR/ASF timeout) → lines go into `run_01_burst2safe_timeout_0` for rerun via `rerun_burst2safe.sh`.
+   - **Data problem** (known stderr strings, e.g. `AttributeError: 'NoneType' object has no attribute 'tag'`, `ValueError: min() arg is an empty sequence`) → those dates are removed (see below) and can be listed for rerun.
+   - **Other** → any other stderr content; lines go into `run_01_burst2safe_rerun_0` (for optional burst2stack or manual handling).
+
+3. **SAFE-aware summaries**  
+   For each error, the script checks whether a `.SAFE` directory already exists for that date in the SLC dir:
+   - **errors_redundant.txt** — one line per error where a SAFE already exists (date + short error summary). The failure is redundant in the sense that the date is already covered by an existing SAFE.
+   - **errors_eliminated.txt** — one line per error where no SAFE exists (date + short summary). Those burst2safe calls are treated as eliminated (no SAFE produced).
+
+4. **BURST2SAFE_ERRORS.txt**  
+   A summary file that groups errors by type (timeout, data_problem, other) and lists the burst2safe command (or a short form) that was eliminated for each.
+
+5. **run_01_burst2safe_0_clean**  
+   The run file with all problem burst2safe lines removed (i.e. only lines that did not produce an error). The original is kept in `run_01_burst2safe_0_orig`.
+
+6. **Timeout and rerun lists**  
+   Writes `run_01_burst2safe_timeout_0` (and `.job`) when there are timeouts; writes `run_01_burst2safe_rerun_0` (and `.job`) when there are non-timeout errors. The download script can rerun timeouts via `rerun_burst2safe.sh`; the rerun list can be used for burst2stack or manual fixes.
+
+7. **Data-problem dates**  
+   For dates matching **data_problem_strings_stderr**, the script removes matching `*tiff` and `*SAFE` files from the SLC dir and logs to `removed_dates_*.txt`.
+
+**Output files (all under SLC/):**
+
+| File | Description |
+|------|-------------|
+| run_01_burst2safe_0_orig | Copy of the original run file before any modifications |
+| run_01_burst2safe_0_clean | Run file with problem burst2safe lines removed |
+| errors_redundant.txt | One line per error where a SAFE already exists (date + summary) |
+| errors_eliminated.txt | One line per error where no SAFE exists (date + summary) |
+| BURST2SAFE_ERRORS.txt | Summary of error types and eliminated burst2safe commands |
+| run_01_burst2safe_timeout_0 | Lines to re-run for timeouts (optional) |
+| run_01_burst2safe_rerun_0 | Lines to re-run for non-timeout errors (optional) |
+| timeout.txt | Reference list of timeout run lines |
+
+**Usage:**  
+`check_burst2safe_job_outputs.py SLC`  
+(from the project directory). Use `--help` for options and a link to this doc on GitHub.
+
+**Note for maintainers and AI:** When changing `check_burst2safe_job_outputs.py` (e.g. adding or changing error strings, output files, or behavior), update this section and the table above so the doc stays in sync with the script.

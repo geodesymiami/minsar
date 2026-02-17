@@ -115,6 +115,9 @@ bash tests/run_all_tests.bash      # Full suite
 | New concepts/terminology | `KEY_CONCEPTS.md` |
 | Testing changes | `DEVELOPMENT_GUIDE.md` |
 | Quick reference updates | `README.md` |
+| **check_burst2safe_job_outputs.py** or burst download error handling | **docs/README_burst_download.md** |
+
+When modifying `minsar/scripts/check_burst2safe_job_outputs.py` (error strings, output files, or behavior), read and update `docs/README_burst_download.md` so the doc stays in sync.
 
 Keep documentation in sync with code - outdated docs are worse than no docs.
 

@@ -39,12 +39,53 @@ def _date_and_task_index_from_stderr_filename(filepath):
     task_index = int(jid_str) if jid_str is not None else None
     return date_str, task_index
 
+
+def _safe_exists_for_date(dirname, date_str):
+    """Return True if a .SAFE directory exists in dirname whose name contains date_str (YYYYMMDD)."""
+    pattern = os.path.join(dirname, "*" + date_str + "*.SAFE")
+    for p in glob.glob(pattern):
+        if os.path.isdir(p):
+            return True
+    return False
+
+
+def _error_summary_from_stderr(stderr_path, timeout_strings, data_problem_strings_stderr):
+    """
+    Classify error and return (error_type, short_summary).
+    error_type: 'timeout' | 'data_problem' | 'other'
+    """
+    for s in timeout_strings:
+        if check_words_in_file(stderr_path, s):
+            return "timeout", "Timeout"
+    for s in data_problem_strings_stderr:
+        if check_words_in_file(stderr_path, s):
+            return "data_problem", s[:80] if len(s) > 80 else s
+    try:
+        with open(stderr_path, "r") as f:
+            first = None
+            file_not_found_line = None
+            for line in f:
+                line_stripped = line.strip()
+                if line_stripped and "FileNotFoundError" in line_stripped:
+                    file_not_found_line = line_stripped  # full line for errors_redundant/errors_eliminated
+                    break
+                if line_stripped and first is None:
+                    first = line_stripped[:80] if len(line_stripped) > 80 else line_stripped
+        if file_not_found_line is not None:
+            return "other", file_not_found_line
+        return "other", first if first else "Error in stderr"
+    except OSError:
+        return "other", "Error in stderr"
+
+
 def cmd_line_parser(iargs=None):
 
     DESCRIPTION = "Check run_burst2safe job output files and remove data for problematic dates"
     EXAMPLE = """
 Examples:
   check_burst2safe_job_outputs.py SLC
+
+Docs: https://github.com/geodesymiami/minsar/blob/master/docs/README_burst_download.md
     """
 
     parser = argparse.ArgumentParser( description=DESCRIPTION, epilog=EXAMPLE, formatter_class=argparse.RawTextHelpFormatter)
@@ -80,6 +121,14 @@ def main(iargs=None):
 
     message_rsmas.log(os.getcwd(), os.path.basename(__file__) + ' ' + ' '.join(input_arguments))
 
+    # Remove previous run list and job files so we start fresh (timeouts and reruns)
+    for pattern in ["run_01_burst2safe_timeout*", "run_01_burst2safe_rerun_*"]:
+        for f in glob.glob(os.path.join(inps.slc_dir, pattern)):
+            try:
+                (shutil.rmtree if os.path.isdir(f) else os.remove)(f)
+            except OSError:
+                pass
+
     error_happened = False
     data_problem_strings_stdout = []     #FA 10/25: may not be needed
     timeout_strings = ["TimeoutError","asf_search.exceptions.ASFSearchError: Connection Error (Timeout): CMR took too long to respond"]
@@ -110,6 +159,9 @@ def main(iargs=None):
     if os.path.isfile(run_file):
         with open(run_file, "r") as f:
             run_lines = f.readlines()
+        # Preserve original run file before any modifications
+        run_file_orig = os.path.join(dirname, "run_01_burst2safe_0_orig")
+        shutil.copy2(run_file, run_file_orig)
 
     def line_index_for_stderr_file(stderr_path):
         """One run-file line index for this .e file: use task index from filename, else first line containing date."""
@@ -138,66 +190,114 @@ def main(iargs=None):
                 idx = line_index_for_stderr_file(file)
                 if idx is not None:
                     timeout_line_indices.append(idx)
-                print('Timeout detected:' + file)
-                print('Timed out burst downloads (need script to re-download):')
                 break
 
-    # Write timeout.txt with run-file lines that were timeouts (for reference)
-    timeout_txt = os.path.join(dirname, "timeout.txt")
+    # Per-error records: (date, line_idx, error_type, summary, run_line) for each non-zero .e file
+    error_records = []
+    for stderr_path in stderr_files:
+        idx = line_index_for_stderr_file(stderr_path)
+        if idx is None:
+            continue
+        date_str, _ = _date_and_task_index_from_stderr_filename(stderr_path)
+        if not date_str:
+            date_str = _date_from_stderr_filename(stderr_path)
+        if not date_str:
+            continue
+        error_type, summary = _error_summary_from_stderr(stderr_path, timeout_strings, data_problem_strings_stderr)
+        run_line = run_lines[idx].strip() if run_lines and 0 <= idx < len(run_lines) else ""
+        error_records.append((date_str, idx, error_type, summary, run_line))
+
+    # Split into redundant (SAFE exists for date) vs eliminated (no SAFE)
+    errors_redundant = []
+    errors_eliminated = []
+    for date_str, line_idx, error_type, summary, run_line in error_records:
+        one_liner = "{} {}".format(date_str, summary)
+        if _safe_exists_for_date(dirname, date_str):
+            errors_redundant.append(one_liner)
+        else:
+            errors_eliminated.append(one_liner)
+
+    errors_redundant_path = os.path.join(dirname, "errors_redundant.txt")
+    errors_eliminated_path = os.path.join(dirname, "errors_eliminated.txt")
+    if errors_redundant:
+        with open(errors_redundant_path, "w") as f:
+            f.write("\n".join(errors_redundant) + "\n")
+    if errors_eliminated:
+        with open(errors_eliminated_path, "w") as f:
+            f.write("\n".join(errors_eliminated) + "\n")
+    if errors_redundant or errors_eliminated:
+        cwd = os.getcwd()
+        parts = []
+        if errors_redundant:
+            parts.append("{} ({})".format(os.path.relpath(errors_redundant_path, cwd), len(errors_redundant)))
+        if errors_eliminated:
+            parts.append("{} ({})".format(os.path.relpath(errors_eliminated_path, cwd), len(errors_eliminated)))
+        print("Wrote " + ", ".join(parts))
+
+    all_error_line_indices = sorted(set(error_line_indices))
+
+    # run_01_burst2safe_0_clean: original run file with problem lines removed
+    if run_lines and all_error_line_indices:
+        clean_path = os.path.join(dirname, "run_01_burst2safe_0_clean")
+        error_set = set(all_error_line_indices)
+        clean_lines = [run_lines[i] for i in range(len(run_lines)) if i not in error_set]
+        with open(clean_path, "w") as f:
+            f.writelines(clean_lines)
+
+    # timeout.txt and timeout run file: only when there are timeouts
     if timeout_line_indices and run_lines:
         timeout_indices = sorted(set(timeout_line_indices))
+        timeout_txt = os.path.join(dirname, "timeout.txt")
         with open(timeout_txt, "w") as fout:
             for i in timeout_indices:
                 if 0 <= i < len(run_lines):
                     fout.write(run_lines[i])
-        print("Wrote {} ({} timeout entries)".format(timeout_txt, len(timeout_indices)))
-    elif os.path.isfile(timeout_txt):
-        open(timeout_txt, "w").close()  # clear if no timeouts
+        timeout_file = os.path.join(dirname, "run_01_burst2safe_timeout_0")
+        with open(timeout_file, "w") as fout:
+            for i in timeout_indices:
+                if 0 <= i < len(run_lines):
+                    fout.write(run_lines[i])
+        if os.path.isfile(job_file):
+            copy_burst2safe_jobfile(job_file, new_tag="burst2safe_timeout")
+        print("Wrote {} ({} timeouts)".format(os.path.relpath(timeout_file, os.getcwd()), len(timeout_indices)))
 
-    # Rerun: only run_01_burst2safe_rerun_0 and run_01_burst2safe_rerun_0.job (merge timeouts + errors)
-    rerun_file = os.path.join(dirname, "run_01_burst2safe_rerun_0")
-    rerun_line_indices = sorted(set(timeout_line_indices) | set(error_line_indices))
-    if rerun_line_indices and run_lines:
-        selected = [run_lines[i] for i in rerun_line_indices]
+    # Rerun file: only when there are non-timeout errors
+    error_only_indices = sorted(set(error_line_indices) - set(timeout_line_indices))
+    if error_only_indices and run_lines:
+        rerun_file = os.path.join(dirname, "run_01_burst2safe_rerun_0")
+        selected = [run_lines[i] for i in error_only_indices]
         with open(rerun_file, "w") as fout:
             fout.writelines(selected)
-        print("Wrote {} ({} rerun entries)".format(rerun_file, len(rerun_line_indices)))
         if os.path.isfile(job_file):
             copy_burst2safe_jobfile(job_file, new_tag="burst2safe_rerun")
-    else:
-        # No errors/timeouts: empty rerun file so rerun_burst2safe.sh loop exits
-        with open(rerun_file, "w") as fout:
-            pass
-        print("No errors/timeouts; {} is empty.".format(rerun_file))
+        print("Wrote {} ({} errors)".format(os.path.relpath(rerun_file, os.getcwd()), len(error_only_indices)))
 
-    # identify problem dates and remove *tiff and *SAFE files
+    # Identify problem dates and remove *tiff and *SAFE files
     problem_dates = []
     for file in stderr_files:
         for string in data_problem_strings_stderr:
             if check_words_in_file(file, string):
                 date = _date_from_stderr_filename(file)
-                if date:
+                if date and date not in problem_dates:
                     problem_dates.append(date)
-                print('Match:' + file)
+                break
 
-    log_index = 1
-    while os.path.exists(f"removed_dates_{log_index}.txt"):
-       log_index += 1
-    logfile = f"removed_dates_{log_index}.txt"
-
-    for date in problem_dates:
-        msg = f"Removed problem date: {date}"
-        print(msg)  
-        with open(logfile, "a") as f:
-             f.write(msg + "\n")
-
-        matching_files = glob.glob(os.path.join(dirname, "*" + date + "*"))
-        for f in matching_files:
-             if os.path.exists(f):
-                try:
-                    (shutil.rmtree if os.path.isdir(f) else os.remove)(f)
-                except Exception as e:
-                    print(f"Could not remove {f}: {e}")
+    if problem_dates:
+        log_index = 1
+        while os.path.exists(f"removed_dates_{log_index}.txt"):
+            log_index += 1
+        logfile = f"removed_dates_{log_index}.txt"
+        for date in problem_dates:
+            with open(logfile, "a") as f:
+                f.write("Removed problem date: {}\n".format(date))
+            matching_files = glob.glob(os.path.join(dirname, "*" + date + "*"))
+            for f in matching_files:
+                if os.path.exists(f):
+                    try:
+                        (shutil.rmtree if os.path.isdir(f) else os.remove)(f)
+                    except Exception as e:
+                        print("Could not remove {}: {}".format(f, e))
+        print("Removed {} problem date(s): {}".format(len(problem_dates), " ".join(problem_dates)))
         
     if inps.clean_flag:
         for file in stderr_files:

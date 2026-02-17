@@ -116,7 +116,7 @@ def main(iargs=None):
     with open(run_01_burst2safe_path, "w") as f:
         for (date_str, h, swath), bursts in sorted(groups.items()):
             sorted_bursts = sort_bursts_by_hash_subswath(bursts)
-            f.write("burst2safe " + ' '.join(sorted_bursts) + " --keep-files --output-dir " + output_dir + "\n")
+            f.write("burst2safe " + ' '.join(sorted_bursts) + " --all-anns --keep-files --output-dir " + output_dir + "\n")
 
     print("Created: ", run_01_burst2safe_path)
     

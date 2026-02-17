@@ -76,6 +76,13 @@ def generate_download_command(template,inps):
     print(f"New intersectsWith string using delta_lat, delta_lon: {inps.delta_lat},{inps.delta_lon}: ", intersects_string)
     print(f'New extent string: ', extent_str)
 
+    def _to_iso_date(ymd):
+        """Convert YYYYMMDD to YYYY-MM-DD if needed."""
+        s = str(ymd).strip()
+        if len(s) == 8 and s.isdigit():
+            return f"{s[:4]}-{s[4:6]}-{s[6:8]}"
+        return s
+
     # create download_ssara_bash.cmd
     ssara_slc_download_cmd_bash = ['ssara_federated_query.bash'] + ssaraopt
     ssara_slc_download_cmd_python = ['ssara_federated_query.py'] + ssaraopt + ['--maxResults=20000','--asfResponseTimeout=300', '--kml', '--print','--download']
@@ -97,6 +104,10 @@ def generate_download_command(template,inps):
 
     # create download_asf_burst.sh
     asf_burst_download_opts = ['--processingLevel=BURST'] + ssaraopt + ['--dir=SLC']
+    rel_orbit = dataset_template.options.get('ssaraopt.relativeOrbit', '')
+    start_date = _to_iso_date(dataset_template.options.get('ssaraopt.startDate', '2000-01-01'))
+    end_date = _to_iso_date(dataset_template.options.get('ssaraopt.endDate', '2099-12-31'))
+    extent_args = ' '.join(str(x) for x in extent_list)  # W S E N (lon lat lon lat)
     with open('download_asf_burst.sh', 'w') as f:
         f.write(f"#!/usr/bin/env bash\n")
         f.write(f"mkdir -p SLC\n")
@@ -107,8 +118,22 @@ def generate_download_command(template,inps):
         f.write(' '.join(['bursts_to_burst2safe_jobfile.py','SLC']) + '\n')
         f.write(' '.join(['run_workflow.bash','--jobfile',f'{inps.work_dir}/SLC/run_01_burst2safe','--no-check-job-outputs']) + '\n')
         f.write(' '.join(['check_burst2safe_job_outputs.py','SLC']) + '\n')
-        f.write('if [[ -s SLC/run_01_burst2safe_rerun_0 ]]; then\n    rerun_burst2safe.sh SLC/run_01_burst2safe_rerun_0.job\nfi\n')
-        f.write(' '.join(['check_SAFE_completeness.py','SLC']) + '\n')
+        f.write('if [[ -s SLC/run_01_burst2safe_timeout_0 ]]; then\n    rerun_burst2safe.sh SLC/run_01_burst2safe_timeout_0.job\nfi\n')
+        f.write('# if [[ -s SLC/run_01_burst2safe_rerun_0 ]]; then\n')
+        f.write('#     cd SLC\n')
+        f.write('#     burst2stack --rel-orbit ' + str(rel_orbit) + ' --start-date ' + start_date + ' --end-date ' + end_date + ' --extent ' + extent_args + '\n')
+        f.write('#     cd -\n')
+        f.write('# fi\n')
+        f.write('# ' + ' '.join(['check_SAFE_completeness.py','SLC']) + '\n')
+
+    # create download_asf_burst2stack.sh (burst2stack command only)
+    with open('download_asf_burst2stack.sh', 'w') as f:
+        f.write("#!/usr/bin/env bash\n")
+        f.write("set -e\n")
+        f.write("cd SLC\n")
+        f.write("burst2stack --rel-orbit " + str(rel_orbit) + " --start-date " + start_date + " --end-date " + end_date + " --extent " + extent_args + "\n")
+        f.write("cd -\n")
+    os.chmod('download_asf_burst2stack.sh', 0o755)
 
     os.chmod('download_asf.sh', 0o755)
     os.chmod('download_asf_burst.sh', 0o755)
