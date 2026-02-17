@@ -102,7 +102,7 @@ def generate_download_command(template,inps):
     #with open('download_asf.cmd', 'w') as f:
     #    f.write(' '.join(asf_slc_download_cmd) + '\n')
 
-    # create download_asf_burst.sh
+    # create download_asf_burst.sh (download only: listing + two download runs)
     asf_burst_download_opts = ['--processingLevel=BURST'] + ssaraopt + ['--dir=SLC']
     rel_orbit = dataset_template.options.get('ssaraopt.relativeOrbit', '')
     start_date = _to_iso_date(dataset_template.options.get('ssaraopt.startDate', '2000-01-01'))
@@ -112,19 +112,21 @@ def generate_download_command(template,inps):
         f.write(f"#!/usr/bin/env bash\n")
         f.write(f"mkdir -p SLC\n")
         f.write(f"set -e\n")
-        f.write(' '.join(['asf_download.sh'] + asf_burst_download_opts + ['--print','>SLC/asf_burst_listing.txt']) + '\n')
-        f.write(' '.join(['asf_download.sh'] + asf_burst_download_opts + ['--download','2>asf_burst_download1.e']) + '\n')
-        f.write(' '.join(['asf_download.sh'] + asf_burst_download_opts + ['--download','2>asf_burst_download2.e']) + '\n')
-        f.write(' '.join(['bursts_to_burst2safe_jobfile.py','SLC']) + '\n')
-        f.write(' '.join(['run_workflow.bash','--jobfile',f'{inps.work_dir}/SLC/run_01_burst2safe','--no-check-job-outputs']) + '\n')
-        f.write(' '.join(['check_burst2safe_job_outputs.py','SLC']) + '\n')
-        f.write('if [[ -s SLC/run_01_burst2safe_timeout_0 ]]; then\n    rerun_burst2safe.sh SLC/run_01_burst2safe_timeout_0.job\nfi\n')
-        f.write('# if [[ -s SLC/run_01_burst2safe_rerun_0 ]]; then\n')
-        f.write('#     cd SLC\n')
-        f.write('#     burst2stack --rel-orbit ' + str(rel_orbit) + ' --start-date ' + start_date + ' --end-date ' + end_date + ' --extent ' + extent_args + '\n')
-        f.write('#     cd -\n')
-        f.write('# fi\n')
-        f.write('# ' + ' '.join(['check_SAFE_completeness.py','SLC']) + '\n')
+        f.write(' '.join(['asf_download.sh'] + asf_burst_download_opts + ['--print', '>SLC/asf_burst_listing.txt']) + '\n')
+        f.write(' '.join(['asf_download.sh'] + asf_burst_download_opts + ['--download', '2>asf_burst_download1.e']) + '\n')
+        f.write(' '.join(['asf_download.sh'] + asf_burst_download_opts + ['--download', '2>asf_burst_download2.e']) + '\n')
+
+    # create pack_bursts.sh (burst2safe jobfile, run_workflow, check, rerun timeouts)
+    with open('pack_bursts.sh', 'w') as f:
+        f.write("#!/usr/bin/env bash\n")
+        f.write("set -e\n")
+        f.write(' '.join(['bursts_to_burst2safe_jobfile.py', 'SLC']) + '\n')
+        f.write(' '.join(['run_workflow.bash', '--jobfile', f'{inps.work_dir}/SLC/run_01_burst2safe', '--no-check-job-outputs']) + '\n')
+        f.write(' '.join(['check_burst2safe_job_outputs.py', 'SLC']) + '\n')
+        f.write("if [[ -s SLC/run_01_burst2safe_timeout_0 ]]; then\n")
+        f.write("    rerun_burst2safe.sh SLC/run_01_burst2safe_timeout_0.job\n")
+        f.write("fi\n")
+        f.write("# Need to convert to scripts/pack_bursts.bash SLC\n")
 
     # create download_asf_burst2stack.sh (burst2stack command only)
     with open('download_asf_burst2stack.sh', 'w') as f:
@@ -137,6 +139,7 @@ def generate_download_command(template,inps):
 
     os.chmod('download_asf.sh', 0o755)
     os.chmod('download_asf_burst.sh', 0o755)
+    os.chmod('pack_bursts.sh', 0o755)
 
     return
 
