@@ -122,11 +122,6 @@ finishup_flag=1
 download_method="asf-burst"
 miaplpy_startstep=1
 miaplpy_stopstep=9
-isce_startstep=1
-isce_stopstep=11
-if [[ ${template[topsStack.coregistration]:-} == "NESD" ]] || [[ ${template[topsStack.coregistration]:-} == "auto" ]]; then
-   isce_stopstep=16
-fi
 
 skip_mintpy_flag=0
 skip_miaplpy_flag=0
@@ -164,18 +159,18 @@ do
             shift
             ;;
         --isce-start)
-            isce_startstep="$2"
+            isce_start="$2"
             shift
             shift
             ;;
         --isce-stop)
-            isce_stopstep="$2"
+            isce_stop="$2"
             shift
             shift
             ;;
         --isce-step)
-            isce_startstep="$2"
-            isce_stopstep="$2"
+            isce_start="$2"
+            isce_stop="$2"
             shift
             shift
             ;;
@@ -297,6 +292,7 @@ if [[ ! -v upload_flag ]]; then
    fi
 fi
 
+
 if [ ! -z ${sleep_time+x} ]; then
   echo "sleeping $sleep_time secs before starting ..."
   sleep $sleep_time
@@ -402,6 +398,47 @@ fi
 if [[ ${template[topsStack.workflow]} == "slc" ]]; then
    mintpy_flag=0
 fi
+
+       echo "topsStack.workflow: <${template[topsStack.workflow]}>"
+       echo "topsStack.coregistration: <${template[topsStack.coregistration]}>"
+       echo "QQQ0 isce_start after: <$isce_start> isce_stop after: <$isce_stop> mintpy_flag: <$mintpy_flag>"
+
+       #if [[ ${template[topsStack.workflow]} == "slc" ]] || [[ $mintpy_flag == 0 ]]; then
+       if [[ ${template[topsStack.workflow]} == "slc" ]]; then
+           isce_stop="${isce_stop:-12}"
+           if  [[ ${template[topsStack.coregistration]} == "geometry" ]]; then      
+               isce_stop="${isce_stop:-8}"
+               [[ $isce_stop != 8 ]] && mintpy_flag=0
+
+           fi
+       else
+            isce_stop="${isce_stop:-16}"
+            if  [[ ${template[topsStack.coregistration]} == "geometry" ]]; then      
+               isce_stop="${isce_stop:-12}"
+               [[ $isce_stop != 16 ]] && mintpy_flag=0
+            fi
+       fi
+
+        echo "QQQ1 isce_start after: <$isce_start> isce_stop after: <$isce_stop> mintpy_flag: <$mintpy_flag>"
+        sleep 10
+  
+
+       if [[ ${template[topsStack.workflow]} == "slc" ]] || [[ $mintpy_flag == 0 ]]; then
+           if  [[ ${template[topsStack.coregistration]} == "geometry" ]]; then      
+               isce_stop=8
+           else
+               isce_stop=12
+           fi
+       fi
+       isce_start=1
+isce_stop=11
+if [[ ${template[topsStack.coregistration]:-} == "NESD" ]] || [[ ${template[topsStack.coregistration]:-} == "auto" ]]; then
+   isce_stop=16
+fi
+full_isce_stop=$isce_stop
+echo "$QQQ full_isce_stop: $full_isce_stop"
+sleep 5
+
 
 echo "Switches: download_method: <$download_method> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
 echo "Flags for processing steps:"
@@ -581,12 +618,7 @@ if [[ $ifgram_flag == "1" ]]; then
         run_command "run_workflow.bash --dostep ifgram"
         PATH="$OLD_PATH"
     else
-       echo "topsStack.workflow: <${template[topsStack.workflow]}>"
-       if [[ ${template[topsStack.workflow]} == "slc" ]] || [[ $mintpy_flag == 0 ]]; then
-          isce_stopstep=12
-       fi
-
-       run_command "run_workflow.bash --start $isce_startstep --stop $isce_stopstep"
+       run_command "run_workflow.bash --start $isce_start --stop $isce_stop"
     fi
 
     reference_date=$(get_reference_date)
