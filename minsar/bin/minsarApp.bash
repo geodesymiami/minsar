@@ -159,18 +159,18 @@ do
             shift
             ;;
         --isce-start)
-            isce_start="$2"
+            isce_start_cli="$2"
             shift
             shift
             ;;
         --isce-stop)
-            isce_stop="$2"
+            isce_stop_cli="$2"
             shift
             shift
             ;;
         --isce-step)
-            isce_start="$2"
-            isce_stop="$2"
+            isce_start_cli="$2"
+            isce_stop_cli="$2"
             shift
             shift
             ;;
@@ -394,43 +394,33 @@ elif [[ $stopstep != "" ]]; then
     exit 1
 fi
 
-# switch mintpy off for slc workflow
+# set isce_stop depending on coregistration method and workflow 
+if [[ ${template[topsStack.coregistration]} == "geometry" ]]; then 
+    isce_stop=12
+    if [[ ${template[topsStack.workflow]} == "slc" ]]; then
+         isce_stop=8
+    fi
+else
+    # for coregistration "NESD" or "auto" (default if not given)     
+    isce_stop=16
+    if [[ ${template[topsStack.workflow]} == "slc" ]]; then
+         isce_stop=12
+    fi
+fi
+
+# set isce_start/isce_stop to 1 or isce_start_cli and isce_stop or isce_stop_cli if given as arguments
+isce_start="${isce_start_cli:-1}"
+isce_stop="${isce_stop_cli:-$isce_stop}"
+
+# switch off mintpy for slc workflow and if isce_stop less than required for full processing
 if [[ ${template[topsStack.workflow]} == "slc" ]]; then
    mintpy_flag=0
 fi
+[[ ${template[topsStack.coregistration]} == "geometry" ]] && [[ $isce_stop != 12 ]] && mintpy_flag=0      
+[[ ${template[topsStack.coregistration]} == "NESD" || ${template[topsStack.coregistration]} == "auto" ]] && [[ $isce_stop != 16 ]] && mintpy_flag=0
 
-       if [[ ${template[topsStack.workflow]} == "slc" ]]; then
-           isce_stop="${isce_stop:-12}"
-           if  [[ ${template[topsStack.coregistration]} == "geometry" ]]; then      
-               isce_stop="${isce_stop:-8}"
-               [[ $isce_stop != 8 ]] && mintpy_flag=0
-           fi
-       else
-            isce_stop="${isce_stop:-16}"
-            if  [[ ${template[topsStack.coregistration]} == "NESD" || ${template[topsStack.coregistration]} == "auto" ]]; then      
-               isce_stop="${isce_stop:-12}"
-               [[ $isce_stop != 16 ]] && mintpy_flag=0
-            fi
-       fi
-
-  
-
-       if [[ ${template[topsStack.workflow]} == "slc" ]] || [[ $mintpy_flag == 0 ]]; then
-           if  [[ ${template[topsStack.coregistration]} == "geometry" ]]; then      
-               isce_stop=8
-           else
-               isce_stop=12
-           fi
-       fi
-       isce_start=1
-isce_stop=11
-if [[ ${template[topsStack.coregistration]:-} == "NESD" ]] || [[ ${template[topsStack.coregistration]:-} == "auto" ]]; then
-   isce_stop=16
-fi
-full_isce_stop=$isce_stop
-echo "$QQQ full_isce_stop: $full_isce_stop"
+echo "$QQQ isce_start isce_stop mintpy_flag: <$isce_start> <$isce_stop> <$mintpy_flag>"
 sleep 5
-
 
 echo "Switches: download_method: <$download_method> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
 echo "Flags for processing steps:"
