@@ -54,6 +54,7 @@ minsarApp.bash
 | [KEY_CONCEPTS.md](./KEY_CONCEPTS.md) | Terminology, template files, data structures | Understanding terminology |
 | [DEVELOPMENT_GUIDE.md](./DEVELOPMENT_GUIDE.md) | Coding conventions, testing, debugging | Contributing code |
 | [burst_testing.md](./burst_testing.md) | Annual template generation, run_templates.sh, testing bursts | Testing burst processing across years |
+| [nasa_earthdata_status_check.md](./nasa_earthdata_status_check.md) | NASA Earthdata status check before ASF downloads (check_nasa_earthdata_status.py/.bash, env vars, minsarApp.bash integration) | Understanding or modifying download pre-checks |
 
 ## Quick Lookup Tables
 
