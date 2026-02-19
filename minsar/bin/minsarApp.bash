@@ -460,6 +460,9 @@ if [[ $download_flag == "1" ]]; then
 
     if [[ $download_method == "asf-burst" ]]; then
         run_command "./download_asf_burst.sh  2>out_download_asf_burst.e 1>out_download_asf_burst.o"
+    elif [[ "$download_method" == "asf-burst2stack" ]]; then
+        run_command "cmd2jobfile.py ./download_asf_burst2stack.sh --submit"
+        #run_command "cmd2jobfile.py ./download_asf_burst2stack.sh --submit 2>out_download_asf_burst2stack.e 1>out_download_asf_burst2stack.o"
     elif [[ "$download_method" == "asf-slc" ]]; then
         run_command "./download_asf.sh 2>out_download_asf.e 1>out_download_asf.o"
     elif [[ $download_method == "ssara-python" ]]; then
@@ -497,7 +500,7 @@ if [[ $download_flag == "1" ]]; then
     fi
 fi
 
-# preprocess SLCs for non-Sentinel-1 platforms
+# preprocess SLCs for non-Sentinel-1 platforms and asf-burst. No preprocessing needed for asf-slc and asf-burst2stack.
 if [[ $preprocess_flag == "1" ]]; then
     if [[ $platform_str == *"SENTINEL-1"*  ]]; then
         if [[ $download_method == "asf-burst" ]]; then

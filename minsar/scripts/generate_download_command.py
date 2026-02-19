@@ -132,6 +132,7 @@ def generate_download_command(template,inps):
     with open('download_asf_burst2stack.sh', 'w') as f:
         f.write("#!/usr/bin/env bash\n")
         f.write("set -e\n")
+        f.write("mkdir -p SLC\n")
         f.write("cd SLC\n")
         f.write("burst2stack --rel-orbit " + str(rel_orbit) + " --start-date " + start_date + " --end-date " + end_date + " --extent " + extent_args + "\n")
         f.write("cd -\n")
