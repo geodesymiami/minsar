@@ -399,28 +399,20 @@ if [[ ${template[topsStack.workflow]} == "slc" ]]; then
    mintpy_flag=0
 fi
 
-       echo "topsStack.workflow: <${template[topsStack.workflow]}>"
-       echo "topsStack.coregistration: <${template[topsStack.coregistration]}>"
-       echo "QQQ0 isce_start after: <$isce_start> isce_stop after: <$isce_stop> mintpy_flag: <$mintpy_flag>"
-
-       #if [[ ${template[topsStack.workflow]} == "slc" ]] || [[ $mintpy_flag == 0 ]]; then
        if [[ ${template[topsStack.workflow]} == "slc" ]]; then
            isce_stop="${isce_stop:-12}"
            if  [[ ${template[topsStack.coregistration]} == "geometry" ]]; then      
                isce_stop="${isce_stop:-8}"
                [[ $isce_stop != 8 ]] && mintpy_flag=0
-
            fi
        else
             isce_stop="${isce_stop:-16}"
-            if  [[ ${template[topsStack.coregistration]} == "geometry" ]]; then      
+            if  [[ ${template[topsStack.coregistration]} == "NESD" || ${template[topsStack.coregistration]} == "auto" ]]; then      
                isce_stop="${isce_stop:-12}"
                [[ $isce_stop != 16 ]] && mintpy_flag=0
             fi
        fi
 
-        echo "QQQ1 isce_start after: <$isce_start> isce_stop after: <$isce_stop> mintpy_flag: <$mintpy_flag>"
-        sleep 10
   
 
        if [[ ${template[topsStack.workflow]} == "slc" ]] || [[ $mintpy_flag == 0 ]]; then
