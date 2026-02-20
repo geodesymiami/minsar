@@ -527,6 +527,9 @@ if [[ $dem_flag == "1" ]]; then
        run_command "generate_makedem_command.py $template_file 2>out_generate_makedem_command.e 1>out_generate_makedem_command.o"
        run_command "./makedem_sardem.sh  2>out_makedem.e 1>out_makedem.o"
     fi
+    if [[ "${template[minsar.zeroElevationDem]}" == "True" ]]; then
+        run_command "make_zero_elevation_dem.py DEM --swap-in-place 2>out_make_zero_elevation_dem.e 1>out_make_zero_elevation_dem.o"
+    fi
 fi
 
 if [[ $chunks_flag == "1" ]]; then

@@ -1,5 +1,3 @@
-processor                             = isce
-
 ssaraopt.collectionName               = TSX ARC_famelung_COA3837
 ssaraopt.beamSwath                    = strip_014
 ssaraopt.relativeOrbit                = 36
@@ -44,5 +42,6 @@ miaplpy.interferograms.networkType   = sequential
 miaplpy.interferograms.networkType   = single_reference
 
 ######################################################
+minsar.zeroElevationDem              = True     # [True/False] replace DEM with zero-elevation DEM
 minsar.upload_flag                   = True
 minsar.insarmaps_dataset             = filt*DS

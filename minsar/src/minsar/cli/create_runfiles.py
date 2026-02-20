@@ -129,7 +129,7 @@ def main(iargs=None):
     if wgs84_list:
          dem_file = wgs84_list[0]
     else:
-         dem_list = glob.glob(os.path.join(dem_dir, '*.dem'))
+         dem_list = sorted(glob.glob(os.path.join(dem_dir, '*.dem')))     # main .dem before *_orig.dem
          if dem_list:
              dem_file = dem_list[0]
          else:
