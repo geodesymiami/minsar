@@ -934,7 +934,9 @@ run_all_tests() {
     echo -e "${BOLD}╠══════════════════════════════════════════════════════════════════════════╣${NC}"
     printf "${BOLD}║${NC}  %-30s %s${BOLD}║${NC}\n" "Total tests run:" "$TESTS_RUN"
     printf "${BOLD}║${NC}  ${GREEN}%-30s %s${NC}${BOLD}║${NC}\n" "Passed:" "$TESTS_PASSED"
-    printf "${BOLD}║${NC}  ${RED}%-30s %s${NC}${BOLD}║${NC}\n" "Failed:" "$TESTS_FAILED"
+    if [[ $TESTS_FAILED -gt 0 ]]; then
+        printf "${BOLD}║${NC}  ${RED}%-30s %s${NC}${BOLD}║${NC}\n" "Failed:" "$TESTS_FAILED"
+    fi
     echo -e "${BOLD}╚══════════════════════════════════════════════════════════════════════════╝${NC}"
     
     if [[ $TESTS_FAILED -gt 0 ]]; then

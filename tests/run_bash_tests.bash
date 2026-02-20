@@ -102,7 +102,9 @@ print_final_summary() {
     echo -e "${BOLD}╠══════════════════════════════════════════════════════════════════════════╣${NC}"
     printf "${BOLD}║${NC}  Total test suites run:         %-5s${BOLD}║${NC}\n" "$TOTAL_SUITES"
     printf "${BOLD}║${NC}  ${GREEN}Suites passed:                 %-5s${NC}${BOLD}║${NC}\n" "$PASSED_SUITES"
-    printf "${BOLD}║${NC}  ${RED}Suites failed:                 %-5s${NC}${BOLD}║${NC}\n" "$FAILED_SUITES"
+    if [[ $FAILED_SUITES -gt 0 ]]; then
+        printf "${BOLD}║${NC}  ${RED}Suites failed:                 %-5s${NC}${BOLD}║${NC}\n" "$FAILED_SUITES"
+    fi
     echo -e "${BOLD}╚══════════════════════════════════════════════════════════════════════════╝${NC}"
     
     if [[ $FAILED_SUITES -gt 0 ]]; then
