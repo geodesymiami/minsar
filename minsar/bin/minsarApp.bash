@@ -408,29 +408,7 @@ else
     fi
 fi
 
-# set isce_start/isce_stop to 1 or isce_start_cli and isce_stop or isce_stop_cli if given as arguments
-isce_start="${isce_start_cli:-1}"
-isce_stop="${isce_stop_cli:-$isce_stop}"
-
-# switch off mintpy for slc workflow and if isce_stop less than required for full processing
-if [[ ${template[topsStack.workflow]} == "slc" ]]; then
-   mintpy_flag=0
-fi
-[[ ${template[topsStack.coregistration]} == "geometry" ]] && [[ $isce_stop != 12 ]] && mintpy_flag=0      
-[[ ${template[topsStack.coregistration]} == "NESD" || ${template[topsStack.coregistration]} == "auto" ]] && [[ $isce_stop != 16 ]] && mintpy_flag=0
-
-echo "$QQQ isce_start isce_stop mintpy_flag: <$isce_start> <$isce_stop> <$mintpy_flag>"
-sleep 5
-
-echo "Switches: download_method: <$download_method> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
-echo "Flags for processing steps:"
-echo "download preprocess dem jobfiles ifgram mintpy miaplpy upload insarmaps finishup"
-echo "    $download_flag        $preprocess_flag       $dem_flag      $jobfiles_flag       $ifgram_flag       $mintpy_flag      $miaplpy_flag      $upload_flag       $insarmaps_flag        $finishup_flag"
-
-sleep 3
-
 #############################################################
-
 platform_str=$( (grep platform "$template_file" || echo "") | cut -d'=' -f2 )
 if [[ -z $platform_str ]]; then
    # assume TERRASAR-X if no platform is given (ssara_federated_query.py does not seem to work with --platform-TERRASAR-X)
@@ -447,6 +425,34 @@ else
     download_dir="$WORK_DIR/SLC"
 fi
 
+# set preprocess_flag for Sentinel-1
+if [[ $preprocess_flag == "1" && $platform_str == *"SENTINEL-1"*  ]]; then
+    preprocess_flag=0
+    if [[ $download_method == "asf-burst" ]]; then
+        preprocess_flag=1
+    fi # no preprocessing needed for asf-burst2stack and asf-slc
+fi
+
+# set isce_start/isce_stop to 1 or isce_start_cli and isce_stop or isce_stop_cli if given as arguments
+isce_start="${isce_start_cli:-1}"
+isce_stop="${isce_stop_cli:-$isce_stop}"
+
+# switch off mintpy for slc workflow and if isce_stop less than required for full processing
+if [[ ${template[topsStack.workflow]} == "slc" ]]; then
+   mintpy_flag=0
+fi
+[[ ${template[topsStack.coregistration]} == "geometry" ]] && [[ $isce_stop != 12 ]] && mintpy_flag=0      
+[[ ${template[topsStack.coregistration]} == "NESD" || ${template[topsStack.coregistration]} == "auto" ]] && [[ $isce_stop != 16 ]] && mintpy_flag=0
+
+
+echo "Switches: download_method: <$download_method> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
+echo "Flags for processing steps:"
+echo "download preprocess dem jobfiles ifgram mintpy miaplpy upload insarmaps finishup"
+echo "    $download_flag        $preprocess_flag       $dem_flag      $jobfiles_flag       $ifgram_flag       $mintpy_flag      $miaplpy_flag      $upload_flag       $insarmaps_flag        $finishup_flag"
+
+sleep 3
+
+
 ####################################
 ###       Processing Steps       ###
 ####################################
@@ -462,7 +468,6 @@ if [[ $download_flag == "1" ]]; then
         run_command "./download_asf_burst.sh  2>out_download_asf_burst.e 1>out_download_asf_burst.o"
     elif [[ "$download_method" == "asf-burst2stack" ]]; then
         run_command "cmd2jobfile.py ./download_asf_burst2stack.sh --submit"
-        #run_command "cmd2jobfile.py ./download_asf_burst2stack.sh --submit 2>out_download_asf_burst2stack.e 1>out_download_asf_burst2stack.o"
     elif [[ "$download_method" == "asf-slc" ]]; then
         run_command "./download_asf.sh 2>out_download_asf.e 1>out_download_asf.o"
     elif [[ $download_method == "ssara-python" ]]; then
