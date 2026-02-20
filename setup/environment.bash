@@ -112,6 +112,7 @@ export PATH=${PATH}:${MINSAR_HOME}/minsar
 export PATH=${PATH}:${MINSAR_HOME}/minsar/insarmaps_utils
 export PATH=${PATH}:${MINSAR_HOME}/minsar/utils
 export PATH=${PATH}:${MINSAR_HOME}/minsar/scripts
+export PATH=${PATH}:${MINSAR_HOME}/tests
 export PATH=${PATH}:${MINTPY_HOME}/src/mintpy/legacy         # for add_attribute.py
 export PATH=${PATH}:${MIAPLPY_HOME}/src/miaplpy
 export PATH=${PATH}:${SOURCEINVERSION_HOME}/src/cli

@@ -83,13 +83,27 @@ def generate_download_command(template,inps):
             return f"{s[:4]}-{s[4:6]}-{s[6:8]}"
         return s
 
-    # create download_ssara_bash.cmd
-    ssara_slc_download_cmd_bash = ['ssara_federated_query.bash'] + ssaraopt
-    ssara_slc_download_cmd_python = ['ssara_federated_query.py'] + ssaraopt + ['--maxResults=20000','--asfResponseTimeout=300', '--kml', '--print','--download']
-    with open('download_ssara_bash.cmd', 'w') as f:
-        f.write(' '.join(ssara_slc_download_cmd_bash) + '\n')
-    with open('download_ssara_python.cmd', 'w') as f:
-       f.write(' '.join(ssara_slc_download_cmd_python) + '\n')
+    # create download_ssara_bash.cmd (one line per collection when multiple collections)
+    raw_collections = dataset_template.options.get('ssaraopt.collectionName', '').strip("'\"")
+    collection_names = [c.strip() for c in raw_collections.split(',') if c.strip()]
+
+    if len(collection_names) > 1:
+        base_ssaraopt = [a for a in ssaraopt if not a.startswith("--collectionName=")]
+        with open('download_ssara_bash.cmd', 'w') as f:
+            for name in collection_names:
+                opt = base_ssaraopt + [f"--collectionName='{name}'"]
+                f.write(' '.join(['ssara_federated_query.bash'] + opt) + '\n')
+        with open('download_ssara_python.cmd', 'w') as f:
+            for name in collection_names:
+                opt = base_ssaraopt + [f"--collectionName='{name}'"]
+                f.write(' '.join(['ssara_federated_query.py'] + opt + ['--maxResults=20000', '--asfResponseTimeout=300', '--kml', '--print', '--download']) + '\n')
+    else:
+        ssara_slc_download_cmd_bash = ['ssara_federated_query.bash'] + ssaraopt
+        ssara_slc_download_cmd_python = ['ssara_federated_query.py'] + ssaraopt + ['--maxResults=20000', '--asfResponseTimeout=300', '--kml', '--print', '--download']
+        with open('download_ssara_bash.cmd', 'w') as f:
+            f.write(' '.join(ssara_slc_download_cmd_bash) + '\n')
+        with open('download_ssara_python.cmd', 'w') as f:
+            f.write(' '.join(ssara_slc_download_cmd_python) + '\n')
 
     # create download_asf.sh
     asf_slc_download_cmd = ['asf_search_args.py', '--processingLevel=SLC'] + ssaraopt + ['--dir=SLC', '--print', '--download']
