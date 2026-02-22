@@ -111,14 +111,21 @@ elif [[ $cmd == *COSMO-SKYMED* ]] || [[ $cmd == *ALOS-2* ]] || [[ $cmd == *TSX* 
    regex="https:\/\/imaging\.unavco\.\.org\/*\.gz"
 fi
 
-downloads_num=$(grep Found ssara_listing.txt | cut -d " " -f 2)
+downloads_num=$(grep Found ssara_listing.txt 2>/dev/null | cut -d " " -f 2)
 echo "Number of granules in ssara_listing.txt : $downloads_num"
 
-urls_list=$(cut -s -d ',' -f 14 ssara_listing.txt)
+urls_list=$(cut -s -d ',' -f 14 ssara_listing.txt 2>/dev/null)
 unset IFS
 urls=($urls_list)
 
 num_urls=${#urls[@]}
+
+# No granules to download: exit successfully (avoids wget loop hanging on empty input)
+if [[ "$num_urls" -eq 0 ]]; then
+    echo "No granules to download. Exiting successfully (exit 0)."
+    echo "$(date +"%Y%m%d:%H-%m") * No granules to download (Found $downloads_num)" | tee -a log
+    exit 0
+fi
 
 echo "URLs to download: ${urls[@]}"
 echo "$(date +"%Y%m%d:%H-%m") * Datafiles to download: $num_urls" | tee -a log
