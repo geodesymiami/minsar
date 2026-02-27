@@ -212,6 +212,14 @@ echot "Step: $step_name"
 defaults_file="${MINSAR_HOME}/minsar/defaults/job_defaults.cfg"
 step_io_load=$(grep ^$step_name $defaults_file | awk '{print $9}')
 
+# FA 2/2026: defaults fix: if step not in job_defaults.cfg, use default row io_load (avoids bc syntax error)
+if [[ -z "$step_io_load" ]]; then
+    step_io_load=$(grep ^default $defaults_file | awk '{print $9}')
+fi
+if [[ -z "$step_io_load" ]]; then
+    step_io_load=1
+fi
+
 # Get queue that job_file is being submitted to from job_file definition
 QUEUENAME=$(grep "#SBATCH -p" $job_file | awk -F'[ ]' '{print $3}')
 queues_file="${MINSAR_HOME}/minsar/defaults/queues.cfg"
