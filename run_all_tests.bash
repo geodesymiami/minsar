@@ -110,6 +110,7 @@ run_python_tests() {
         "tests"                    # Integration tests
         "minsar/utils/tests"       # Utils unit tests
         "minsar/objects/tests"     # Objects unit tests (when created)
+        "additions/mintpy/tests"   # MintPy additions (geocode wrapper, etc.)
     )
     
     for location in "${test_locations[@]}"; do
