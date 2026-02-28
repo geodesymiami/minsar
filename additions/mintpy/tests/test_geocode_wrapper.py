@@ -36,6 +36,7 @@ def _inject_geocode_orig_module(mock_main, mock_parser=None):
     fake = types.ModuleType("mintpy.cli.geocode_orig")
     fake.main = mock_main
     fake.create_parser = (lambda: mock_parser) if mock_parser is not None else MagicMock()
+    fake.read_template2inps = lambda tf, inps: inps  # no-op for tests
     sys.modules["mintpy.cli.geocode_orig"] = fake
 
 
@@ -107,17 +108,20 @@ class TestGeocodeWrapperDelegation(unittest.TestCase):
         return argparse.Namespace(file=files if isinstance(files, list) else [files])
 
     def test_he5_input_delegates_to_geocode_hdfeos5(self):
-        """When input file is .he5, geocode_hdfeos5.main() should be called."""
+        """When input file is .he5, geocode_hdfeos5.main() should be called with parsed inps."""
+        mock_inps = self._create_mock_inps(["file.he5"])
         mock_parser = MagicMock()
-        mock_parser.parse_args.return_value = self._create_mock_inps(["file.he5"])
+        mock_parser.parse_args.return_value = mock_inps
         mock_he5_main = MagicMock()
         _inject_geocode_orig_module(MagicMock(), mock_parser)
         _inject_geocode_hdfeos5_module(mock_he5_main)
 
         geocode_module = _load_geocode_wrapper()
         iargs = ["file.he5", "-l", "geometryRadar.h5"]
-        geocode_module.main(iargs)
-        mock_he5_main.assert_called_once_with(iargs)
+        with patch("mintpy.utils.utils.get_file_list", side_effect=lambda x: x if isinstance(x, list) else [x]):
+            geocode_module.main(iargs)
+        mock_he5_main.assert_called_once()
+        self.assertIs(mock_he5_main.call_args[0][0], mock_inps)
 
     def test_h5_input_delegates_to_geocode_orig(self):
         """When input file is .h5 (not .he5), geocode_orig.main() should be called."""

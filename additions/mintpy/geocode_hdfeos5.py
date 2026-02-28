@@ -6,7 +6,6 @@
 ############################################################
 
 
-import argparse
 import os
 import shutil
 import subprocess
@@ -24,32 +23,6 @@ from mintpy.utils import attribute as attr, readfile
 BOOL_ZERO = np.bool_(0)
 FLOAT_ZERO = np.float32(0.0)
 COMPRESSION = 'lzf'
-
-
-def parse_args(iargs=None):
-    """Parse arguments for geocoding .he5 files."""
-    parser = argparse.ArgumentParser(
-        description='Geocode radar-coordinate HDFEOS5 (.he5) file to geographic coordinates.',
-        epilog='Full in-place (B2): read HDFEOS5 directly, geocode block-by-block, write HDFEOS5 directly.',
-    )
-    parser.add_argument('file', nargs='+', help='.he5 file(s) to geocode')
-    parser.add_argument('-l', '--lookup', dest='lookupFile',
-                        help='Lookup table (e.g. inputs/geometryRadar.h5). '
-                             'Default: extract geometry only from .he5.')
-    parser.add_argument('-t', '--template', dest='templateFile',
-                        help='Template file with geocoding options')
-    parser.add_argument('-o', '--output', dest='outfile', help='Output .he5 file')
-    parser.add_argument('--outdir', '--output-dir', dest='out_dir',
-                        help='Output directory (default: same as input)')
-    parser.add_argument('--ram', '--memory', dest='maxMemory', type=float, default=4.0,
-                        help='Max memory in GB (default: 4.0)')
-    parser.add_argument('-b', '--bbox', dest='SNWE', type=float, nargs=4,
-                        metavar=('S', 'N', 'W', 'E'),
-                        help='Bounding box for output grid')
-    parser.add_argument('--lalo', '--lalo-step', dest='laloStep', type=float, nargs=2,
-                        metavar=('LAT_STEP', 'LON_STEP'),
-                        help='Output pixel size in degrees')
-    return parser.parse_args(args=iargs or sys.argv[1:])
 
 
 def run_cmd(cmd, check=True):
@@ -139,8 +112,8 @@ def _create_hdf5_dataset(group, dsName, data, compression=COMPRESSION):
     )
 
 
-def main(iargs=None):
-    inps = parse_args(iargs)
+def main(inps):
+    """Geocode .he5 file(s). inps: parsed namespace from mintpy.cli.geocode_orig.create_parser()."""
     he5_files = [f for f in inps.file if f.endswith('.he5') and os.path.isfile(f)]
     if not he5_files:
         raise SystemExit("Error: No .he5 input files found.")
@@ -345,4 +318,12 @@ def main(iargs=None):
 
 
 if __name__ == '__main__':
-    sys.exit(main(sys.argv[1:]) or 0)
+    from mintpy.cli.geocode_orig import create_parser, read_template2inps
+    from mintpy.utils import utils as ut
+    parser = create_parser()
+    inps = parser.parse_args(args=sys.argv[1:])
+    inps.argv = sys.argv[1:]
+    if inps.templateFile:
+        inps = read_template2inps(inps.templateFile, inps)
+    inps.file = ut.get_file_list(inps.file)
+    sys.exit(main(inps) or 0)
