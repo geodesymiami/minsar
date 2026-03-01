@@ -467,7 +467,7 @@ if [[ $download_flag == "1" ]]; then
     if [[ $download_method == "asf-burst" ]]; then
         run_command "./download_asf_burst.sh  2>out_download_asf_burst.e 1>out_download_asf_burst.o"
     elif [[ "$download_method" == "asf-burst2stack" ]]; then
-        run_command "cmd2jobfile.py ./download_asf_burst2stack.sh --submit"
+        run_command "cmd2jobfile.py ./download_burst2stack.sh --submit"
     elif [[ "$download_method" == "asf-slc" ]]; then
         run_command "./download_asf.sh 2>out_download_asf.e 1>out_download_asf.o"
     elif [[ $download_method == "ssara-python" ]]; then

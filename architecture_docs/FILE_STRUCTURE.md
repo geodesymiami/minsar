@@ -70,6 +70,8 @@ Python scripts called by bash entry points:
 | `check_job_outputs.py` | Validate job outputs after completion |
 | `check_nasa_earthdata_status.py` | Check NASA Earthdata status (fetch status page, exit 0/1) |
 | `check_nasa_earthdata_status.bash` | Check + optional wait loop for Earthdata before ASF downloads |
+| `burst_download.bash` | Download ASF bursts via listing + per-date burst2stack in parallel |
+| `remove_no_burst_sync_data.py` | Remove S1 acquisitions affected by MPC #273 (degraded burst sync) |
 | `update_walltime_queuename.py` | Update job walltime after TIMEOUT |
 | `create_ingest_insarmaps_jobfile.py` | Create InsarMaps ingestion job |
 | `create_save_hdfeos5_jobfile.py` | Create HDF-EOS5 save job |

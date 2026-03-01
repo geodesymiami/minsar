@@ -170,6 +170,25 @@ def generate_download_command(template,inps):
         f.write("cd -\n")
     os.chmod('download_asf_burst2stack.sh', 0o755)
 
+    # create download_burst2stack.sh (burst_download.bash for asf-burst2stack / standalone mode)
+    polygon_val = ssaraopt_dict.get('intersectsWith', '').strip("'\"")
+    if not polygon_val:
+        # intersects_string from generate_intersects_string: --intersectsWith='Polygon(...)'
+        match = re.search(r"--intersectsWith=['\"]([^'\"]+)['\"]", str(intersects_string))
+        if match:
+            polygon_val = match.group(1)
+    burst_download_cmd = (
+        f"burst_download.bash --relativeOrbit {rel_orbit} "
+        f"--intersectsWith='{polygon_val}' "
+        f"--start-date {start_date} --end-date {end_date} "
+        f"--dir SLC"
+    )
+    with open('download_burst2stack.sh', 'w') as f:
+        f.write("#!/usr/bin/env bash\n")
+        f.write("set -e\n")
+        f.write(burst_download_cmd + "\n")
+    os.chmod('download_burst2stack.sh', 0o755)
+
     os.chmod('download_asf.sh', 0o755)
     os.chmod('download_asf_burst.sh', 0o755)
     os.chmod('pack_bursts.sh', 0o755)
