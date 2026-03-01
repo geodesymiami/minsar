@@ -39,7 +39,7 @@ helptext="                                                                      
    --start STEP          start processing at the named step [default: download]. \n\
    --end STEP, --stop STEP                                                       \n\
    --dostep STEP         run processing at the named step only                   \n\
-   --download-method {asf-slc, asf-burst ssara-slc, ssara-bash, ssara-python} download method \n\
+   --download-method {asf-slc, asf-burst, asf-burst2stack, ssara-slc, ssara-bash, ssara-python} download method \n\
           (default: asf-burst)                                                     \n\
                                                                                  \n\
    --mintpy              use smallbaselineApp.py for time series [default]       \n\
