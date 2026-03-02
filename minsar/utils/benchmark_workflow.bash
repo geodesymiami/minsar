@@ -150,10 +150,15 @@ bytes_to_mb() {
     awk -v b="$bytes" 'BEGIN { printf "%.2f", b/1048576 }'
 }
 
-# Write header once (overwrites OUTFILE on first call)
+# Write header once; append if file already has content (previous run)
 header_written=false
 write_header() {
     if [[ "$header_written" == true ]]; then return; fi
+    # If file exists and has content, we're appending to a previous run - don't overwrite
+    if [[ -s "$OUTFILE" ]]; then
+        header_written=true
+        return
+    fi
     {
         echo "# $SCRIPT_NAME"
         echo "# Date: $(date -Iseconds 2>/dev/null || date '+%Y-%m-%d %H:%M:%S')"
@@ -161,7 +166,7 @@ write_header() {
         echo "# OMP_NUM_THREADS: $THREADS_STR"
         echo "# user_% and system_% are 100*user_sec/elapsed_sec and 100*system_sec/elapsed_sec (can exceed 100% with multithreading)"
         echo "#"
-        printf "%-20s %7s %11s %7s %8s %12s %13s  %s\n" "run_file" "threads" "elapsed_sec" "user_%" "system_%" "fs_inputs_MB" "fs_outputs_MB" "command"
+        printf "%-28s%s %11s %7s %8s %12s %13s  %s\n" "run_file" "threads" "elapsed_sec" "user_%" "system_%" "fs_inputs_MB" "fs_outputs_MB" "command"
     } > "$OUTFILE"
     header_written=true
 }
@@ -219,7 +224,7 @@ for run_arg in "${POSITIONAL[@]}"; do
         fs_out_mb=$(bytes_to_mb "$fs_out")
 
         write_header
-        printf "%-20s %7s %11s %7s %8s %12s %13s  %s\n" \
+        printf "%-28s%s %11s %7s %8s %12s %13s  %s\n" \
             "$run_basename" "$n" "$elapsed" "$user_pct" "$system_pct" "$fs_in_mb" "$fs_out_mb" "$first_line" >> "$OUTFILE"
 
         rm -f "$timelog"
