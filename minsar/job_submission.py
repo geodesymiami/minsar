@@ -261,6 +261,9 @@ class JOB_SUBMIT:
 
             elif 'multiTask_multiNode' in self.submission_scheme: # or number_of_nodes == 1:
 
+                if num_cores_per_task is None:
+                    nthreads = int(self.default_num_threads) or 1
+                    self.number_of_parallel_tasks_per_node = self.number_of_cores_per_node // nthreads
                 batch_file_name = batch_file + '_0'
                 job_name = os.path.basename(batch_file_name)
 
