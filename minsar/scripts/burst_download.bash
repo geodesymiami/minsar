@@ -34,7 +34,7 @@ usage() {
     echo "  --help, -h            Show this help"
     echo ""
     echo "Example:"
-    echo "  $SCRIPT_NAME --relativeOrbit 36 --intersectsWith='Polygon((25.32 36.33, 25.49 36.33, 25.49 36.49, 25.32 36.49, 25.32 36.33))' --start-date 2014-10-01 --end-date 2015-12-31 --parallel 20 --dir SLC"
+    echo "  $SCRIPT_NAME --relativeOrbit 36 --intersectsWith='Polygon((25.32 36.33, 25.49 36.33, 25.49 36.49, 25.32 36.49, 25.32 36.33))' --start-date 2014-10-01 --end-date 2015-12-31 --parallel 30 --dir SLC"
     echo ""
     echo "Template mode: run generate_download_command.py first. Standalone: pass --relativeOrbit and --intersectsWith."
     exit 0
@@ -42,7 +42,7 @@ usage() {
 
 work_dir="."
 slc_dir="SLC"
-parallel=20
+parallel=30
 skip_listing=0
 relative_orbit=""
 intersects_with=""
@@ -212,7 +212,8 @@ from datetime import datetime, timedelta
 d = datetime.strptime('$d', '%Y-%m-%d')
 print((d + timedelta(days=1)).strftime('%Y-%m-%d'))
 ")
-    echo "burst2stack --rel-orbit $rel_orbit --start-date $d --end-date $end_date --extent $extent --keep-files --all-anns" >> "$run_file"
+    d_compact=$(echo "$d" | tr -d '-')
+    echo "burst2stack --rel-orbit $rel_orbit --start-date $d --end-date $end_date --extent $extent --keep-files --all-anns 2> burst2stack_${d_compact}.e" >> "$run_file"
 done
 
 echo "Wrote $run_file with $(wc -l < "$run_file" | tr -d ' \n') burst2stack commands."
@@ -229,10 +230,15 @@ else
 fi
 
 # 4b. Filter run_burst2stack: remove lines for dates that already have a complete SAFE
+count_before=$(wc -l < "$run_file" | tr -d ' \n')
+skipped_dates=()
 for safe in "$slc_dir"/*.SAFE; do
     [[ -d "$safe" ]] || continue
     date_str=$(basename "$safe" .SAFE | sed -E 's/.*([0-9]{4})([0-9]{2})([0-9]{2})T.*/\1-\2-\3/')
     [[ "$date_str" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || continue
+    if grep -q -- "--start-date $date_str " "$run_file"; then
+        skipped_dates+=( "$date_str" )
+    fi
     grep -v -- "--start-date $date_str " "$run_file" > "${run_file}.tmp" && mv "${run_file}.tmp" "$run_file"
 done
 
@@ -241,7 +247,9 @@ if [[ ! -s "$run_file" ]]; then
     exit 0
 fi
 
-echo "After filtering: $(wc -l < "$run_file" | tr -d ' \n') burst2stack commands remaining."
+if [[ ${#skipped_dates[@]} -gt 0 ]]; then
+    echo "After filtering: $(wc -l < "$run_file" | tr -d ' \n') burst2stack commands remaining (skipped ${#skipped_dates[@]} date(s) that already have complete SAFEs: ${skipped_dates[*]})."
+fi
 
 # 5. Compute parallelism
 num_parallel=$(( parallel / max_bursts ))
@@ -295,6 +303,12 @@ if [[ -s "$rerun_file" ]]; then
     num_rerun=$(wc -l < "$rerun_file" | tr -d ' \n')
     echo "Retrying $num_rerun failed date(s) ..."
     xargs -P "$num_parallel" -I {} bash -c "cd \"$work_dir/$slc_dir\" && {}" < "$rerun_file" || true
+    # Remove incomplete SAFEs from retry pass so re-verify correctly flags failures
+    if [[ -f "$SCRIPT_DIR/check_SAFE_completeness.py" ]]; then
+        python3 "$SCRIPT_DIR/check_SAFE_completeness.py" "$slc_dir" || true
+    elif command -v check_SAFE_completeness.py &>/dev/null; then
+        check_SAFE_completeness.py "$slc_dir" || true
+    fi
     # Re-verify after retry; rebuild failures_file and rerun_file with only still-failed dates
     : > "$failures_file"
     : > "${rerun_file}.tmp"

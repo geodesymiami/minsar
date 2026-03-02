@@ -31,6 +31,7 @@ def main(iargs=None):
 
          update_walltime_exceptions = ['smallbaseline', 'mintpy_timeseries_correction']
          update_walltime_exceptions = ['smallbaseline', 'mintpy_timeseries_correction','miaplpy_invert_network']   #FA 10/2025  I think restarting of miaplpy_invert_network is OK. But I am not certain
+         update_walltime_exceptions = ['smallbaseline', 'download_burst2stack']   #FA 3/2026  removed mintpy_timeseries_correction required for >500 dates
          if any(exc in inps.job_file_name for exc in update_walltime_exceptions):
              new_wall_time = "02:00:00"
          else:

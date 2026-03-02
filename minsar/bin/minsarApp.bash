@@ -490,6 +490,11 @@ if [[ $download_flag == "1" ]]; then
         exit 1
     fi
 
+    # Remove S1 acquisitions affected by degraded burst sync
+    if [[ $platform_str == *"SENTINEL-1"* && -d "$download_dir" ]]; then
+        run_command "remove_problem_data.py $download_dir"
+    fi
+
     # remove excluded dates
     if [[ ! -z $(grep "^minsar.excludeDates" $template_file) ]];  then
       date_string=$(grep ^minsar.excludeDates $template_file | awk -F = '{printf "%s\n",$2}')
@@ -500,7 +505,7 @@ if [[ $download_flag == "1" ]]; then
            echo "Remove $date if exist"
            files="$download_dir/*$date*"
            echo "Removing: $files"
-           rm -f $files
+           rm -rf $files
        done
     fi
 fi

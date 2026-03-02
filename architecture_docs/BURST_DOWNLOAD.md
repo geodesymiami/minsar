@@ -38,11 +38,11 @@ flowchart TD
 
 1. **Listing:** Execute the first (--print) line from `download_asf_burst.sh` → `SLC/asf_burst_listing.txt`.
 2. **Parse:** Data lines start with `YYYY-MM-DD`; use `grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}'` and `sed -E` (portable; no grep -oP).
-3. **run_burst2stack:** One line per date: `burst2stack --rel-orbit N --start-date YYYY-MM-DD --end-date YYYY-MM-DD+1d --extent W S E N --keep-files --all-anns`. Rel-orbit and extent parsed from `download_asf_burst2stack.sh`.
+3. **run_burst2stack:** One line per date: `burst2stack ... 2> burst2stack_YYYYMMDD.e`. Rel-orbit and extent parsed from `download_asf_burst2stack.sh`. Per-date stderr only goes to `SLC/burst2stack_YYYYMMDD.e` (e.g. burst2stack_20141022.e).
 4. **4a – Incomplete SAFEs:** Run `check_SAFE_completeness.py "$slc_dir"`. Removes `.SAFE` dirs missing required paths (e.g. `preview/map-overlay.kml`), logs to `SLC/DATES_REMOVED.txt`. Handles timeout mid-write on SLURM restart.
 5. **4b – Filter:** For each remaining `*.SAFE` in `$slc_dir`, extract date from name (`S1A_IW_SLC__1SDV_YYYYMMDDTHHMMSS_...` → `YYYY-MM-DD`) and remove lines with `--start-date YYYY-MM-DD ` from run_burst2stack. If file empty, exit 0.
 6. **Run:** `xargs -P "$num_parallel" -I {} bash -c 'cd SLC && {}' < run_burst2stack`. Parallelism = max(1, parallel / max_bursts_per_date).
-7. **Post-run verification and retry (Option A):** Compare expected dates (from run_burst2stack) vs actual complete SAFEs. Write `burst2stack_failures.txt` (one line per failed date: `YYYY-MM-DD  reason`), write `run_burst2stack_rerun` with burst2stack commands for failed dates. If non-empty: one retry pass via xargs, then re-verify and rebuild failures/rerun files. If any still fail: print message and manual rerun command.
+7. **Post-run verification and retry (Option A):** Run `check_SAFE_completeness.py` again (remove incomplete SAFEs from main pass). Compare expected dates (from run_burst2stack) vs actual complete SAFEs. Write `burst2stack_failures.txt` (one line per failed date: `YYYY-MM-DD  reason`), write `run_burst2stack_rerun` with burst2stack commands for failed dates. If non-empty: one retry pass via xargs, then run `check_SAFE_completeness.py` again (remove incomplete SAFEs from retry so re-verify correctly flags failures), then re-verify and rebuild failures/rerun files. If any still fail: print message and manual rerun command.
 
 ## asf_burst_listing.txt format
 
@@ -128,7 +128,8 @@ sbatch --partition=skx-dev --time=02:00:00 --wrap="bash $MINSAR_HOME/minsar/scri
 | File | Purpose |
 |------|---------|
 | burst2stack_failures.txt | One line per failed date: `YYYY-MM-DD  reason` (e.g. "no SAFE produced", "no SAFE produced (retry)") |
-| run_burst2stack_rerun | Burst2stack commands for failed dates; same format as run_burst2stack; use for manual rerun |
+| run_burst2stack_rerun | Burst2stack commands for failed dates; same format as run_burst2stack (with per-date stderr to .e); use for manual rerun |
+| burst2stack_YYYYMMDD.e | Per-date stderr from burst2stack (under SLC/), e.g. burst2stack_20141022.e |
 
 The script runs one retry pass automatically. To rerun manually:
 ```bash

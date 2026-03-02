@@ -47,10 +47,10 @@ The script groups bursts so that **each burst2safe call receives a valid set of 
 ## burst_download.bash (burst2stack path)
 
 - **Script:** `minsar/scripts/burst_download.bash`
-- **Purpose:** Run `asf_download.sh --print` to get the burst listing, parse it for unique dates, write one burst2stack command per date, and run them in parallel via xargs. After the main pass, verifies which dates lack a complete SAFE, writes `burst2stack_failures.txt` and `run_burst2stack_rerun`, runs one retry pass, and re-verifies.
+- **Purpose:** Run `asf_download.sh --print` to get the burst listing, parse it for unique dates, write one burst2stack command per date (with per-date stderr to `burst2stack_YYYYMMDD.e`), and run them in parallel via xargs. After the main pass, runs `check_SAFE_completeness.py` (removes incomplete SAFEs), verifies which dates lack a complete SAFE, writes `burst2stack_failures.txt` and `run_burst2stack_rerun`, runs one retry pass, runs `check_SAFE_completeness.py` again (so incomplete SAFEs from failed retries are removed and failures are correctly recorded), then re-verifies.
 - **Prerequisites:** Run `generate_download_command.py` first (template mode), or pass `--relativeOrbit` and `--intersectsWith` (standalone mode).
 - **Usage:** `burst_download.bash [--work-dir DIR] [--slc-dir SLC] [--parallel N] [--skip-listing]` (run from work dir or pass `--work-dir`).
-- **Output files (under SLC/):** `burst2stack_failures.txt` (one line per failed date: `YYYY-MM-DD  reason`), `run_burst2stack_rerun` (burst2stack commands for manual rerun).
+- **Output files (under SLC/):** `burst2stack_failures.txt` (one line per failed date: `YYYY-MM-DD  reason`), `run_burst2stack_rerun` (burst2stack commands for manual rerun), `burst2stack_YYYYMMDD.e` (per-date stderr, e.g. burst2stack_20141022.e).
 
 ## Script and help (burst2safe path)
 
