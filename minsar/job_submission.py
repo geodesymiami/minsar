@@ -131,7 +131,8 @@ class JOB_SUBMIT:
 
         self.submission_scheme, self.platform_name, self.scheduler, self.queue_name, \
         self.number_of_cores_per_node, self.number_of_threads_per_core, self.max_jobs_per_workflow, \
-        self.max_memory_per_node, self.wall_time_factor, self.max_jobs_per_queue = set_job_queue_values(inps)
+        self.max_memory_per_node, self.wall_time_factor, self.max_jobs_per_queue, \
+        self.max_nodes_per_job = set_job_queue_values(inps)
         self.number_of_parallel_tasks_per_node = 1
 
         if not 'num_memory_units' in inps or not inps.num_memory_units:
@@ -269,20 +270,13 @@ class JOB_SUBMIT:
 
                 self.write_batch_singletask_jobs(batch_file, number_of_nodes, distribute=distribute)
 
-            elif 'multiTask_multiNode' in self.submission_scheme: # or number_of_nodes == 1:
+            elif 'multiTask_multiNode' in self.submission_scheme:
 
                 if num_cores_per_task is None:
                     nthreads = int(self.default_num_threads) or 1
                     self.number_of_parallel_tasks_per_node = self.number_of_cores_per_node // nthreads
-                batch_file_name = batch_file + '_0'
-                job_name = os.path.basename(batch_file_name)
-
-                job_file_lines = self.get_job_file_lines(batch_file, job_name, number_of_tasks=len(tasks),
-                                                         number_of_nodes=number_of_nodes, work_dir=self.out_dir)
-                self.job_files.append(self.add_tasks_to_job_file_lines(job_file_lines, tasks,
-                                                                       batch_file=batch_file_name,
-                                                                       number_of_nodes=number_of_nodes,
-                                                                       distribute=distribute))
+                self.split_multi_node_jobs(batch_file, tasks, number_of_nodes, distribute=distribute,
+                                           num_cores_per_task=num_cores_per_task)
 
             elif 'multiTask_singleNode' in self.submission_scheme:
 
@@ -594,6 +588,58 @@ class JOB_SUBMIT:
             self.job_files.append(job_file_name)
 
         return
+
+    def split_multi_node_jobs(self, batch_file, tasks, number_of_nodes, distribute=None, num_cores_per_task=None):
+        """
+        For multiTask_multiNode: create one job if number_of_nodes <= max_nodes_per_job,
+        otherwise split into multiple jobs each with at most max_nodes_per_job nodes.
+        """
+        max_nodes = self.max_nodes_per_job
+        if number_of_nodes <= max_nodes:
+            batch_file_name = batch_file + '_0'
+            job_name = os.path.basename(batch_file_name)
+            job_file_lines = self.get_job_file_lines(batch_file, job_name, number_of_tasks=len(tasks),
+                                                     number_of_nodes=number_of_nodes, work_dir=self.out_dir)
+            self.job_files.append(self.add_tasks_to_job_file_lines(job_file_lines, tasks,
+                                                                   batch_file=batch_file_name,
+                                                                   number_of_nodes=number_of_nodes,
+                                                                   distribute=distribute))
+            return
+
+        number_of_jobs = int(np.ceil(number_of_nodes / max_nodes))
+        number_of_parallel_tasks = int(np.ceil(len(tasks) / number_of_jobs))
+        nodes_needed_per_job = int(np.ceil(number_of_parallel_tasks * float(self.default_num_threads) / (
+                self.number_of_cores_per_node * self.number_of_threads_per_core)))
+        while nodes_needed_per_job > max_nodes and number_of_jobs < len(tasks):
+            number_of_jobs += 1
+            number_of_parallel_tasks = int(np.ceil(len(tasks) / number_of_jobs))
+            nodes_needed_per_job = int(np.ceil(number_of_parallel_tasks * float(self.default_num_threads) / (
+                    self.number_of_cores_per_node * self.number_of_threads_per_core)))
+        number_of_nodes_per_job = min(max_nodes, max(nodes_needed_per_job, int(np.ceil(number_of_nodes / number_of_jobs))))
+
+        if not num_cores_per_task is None:
+            self.number_of_parallel_tasks_per_node = self.number_of_cores_per_node // num_cores_per_task
+        else:
+            self.number_of_parallel_tasks_per_node = math.ceil(number_of_parallel_tasks / number_of_nodes_per_job)
+
+        start_lines = np.ogrid[0:len(tasks):number_of_parallel_tasks].tolist()
+        end_lines = [x + number_of_parallel_tasks for x in start_lines]
+        end_lines[-1] = len(tasks)
+
+        print('Note: number_of_nodes ({}) exceeds MAX_NODES_PER_JOB ({}). Splitting into {} jobs of {} nodes each.'.format(
+            number_of_nodes, max_nodes, number_of_jobs, number_of_nodes_per_job))
+
+        for start_line, end_line in zip(start_lines, end_lines):
+            job_count = start_lines.index(start_line)
+            batch_file_name = batch_file + '_{}'.format(job_count)
+            job_name = os.path.basename(batch_file_name)
+            job_file_lines = self.get_job_file_lines(job_name, batch_file_name, number_of_tasks=end_line - start_line,
+                                                     number_of_nodes=number_of_nodes_per_job, work_dir=self.out_dir)
+            job_file_name = self.add_tasks_to_job_file_lines(job_file_lines, tasks[start_line:end_line],
+                                                             batch_file=batch_file_name,
+                                                             number_of_nodes=number_of_nodes_per_job,
+                                                             distribute=distribute)
+            self.job_files.append(job_file_name)
 
     def get_memory_walltime(self, job_name, job_type='batch'):
         """
@@ -1429,7 +1475,8 @@ def set_job_queue_values(args):
                   'max_jobs_per_workflow': template['MAX_JOBS_PER_WORKFLOW'],
                   'max_jobs_per_queue': template['MAX_JOBS_PER_QUEUE'],
                   'wall_time_factor': template['WALLTIME_FACTOR'],
-                  'max_memory_per_node': template['MEM_PER_NODE']}
+                  'max_memory_per_node': template['MEM_PER_NODE'],
+                  'max_nodes_per_job': template.get('MAX_NODES_PER_JOB', 'auto')}
 
     for key in check_auto.keys():
         if not check_auto[key] == 'auto':
@@ -1464,6 +1511,8 @@ def set_job_queue_values(args):
                         check_auto['max_memory_per_node'] = int(split_values[queue_header.index('MEM_PER_NODE')])
                     if check_auto['wall_time_factor'] == 'auto':
                         check_auto['wall_time_factor'] = float(split_values[queue_header.index('WALLTIME_FACTOR')])
+                    if check_auto['max_nodes_per_job'] == 'auto':
+                        check_auto['max_nodes_per_job'] = int(split_values[queue_header.index('MAX_NODES_PER_JOB')])
 
                     break
                 #else:
@@ -1476,7 +1525,7 @@ def set_job_queue_values(args):
     # platform_name = 'stampede3'
 
 
-    def_auto = [None, 16, 1, 1, 16000, 1]
+    def_auto = [None, 16, 1, 1, 16000, 1, 999, 999]
     i = 0
     for key, value in check_auto.items():
         if check_auto[key] == 'auto':
@@ -1485,7 +1534,8 @@ def set_job_queue_values(args):
 
     out_puts = (submission_scheme, platform_name, scheduler, check_auto['queue_name'], check_auto['number_of_cores_per_node'],
                 check_auto['number_of_threads_per_core'], check_auto['max_jobs_per_workflow'],
-                check_auto['max_memory_per_node'], check_auto['wall_time_factor'], check_auto['max_jobs_per_queue'])
+                check_auto['max_memory_per_node'], check_auto['wall_time_factor'], check_auto['max_jobs_per_queue'],
+                check_auto['max_nodes_per_job'])
 
     return out_puts
 
@@ -1493,7 +1543,7 @@ def set_job_queue_values(args):
 def auto_template_not_existing_options(args):
 
     job_options = ['QUEUENAME', 'CPUS_PER_NODE', 'THREADS_PER_CORE', 'MAX_JOBS_PER_WORKFLOW', 'MAX_JOBS_PER_QUEUE',
-                   'WALLTIME_FACTOR', 'MEM_PER_NODE', 'job_submission_scheme']
+                   'WALLTIME_FACTOR', 'MEM_PER_NODE', 'MAX_NODES_PER_JOB', 'job_submission_scheme']
 
     if hasattr(args, 'custom_template_file') and args.custom_template_file:
         from minsar.objects.dataset_template import Template

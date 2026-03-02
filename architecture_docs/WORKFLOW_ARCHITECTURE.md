@@ -186,11 +186,11 @@ Walltime calculation: `walltime = c_walltime + (num_memory_units * s_walltime) *
 
 ### `queues.cfg`
 
-Defines queue-specific resource limits:
+Defines queue-specific resource limits, including `MAX_NODES_PER_JOB`. When using `multiTask_multiNode` or `launcher_multiTask_multiNode`, if `number_of_nodes` exceeds `MAX_NODES_PER_JOB`, `job_submission.py` splits the batch into multiple jobs (each with at most `MAX_NODES_PER_JOB` nodes) via `split_multi_node_jobs`.
 
 ```
-PLATFORM  QUEUENAME  CPUS_PER_NODE  THREADS_PER_CORE  ...  MAX_JOBS  STEP_MAX_TASKS  TOTAL_MAX_TASKS
-stampede2 skx        48             2                 ...  3         400             100
+PLATFORM  QUEUENAME  CPUS_PER_NODE  THREADS_PER_CORE  ...  MAX_NODES_PER_JOB  MAX_JOBS  STEP_MAX_TASKS  TOTAL_MAX_TASKS
+stampede2 skx        48             2                 ...  20                 3         400             100
 ```
 
 ## Shared Utilities
