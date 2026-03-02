@@ -70,7 +70,7 @@ If unit tests don't exist for what you're changing:
 
 Make the planned changes following the execution plan.
 
-**When presenting code modifications:** Before giving a summary of changes, always show a short before/after: a few lines of the **old code** and then the **new code** for each substantive edit. This makes reviews and history easier to follow.
+**When presenting code modifications:** Always show the previous code and the modified code in the chat (only the lines that were changed). Before giving a summary of changes, show a short before/after: a few lines of the **old code** and then the **new code** for each substantive edit. When you modify code, always show the user the previous and modified code. This makes reviews and history easier to follow.
 
 **When deleting files:** Always ask for permission before deleting any file. Do not delete files without explicit user approval.
 
@@ -145,6 +145,8 @@ For `run_workflow.bash` internals: `minsar/bin/ARCHITECTURE.md`
 | `minsar/bin/sbatch_conditional.bash` | Resource-checked sbatch |
 
 ## Coding Conventions
+
+**Scripts (Bash and Python):** Always make all bash and python scripts executable (e.g. `chmod +x script.bash`, `chmod +x script.py`). When creating or modifying scripts, ensure the executable bit is set.
 
 ### Bash Scripts
 - Use `[[ ]]` for conditionals, not `[ ]`
