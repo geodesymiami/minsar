@@ -50,7 +50,17 @@ def create_argument_parser():
     Optional parameters: template file, memory, walltime, and queue name
     :return: ArgumentParser object for parsing command line batch job submission
     """
-    parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter)
+    job_scheme_help = """
+Environment (JOB_SUBMISSION_SCHEME, QUEUENAME set in ~/accounts/platforms_defaults.bash):
+
+  JOB_SUBMISSION_SCHEME options:
+    singleTask                   Submit each task of a batch file separately in a job
+    multiTask_singleNode         Distribute tasks into jobs with one node
+    multiTask_multiNode          Submit tasks in one job with required number of nodes
+    launcher_multiTask_singleNode  Distribute tasks into jobs with one node, submit with launcher
+    launcher_multiTask_multiNode   Submit tasks in one job with required nodes using launcher
+"""
+    parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, epilog=job_scheme_help)
 
     group = parser.add_argument_group("Input File", "File/Dataset to display")
     group.add_argument("file", type=str, help="The file to batch create")
