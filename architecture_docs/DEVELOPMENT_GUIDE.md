@@ -105,6 +105,19 @@ done
 - Use `$(command)` not backticks
 - Check exit status explicitly when needed
 
+### Bash Option-Resolution Order (minsarApp Pattern)
+
+For scripts with many interacting CLI/template options (especially `minsar/bin/minsarApp.bash`), keep option handling in explicit phases:
+
+1. **Parse CLI only**: store explicit user input and `*_cli_set` markers.
+2. **Load template defaults**: read `template[...]` settings and normalize `minsar.*` booleans.
+3. **Normalize mode**: infer missing start mode from range-style options (for example `--isce-start` => `startstep=ifgram`, `--miaplpy-start` => `startstep=miaplpy` when `--start` is not explicit).
+4. **Compute derived defaults**: choose step ranges from workflow/coregistration context.
+5. **Apply policy overrides once**: centralize rules like disabling MintPy for geometry coregistration.
+6. **Execute**: run step blocks based on final flags.
+
+This keeps precedence predictable and avoids scattered flag mutations across the script.
+
 ### Python Scripts
 
 ```python
@@ -185,6 +198,7 @@ minsar/
 │   ├── __init__.py
 │   ├── run_bash_tests.bash         # Bash test orchestrator
 │   ├── test_helpers.bash           # Shared Bash utilities
+│   ├── test_queues_and_job_defaults_cfg.py  # queues.cfg & job_defaults.cfg format/parsing
 │   ├── test_run_workflow.bash      # Workflow tests
 │   ├── test_submit_jobs.bash
 │   └── test_sbatch_conditional.bash
@@ -201,6 +215,8 @@ minsar/
 | Unit tests for a module | `minsar/<module>/tests/test_foo.py` |
 | Integration/end-to-end tests | `tests/` directory |
 | Bash workflow tests | `tests/` directory |
+
+**Config file tests:** `tests/test_queues_and_job_defaults_cfg.py` checks the format of `minsar/defaults/queues.cfg` and `minsar/defaults/job_defaults.cfg` and that the code in `job_submission.py` / `process_utilities.py` that reads them still works. Test classes: `TestQueuesCfgFormatAndParsing`, `TestJobDefaultsCfgFormatAndParsing`.
 
 ### Running Tests
 
@@ -227,8 +243,8 @@ bash tests/run_bash_tests.bash test_run_workflow.bash
 # Run specific Python test file (colocated)
 python -m unittest minsar.utils.tests.test_system_utils -v
 
-# Run specific Python test file (centralized)
-python -m unittest tests.test_utils -v
+# Run specific Python test file (defaults config: queues.cfg & job_defaults.cfg)
+python -m unittest discover -s tests -p test_queues_and_job_defaults_cfg.py -v
 
 # Discover and run all Python tests
 python -m unittest discover -s . -p "test_*.py" -v
@@ -478,7 +494,7 @@ The code shows what changed, the message explains why.
 
 ### Job Submission
 
-- Don't submit too many jobs at once (check `SJOBS_MAX_JOBS_PER_QUEUE`)
+- Don't submit too many jobs at once (check `SJOBS_MAX_SUBMIT`)
 - Use appropriate walltime (check historical run times)
 - Consider IO load for parallel tasks
 

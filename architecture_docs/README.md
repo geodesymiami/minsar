@@ -55,6 +55,8 @@ minsarApp.bash
 | [DEVELOPMENT_GUIDE.md](./DEVELOPMENT_GUIDE.md) | Coding conventions, testing, debugging | Contributing code |
 | [burst_testing.md](./burst_testing.md) | Annual template generation, run_templates.sh, testing bursts | Testing burst processing across years |
 | [nasa_earthdata_status_check.md](./nasa_earthdata_status_check.md) | NASA Earthdata status check before ASF downloads (check_nasa_earthdata_status.py/.bash, env vars, minsarApp.bash integration) | Understanding or modifying download pre-checks |
+| [BURST_DOWNLOAD.md](./BURST_DOWNLOAD.md) | burst_download.bash: per-date burst2stack, SLURM restart (check_SAFE_completeness, filter by complete SAFEs) | ASF burst download and burst2stack flow |
+| [GEocode_HE5.md](./GEocode_HE5.md) | Geocode S1*.he5 (HDFEOS5) via thin wrapper over MintPy | Geocoding radar .he5 to geographic |
 
 ## Quick Lookup Tables
 

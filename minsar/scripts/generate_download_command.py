@@ -3,6 +3,7 @@
 import os
 import sys
 import re
+import shlex
 import argparse
 from minsar.objects.dataset_template import Template
 from minsar.objects import message_rsmas
@@ -62,7 +63,7 @@ def generate_download_command(template,inps):
     dataset_template.options.update(pathObj.correct_for_ssara_date_format(dataset_template.options))
 
     ssaraopt_string, ssaraopt_dict = dataset_template.generate_ssaraopt_string()
-    ssaraopt = ssaraopt_string.split(' ')
+    ssaraopt = shlex.split(ssaraopt_string)
     if 'end' not in ssaraopt_dict:
         ssaraopt_dict['end'] = '2099-12-31'
 
@@ -88,7 +89,24 @@ def generate_download_command(template,inps):
     collection_names = [c.strip() for c in raw_collections.split(',') if c.strip()]
 
     if len(collection_names) > 1:
-        base_ssaraopt = [a for a in ssaraopt if not a.startswith("--collectionName=")]
+        # Build base options from ssaraopt_dict to avoid shlex.split corrupting
+        # comma-containing collectionName (e.g. "TSX A, TSX B" -> stray token in output)
+        def _v(k, default=''):
+            return ssaraopt_dict.get(k, default).strip().strip("'\"") or default
+
+        base_ssaraopt = [f"--relativeOrbit={_v('relativeOrbit')}"]
+        if 'platform' in ssaraopt_dict:
+            base_ssaraopt.append(f"--platform={_v('platform')}")
+        base_ssaraopt.append(intersects_string)
+        if 'beamMode' in ssaraopt_dict:
+            base_ssaraopt.append(f"--beamMode={_v('beamMode')}")
+        if 'beamSwath' in ssaraopt_dict:
+            base_ssaraopt.append(f"--beamSwath={_v('beamSwath')}")
+        if 'frame' in ssaraopt_dict:
+            base_ssaraopt.append(f"--frame={_v('frame')}")
+        base_ssaraopt.append(f"--start={_v('start')}")
+        base_ssaraopt.append(f"--end={_v('end')}")
+        base_ssaraopt.append(f"--parallel={_v('parallel') or '6'}")
         with open('download_ssara_bash.cmd', 'w') as f:
             for name in collection_names:
                 opt = base_ssaraopt + [f"--collectionName='{name}'"]
@@ -151,6 +169,25 @@ def generate_download_command(template,inps):
         f.write("burst2stack --rel-orbit " + str(rel_orbit) + " --start-date " + start_date + " --end-date " + end_date + " --extent " + extent_args + "\n")
         f.write("cd -\n")
     os.chmod('download_asf_burst2stack.sh', 0o755)
+
+    # create download_burst2stack.sh (burst_download.bash for asf-burst2stack / standalone mode)
+    polygon_val = ssaraopt_dict.get('intersectsWith', '').strip("'\"")
+    if not polygon_val:
+        # intersects_string from generate_intersects_string: --intersectsWith='Polygon(...)'
+        match = re.search(r"--intersectsWith=['\"]([^'\"]+)['\"]", str(intersects_string))
+        if match:
+            polygon_val = match.group(1)
+    burst_download_cmd = (
+        f"burst_download.bash --relativeOrbit {rel_orbit} "
+        f"--intersectsWith='{polygon_val}' "
+        f"--start-date {start_date} --end-date {end_date} "
+        f"--dir SLC"
+    )
+    with open('download_burst2stack.sh', 'w') as f:
+        f.write("#!/usr/bin/env bash\n")
+        f.write("set -e\n")
+        f.write(burst_download_cmd + "\n")
+    os.chmod('download_burst2stack.sh', 0o755)
 
     os.chmod('download_asf.sh', 0o755)
     os.chmod('download_asf_burst.sh', 0o755)

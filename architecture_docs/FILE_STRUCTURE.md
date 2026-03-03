@@ -68,6 +68,10 @@ Python scripts called by bash entry points:
 | `generate_download_command.py` | Generate data download commands |
 | `generate_makedem_command.py` | Generate DEM creation commands |
 | `check_job_outputs.py` | Validate job outputs after completion |
+| `check_nasa_earthdata_status.py` | Check NASA Earthdata status (fetch status page, exit 0/1) |
+| `check_nasa_earthdata_status.bash` | Check + optional wait loop for Earthdata before ASF downloads |
+| `burst_download.bash` | Download ASF bursts via listing + per-date burst2stack in parallel |
+| `remove_problem_data.py` | Remove S1 acquisitions affected by MPC #273 (degraded burst sync) |
 | `update_walltime_queuename.py` | Update job walltime after TIMEOUT |
 | `create_ingest_insarmaps_jobfile.py` | Create InsarMaps ingestion job |
 | `create_save_hdfeos5_jobfile.py` | Create HDF-EOS5 save job |
@@ -102,7 +106,7 @@ Mixed Python and Bash utilities:
 |----------|----------|
 | Data handling | `uncompress_and_rename_data.py`, `check_download.py` |
 | Template management | `generate_template_files.py`, `create_insar_template.py`, `create_annual_template_files.bash` |
-| Job utilities | `examine_job_stdout_files.py`, `summarize_job_run_times.py` |
+| Job utilities | `examine_job_stdout_files.py`, `summarize_job_run_times.py`, `benchmark_workflow.bash` (OMP thread scaling → benchmark_threads.txt) |
 | Geospatial | `convert_boundingbox.py`, `get_boundingBox_from_kml.py` |
 
 `create_annual_template_files.bash` generates year-shifted template copies from a base template and writes `$SCRATCHDIR/run_templates.sh` (overwritten each run; not version-controlled) to batch-run minsarApp.bash on those templates. See [burst_testing.md](burst_testing.md).
@@ -158,6 +162,13 @@ additions/
 ├── isce2/          # ISCE2 patches  
 ├── miaplpy/        # MiaplPy patches
 └── mintpy/         # MintPy patches
+    ├── save_hdfeos5.py    # HDFEOS5 export
+    ├── geocode_hdfeos5.py # Geocode .he5 files (extract → geocode → save)
+    ├── cli/
+    │   ├── geocode.py     # Thin wrapper: .he5 → geocode_hdfeos5, else → geocode_orig
+    │   ├── geocode_orig.py    # Unmodified MintPy geocode (replace from upstream when upgrading)
+    │   └── save_hdfeos5.py
+    └── PLAN_geocode_S1_he5.md
 ```
 
 ## Processing Directory Structure

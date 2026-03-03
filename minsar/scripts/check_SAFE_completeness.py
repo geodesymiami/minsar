@@ -2,7 +2,7 @@
 """
 Check that each .SAFE directory in the given directory is complete.
 If a required file (e.g. preview/map-overlay.kml) is missing, remove the SAFE
-and log the date to DATES_REMOVED.txt.
+and log the date to DATES_REMOVED.txt. The file is kept sorted by date (first column).
 """
 
 import argparse
@@ -82,6 +82,14 @@ def main(iargs=None):
             shutil.rmtree(safe_path)
         except Exception as e:
             print(f"WARNING: Could not remove {safe_path}: {e}", file=sys.stderr)
+
+    # Keep DATES_REMOVED.txt sorted by date (first column YYYYMMDD)
+    if not inps.dry_run and os.path.isfile(dates_removed_file):
+        with open(dates_removed_file, "r") as f:
+            lines = f.readlines()
+        lines.sort(key=lambda line: line.split(None, 1)[0] if line.strip() else "")
+        with open(dates_removed_file, "w") as f:
+            f.writelines(lines)
 
     return 0
 

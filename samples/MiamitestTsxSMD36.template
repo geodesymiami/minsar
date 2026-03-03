@@ -20,6 +20,7 @@ stripmapStack.unwMethod               = snaphu
 
 mintpy.troposphericDelay.method       = no
 mintpy.reference.minCoherence         = 0.7   #[0.0-1.0], auto for 0.85, minimum coherence for auto method
+mintpy.load.waterMaskFile         = no  #[path of water  mask file], optional but recommended
 
 raw_image_dir                         =  ./SLC_ORIG
 
@@ -33,7 +34,8 @@ insarmaps_flag                        = False
 
 ###### South Surfside #
 #mintpy.reference.lalo                = 25.8791,-80.1259          
-mintpy.subset.lalo                   = 25.89:25.906,-80.129:-80.115            # Surfside_only
+#mintpy.subset.lalo                   = 25.89:25.906,-80.129:-80.115            # Surfside_only
+miaplpyy.subset.lalo                   = 25.89:25.906,-80.129:-80.115            # Surfside_only
 
 miaplpy.multiprocessing.numProcessor = 40
 ### crop the area to a small subset

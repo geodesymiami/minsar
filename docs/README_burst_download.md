@@ -5,6 +5,7 @@ This document describes how MinSAR builds **burst2safe** commands when using the
 ## Overview
 
 - **Download:** Bursts are downloaded (e.g. via `download_asf_burst.sh`) into a burst directory (typically `SLC/`) as `*BURST.tiff` files. For ASF burst, **generate_download_command.py** produces two scripts: **download_asf_burst.sh** (download only: listing + two download runs) and **pack_bursts.sh** (burst2safe jobfile, run_workflow, check_burst2safe_job_outputs, rerun timeouts). The pack step is intended to be replaced by **scripts/pack_bursts.bash** when that exists.
+- **burst2stack path:** **burst_download.bash** runs `asf_download.sh --print` to get a burst listing, parses it for dates, writes one burst2stack command per date, and runs them in parallel. This path uses burst2stack (which downloads from ASF and creates SAFEs) instead of burst tiff → burst2safe.
 - **burst2safe:** Each burst2safe invocation converts a **group** of bursts into one ESA SAFE product. The script **bursts_to_burst2safe_jobfile.py** creates the runfile that lists one burst2safe command per group.
 - **ISCE:** The resulting `.SAFE` products are then unpacked and processed by ISCE (Sentinel1_TOPS) in the same way as SLC `.zip` products; multiple SAFEs per date are supported (see below).
 
@@ -43,7 +44,15 @@ The script groups bursts so that **each burst2safe call receives a valid set of 
 - When the script outputs **one SAFE per (date, hash)** (subswaths overlap), that SAFE contains all subswaths (IW1, IW2, IW3) and their annotation XMLs. ISCE unpack and topo then work without change. This is the preferred case (e.g. AOI within one SLC frame).
 - When the script outputs **multiple SAFEs per date** (one per subswath, overlap failed), each SAFE has only one subswath’s annotation. Passing multiple such SAFEs in `dirname` can lead to "No annotation xml file found" and topo failures; handling that would require stack or ISCE changes.
 
-## Script and help
+## burst_download.bash (burst2stack path)
+
+- **Script:** `minsar/scripts/burst_download.bash`
+- **Purpose:** Run `asf_download.sh --print` to get the burst listing, parse it for unique dates, write one burst2stack command per date (with per-date stderr to `burst2stack_YYYYMMDD.e`), and run them in parallel via xargs. After the main pass, runs `check_SAFE_completeness.py` (removes incomplete SAFEs), verifies which dates lack a complete SAFE, writes `burst2stack_failures.txt` and `run_burst2stack_rerun`, runs one retry pass, runs `check_SAFE_completeness.py` again (so incomplete SAFEs from failed retries are removed and failures are correctly recorded), then re-verifies.
+- **Prerequisites:** Run `generate_download_command.py` first (template mode), or pass `--relativeOrbit` and `--intersectsWith` (standalone mode).
+- **Usage:** `burst_download.bash [--work-dir DIR] [--slc-dir SLC] [--parallel N] [--skip-listing]` (run from work dir or pass `--work-dir`).
+- **Output files (under SLC/):** `burst2stack_failures.txt` (one line per failed date: `YYYY-MM-DD  reason`), `run_burst2stack_rerun` (burst2stack commands for manual rerun), `burst2stack_YYYYMMDD.e` (per-date stderr, e.g. burst2stack_20141022.e).
+
+## Script and help (burst2safe path)
 
 - **Script:** `minsar/scripts/bursts_to_burst2safe_jobfile.py`
 - **Usage:**  

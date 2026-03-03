@@ -106,11 +106,15 @@ run_python_tests() {
     
     # Define test locations (add more as colocated tests are created)
     # Pattern: minsar/<module>/tests/ for colocated tests
+    # additions/mintpy/tests is long-running; pre-push skips it unless additions/mintpy/ changed (MINSAR_SKIP_MINTPY_ADDITIONS_TESTS=1)
     local test_locations=(
         "tests"                    # Integration tests
         "minsar/utils/tests"       # Utils unit tests
         "minsar/objects/tests"     # Objects unit tests (when created)
     )
+    if [[ "${MINSAR_SKIP_MINTPY_ADDITIONS_TESTS:-0}" != "1" ]]; then
+        test_locations+=("additions/mintpy/tests")   # MintPy additions (geocode wrapper, etc.)
+    fi
     
     for location in "${test_locations[@]}"; do
         if [[ -d "$SCRIPT_DIR/$location" ]]; then

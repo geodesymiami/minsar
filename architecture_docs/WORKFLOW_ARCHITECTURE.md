@@ -10,7 +10,39 @@ MinSAR uses a three-tier job submission system:
 run_workflow.bash → submit_jobs.bash → sbatch_conditional.bash → SLURM sbatch
 ```
 
+`minsarApp.bash` runs before this chain and resolves user/template options into the step flags and `run_workflow.bash` ranges that drive execution.
+
 ## Job Orchestration Scripts
+
+### 0. `minsarApp.bash` - Option Resolution Entry Point
+
+**Location**: `minsar/bin/minsarApp.bash`
+
+**Purpose**: Convert CLI + template options into a deterministic execution plan (flags + ISCE/MintPy/MiaplPy ranges), then call `run_workflow.bash` and helper scripts.
+
+**Resolution Order**:
+1. Parse CLI options into explicit variables (`startstep`, `stopstep`, `isce_*_cli`, `miaplpy_*`, etc.).
+2. Load template settings (for example `topsStack.coregistration`, `topsStack.workflow`, `minsar.*` flags).
+3. Normalize inferred start mode:
+   - `--miaplpy-start` without explicit `--start` implies `startstep=miaplpy`.
+   - `--isce-start` without explicit `--start` implies `startstep=ifgram`.
+4. Compute ISCE defaults:
+   - geometry: full stop `12`, ifgram-only stop `8`
+   - NESD/auto: full stop `16`, ifgram-only stop `12`
+   - Sentinel only: if `--isce-start` is provided without `--isce-stop`, default to ifgram-only stop (`8`/`12`).
+5. Apply policy overrides:
+   - geometry coregistration forces `mintpy_flag=0`
+   - starting at `ifgram` or later disables orbit download
+6. Execute selected step blocks (`download`, `jobfiles`, `ifgram`, `mintpy`, `miaplpy`, etc.).
+
+**Examples**:
+```bash
+# Auto-select ifgram mode from --isce-start (no --start needed)
+minsarApp.bash $TE/template.template --isce-start 6
+
+# MiaplPy range auto-selects miaplpy start mode
+minsarApp.bash $TE/template.template --miaplpy-start 6 --miaplpy-stop 7
+```
 
 ### 1. `run_workflow.bash` - Main Orchestrator
 
@@ -186,11 +218,11 @@ Walltime calculation: `walltime = c_walltime + (num_memory_units * s_walltime) *
 
 ### `queues.cfg`
 
-Defines queue-specific resource limits:
+Defines queue-specific resource limits, including `MAX_NODES_PER_JOB`. When using `multiTask_multiNode` or `launcher_multiTask_multiNode`, if `number_of_nodes` exceeds `MAX_NODES_PER_JOB`, `job_submission.py` splits the batch into multiple jobs (each with at most `MAX_NODES_PER_JOB` nodes) via `split_multi_node_jobs`.
 
 ```
-PLATFORM  QUEUENAME  CPUS_PER_NODE  THREADS_PER_CORE  ...  MAX_JOBS  STEP_MAX_TASKS  TOTAL_MAX_TASKS
-stampede2 skx        48             2                 ...  3         400             100
+PLATFORM  QUEUENAME  CPUS_PER_NODE  THREADS_PER_CORE  ...  MAX_NODES_PER_JOB  MAX_JOBS  STEP_MAX_TASKS  TOTAL_MAX_TASKS
+stampede2 skx        48             2                 ...  20                 3         400             100
 ```
 
 ## Shared Utilities
