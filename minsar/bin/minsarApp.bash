@@ -686,7 +686,7 @@ if [[ $mintpy_flag == "1" ]]; then
 
     if [[ $skip_mintpy_flag != "1" ]]; then
         # run MintPy
-        run_command "run_workflow.bash --append --dostep mintpy"
+        run_command "run_workflow.bash --dostep mintpy"
     fi
 
     # summarize profiling logs
@@ -732,7 +732,7 @@ if [[ $miaplpy_flag == "1" ]]; then
        run_command "run_workflow.bash $template_file --jobfile $PWD/create_miaplpy_jobfiles.job"
 
        # run miaplpy jobfiles
-       run_command "run_workflow.bash $template_file --append --dir $miaplpy_dir_name --start $miaplpy_startstep --stop $miaplpy_stopstep"
+       run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start $miaplpy_startstep --stop $miaplpy_stopstep"
     fi
 
     # create and run save_hdf5 jobfile

@@ -267,7 +267,7 @@ generate_miaplpy_script() {
     printf "run_workflow.bash $template_file --jobfile ${PWD}/miaplpyApp.job\n" >> "$output_script"
     
     printf "\n# run miaplpy jobfiles\n" >> "$output_script"
-    printf "run_workflow.bash $template_file --append --dostep miaplpy --dir $miaplpy_dir_name\n" >> "$output_script"
+    printf "run_workflow.bash $template_file --dostep miaplpy --dir $miaplpy_dir_name\n" >> "$output_script"
     
     printf "\n# create and run run_10_save_hdfeos5_radar.job\n" >> "$output_script"
     printf "create_save_hdfeos5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME --walltime 0:30\n" >> "$output_script"
