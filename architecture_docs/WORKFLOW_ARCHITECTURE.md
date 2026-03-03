@@ -10,7 +10,39 @@ MinSAR uses a three-tier job submission system:
 run_workflow.bash → submit_jobs.bash → sbatch_conditional.bash → SLURM sbatch
 ```
 
+`minsarApp.bash` runs before this chain and resolves user/template options into the step flags and `run_workflow.bash` ranges that drive execution.
+
 ## Job Orchestration Scripts
+
+### 0. `minsarApp.bash` - Option Resolution Entry Point
+
+**Location**: `minsar/bin/minsarApp.bash`
+
+**Purpose**: Convert CLI + template options into a deterministic execution plan (flags + ISCE/MintPy/MiaplPy ranges), then call `run_workflow.bash` and helper scripts.
+
+**Resolution Order**:
+1. Parse CLI options into explicit variables (`startstep`, `stopstep`, `isce_*_cli`, `miaplpy_*`, etc.).
+2. Load template settings (for example `topsStack.coregistration`, `topsStack.workflow`, `minsar.*` flags).
+3. Normalize inferred start mode:
+   - `--miaplpy-start` without explicit `--start` implies `startstep=miaplpy`.
+   - `--isce-start` without explicit `--start` implies `startstep=ifgram`.
+4. Compute ISCE defaults:
+   - geometry: full stop `12`, ifgram-only stop `8`
+   - NESD/auto: full stop `16`, ifgram-only stop `12`
+   - Sentinel only: if `--isce-start` is provided without `--isce-stop`, default to ifgram-only stop (`8`/`12`).
+5. Apply policy overrides:
+   - geometry coregistration forces `mintpy_flag=0`
+   - starting at `ifgram` or later disables orbit download
+6. Execute selected step blocks (`download`, `jobfiles`, `ifgram`, `mintpy`, `miaplpy`, etc.).
+
+**Examples**:
+```bash
+# Auto-select ifgram mode from --isce-start (no --start needed)
+minsarApp.bash $TE/template.template --isce-start 6
+
+# MiaplPy range auto-selects miaplpy start mode
+minsarApp.bash $TE/template.template --miaplpy-start 6 --miaplpy-stop 7
+```
 
 ### 1. `run_workflow.bash` - Main Orchestrator
 

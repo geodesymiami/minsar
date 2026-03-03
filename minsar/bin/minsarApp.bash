@@ -106,6 +106,7 @@ download_ECMWF_flag=1
 download_ECMWgF_before_mintpy_flag=0
 
 args=( "$@" )    # copy of command line arguments
+POSITIONAL=()
 
 ##################################
 create_template_array $template_file
@@ -123,6 +124,13 @@ download_method="asf-burst"
 miaplpy_startstep=1
 miaplpy_stopstep=9
 
+# Track whether options were explicitly set on CLI
+startstep_cli_flag=0
+stopstep_cli_flag=0
+isce_start_cli_flag=0
+isce_stop_cli_flag=0
+miaplpy_start_cli_flag=0
+
 skip_mintpy_flag=0
 skip_miaplpy_flag=0
 
@@ -136,17 +144,21 @@ do
     case $key in
         --start)
             startstep="$2"
+            startstep_cli_flag=1
             shift # past argument
             shift # past value
             ;;
 	--stop)
             stopstep="$2"
+            stopstep_cli_flag=1
             shift
             shift
             ;;
 	--dostep)
             startstep="$2"
             stopstep="$2"
+            startstep_cli_flag=1
+            stopstep_cli_flag=1
             shift
             shift
             ;;
@@ -160,17 +172,21 @@ do
             ;;
         --isce-start)
             isce_start_cli="$2"
+            isce_start_cli_flag=1
             shift
             shift
             ;;
         --isce-stop)
             isce_stop_cli="$2"
+            isce_stop_cli_flag=1
             shift
             shift
             ;;
         --isce-step)
             isce_start_cli="$2"
             isce_stop_cli="$2"
+            isce_start_cli_flag=1
+            isce_stop_cli_flag=1
             shift
             shift
             ;;
@@ -180,7 +196,7 @@ do
             ;;
         --miaplpy-start)
             miaplpy_flag=1
-            [[ -z "$startstep" ]] && startstep="miaplpy"
+            miaplpy_start_cli_flag=1
             miaplpy_startstep="$2"
             shift
             shift
@@ -257,6 +273,24 @@ if [[ ${#POSITIONAL[@]} -gt 1 ]]; then
         echo "Unknown parameters provided: $2"
     fi
     exit 1
+fi
+
+# Validate incompatible option combinations before deriving defaults.
+if [[ "$miaplpy_start_cli_flag" == "1" && "$startstep_cli_flag" == "1" && "$startstep" != "miaplpy" ]]; then
+    echo "USER ERROR: Inconsistent options: --miaplpy-start requires --start miaplpy (or omit --start)." >&2
+    exit 1
+fi
+
+if [[ "$isce_start_cli_flag" == "1" && "$startstep_cli_flag" == "1" && ( "$startstep" == "mintpy" || "$startstep" == "miaplpy" || "$startstep" == "finishup" ) ]]; then
+    echo "USER ERROR: Inconsistent options: --isce-start cannot be combined with --start $startstep." >&2
+    exit 1
+fi
+
+# Normalize start mode from explicit CLI ranges
+if [[ "$miaplpy_start_cli_flag" == "1" && "$startstep_cli_flag" == "0" ]]; then
+    startstep="miaplpy"
+elif [[ "$isce_start_cli_flag" == "1" && "$startstep_cli_flag" == "0" ]]; then
+    startstep="ifgram"
 fi
 
 if [[ $debug_flag == "1" ]]; then
@@ -398,17 +432,21 @@ elif [[ $stopstep != "" ]]; then
     exit 1
 fi
 
-# set isce_stop depending on coregistration method and workflow 
+# set isce_stop depending on coregistration method and workflow  (for Sentinel-1, for TSX/CSK/ENV we have --dostep ifgram but can be implemented)
 if [[ ${template[topsStack.coregistration]} == "geometry" ]]; then 
-    isce_stop=12
+    full_isce_run_stop=12
+    partial_isce_run_stop=8
     if [[ ${template[topsStack.workflow]} == "slc" ]]; then
-         isce_stop=8
+         full_isce_run_stop=8
+         partial_isce_run_stop=8
     fi
 else
     # for coregistration "NESD" or "auto" (default if not given)     
-    isce_stop=16
+    full_isce_run_stop=16
+    partial_isce_run_stop=12
     if [[ ${template[topsStack.workflow]} == "slc" ]]; then
-         isce_stop=12
+         full_isce_run_stop=12
+         partial_isce_run_stop=12
     fi
 fi
 
@@ -437,16 +475,29 @@ if [[ $preprocess_flag == "1" && $platform_str == *"SENTINEL-1"*  ]]; then
     fi # no preprocessing needed for asf-burst2stack and asf-slc
 fi
 
-# set isce_start/isce_stop to 1 or isce_start_cli and isce_stop or isce_stop_cli if given as arguments
+# set isce_start/isce_stop from CLI + defaults
 isce_start="${isce_start_cli:-1}"
-isce_stop="${isce_stop_cli:-$isce_stop}"
+if [[ "$isce_stop_cli_flag" == "1" ]]; then
+    isce_stop="$isce_stop_cli"
+elif [[ "$platform_str" == *"SENTINEL-1"* && "$isce_start_cli_flag" == "1" ]]; then
+    # For Sentinel: if user provides --isce-start but omits --isce-stop, run ifgram-only range.
+    isce_stop="$partial_isce_run_stop"
+else
+    isce_stop="$full_isce_run_stop"
+fi
 
-# switch off mintpy for slc workflow and if isce_stop less than required for full processing
+# switch off mintpy for slc workflow, geometry coregistration, and partial ISCE ranges
 if [[ ${template[topsStack.workflow]} == "slc" ]]; then
    mintpy_flag=0
 fi
-[[ ${template[topsStack.coregistration]} == "geometry" ]] && [[ $isce_stop != 12 ]] && mintpy_flag=0      
+[[ ${template[topsStack.coregistration]} == "geometry" ]] && mintpy_flag=0
+[[ ${template[topsStack.coregistration]} == "geometry" ]] && [[ $isce_stop != 12 ]] && mintpy_flag=0
 [[ ${template[topsStack.coregistration]} == "NESD" || ${template[topsStack.coregistration]} == "auto" ]] && [[ $isce_stop != 16 ]] && mintpy_flag=0
+
+# Starting at ifgram or later does not need orbit download.
+if [[ "$startstep" == "ifgram" || "$startstep" == "mintpy" || "$startstep" == "miaplpy" || "$startstep" == "finishup" ]]; then
+    orbit_download_flag=0
+fi
 
 
 echo "Switches: download_method: <$download_method> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
