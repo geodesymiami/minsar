@@ -22,14 +22,18 @@ usage() {
     echo "  --runfiles-dir DIR         Directory for run files when name has no path (default: $RUNFILES_DIR_DEFAULT)"
     echo ""
     echo "Examples:"
-    echo "  topsStack:"
+    echo ""
+    echo "topsStack:"
     echo "    $SCRIPT_NAME run_01_unpack_topo_reference run_02_unpack_secondary_slc run_03_average_baseline run_04_extract_burst_overlaps run_05_overlap_geo2rdr run_06_overlap_resample run_07_pairs_misreg run_08_timeseries_misreg"
     echo "    $SCRIPT_NAME run_09_fullBurst_geo2rdr run_10_fullBurst_resample run_11_extract_stack_valid_region run_12_merge_reference_secondary_slc run_13_generate_burst_igram run_14_merge_burst_igram run_15_filter_coherence run_16_unwrap"
-    echo "  stripmapStack:"
+    echo ""
+    echo "stripmapStack:"
     echo "    $SCRIPT_NAME run_01_crop run_02_reference run_03_focus_split run_04_geo2rdr_coarseResamp run_05_refineSecondaryTiming run_06_invertMisreg run_07_fineResamp run_08_grid_baseline run_09_igram"
-    echo "  miaplpy:"
-    echo "    $SCRIPT_NAME run_01_miaplpy_load_data run_02_miaplpy_phase_linking run_03_miaplpy_concatenate_patches run_04_miaplpy_generate_ifgram run_05_miaplpy_unwrap_ifgram run_06_miaplpy_load_ifgram run_07_mintpy_ifgram_correction run_08_miaplpy_invert_network"
-    echo "  All run files (exclude .job, .e, numbered suffixes):"
+    echo ""
+    echo "miaplpy:"
+    echo "    $SCRIPT_NAME run_01_miaplpy_load_data run_02_miaplpy_phase_linking run_03_miaplpy_concatenate_patches run_04_miaplpy_generate_ifgram run_05_miaplpy_unwrap_ifgram run_06_miaplpy_load_ifgram run_07_mintpy_ifgram_correction run_08_miaplpy_invert_network run_09_mintpy_timeseries_correction"
+    echo ""
+    echo "All run files (exclude .job, .e, numbered suffixes):"
     echo "    $SCRIPT_NAME \$(ls run_* | grep -vE '\\.(job|e)\$|_[0-9]+\$')"
     exit 0
 }
@@ -224,8 +228,13 @@ for run_arg in "${POSITIONAL[@]}"; do
         fs_out_mb=$(bytes_to_mb "$fs_out")
 
         write_header
+        # Truncate command only in data lines (header stays intact); max 120 chars then "..."
+        cmd_col="$first_line"
+        if [[ ${#first_line} -gt 120 ]]; then
+            cmd_col="${first_line:0:120}..."
+        fi
         printf "%-28s%s %11s %7s %8s %12s %13s  %s\n" \
-            "$run_basename" "$n" "$elapsed" "$user_pct" "$system_pct" "$fs_in_mb" "$fs_out_mb" "$first_line" >> "$OUTFILE"
+            "$run_basename" "$n" "$elapsed" "$user_pct" "$system_pct" "$fs_in_mb" "$fs_out_mb" "$cmd_col" >> "$OUTFILE"
 
         rm -f "$timelog"
     done

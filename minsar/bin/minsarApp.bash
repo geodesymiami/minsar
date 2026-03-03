@@ -251,8 +251,12 @@ done
 set -- "${POSITIONAL[@]}" # restore positional parameters
 
 if [[ ${#POSITIONAL[@]} -gt 1 ]]; then
-    echo "Unknown parameters provided: ${POSITIONAL[-1]}"
-    exit 1;
+    if [[ "$2" == -* ]]; then
+        echo "Unknown option: $2"
+    else
+        echo "Unknown parameters provided: $2"
+    fi
+    exit 1
 fi
 
 if [[ $debug_flag == "1" ]]; then

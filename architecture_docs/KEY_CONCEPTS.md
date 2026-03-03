@@ -166,7 +166,7 @@ MinSAR enforces limits beyond SLURM's defaults:
 
 | Limit | Purpose |
 |-------|---------|
-| `SJOBS_MAX_JOBS_PER_QUEUE` | Max jobs per user in queue |
+| `SJOBS_MAX_SUBMIT` | Max jobs to submit in queue (from queues.cfg MAX_SUBMIT) |
 | `SJOBS_STEP_MAX_TASKS` | Max tasks for current step |
 | `SJOBS_TOTAL_MAX_TASKS` | Max tasks across all steps |
 

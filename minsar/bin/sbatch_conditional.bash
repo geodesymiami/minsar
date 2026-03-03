@@ -144,14 +144,14 @@ if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     ADDITIONAL NOTES:                                                                                            
                                                                                                                     
     Maximum values for custom conditions are set using the following variables:                                  
-        1) \$SJOBS_MAX_JOBS_PER_QUEUE   (minsar/defaults/queues.cfg)                                             
+        1) \$SJOBS_MAX_SUBMIT           (minsar/defaults/queues.cfg, column MAX_SUBMIT)                             
         2) \$SJOBS_TOTAL_MAX_TASKS      (minsar/defaults/queues.cfg)                                             
         3) \$SJOBS_STEP_MAX_TASKS       (minsar/defaults/queues.cfg)                                             
                                                                                                                     
         Computation of \$SJOBS_STEP_MAX_TASKS also relies on a custom 'io_load' paramameter set in 
         minsar/defaults/job_defaults.cfg 
 
-        \$SJOBS_MAX_JOBS_PER_QUEUE, \$SJOBS_TOTAL_MAX_TASKS, and \$SJOBS_STEP_MAX_TASKS can be set in
+        \$SJOBS_MAX_SUBMIT, \$SJOBS_TOTAL_MAX_TASKS, and \$SJOBS_STEP_MAX_TASKS can be set in
         the default queues.cfg file or be overwritten by an external environmental variable of the same
         name (export SJOBS_STEP_MAX_TASKS=1).
         "
@@ -227,20 +227,20 @@ queue_info=$(grep "^[^#;]" $queues_file | grep $PLATFORM_NAME | grep $QUEUENAME)
 
 # Parse custom resource allocation limits from queues.cfg
 # If environment variable already exists, use that instead.
-if [ -z "$SJOBS_MAX_JOBS_PER_QUEUE" ]; then
-    SJOBS_MAX_JOBS_PER_QUEUE=$(echo $queue_info | awk '{print $7}')
+if [ -z "$SJOBS_MAX_SUBMIT" ]; then
+    SJOBS_MAX_SUBMIT=$(echo $queue_info | awk '{print $9}')
 else
-    SJOBS_MAX_JOBS_PER_QUEUE="${SJOBS_MAX_JOBS_PER_QUEUE}"
+    SJOBS_MAX_SUBMIT="${SJOBS_MAX_SUBMIT}"
 fi
 
 if [ -z "$SJOBS_STEP_MAX_TASKS" ]; then
-    SJOBS_STEP_MAX_TASKS=$(echo $queue_info | awk '{print $9}')
+    SJOBS_STEP_MAX_TASKS=$(echo $queue_info | awk '{print $11}')
 else
     SJOBS_STEP_MAX_TASKS="${SJOBS_STEP_MAX_TASKS}"
 fi
 
 if [ -z "$SJOBS_TOTAL_MAX_TASKS" ]; then
-    SJOBS_TOTAL_MAX_TASKS=$(echo $queue_info | awk '{print $10}')
+    SJOBS_TOTAL_MAX_TASKS=$(echo $queue_info | awk '{print $12}')
 else
     SJOBS_TOTAL_MAX_TASKS="${SJOBS_TOTAL_MAX_TASKS}"
 fi
@@ -283,7 +283,7 @@ sbatch_message=$(sbatch --test-only -Q $job_file)
 echot -e "${sbatch_message[@]:1}"
 
 # Check if submitting job_file will exceed custom resource limits
-if [[ $new_active_jobs   -le $SJOBS_MAX_JOBS_PER_QUEUE  ]]; then job_count="OK";        else job_count="FAILED";        fi
+if [[ $new_active_jobs   -le $SJOBS_MAX_SUBMIT  ]]; then job_count="OK";        else job_count="FAILED";        fi
 if [[ $new_tasks_step    -le $SJOBS_STEP_MAX_TASKS      ]]; then steptask_count="OK";   else steptask_count="FAILED";   fi
 if [[ $new_tasks_total   -le $SJOBS_TOTAL_MAX_TASKS     ]]; then task_count="OK";       else task_count="FAILED";       fi
 
@@ -296,7 +296,7 @@ fi
 echot -e "\n"
 echot -e "--> Verifying job request is within custom resource limits...$resource_check"
 echot -e "\t--> $num_tasks_job additional tasks."
-echot -e "\t[*] Job count \t\t($num_active_jobs/$SJOBS_MAX_JOBS_PER_QUEUE) --> ($new_active_jobs/$SJOBS_MAX_JOBS_PER_QUEUE)...$job_count"
+echot -e "\t[*] Job count \t\t($num_active_jobs/$SJOBS_MAX_SUBMIT) --> ($new_active_jobs/$SJOBS_MAX_SUBMIT)...$job_count"
 echot -e "\t[*] Step task count \t($num_active_tasks_step/$SJOBS_STEP_MAX_TASKS) --> ($new_tasks_step/$SJOBS_STEP_MAX_TASKS)...$steptask_count"
 echot -e "\t[*] Total task count \t($num_active_tasks_total/$SJOBS_TOTAL_MAX_TASKS) --> ($new_tasks_total/$SJOBS_TOTAL_MAX_TASKS)...$task_count"
 echot -e "\n"

@@ -57,7 +57,7 @@ test_help_flag() {
     assert_contains "$output" "sbatch" "Help mentions sbatch"
     assert_contains "$output" "job_file" "Help mentions job_file argument"
     assert_contains "$output" "--verbose" "Help documents --verbose option"
-    assert_contains "$output" "SJOBS_MAX_JOBS_PER_QUEUE" "Help documents resource limits"
+    assert_contains "$output" "SJOBS_MAX_SUBMIT" "Help documents resource limits"
     
     print_test_end "Help Flag"
 }

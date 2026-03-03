@@ -130,8 +130,8 @@ class JOB_SUBMIT:
             self.prefix = 'tops'
 
         self.submission_scheme, self.platform_name, self.scheduler, self.queue_name, \
-        self.number_of_cores_per_node, self.number_of_threads_per_core, self.max_jobs_per_workflow, \
-        self.max_memory_per_node, self.wall_time_factor, self.max_jobs_per_queue, \
+        self.number_of_cores_per_node, self.number_of_threads_per_core, self.max_jobs_pu, \
+        self.max_memory_per_node, self.wall_time_factor, self.max_submit, \
         self.max_nodes_per_job = set_job_queue_values(inps)
         self.number_of_parallel_tasks_per_node = 1
 
@@ -356,12 +356,12 @@ class JOB_SUBMIT:
             raise Exception("ERROR: scheduler {0} not supported".format(self.scheduler))
 
         # Wait if the queue is full (only for SLURM scheduler)
-        if self.scheduler == 'SLURM' and hasattr(self, 'max_jobs_per_queue') and self.max_jobs_per_queue:
+        if self.scheduler == 'SLURM' and hasattr(self, 'max_submit') and self.max_submit:
             while True:
                 num_active_jobs = self.get_num_active_jobs_in_queue()
-                if num_active_jobs < self.max_jobs_per_queue:
+                if num_active_jobs < self.max_submit:
                     break
-                print(f"Queue {self.queue} is full ({num_active_jobs}/{self.max_jobs_per_queue} jobs). Waiting 30 seconds...")
+                print(f"Queue {self.queue} is full ({num_active_jobs}/{self.max_submit} jobs). Waiting 30 seconds...")
                 time.sleep(30)
 
         output_job = subprocess.check_output(command, stderr=subprocess.STDOUT, shell=True)
@@ -530,15 +530,15 @@ class JOB_SUBMIT:
         number_of_jobs = number_of_nodes
         number_of_nodes_per_job = 1
 
-        max_jobs_per_workflow = self.max_jobs_per_workflow
+        max_jobs_pu = self.max_jobs_pu
 
         if ( "generate_burst_igram" in batch_file or "merge_burst_igram" in batch_file) :
-            max_jobs_per_workflow = 100
+            max_jobs_pu = 100
         # FA 4/2021: we should remove all jobs_per_workflow restrictions as this is done by submit_jobs.bash
         if 'singleNode' in self.submission_scheme:
-           max_jobs_per_workflow = 1000
-        #while number_of_jobs > int(self.max_jobs_per_workflow):
-        while number_of_jobs > int(max_jobs_per_workflow):
+           max_jobs_pu = 1000
+        #while number_of_jobs > int(self.max_jobs_pu):
+        while number_of_jobs > int(max_jobs_pu):
             number_of_nodes_per_job = number_of_nodes_per_job + 1
             number_of_jobs = np.ceil(number_of_nodes/number_of_nodes_per_job)
 
@@ -547,8 +547,8 @@ class JOB_SUBMIT:
         #if ( "run_15_filter_coherence" in batch_file) :
 
         while number_of_limited_memory_tasks < number_of_parallel_tasks:
-            #if number_of_jobs < int(self.max_jobs_per_workflow):
-            if number_of_jobs < int(max_jobs_per_workflow):
+            #if number_of_jobs < int(self.max_jobs_pu):
+            if number_of_jobs < int(max_jobs_pu):
                 number_of_jobs += 1
                 number_of_parallel_tasks = int(np.ceil(len(tasks) / number_of_jobs))
             else:
@@ -1472,11 +1472,11 @@ def set_job_queue_values(args):
     check_auto = {'queue_name': template['QUEUENAME'],
                   'number_of_cores_per_node': template['CPUS_PER_NODE'],
                   'number_of_threads_per_core': template['THREADS_PER_CORE'],
-                  'max_jobs_per_workflow': template['MAX_JOBS_PER_WORKFLOW'],
-                  'max_jobs_per_queue': template['MAX_JOBS_PER_QUEUE'],
+                  'max_jobs_pu': template['MAX_JOBS_PU'],
+                  'max_submit': template['MAX_SUBMIT'],
                   'wall_time_factor': template['WALLTIME_FACTOR'],
                   'max_memory_per_node': template['MEM_PER_NODE'],
-                  'max_nodes_per_job': template.get('MAX_NODES_PER_JOB', 'auto')}
+                  'max_nodes_per_job': template.get('MAX_NODES_PJ', template.get('MAX_NODES_PER_JOB', 'auto'))}
 
     for key in check_auto.keys():
         if not check_auto[key] == 'auto':
@@ -1503,16 +1503,17 @@ def set_job_queue_values(args):
                         check_auto['number_of_cores_per_node'] = int(split_values[queue_header.index('CPUS_PER_NODE')])
                     if check_auto['number_of_threads_per_core'] == 'auto':
                         check_auto['number_of_threads_per_core'] = int(split_values[queue_header.index('THREADS_PER_CORE')])
-                    if check_auto['max_jobs_per_queue'] == 'auto':
-                        check_auto['max_jobs_per_queue'] = int(split_values[queue_header.index('MAX_JOBS_PER_QUEUE')])
-                    if check_auto['max_jobs_per_workflow'] == 'auto':
-                        check_auto['max_jobs_per_workflow'] = int(split_values[queue_header.index('MAX_JOBS_PER_WORKFLOW')])
+                    if check_auto['max_submit'] == 'auto':
+                        check_auto['max_submit'] = int(split_values[queue_header.index('MAX_SUBMIT')])
+                    if check_auto['max_jobs_pu'] == 'auto':
+                        check_auto['max_jobs_pu'] = int(split_values[queue_header.index('MAX_JOBS_PU')])
                     if check_auto['max_memory_per_node'] == 'auto':
                         check_auto['max_memory_per_node'] = int(split_values[queue_header.index('MEM_PER_NODE')])
                     if check_auto['wall_time_factor'] == 'auto':
                         check_auto['wall_time_factor'] = float(split_values[queue_header.index('WALLTIME_FACTOR')])
                     if check_auto['max_nodes_per_job'] == 'auto':
-                        check_auto['max_nodes_per_job'] = int(split_values[queue_header.index('MAX_NODES_PER_JOB')])
+                        col = 'MAX_NODES_PJ' if 'MAX_NODES_PJ' in queue_header else 'MAX_NODES_PER_JOB'
+                        check_auto['max_nodes_per_job'] = int(split_values[queue_header.index(col)])
 
                     break
                 #else:
@@ -1533,8 +1534,8 @@ def set_job_queue_values(args):
             i += 1
 
     out_puts = (submission_scheme, platform_name, scheduler, check_auto['queue_name'], check_auto['number_of_cores_per_node'],
-                check_auto['number_of_threads_per_core'], check_auto['max_jobs_per_workflow'],
-                check_auto['max_memory_per_node'], check_auto['wall_time_factor'], check_auto['max_jobs_per_queue'],
+                check_auto['number_of_threads_per_core'], check_auto['max_jobs_pu'],
+                check_auto['max_memory_per_node'], check_auto['wall_time_factor'], check_auto['max_submit'],
                 check_auto['max_nodes_per_job'])
 
     return out_puts
@@ -1542,8 +1543,8 @@ def set_job_queue_values(args):
 
 def auto_template_not_existing_options(args):
 
-    job_options = ['QUEUENAME', 'CPUS_PER_NODE', 'THREADS_PER_CORE', 'MAX_JOBS_PER_WORKFLOW', 'MAX_JOBS_PER_QUEUE',
-                   'WALLTIME_FACTOR', 'MEM_PER_NODE', 'MAX_NODES_PER_JOB', 'job_submission_scheme']
+    job_options = ['QUEUENAME', 'CPUS_PER_NODE', 'THREADS_PER_CORE', 'MAX_JOBS_PU', 'MAX_SUBMIT',
+                   'WALLTIME_FACTOR', 'MEM_PER_NODE', 'MAX_NODES_PJ', 'job_submission_scheme']
 
     if hasattr(args, 'custom_template_file') and args.custom_template_file:
         from minsar.objects.dataset_template import Template
