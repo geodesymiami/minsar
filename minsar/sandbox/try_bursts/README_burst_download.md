@@ -4,7 +4,7 @@ This document describes how MinSAR builds **burst2safe** commands when using the
 
 ## Overview
 
-- **Download:** Bursts are downloaded (e.g. via `download_asf_burst.sh`) into a burst directory (typically `SLC/`) as `*BURST.tiff` files.
+- **Download:** Bursts are downloaded (e.g. via `download_burst2safe.sh`) into a burst directory (typically `SLC/`) as `*BURST.tiff` files.
 - **burst2safe:** Each burst2safe invocation converts a **group** of bursts into one ESA SAFE product. The script **bursts_to_burst2safe_jobfile.py** creates the runfile that lists one burst2safe command per group.
 - **ISCE:** The resulting `.SAFE` products are then unpacked and processed by ISCE (Sentinel1_TOPS) in the same way as SLC `.zip` products; multiple SAFEs per date are supported (see below).
 

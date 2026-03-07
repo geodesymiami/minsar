@@ -58,8 +58,8 @@ EOF
         create_save_hdfeos5_jobfile.py create_html.py upload_data_products.py \
         summarize_resource_usage.py generate_download_command.py remove_problem_data.py \
         generate_makedem_command.py makedem_sardem.sh make_zero_elevation_dem.py \
-        unpack_SLCs.py pack_bursts.sh cmd2jobfile.py download_asf_burst.sh \
-        download_burst2stack.sh download_asf.sh; do
+        unpack_SLCs.py pack_bursts.sh cmd2jobfile.py download_burst2safe.sh \
+        download_burst2stack.sh download_slc.sh; do
         make_mock_command "$TEST_TMP/mockbin" "$cmd"
     done
 

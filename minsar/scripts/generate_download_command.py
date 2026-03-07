@@ -123,30 +123,30 @@ def generate_download_command(template,inps):
         with open('download_ssara_python.cmd', 'w') as f:
             f.write(' '.join(ssara_slc_download_cmd_python) + '\n')
 
-    # create download_asf.sh
+    # create download_slc.sh (slc method)
     asf_slc_download_cmd = ['asf_search_args.py', '--processingLevel=SLC'] + ssaraopt + ['--dir=SLC', '--print', '--download']
-    with open('download_asf.sh', 'w') as f:
+    with open('download_slc.sh', 'w') as f:
         asf_slc_download_cmd = [arg for arg in asf_slc_download_cmd if arg != '--print']
         f.write(f"#!/usr/bin/env bash\n")
         f.write(' '.join(['asf_download.sh'] + asf_slc_download_cmd[1:]) + '\n')
         f.write(f"check_download.py $PWD/SLC --delete\n")
         f.write(' '.join(['asf_download.sh'] + asf_slc_download_cmd[1:]) + '\n')
-    #with open('download_asf.cmd', 'w') as f:
+    #with open('download_slc.cmd', 'w') as f:
     #    f.write(' '.join(asf_slc_download_cmd) + '\n')
 
-    # create download_asf_burst.sh (download only: listing + two download runs)
+    # create download_burst2safe.sh (burst2safe method: download only, listing + two download runs)
     asf_burst_download_opts = ['--processingLevel=BURST'] + ssaraopt + ['--dir=SLC']
     rel_orbit = dataset_template.options.get('ssaraopt.relativeOrbit', '')
     start_date = _to_iso_date(dataset_template.options.get('ssaraopt.startDate', '2000-01-01'))
     end_date = _to_iso_date(dataset_template.options.get('ssaraopt.endDate', '2099-12-31'))
     extent_args = ' '.join(str(x) for x in extent_list)  # W S E N (lon lat lon lat)
-    with open('download_asf_burst.sh', 'w') as f:
+    with open('download_burst2safe.sh', 'w') as f:
         f.write(f"#!/usr/bin/env bash\n")
         f.write(f"mkdir -p SLC\n")
         f.write(f"set -e\n")
         f.write(' '.join(['asf_download.sh'] + asf_burst_download_opts + ['--print', '>SLC/asf_burst_listing.txt']) + '\n')
-        f.write(' '.join(['asf_download.sh'] + asf_burst_download_opts + ['--download', '2>asf_burst_download1.e']) + '\n')
-        f.write(' '.join(['asf_download.sh'] + asf_burst_download_opts + ['--download', '2>asf_burst_download2.e']) + '\n')
+        f.write(' '.join(['asf_download.sh'] + asf_burst_download_opts + ['--download', '2>burst2safe_download1.e']) + '\n')
+        f.write(' '.join(['asf_download.sh'] + asf_burst_download_opts + ['--download', '2>burst2safe_download2.e']) + '\n')
 
     # create pack_bursts.sh (burst2safe jobfile, run_workflow, check, rerun timeouts)
     with open('pack_bursts.sh', 'w') as f:
@@ -160,17 +160,17 @@ def generate_download_command(template,inps):
         f.write("fi\n")
         f.write("# Need to convert to scripts/pack_bursts.bash SLC\n")
 
-    # create download_asf_burst2stack.sh (burst2stack command only)
-    with open('download_asf_burst2stack.sh', 'w') as f:
+    # create burst2stack_cmd.sh (burst2stack single-command; used by burst_download.bash)
+    with open('burst2stack_cmd.sh', 'w') as f:
         f.write("#!/usr/bin/env bash\n")
         f.write("set -e\n")
         f.write("mkdir -p SLC\n")
         f.write("cd SLC\n")
         f.write("burst2stack --rel-orbit " + str(rel_orbit) + " --start-date " + start_date + " --end-date " + end_date + " --extent " + extent_args + "\n")
         f.write("cd -\n")
-    os.chmod('download_asf_burst2stack.sh', 0o755)
+    os.chmod('burst2stack_cmd.sh', 0o755)
 
-    # create download_burst2stack.sh (burst_download.bash for asf-burst2stack / standalone mode)
+    # create download_burst2stack.sh (burst_download.bash for burst2stack / standalone mode)
     polygon_val = ssaraopt_dict.get('intersectsWith', '').strip("'\"")
     if not polygon_val:
         # intersects_string from generate_intersects_string: --intersectsWith='Polygon(...)'
@@ -189,8 +189,8 @@ def generate_download_command(template,inps):
         f.write(burst_download_cmd + "\n")
     os.chmod('download_burst2stack.sh', 0o755)
 
-    os.chmod('download_asf.sh', 0o755)
-    os.chmod('download_asf_burst.sh', 0o755)
+    os.chmod('download_slc.sh', 0o755)
+    os.chmod('download_burst2safe.sh', 0o755)
     os.chmod('pack_bursts.sh', 0o755)
 
     return

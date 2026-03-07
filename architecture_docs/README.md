@@ -64,7 +64,7 @@ minsarApp.bash
 
 | Step | Flag | Script/Job | Description |
 |------|------|------------|-------------|
-| download | `--dostep download` | download_asf_burst.sh | Download SLC data |
+| download | `--dostep download` | download_slc.sh / download_burst2safe.sh / download_burst2stack.sh | Download SLC data (method-dependent) |
 | dem | `--dostep dem` | makedem_sardem.sh | Download DEM |
 | jobfiles | `--dostep jobfiles` | create_runfiles.py | Create SLURM jobs |
 | ifgram | `--dostep ifgram` | run_01 - run_11/16 | ISCE processing |

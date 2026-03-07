@@ -14,12 +14,12 @@ This document describes the architecture of `burst_download.bash`: per-date ASF 
 |--------|----------|------|
 | burst_download.bash | minsar/scripts/burst_download.bash | Main entry: listing → run file → filter → xargs |
 | check_SAFE_completeness.py | minsar/scripts/check_SAFE_completeness.py | Remove incomplete .SAFE dirs (required files missing) |
-| generate_download_command.py | minsar/scripts/generate_download_command.py | Produces download_asf_burst.sh, download_asf_burst2stack.sh, **download_burst2stack.sh** |
+| generate_download_command.py | minsar/scripts/generate_download_command.py | Produces download_burst2safe.sh, burst2stack_cmd.sh, **download_burst2stack.sh** |
 | download_burst2stack.sh | (generated in work dir) | Executable script running burst_download.bash with --relativeOrbit, --intersectsWith, --start-date, --end-date, --parallel, --dir |
 
 ## Prerequisites
 
-- Run `generate_download_command.py` first so `download_asf_burst.sh` and `download_asf_burst2stack.sh` exist in the work directory.
+- Run `generate_download_command.py` first so `download_burst2safe.sh` and `burst2stack_cmd.sh` exist in the work directory.
 - `asf_download.sh` and `burst2stack` on PATH (or equivalent).
 
 ## Data flow
@@ -36,10 +36,10 @@ flowchart TD
     H --> I[Done]
 ```
 
-1. **Listing:** Execute the first (--print) line from `download_asf_burst.sh` → `SLC/asf_burst_listing.txt`.
+1. **Listing:** Execute the first (--print) line from `download_burst2safe.sh` → `SLC/asf_burst_listing.txt`.
 2. **Parse:** Data lines start with `YYYY-MM-DD`; use `grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}'` and `sed -E` (portable; no grep -oP).
-3. **run_burst2stack:** One line per date: `burst2stack ... 2> burst2stack_YYYYMMDD.e`. Rel-orbit and extent parsed from `download_asf_burst2stack.sh`. Per-date stderr only goes to `SLC/burst2stack_YYYYMMDD.e` (e.g. burst2stack_20141022.e).
-4. **4a – Incomplete SAFEs:** Run `check_SAFE_completeness.py "$slc_dir"`. Removes `.SAFE` dirs missing required paths (e.g. `preview/map-overlay.kml`), logs to `SLC/DATES_REMOVED.txt`. Handles timeout mid-write on SLURM restart.
+3. **run_burst2stack:** One line per date: `burst2stack ... 2> burst2stack_YYYYMMDD.e`. Rel-orbit and extent parsed from `burst2stack_cmd.sh`. Per-date stderr only goes to `SLC/burst2stack_YYYYMMDD.e` (e.g. burst2stack_20141022.e).
+4. **4a – Incomplete SAFEs:** Run `check_SAFE_completeness.py "$slc_dir"`. Removes `.SAFE` dirs missing required paths (e.g. `preview/map-overlay.kml`), logs to `SLC/dates_removed.txt`. Handles timeout mid-write on SLURM restart.
 5. **4b – Filter:** For each remaining `*.SAFE` in `$slc_dir`, extract date from name (`S1A_IW_SLC__1SDV_YYYYMMDDTHHMMSS_...` → `YYYY-MM-DD`) and remove lines with `--start-date YYYY-MM-DD ` from run_burst2stack. If file empty, exit 0.
 6. **Run:** `xargs -P "$num_parallel" -I {} bash -c 'cd SLC && {}' < run_burst2stack`. Parallelism = max(1, parallel / max_bursts_per_date).
 7. **Post-run verification and retry (Option A):** Run `check_SAFE_completeness.py` again (remove incomplete SAFEs from main pass). Compare expected dates (from run_burst2stack) vs actual complete SAFEs. Write `burst2stack_failures.txt` (one line per failed date: `YYYY-MM-DD  reason`), write `run_burst2stack_rerun` with burst2stack commands for failed dates. If non-empty: one retry pass via xargs, then run `check_SAFE_completeness.py` again (remove incomplete SAFEs from retry so re-verify correctly flags failures), then re-verify and rebuild failures/rerun files. If any still fail: print message and manual rerun command.
@@ -69,7 +69,7 @@ burst_download.bash [--relativeOrbit N] [--intersectsWith POL] [--start-date DAT
 | --parallel | 20 | Max parallel burst2stack jobs |
 | --skip-listing | off | Use existing asf_burst_listing.txt |
 
-**Template mode:** Use `download_asf_burst.sh` and `download_asf_burst2stack.sh` (from generate_download_command.py). **Standalone mode:** Pass both `--relativeOrbit` and `--intersectsWith`; no generated scripts needed.
+**Template mode:** Use `download_burst2safe.sh` and `burst2stack_cmd.sh` (from generate_download_command.py). **Standalone mode:** Pass both `--relativeOrbit` and `--intersectsWith`; no generated scripts needed.
 
 ## Example: how to run
 
@@ -80,11 +80,11 @@ cd $SCRATCHDIR/MyProject
 generate_download_command.py $TE/MyTemplate.template --delta-lat 0.0 --delta-lon 0.0
 ```
 
-This creates `download_asf_burst.sh`, `download_asf_burst2stack.sh`, and **download_burst2stack.sh** in the current directory.
+This creates `download_burst2safe.sh`, `burst2stack_cmd.sh`, and **download_burst2stack.sh** in the current directory.
 
 **2. Run burst_download.bash:**
 
-Template mode (uses download_asf_burst.sh and download_asf_burst2stack.sh):
+Template mode (uses download_burst2safe.sh and burst2stack_cmd.sh):
 
 ```bash
 $MINSAR_HOME/minsar/scripts/burst_download.bash --work-dir $SCRATCHDIR/MyProject --parallel 4
@@ -111,7 +111,7 @@ cd $SCRATCHDIR/MyProject
 sbatch --partition=skx-dev --time=02:00:00 --wrap="bash $MINSAR_HOME/minsar/scripts/burst_download.bash --work-dir $PWD --parallel 4"
 ```
 
-- `--work-dir`: directory containing download_asf_burst.sh and download_asf_burst2stack.sh (default: `.`).
+- `--work-dir`: directory containing download_burst2safe.sh and burst2stack_cmd.sh (default: `.`).
 - `--slc-dir`: SLC directory (default: `SLC`).
 - `--parallel`: max parallel burst2stack jobs (default: 20).
 - `--skip-listing`: use existing asf_burst_listing.txt; do not run asf_download --print.

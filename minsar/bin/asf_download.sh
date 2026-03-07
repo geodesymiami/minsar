@@ -32,22 +32,27 @@ timeout=86400          # total seconds before giving up
 
 start_time=$(date +%s)
 logfile="download_retry.log"
-> "$logfile"
+retry_count=0
+output_tmp=$(mktemp)
+trap 'rm -f "$output_tmp"' EXIT
 
 # Retry loop
 while true; do
-    echo "Starting download at $(date)" | tee -a "$logfile"
+    if [[ $retry_count -gt 0 ]]; then
+        echo "Starting download at $(date)" | tee -a "$logfile"
+    fi
     #set -x
     echo "running ... $cmd"
-    eval "$cmd"
-    exit_status="$?"
+    eval "$cmd" 2>&1 | tee "$output_tmp"
+    exit_status="${PIPESTATUS[0]}"
     if [ $exit_status -eq 0 ]; then
-        echo "Download completed successfully." | tee -a "$logfile"
+        [[ $retry_count -gt 0 ]] && echo "Download completed successfully." | tee -a "$logfile"
         break
     fi
 
-    # Check for HTTP 50x errors in the log
-    if grep -E "HTTP Error 50[0-9]|502 Server Error|50[0-9]: Proxy Error|50[0-9]: Internal Server Error" "$logfile"; then
+    # Check for HTTP 50x errors in the last run's output
+    if grep -q -E "HTTP Error 50[0-9]|502 Server Error|50[0-9]: Proxy Error|50[0-9]: Internal Server Error" "$output_tmp"; then
+        (( retry_count++ ))
         echo "Encountered server error (HTTP 50x). Retrying in $waittime seconds..." | tee -a "$logfile"
         sleep "$waittime"
 
@@ -59,8 +64,12 @@ while true; do
             exit 1
         fi
     else
-        echo "Download failed with non-retryable error. Exiting." | tee -a "$logfile"
-        exit $exit_code
+        if [[ $retry_count -gt 0 ]]; then
+            echo "Download failed with non-retryable error. Exiting." | tee -a "$logfile"
+        else
+            echo "Download failed with non-retryable error. Exiting." >&2
+        fi
+        exit $exit_status
     fi
 done
 

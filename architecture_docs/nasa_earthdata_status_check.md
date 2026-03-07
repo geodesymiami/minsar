@@ -41,7 +41,7 @@ Use these for debugging (e.g. `EARTHDATA_CHECK_INTERVAL=60 EARTHDATA_MAX_WAIT=60
 **Problem:** `minsar/bin/minsarApp.bash` runs the download script with redirects, e.g.:
 
 ```bash
-run_command "./download_asf_burst.sh  2>out_download_asf_burst.e 1>out_download_asf_burst.o"
+run_command "./download_burst2safe.sh  2>out_download_burst2safe.e 1>out_download_burst2safe.o"
 ```
 
 All stdout/stderr from the download script goes to files, so the status would not appear on the terminal.
@@ -50,7 +50,7 @@ All stdout/stderr from the download script goes to files, so the status would no
 
 **Changes to minsarApp.bash** (around lines 461–468):
 
-- For `asf-burst` and `asf-burst2stack`, before running the download script, run:
+- For `burst2safe` and `burst2stack`, before running the download script, run:
 
 ```bash
 run_command "check_nasa_earthdata_status.bash --wait"
@@ -60,7 +60,7 @@ run_command "check_nasa_earthdata_status.bash --wait"
 
 - Then run the download script as before.
 
-**Generated scripts** (`download_asf_burst.sh`, `download_asf_burst2stack.sh`) do **not** need to call the check; minsarApp.bash handles it. That keeps the check outside the redirected download output and guarantees visibility.
+**Generated scripts** (`download_burst2safe.sh`, `burst2stack_cmd.sh`) do **not** need to call the check; minsarApp.bash handles it. That keeps the check outside the redirected download output and guarantees visibility.
 
 ## 4. Integration into generate_download_command.py (alternative)
 
@@ -88,7 +88,7 @@ To see output when run via minsarApp.bash, minsarApp.bash would need to run the 
 |------|--------|
 | `minsar/scripts/check_nasa_earthdata_status.py` | Create: fetch status page, parse, exit 0/1 (no wait) |
 | `minsar/scripts/check_nasa_earthdata_status.bash` | Create: calls Python; with `--wait` loops using EARTHDATA_CHECK_INTERVAL / EARTHDATA_MAX_WAIT (defaults 300, 86400) |
-| `minsar/bin/minsarApp.bash` | Modify: for asf-burst and asf-burst2stack, run `check_nasa_earthdata_status.bash --wait` before download (no redirect so output appears on terminal) |
+| `minsar/bin/minsarApp.bash` | Modify: for burst2safe and burst2stack, run `check_nasa_earthdata_status.bash --wait` before download (no redirect so output appears on terminal) |
 
 ## 8. Optional: Skip Check
 

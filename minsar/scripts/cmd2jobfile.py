@@ -15,9 +15,9 @@ from minsar.objects import message_rsmas
 from minsar.job_submission import JOB_SUBMIT
 
 EXAMPLE = """Examples:
-  cmd2jobfile.py download_asf_burst2stack.sh
-  cmd2jobfile.py download_asf_burst2stack.sh --submit
-  cmd2jobfile.py download_asf_burst.sh --background
+  cmd2jobfile.py burst2stack_cmd.sh
+  cmd2jobfile.py burst2stack_cmd.sh --submit
+  cmd2jobfile.py download_burst2safe.sh --background
   cmd2jobfile.py -- my_command arg1 arg2
   cmd2jobfile.py my_script.sh --queue icx --walltime 0:30:00
 """

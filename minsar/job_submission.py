@@ -259,12 +259,14 @@ class JOB_SUBMIT:
                 tasks = f.readlines()
                 number_of_tasks = len(tasks)
 
-            number_of_nodes = int(np.ceil(number_of_tasks * float(self.default_num_threads) / (
-                    self.number_of_cores_per_node * self.number_of_threads_per_core)))
-
-            if not num_cores_per_task is None:
+            # num_cores_per_task set by callers (e.g. miaplpy run_02 phase_linking, concatenate_patches, unwrap_ifgram): nodes from tasks * cores_per_task.
+            if num_cores_per_task is not None:
                 self.number_of_parallel_tasks_per_node = self.number_of_cores_per_node // num_cores_per_task
-                number_of_nodes += num_cores_per_task
+                number_of_nodes = int(np.ceil(number_of_tasks * float(num_cores_per_task) / (
+                        self.number_of_cores_per_node * self.number_of_threads_per_core)))
+            else:
+                number_of_nodes = int(np.ceil(number_of_tasks * float(self.default_num_threads) / (
+                        self.number_of_cores_per_node * self.number_of_threads_per_core)))
 
             if 'singleTask' in self.submission_scheme:
 
