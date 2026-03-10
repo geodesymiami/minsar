@@ -736,6 +736,9 @@ if [[ $miaplpy_flag == "1" ]]; then
     # create index.html with all images
     run_command "create_html.py ${network_dir}/pic"
 
+    # add missing ORBIT_DIRECTION / relative_orbit to inputs H5 (for saarvey / upload)
+    run_command "add_missing_attributes.py ${miaplpy_dir_name}/inputs/slcStack.h5 ${miaplpy_dir_name}/inputs/geometryRadar.h5"
+
     # summarize profiling logs
     if [[ $PROFILE_FLAG == "True" ]]; then
         run_command "summarize_resource_usage.py $template_file SLC run_files ${network_dir}/run_files --outdir ${network_dir}/pic"

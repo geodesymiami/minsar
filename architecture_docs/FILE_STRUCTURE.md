@@ -75,6 +75,7 @@ Python scripts called by bash entry points:
 | `update_walltime_queuename.py` | Update job walltime after TIMEOUT |
 | `create_ingest_insarmaps_jobfile.py` | Create InsarMaps ingestion job |
 | `create_save_hdfeos5_jobfile.py` | Create HDF-EOS5 save job |
+| `add_missing_attributes.py` | Add ORBIT_DIRECTION and relative_orbit to slcStack.h5 / geometryRadar.h5 when missing |
 | `upload_data_products.py` | Upload products to Jetstream |
 
 ### `minsar/defaults/` - Configuration

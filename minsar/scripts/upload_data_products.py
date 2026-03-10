@@ -18,6 +18,7 @@ from minsar.objects import message_rsmas
 import minsar.utils.process_utilities as putils
 import minsar.job_submission as js
 from minsar.src.minsar.create_html import create_html
+from minsar.src.minsar.add_missing_attributes import add_missing_attributes_for_upload
 
 sys.path.insert(0, os.getenv('SSARAHOME'))
 import password_config as password
@@ -318,6 +319,9 @@ def main(iargs=None):
                 f.write(remote_url + "\n")
 
             remote_urls.append(remote_url)
+
+    # If miaplpy/inputs is uploaded and contains slcStack.h5, add missing ORBIT_DIRECTION / relative_orbit
+    add_missing_attributes_for_upload(inps.work_dir, inps.data_dirs)
 
     print('\n################')
     for data_dir in inps.data_dirs:
