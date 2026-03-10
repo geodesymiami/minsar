@@ -57,6 +57,7 @@ minsarApp.bash
 | [nasa_earthdata_status_check.md](./nasa_earthdata_status_check.md) | NASA Earthdata status check before ASF downloads (check_nasa_earthdata_status.py/.bash, env vars, minsarApp.bash integration) | Understanding or modifying download pre-checks |
 | [BURST_DOWNLOAD.md](./BURST_DOWNLOAD.md) | burst_download.bash: per-date burst2stack, SLURM restart (check_SAFE_completeness, filter by complete SAFEs) | ASF burst download and burst2stack flow |
 | [GEocode_HE5.md](./GEocode_HE5.md) | Geocode S1*.he5 (HDFEOS5) via thin wrapper over MintPy | Geocoding radar .he5 to geographic |
+| [tools/sarvey/docs/ARCHITECTURE.md](../tools/sarvey/docs/ARCHITECTURE.md) | SARvey: MTI time series tool (tools/sarvey), CLI, workflow, inputs | Using or integrating SARvey; displacement from SLC stack |
 
 ## Quick Lookup Tables
 
@@ -82,6 +83,7 @@ minsarApp.bash
 | `minsar/defaults/` | Configuration files |
 | `samples/` | Template examples |
 | `tests/` | Test suite |
+| `tools/sarvey/` | SARvey MTI time series package (standalone) |
 
 ### Key Environment Variables
 

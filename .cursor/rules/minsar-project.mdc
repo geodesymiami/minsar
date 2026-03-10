@@ -146,7 +146,9 @@ For `run_workflow.bash` internals: `minsar/bin/ARCHITECTURE.md`
 
 ## Coding Conventions
 
-**Scripts (Bash and Python):** Always make all bash and python scripts executable (e.g. `chmod +x script.bash`, `chmod +x script.py`). When creating or modifying scripts, ensure the executable bit is set.
+### Executable bit (required for new scripts)
+
+**When creating a new Python script (`.py`) or Bash script (`.bash`, `.sh`), always make it executable.** Run `chmod +x <path>` immediately after creating the file (e.g. `chmod +x minsar/scripts/flip_sign_bperp.py`). Apply the same when adding new scripts in any directory. This applies to both new files and any script that was copied or moved and may have lost the executable bit.
 
 ### Bash Scripts
 - Use `[[ ]]` for conditionals, not `[ ]`
