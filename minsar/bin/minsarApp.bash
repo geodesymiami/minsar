@@ -39,8 +39,7 @@ helptext="                                                                      
    --start STEP          start processing at the named step [default: download]. \n\
    --end STEP, --stop STEP                                                       \n\
    --dostep STEP         run processing at the named step only                   \n\
-   --download-method {asf-slc, asf-burst, asf-burst2stack, ssara-slc, ssara-bash, ssara-python} download method \n\
-          (default: asf-burst)                                                     \n\
+   --download-method {slc, burst2safe, burst2stack, ssara-slc, ssara-bash, ssara-python} (default: burst2stack) \n\
                                                                                  \n\
    --mintpy              use smallbaselineApp.py for time series [default]       \n\
    --miaplpy             use miaplpyApp.py                                       \n\
@@ -59,8 +58,6 @@ Debug options:                                                                  
    --start miaplpy --miaplpy-step 5
                                                                                  \n\
    Coding To Do:                                                                 \n\
-       - clean up run_workflow (remove smallbaseline.job insarmaps.job)          \n\
-       - create a command execution function (cmd_exec)                          \n\
        - create .minsarrc for defaults                                           \n
      "
     printf "$helptext"
@@ -120,7 +117,7 @@ mintpy_flag=1
 miaplpy_flag=0
 finishup_flag=1
 
-download_method="asf-burst"
+download_method="burst2stack"
 miaplpy_startstep=1
 miaplpy_stopstep=9
 
@@ -461,7 +458,7 @@ fi
 
 if [[ $platform_str =~ COSMO-SKYMED|TERRASAR-X|ENVISAT ]]; then
     download_dir="$WORK_DIR/SLC_ORIG"
-    [[ $download_method == *asf-burst* ]] && download_method="ssara-bash"
+    [[ $download_method == *burst2safe* ]] && download_method="ssara-bash"
 else
     # Sentinel-1
     download_dir="$WORK_DIR/SLC"
@@ -470,9 +467,9 @@ fi
 # set preprocess_flag for Sentinel-1
 if [[ $preprocess_flag == "1" && $platform_str == *"SENTINEL-1"*  ]]; then
     preprocess_flag=0
-    if [[ $download_method == "asf-burst" ]]; then
+    if [[ $download_method == "burst2safe" ]]; then
         preprocess_flag=1
-    fi # no preprocessing needed for asf-burst2stack and asf-slc
+    fi # no preprocessing needed for burst2stack and slc
 fi
 
 # set isce_start/isce_stop from CLI + defaults
@@ -486,13 +483,10 @@ else
     isce_stop="$full_isce_run_stop"
 fi
 
-# switch off mintpy for slc workflow, geometry coregistration, and partial ISCE ranges
-if [[ ${template[topsStack.workflow]} == "slc" ]]; then
+# switch off mintpy for slc workflow, or when user explicitly limits ISCE range via --isce-stop
+if [[ ${template[topsStack.workflow]} == "slc" || "$isce_stop_cli_flag" == "1" ]]; then
    mintpy_flag=0
 fi
-[[ ${template[topsStack.coregistration]} == "geometry" ]] && mintpy_flag=0
-[[ ${template[topsStack.coregistration]} == "geometry" ]] && [[ $isce_stop != 12 ]] && mintpy_flag=0
-[[ ${template[topsStack.coregistration]} == "NESD" || ${template[topsStack.coregistration]} == "auto" ]] && [[ $isce_stop != 16 ]] && mintpy_flag=0
 
 # Starting at ifgram or later does not need orbit download.
 if [[ "$startstep" == "ifgram" || "$startstep" == "mintpy" || "$startstep" == "miaplpy" || "$startstep" == "finishup" ]]; then
@@ -519,12 +513,12 @@ if [[ $download_flag == "1" ]]; then
 
     mkdir -p $download_dir
 
-    if [[ $download_method == "asf-burst" ]]; then
-        run_command "./download_asf_burst.sh  2>out_download_asf_burst.e 1>out_download_asf_burst.o"
-    elif [[ "$download_method" == "asf-burst2stack" ]]; then
+    if [[ $download_method == "burst2safe" ]]; then
+        run_command "./download_burst2safe.sh  2>out_download_burst2safe.e 1>out_download_burst2safe.o"
+    elif [[ "$download_method" == "burst2stack" ]]; then
         run_command "cmd2jobfile.py ./download_burst2stack.sh --submit"
-    elif [[ "$download_method" == "asf-slc" ]]; then
-        run_command "./download_asf.sh 2>out_download_asf.e 1>out_download_asf.o"
+    elif [[ "$download_method" == "slc" ]]; then
+        run_command "./download_slc.sh 2>out_download_slc.e 1>out_download_slc.o"
     elif [[ $download_method == "ssara-python" ]]; then
         cd $download_dir
         cmd=$(cat ../download_ssara_python.cmd)
@@ -565,10 +559,10 @@ if [[ $download_flag == "1" ]]; then
     fi
 fi
 
-# preprocess SLCs for non-Sentinel-1 platforms and asf-burst. No preprocessing needed for asf-slc and asf-burst2stack.
+# preprocess SLCs for non-Sentinel-1 platforms and burst2safe. No preprocessing needed for slc and burst2stack.
 if [[ $preprocess_flag == "1" ]]; then
     if [[ $platform_str == *"SENTINEL-1"*  ]]; then
-        if [[ $download_method == "asf-burst" ]]; then
+        if [[ $download_method == "burst2safe" ]]; then
             run_command "./pack_bursts.sh SLC"
         fi
     else
@@ -741,6 +735,9 @@ if [[ $miaplpy_flag == "1" ]]; then
 
     # create index.html with all images
     run_command "create_html.py ${network_dir}/pic"
+
+    # add missing ORBIT_DIRECTION / relative_orbit to inputs H5 (for saarvey / upload)
+    run_command "add_missing_attributes.py ${miaplpy_dir_name}/inputs/slcStack.h5 ${miaplpy_dir_name}/inputs/geometryRadar.h5"
 
     # summarize profiling logs
     if [[ $PROFILE_FLAG == "True" ]]; then

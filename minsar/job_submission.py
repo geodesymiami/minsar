@@ -259,12 +259,14 @@ class JOB_SUBMIT:
                 tasks = f.readlines()
                 number_of_tasks = len(tasks)
 
-            number_of_nodes = int(np.ceil(number_of_tasks * float(self.default_num_threads) / (
-                    self.number_of_cores_per_node * self.number_of_threads_per_core)))
-
-            if not num_cores_per_task is None:
+            # num_cores_per_task set by callers (e.g. miaplpy run_02 phase_linking, concatenate_patches, unwrap_ifgram): nodes from tasks * cores_per_task.
+            if num_cores_per_task is not None:
                 self.number_of_parallel_tasks_per_node = self.number_of_cores_per_node // num_cores_per_task
-                number_of_nodes += num_cores_per_task
+                number_of_nodes = int(np.ceil(number_of_tasks * float(num_cores_per_task) / (
+                        self.number_of_cores_per_node * self.number_of_threads_per_core)))
+            else:
+                number_of_nodes = int(np.ceil(number_of_tasks * float(self.default_num_threads) / (
+                        self.number_of_cores_per_node * self.number_of_threads_per_core)))
 
             if 'singleTask' in self.submission_scheme:
 
@@ -598,7 +600,7 @@ class JOB_SUBMIT:
         if number_of_nodes <= max_nodes:
             batch_file_name = batch_file + '_0'
             job_name = os.path.basename(batch_file_name)
-            job_file_lines = self.get_job_file_lines(batch_file, job_name, number_of_tasks=len(tasks),
+            job_file_lines = self.get_job_file_lines(job_name, batch_file_name, number_of_tasks=len(tasks),
                                                      number_of_nodes=number_of_nodes, work_dir=self.out_dir)
             self.job_files.append(self.add_tasks_to_job_file_lines(job_file_lines, tasks,
                                                                    batch_file=batch_file_name,
@@ -783,10 +785,11 @@ class JOB_SUBMIT:
         if self.email_notif:
             job_file_lines.append(prefix + email_option.format(os.getenv("NOTIFICATIONEMAIL")))
 
+        output_dir = os.path.abspath(work_dir) if work_dir else os.path.abspath(self.out_dir) if hasattr(self, 'out_dir') else os.getcwd()
         job_file_lines.extend([
             prefix + process_option.format(int(number_of_nodes), int(number_of_tasks)),
-            prefix + stdout_option.format(os.path.join(work_dir, job_file_name)),
-            prefix + stderr_option.format(os.path.join(work_dir, job_file_name)),
+            prefix + stdout_option.format(os.path.join(output_dir, job_file_name)),
+            prefix + stderr_option.format(os.path.join(output_dir, job_file_name)),
             prefix + queue_option.format(self.queue),
             prefix + walltime_limit_option.format(self.default_wall_time),
         ])

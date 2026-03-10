@@ -31,7 +31,7 @@ run_workflow.bash → submit_jobs.bash → sbatch_conditional.bash → SLURM sba
    - NESD/auto: full stop `16`, ifgram-only stop `12`
    - Sentinel only: if `--isce-start` is provided without `--isce-stop`, default to ifgram-only stop (`8`/`12`).
 5. Apply policy overrides:
-   - geometry coregistration forces `mintpy_flag=0`
+   - `mintpy_flag` is set to 0 only when workflow is `slc` or `--isce-stop` is given on the CLI
    - starting at `ifgram` or later disables orbit download
 6. Execute selected step blocks (`download`, `jobfiles`, `ifgram`, `mintpy`, `miaplpy`, etc.).
 
@@ -201,6 +201,28 @@ Steps:
 | `NODE_FAIL` | Resubmit immediately |
 | `FAILED` | Exit with error |
 | `CANCELLED` | Exit with error |
+
+### Timeout and Rerun Logic
+
+Rerun logic is implemented in `run_workflow.bash` and `update_walltime_queuename.py`. **minsarApp.bash** does not contain this logic; it calls `run_workflow.bash` for ifgram/mintpy/miaplpy steps, and rerun happens inside the job monitoring loop.
+
+**Flow**:
+1. `run_workflow.bash` monitors jobs via `sacct`. When state is `TIMEOUT`, it calls `update_walltime_queuename.py` on the job file, then resubmits via `submit_jobs.bash`.
+2. Resubmissions are logged to `$RUNFILES_DIR/rerun.log`.
+
+**Implementations**:
+
+| Location | Lines | Behavior |
+|----------|-------|----------|
+| `minsar/bin/run_workflow.bash` | 476–509 | Detect TIMEOUT, call `update_walltime_queuename.py`, resubmit |
+| `minsar/scripts/update_walltime_queuename.py` | 24–40 | 20% walltime increase; skx-dev → skx switch when needed |
+
+**update_walltime_queuename.py behavior**:
+- **Walltime**: Increases by 20% (`putils.multiply_walltime(wall_time, factor=1.2)`).
+- **skx-dev → skx switch** (Stampede3): On `QUEUE_DEV` (skx-dev), if the new walltime would exceed 2:00:00, the job is moved to `QUEUE_NORMAL` (skx), because skx-dev has a 2-hour walltime limit.
+- **Exceptions**: For job names containing `smallbaseline` or `download_burst2stack`, walltime is capped at 02:00:00 instead of switching queues.
+
+Queue names come from `setup/platforms_defaults.bash` (`QUEUE_DEV=skx-dev`, `QUEUE_NORMAL=skx` for Stampede3).
 
 ## Configuration Files
 

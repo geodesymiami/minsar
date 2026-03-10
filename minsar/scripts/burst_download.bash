@@ -5,8 +5,8 @@
 # Runs asf_download.sh --print to get burst listing, parses it for dates,
 # writes one burst2stack command per date, and runs them in parallel via xargs.
 #
-# Prerequisites: Run generate_download_command.py first so download_asf_burst.sh
-# and download_asf_burst2stack.sh exist in the work directory.
+# Prerequisites: Run generate_download_command.py first so download_burst2safe.sh
+# and burst2stack_cmd.sh exist in the work directory.
 #
 # Usage:
 #   burst_download.bash [--work-dir DIR] [--slc-dir DIR] [--parallel N] [--skip-listing] [--help]
@@ -129,12 +129,12 @@ if [[ -n "$relative_orbit" && -n "$intersects_with" ]]; then
 fi
 
 if [[ $standalone_mode -eq 0 ]]; then
-    if [[ ! -f download_asf_burst.sh ]]; then
-        echo "Error: download_asf_burst.sh not found in $work_dir. Run generate_download_command.py first, or pass --relativeOrbit and --intersectsWith." >&2
+    if [[ ! -f download_burst2safe.sh ]]; then
+        echo "Error: download_burst2safe.sh not found in $work_dir. Run generate_download_command.py first, or pass --relativeOrbit and --intersectsWith." >&2
         exit 1
     fi
-    if [[ ! -f download_asf_burst2stack.sh ]]; then
-        echo "Error: download_asf_burst2stack.sh not found in $work_dir. Run generate_download_command.py first, or pass --relativeOrbit and --intersectsWith." >&2
+    if [[ ! -f burst2stack_cmd.sh ]]; then
+        echo "Error: burst2stack_cmd.sh not found in $work_dir. Run generate_download_command.py first, or pass --relativeOrbit and --intersectsWith." >&2
         exit 1
     fi
 fi
@@ -151,8 +151,8 @@ if [[ $skip_listing -eq 0 ]]; then
             --start="$start_date" --end="$end_date" --parallel="$parallel" --dir="$slc_dir" --print \
             > "$slc_dir/asf_burst_listing.txt"
     else
-        # Template mode: execute first asf_download line from download_asf_burst.sh
-        first_line=$(grep 'asf_download' download_asf_burst.sh | head -1)
+        # Template mode: execute first asf_download line from download_burst2safe.sh
+        first_line=$(grep 'asf_download' download_burst2safe.sh | head -1)
         eval "$first_line"
     fi
 fi
@@ -191,13 +191,13 @@ _, ext = convert_intersects_string_to_extent_string(sys.argv[1])
 print(' '.join(str(x) for x in ext))
 " "$intersects_with")
 else
-    burst2stack_line=$(grep 'burst2stack' download_asf_burst2stack.sh | head -1)
+    burst2stack_line=$(grep 'burst2stack' burst2stack_cmd.sh | head -1)
     rel_orbit=$(echo "$burst2stack_line" | sed -E 's/.*--rel-orbit[= ]([^ ]+).*/\1/')
     extent=$(echo "$burst2stack_line" | sed -E 's/.*--extent[= ]([^ ]+ [^ ]+ [^ ]+ [^ ]+).*/\1/')
 fi
 
 if [[ -z "$rel_orbit" || -z "$extent" ]]; then
-    echo "Error: could not get rel_orbit or extent (standalone: check --relativeOrbit/--intersectsWith; template: check download_asf_burst2stack.sh)" >&2
+    echo "Error: could not get rel_orbit or extent (standalone: check --relativeOrbit/--intersectsWith; template: check burst2stack_cmd.sh)" >&2
     exit 1
 fi
 
