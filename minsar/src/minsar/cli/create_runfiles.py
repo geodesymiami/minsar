@@ -160,6 +160,7 @@ def main(iargs=None):
             shutil.move(inps.work_dir + '/coreg_secondarys', inps.work_dir + '/tmp_coreg_secondarys' ) 
 
     inps.num_data = 1
+    inps.out_dir = run_dir
     job_obj = JOB_SUBMIT(inps)
     runObj = CreateRun(inps)
     runObj.run_stack_workflow()

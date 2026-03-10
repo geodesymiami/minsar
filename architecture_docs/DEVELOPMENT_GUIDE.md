@@ -113,7 +113,7 @@ For scripts with many interacting CLI/template options (especially `minsar/bin/m
 2. **Load template defaults**: read `template[...]` settings and normalize `minsar.*` booleans.
 3. **Normalize mode**: infer missing start mode from range-style options (for example `--isce-start` => `startstep=ifgram`, `--miaplpy-start` => `startstep=miaplpy` when `--start` is not explicit).
 4. **Compute derived defaults**: choose step ranges from workflow/coregistration context.
-5. **Apply policy overrides once**: centralize rules like disabling MintPy for geometry coregistration.
+5. **Apply policy overrides once**: centralize rules like disabling MintPy for `slc` workflow or when `--isce-stop` is given.
 6. **Execute**: run step blocks based on final flags.
 
 This keeps precedence predictable and avoids scattered flag mutations across the script.

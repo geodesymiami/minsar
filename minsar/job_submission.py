@@ -600,7 +600,7 @@ class JOB_SUBMIT:
         if number_of_nodes <= max_nodes:
             batch_file_name = batch_file + '_0'
             job_name = os.path.basename(batch_file_name)
-            job_file_lines = self.get_job_file_lines(batch_file, job_name, number_of_tasks=len(tasks),
+            job_file_lines = self.get_job_file_lines(job_name, batch_file_name, number_of_tasks=len(tasks),
                                                      number_of_nodes=number_of_nodes, work_dir=self.out_dir)
             self.job_files.append(self.add_tasks_to_job_file_lines(job_file_lines, tasks,
                                                                    batch_file=batch_file_name,
@@ -785,10 +785,11 @@ class JOB_SUBMIT:
         if self.email_notif:
             job_file_lines.append(prefix + email_option.format(os.getenv("NOTIFICATIONEMAIL")))
 
+        output_dir = os.path.abspath(work_dir) if work_dir else os.path.abspath(self.out_dir) if hasattr(self, 'out_dir') else os.getcwd()
         job_file_lines.extend([
             prefix + process_option.format(int(number_of_nodes), int(number_of_tasks)),
-            prefix + stdout_option.format(os.path.join(work_dir, job_file_name)),
-            prefix + stderr_option.format(os.path.join(work_dir, job_file_name)),
+            prefix + stdout_option.format(os.path.join(output_dir, job_file_name)),
+            prefix + stderr_option.format(os.path.join(output_dir, job_file_name)),
             prefix + queue_option.format(self.queue),
             prefix + walltime_limit_option.format(self.default_wall_time),
         ])

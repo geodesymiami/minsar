@@ -483,13 +483,10 @@ else
     isce_stop="$full_isce_run_stop"
 fi
 
-# switch off mintpy for slc workflow, geometry coregistration, and partial ISCE ranges
-if [[ ${template[topsStack.workflow]} == "slc" ]]; then
+# switch off mintpy for slc workflow, or when user explicitly limits ISCE range via --isce-stop
+if [[ ${template[topsStack.workflow]} == "slc" || "$isce_stop_cli_flag" == "1" ]]; then
    mintpy_flag=0
 fi
-[[ ${template[topsStack.coregistration]} == "geometry" ]] && mintpy_flag=0
-[[ ${template[topsStack.coregistration]} == "geometry" ]] && [[ $isce_stop != 12 ]] && mintpy_flag=0
-[[ ${template[topsStack.coregistration]} == "NESD" || ${template[topsStack.coregistration]} == "auto" ]] && [[ $isce_stop != 16 ]] && mintpy_flag=0
 
 # Starting at ifgram or later does not need orbit download.
 if [[ "$startstep" == "ifgram" || "$startstep" == "mintpy" || "$startstep" == "miaplpy" || "$startstep" == "finishup" ]]; then

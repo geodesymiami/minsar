@@ -69,10 +69,11 @@ EOF
 write_template() {
     local path="$1"
     local coreg="$2"
+    local workflow="${3:-interferogram}"
     cat > "$path" << EOF
 ssaraopt.platform               = SENTINEL-1A,SENTINEL-1B
 topsStack.coregistration        = $coreg
-topsStack.workflow              = interferogram
+topsStack.workflow              = $workflow
 minsar.upload_flag              = False
 minsar.insarmaps_flag           = False
 minsar.upload_option            = None
@@ -145,9 +146,9 @@ test_miaplpy_start_without_start_disables_orbit_download() {
     print_test_end "MiaplPy start normalization"
 }
 
-test_geometry_always_disables_mintpy() {
-    print_test_start "Geometry disables MintPy" \
-        "Verifies mintpy_flag is forced off for geometry coregistration."
+test_geometry_does_not_disable_mintpy() {
+    print_test_start "Geometry does not disable MintPy" \
+        "Verifies mintpy_flag stays 1 for geometry (coregistration no longer overrides mintpy)."
     setup_minsar_app_test_env
 
     local tpl="$TEMPLATES/testproj.template"
@@ -159,11 +160,45 @@ test_geometry_always_disables_mintpy() {
         "minsarApp prints final resolved processing flags"
     assert_contains "$output" "jobfiles ifgram mintpy miaplpy upload insarmaps finishup" \
         "Flag header is present"
-    assert_contains "$output" "0        0       0      1       1       0" \
-        "Resolved flags show mintpy disabled for geometry"
+    assert_contains "$output" "0        0       0      1       1       1" \
+        "Resolved flags show mintpy enabled for geometry (workflow not slc, no --isce-stop)"
 
     teardown_test_workspace
-    print_test_end "Geometry disables MintPy"
+    print_test_end "Geometry does not disable MintPy"
+}
+
+test_slc_workflow_disables_mintpy() {
+    print_test_start "slc workflow disables MintPy" \
+        "Verifies mintpy_flag is 0 when topsStack.workflow is slc."
+    setup_minsar_app_test_env
+
+    local tpl="$TEMPLATES/testproj.template"
+    write_template "$tpl" "NESD" "slc"
+    local output
+    output="$(run_minsar_app "$tpl" --start jobfiles --skip-mintpy --skip-miaplpy)"
+
+    assert_contains "$output" "0        0       0      1       1       0" \
+        "Resolved flags show mintpy disabled for slc workflow"
+
+    teardown_test_workspace
+    print_test_end "slc workflow disables MintPy"
+}
+
+test_isce_stop_on_cli_disables_mintpy() {
+    print_test_start "--isce-stop on CLI disables MintPy" \
+        "Verifies mintpy_flag is 0 when user provides --isce-stop."
+    setup_minsar_app_test_env
+
+    local tpl="$TEMPLATES/testproj.template"
+    write_template "$tpl" "NESD"
+    local output
+    output="$(run_minsar_app "$tpl" --start jobfiles --isce-stop 8 --skip-mintpy --skip-miaplpy)"
+
+    assert_contains "$output" "0        0       0      1       1       0" \
+        "Resolved flags show mintpy disabled when --isce-stop is given"
+
+    teardown_test_workspace
+    print_test_end "--isce-stop on CLI disables MintPy"
 }
 
 test_inconsistent_start_and_miaplpy_start_exits() {
@@ -193,7 +228,9 @@ print_header "MINSARAPP OPTION RESOLUTION TEST SUITE"
 test_isce_start_implies_ifgram_and_geometry_stop_8
 test_isce_start_defaults_to_stop_12_for_nesd_auto
 test_miaplpy_start_without_start_disables_orbit_download
-test_geometry_always_disables_mintpy
+test_geometry_does_not_disable_mintpy
+test_slc_workflow_disables_mintpy
+test_isce_stop_on_cli_disables_mintpy
 test_inconsistent_start_and_miaplpy_start_exits
 
 print_summary
