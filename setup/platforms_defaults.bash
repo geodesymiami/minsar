@@ -14,7 +14,7 @@ export MAX_MEMORY_PER_NODE=16000
 
 ###############################################
 # options: singleTask, multiTask_multiNode, multiTask_singleNode, launcher_multiTask_multiNode, launcher_multiTask_singleNode
-export JOB_SUBMISSION_SCHEME=launcher_multiTask_singleNode
+export JOB_SUBMISSION_SCHEME=launcher_multiTask_multiNode
 
 #############################################
 ########### known platforms ##################
