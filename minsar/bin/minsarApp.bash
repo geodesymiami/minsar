@@ -23,6 +23,7 @@ helptext="                                                                      
       minsarApp.bash  $TE/GalapagosSenDT128.template --start miaplpy --miaplpy-start 6         \n\
       minsarApp.bash  $TE/GalapagosSenDT128.template --start miaplpy --miaplpy-start 6 --miaplpy-stop 6 \n\
       minsarApp.bash  $TE/GalapagosSenDT128.template --start miaplpy --miaplpy-step 6     \n\
+      minsarApp.bash  $TE/GalapagosSenDT128.template --miaplpy-stop 1     \n\
                                                                                  \n\
   Processing steps (start/end/dostep): \n\
    Command line options for steps processing with names are chosen from the following list: \n\
@@ -50,6 +51,9 @@ helptext="                                                                      
                                                                                  \n\
    --sleep SECS           sleep seconds before running                           \n\
    --chunks               process in form of multiple chunks.                    \n\
+                                                                                 \n\
+For sarvey:                                                                      \n\
+   --miaplpy-stop 1      to only run step 1 (load_slc_geometry.py) of miaplpy    \n\
                                                                                  \n\
 Debug options:                                                                   \n\
    --debug           sets set -x                                                 \n\
@@ -174,6 +178,7 @@ do
             shift
             ;;
         --isce-stop)
+            ifgram_flag=1
             isce_stop_cli="$2"
             isce_stop_cli_flag=1
             shift
@@ -199,6 +204,7 @@ do
             shift
             ;;
         --miaplpy-stop)
+            miaplpy_flag=1
             miaplpy_stopstep="$2"
             shift
             shift
@@ -729,15 +735,18 @@ if [[ $miaplpy_flag == "1" ]]; then
        run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start $miaplpy_startstep --stop $miaplpy_stopstep"
     fi
 
-    # create and run save_hdf5 jobfile
-    run_command "create_save_hdfeos5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME --walltime 0:30"
-    run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 10"
-
-    # create index.html with all images
-    run_command "create_html.py ${network_dir}/pic"
-
     # add missing ORBIT_DIRECTION / relative_orbit to inputs H5 (for saarvey / upload)
     run_command "add_missing_attributes.py ${miaplpy_dir_name}/inputs/slcStack.h5 ${miaplpy_dir_name}/inputs/geometryRadar.h5"
+
+    # create and run save_hdf5 jobfile (only when running full miaplpy through step 9)
+    if [[ "$miaplpy_stopstep" == "9" ]]; then
+        run_command "create_save_hdfeos5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME --walltime 0:30"
+        run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 10"
+
+        # create index.html with all images
+        run_command "create_html.py ${network_dir}/pic"
+
+    fi
 
     # summarize profiling logs
     if [[ $PROFILE_FLAG == "True" ]]; then
@@ -745,7 +754,7 @@ if [[ $miaplpy_flag == "1" ]]; then
     fi
 
     ## insarmaps
-    if [[ $insarmaps_flag == "1" ]]; then
+    if [[ $insarmaps_flag == "1" && "$miaplpy_stopstep" == "9" ]]; then
         run_command "create_ingest_insarmaps_jobfile.py $network_dir --dataset $insarmaps_dataset"
 
         # run jobfile

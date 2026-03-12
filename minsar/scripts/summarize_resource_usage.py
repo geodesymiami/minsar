@@ -221,6 +221,9 @@ def main(iargs=None):
             return (2, name)
         return (0, name)
 
+    if not os.path.isdir(inps.outdir):
+        os.makedirs(inps.outdir, exist_ok=True)
+
     with open(f"{inps.outdir}/walltimes_memory.log", "w") as f:
         f.write("\n".join(summary_lines) + "\n")        
         for group in sorted(data, key=group_sort_key):
