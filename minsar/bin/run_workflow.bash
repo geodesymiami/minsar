@@ -97,7 +97,6 @@ else
 fi
 
 randomorder=false
-rapid=false
 append=false
 dir_miaplpy="miaplpy"
 wait_time=30
@@ -139,11 +138,6 @@ do
             ;;
         --random)
             randomorder=true
-            shift
-            ;;
-        --rapid)
-            rapid=true
-            wait_time=10
             shift
             ;;
         --append)
@@ -188,6 +182,11 @@ do
 esac
 done
 set -- "${POSITIONAL[@]}" # restore positional parameters
+
+# SHORT_JOB_COMPLETION_WAITTIME=TRUE/True → 10 sec poll interval
+if [[ "${SHORT_JOB_COMPLETION_WAITTIME:-}" == [Tt]rue ]]; then
+    wait_time=10
+fi
 
 if [[ $startstep == "miaplpy" ]]; then
    miaplpy_flag=true
@@ -422,10 +421,6 @@ for g in "${globlist[@]}"; do
     if $randomorder; then
         sbc_command="$sbc_command --random"
         echo "Jobs are being submitted in random order. Submission order is likely different from the order above."
-    fi
-    if $rapid; then
-        sbc_command="$sbc_command --rapid"
-        echo "Rapid job submission enabled."
     fi
 
     ###############################

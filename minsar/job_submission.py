@@ -453,7 +453,8 @@ class JOB_SUBMIT:
 
         if wait_flag:
             i = 0
-            wait_time_sec = 60
+            # SHORT_JOB_COMPLETION_WAITTIME=TRUE/True → 10 sec poll interval
+            wait_time_sec = 10 if os.environ.get('SHORT_JOB_COMPLETION_WAITTIME', '').upper() == 'TRUE' else 60
             total_wait_time_min = 0
             time.sleep(2)
 

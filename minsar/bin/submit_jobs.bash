@@ -49,6 +49,9 @@ wait_time=300
 wait_time=120
 wait_time=60
 
+# SHORT_JOB_COMPLETION_WAITTIME=TRUE/True → 10 sec retry wait
+[[ "${SHORT_JOB_COMPLETION_WAITTIME:-}" == [Tt]rue ]] && wait_time=10
+
 while [[ $# -gt 0 ]]
 do
     key="$1"

@@ -506,6 +506,8 @@ echo "    $download_flag        $preprocess_flag       $dem_flag      $jobfiles_
 
 step_ranges="Step ranges: isce: $isce_start $isce_stop"
 [[ "$miaplpy_flag" == "1" ]] && step_ranges="$step_ranges  miaplpy: $miaplpy_startstep $miaplpy_stopstep"
+echo ""
+echo ""
 echo "$step_ranges"
 
 sleep 5

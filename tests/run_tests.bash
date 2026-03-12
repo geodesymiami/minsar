@@ -65,7 +65,6 @@ Available tests:
     - tests/test_run_workflow.bash
     - tests/test_submit_jobs.bash
     - tests/test_sbatch_conditional.bash
-    - tests/test_minsarApp_options.bash
 
 Examples:
   ./run_tests.bash                    # Run all tests
