@@ -114,6 +114,26 @@ def format_seconds(secs):
     """Format seconds as H:MM:SS."""
     return str(timedelta(seconds=int(round(secs))))
 
+
+##########################################################
+def get_launcher_params_from_job_file(job_file_path):
+    """Read LAUNCHER_PPN and LAUNCHER_NHOSTS from a .job file. Returns dict of param -> value or None."""
+    if not job_file_path or not os.path.isfile(job_file_path):
+        return None
+    params = {}
+    try:
+        with open(job_file_path) as f:
+            for line in f:
+                m = re.search(r'LAUNCHER_PPN\s*[=]\s*(\S+)', line)
+                if m:
+                    params['LAUNCHER_PPN'] = m.group(1).strip()
+                m = re.search(r'LAUNCHER_NHOSTS\s*[=]\s*(\S+)', line)
+                if m:
+                    params['LAUNCHER_NHOSTS'] = m.group(1).strip()
+    except (OSError, IOError):
+        return None
+    return params if params else None
+
 ##########################################################
 def get_slc_data_size_from_data(dir, number_of_bursts):
     
@@ -202,17 +222,22 @@ def main(iargs=None):
     if miaplpy_log_files:
        miaplpy_size_units = get_miaplpy_data_size_from_data(miaplpy_dir + '/inputs/')
 
-    summary_lines=[]
+    job_submission_scheme = os.environ.get('JOB_SUBMISSION_SCHEME', '')
+    summary_lines = []
     summary_lines.append(f"Number of bursts, azimuth looks, range looks, miaplpy_file_size: {number_of_bursts} {az_looks} {range_looks}")
     summary_lines.append(f"SLC and miaplpy burst units: {slc_size_units:.2f} {miaplpy_size_units:.3f}")
     summary_lines.append(f"Queue: {os.getenv('QUEUENAME')}")
+    summary_lines.append(f"JOB_SUBMISSION_SCHEME: {job_submission_scheme}")
 
     data = defaultdict(list)
+    group_dirs = {}
     for file in isce_log_files + miaplpy_log_files:
         mem_mb, wall_sec = parse_time_log_file(file)
         if mem_mb is not None:
             group = extract_runfile_name(file)
             data[group].append((mem_mb, wall_sec))
+            if group not in group_dirs:
+                group_dirs[group] = os.path.dirname(file)
 
     def group_sort_key(name):
         if "miaplpy" in name:
@@ -238,6 +263,11 @@ def main(iargs=None):
                 f"{group}: MaxMem={max_mem:.2f} MB  MedMem={med_mem:.2f} MB  "
                 f"MeanMem={mean_mem:.2f} MB  MaxWall={max_wall}  MeanWall={mean_wall}"
             )
+            job_file = os.path.join(group_dirs.get(group, ''), f"{group}_0.job")
+            launcher_params = get_launcher_params_from_job_file(job_file)
+            if launcher_params:
+                launcher_str = "  ".join(f"{k}={v}" for k, v in sorted(launcher_params.items()))
+                line = f"{line}  {launcher_str}"
             print(line)
             f.write(line + "\n")
 
