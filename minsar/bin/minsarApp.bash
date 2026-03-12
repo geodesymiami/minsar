@@ -23,7 +23,6 @@ helptext="                                                                      
       minsarApp.bash  $TE/GalapagosSenDT128.template --start miaplpy --miaplpy-start 6         \n\
       minsarApp.bash  $TE/GalapagosSenDT128.template --start miaplpy --miaplpy-start 6 --miaplpy-stop 6 \n\
       minsarApp.bash  $TE/GalapagosSenDT128.template --start miaplpy --miaplpy-step 6     \n\
-      minsarApp.bash  $TE/GalapagosSenDT128.template --miaplpy-stop 1     \n\
                                                                                  \n\
   Processing steps (start/end/dostep): \n\
    Command line options for steps processing with names are chosen from the following list: \n\
@@ -40,7 +39,8 @@ helptext="                                                                      
    --start STEP          start processing at the named step [default: download]. \n\
    --end STEP, --stop STEP                                                       \n\
    --dostep STEP         run processing at the named step only                   \n\
-   --download-method {slc, burst2safe, burst2stack, ssara-slc, ssara-bash, ssara-python} (default: burst2stack) \n\
+   --download-method {asf-slc, asf-burst ssara-slc, ssara-bash, ssara-python} download method \n\
+          (default: asf-burst)                                                     \n\
                                                                                  \n\
    --mintpy              use smallbaselineApp.py for time series [default]       \n\
    --miaplpy             use miaplpyApp.py                                       \n\
@@ -52,9 +52,6 @@ helptext="                                                                      
    --sleep SECS           sleep seconds before running                           \n\
    --chunks               process in form of multiple chunks.                    \n\
                                                                                  \n\
-For sarvey:                                                                      \n\
-   --miaplpy-stop 1      to only run step 1 (load_slc_geometry.py) of miaplpy    \n\
-                                                                                 \n\
 Debug options:                                                                   \n\
    --debug           sets set -x                                                 \n\
    --skip-mintpy     skip mintpy processing (but runs everything else)           \n\
@@ -62,6 +59,8 @@ Debug options:                                                                  
    --start miaplpy --miaplpy-step 5
                                                                                  \n\
    Coding To Do:                                                                 \n\
+       - clean up run_workflow (remove smallbaseline.job insarmaps.job)          \n\
+       - create a command execution function (cmd_exec)                          \n\
        - create .minsarrc for defaults                                           \n
      "
     printf "$helptext"
@@ -107,7 +106,6 @@ download_ECMWF_flag=1
 download_ECMWgF_before_mintpy_flag=0
 
 args=( "$@" )    # copy of command line arguments
-POSITIONAL=()
 
 ##################################
 create_template_array $template_file
@@ -121,16 +119,9 @@ mintpy_flag=1
 miaplpy_flag=0
 finishup_flag=1
 
-download_method="burst2stack"
+download_method="asf-burst"
 miaplpy_startstep=1
 miaplpy_stopstep=9
-
-# Track whether options were explicitly set on CLI
-startstep_cli_flag=0
-stopstep_cli_flag=0
-isce_start_cli_flag=0
-isce_stop_cli_flag=0
-miaplpy_start_cli_flag=0
 
 skip_mintpy_flag=0
 skip_miaplpy_flag=0
@@ -145,21 +136,17 @@ do
     case $key in
         --start)
             startstep="$2"
-            startstep_cli_flag=1
             shift # past argument
             shift # past value
             ;;
 	--stop)
             stopstep="$2"
-            stopstep_cli_flag=1
             shift
             shift
             ;;
 	--dostep)
             startstep="$2"
             stopstep="$2"
-            startstep_cli_flag=1
-            stopstep_cli_flag=1
             shift
             shift
             ;;
@@ -173,22 +160,17 @@ do
             ;;
         --isce-start)
             isce_start_cli="$2"
-            isce_start_cli_flag=1
             shift
             shift
             ;;
         --isce-stop)
-            ifgram_flag=1
             isce_stop_cli="$2"
-            isce_stop_cli_flag=1
             shift
             shift
             ;;
         --isce-step)
             isce_start_cli="$2"
             isce_stop_cli="$2"
-            isce_start_cli_flag=1
-            isce_stop_cli_flag=1
             shift
             shift
             ;;
@@ -198,13 +180,12 @@ do
             ;;
         --miaplpy-start)
             miaplpy_flag=1
-            miaplpy_start_cli_flag=1
+            [[ -z "$startstep" ]] && startstep="miaplpy"
             miaplpy_startstep="$2"
             shift
             shift
             ;;
         --miaplpy-stop)
-            miaplpy_flag=1
             miaplpy_stopstep="$2"
             shift
             shift
@@ -270,30 +251,8 @@ done
 set -- "${POSITIONAL[@]}" # restore positional parameters
 
 if [[ ${#POSITIONAL[@]} -gt 1 ]]; then
-    if [[ "$2" == -* ]]; then
-        echo "Unknown option: $2"
-    else
-        echo "Unknown parameters provided: $2"
-    fi
-    exit 1
-fi
-
-# Validate incompatible option combinations before deriving defaults.
-if [[ "$miaplpy_start_cli_flag" == "1" && "$startstep_cli_flag" == "1" && "$startstep" != "miaplpy" ]]; then
-    echo "USER ERROR: Inconsistent options: --miaplpy-start requires --start miaplpy (or omit --start)." >&2
-    exit 1
-fi
-
-if [[ "$isce_start_cli_flag" == "1" && "$startstep_cli_flag" == "1" && ( "$startstep" == "mintpy" || "$startstep" == "miaplpy" || "$startstep" == "finishup" ) ]]; then
-    echo "USER ERROR: Inconsistent options: --isce-start cannot be combined with --start $startstep." >&2
-    exit 1
-fi
-
-# Normalize start mode from explicit CLI ranges
-if [[ "$miaplpy_start_cli_flag" == "1" && "$startstep_cli_flag" == "0" ]]; then
-    startstep="miaplpy"
-elif [[ "$isce_start_cli_flag" == "1" && "$startstep_cli_flag" == "0" ]]; then
-    startstep="ifgram"
+    echo "Unknown parameters provided: ${POSITIONAL[-1]}"
+    exit 1;
 fi
 
 if [[ $debug_flag == "1" ]]; then
@@ -323,13 +282,13 @@ fi
 # adjust switches according to template options if upload_flag is not given on command line
 if [[ ! -v upload_flag ]]; then
    if [[ -n ${template[minsar.upload_flag]+_} ]]; then
-       if [[ ${template[minsar.upload_flag]} == "True" ]]; then
-           upload_flag=1
-       else
+       if [[ ${template[minsar.upload_flag]} == "False" ]]; then
            upload_flag=0
+       else
+           upload_flag=1
        fi
    else
-       upload_flag=0
+       upload_flag=1
    fi
 fi
 
@@ -435,21 +394,17 @@ elif [[ $stopstep != "" ]]; then
     exit 1
 fi
 
-# set isce_stop depending on coregistration method and workflow  (for Sentinel-1, for TSX/CSK/ENV we have --dostep ifgram but can be implemented)
+# set isce_stop depending on coregistration method and workflow 
 if [[ ${template[topsStack.coregistration]} == "geometry" ]]; then 
-    full_isce_run_stop=12
-    partial_isce_run_stop=8
+    isce_stop=12
     if [[ ${template[topsStack.workflow]} == "slc" ]]; then
-         full_isce_run_stop=8
-         partial_isce_run_stop=8
+         isce_stop=8
     fi
 else
     # for coregistration "NESD" or "auto" (default if not given)     
-    full_isce_run_stop=16
-    partial_isce_run_stop=12
+    isce_stop=16
     if [[ ${template[topsStack.workflow]} == "slc" ]]; then
-         full_isce_run_stop=12
-         partial_isce_run_stop=12
+         isce_stop=12
     fi
 fi
 
@@ -464,7 +419,7 @@ fi
 
 if [[ $platform_str =~ COSMO-SKYMED|TERRASAR-X|ENVISAT ]]; then
     download_dir="$WORK_DIR/SLC_ORIG"
-    [[ $download_method == *burst2safe* ]] && download_method="ssara-bash"
+    [[ $download_method == *asf-burst* ]] && download_method="ssara-bash"
 else
     # Sentinel-1
     download_dir="$WORK_DIR/SLC"
@@ -473,31 +428,21 @@ fi
 # set preprocess_flag for Sentinel-1
 if [[ $preprocess_flag == "1" && $platform_str == *"SENTINEL-1"*  ]]; then
     preprocess_flag=0
-    if [[ $download_method == "burst2safe" ]]; then
+    if [[ $download_method == "asf-burst" ]]; then
         preprocess_flag=1
-    fi # no preprocessing needed for burst2stack and slc
+    fi # no preprocessing needed for asf-burst2stack and asf-slc
 fi
 
-# set isce_start/isce_stop from CLI + defaults
+# set isce_start/isce_stop to 1 or isce_start_cli and isce_stop or isce_stop_cli if given as arguments
 isce_start="${isce_start_cli:-1}"
-if [[ "$isce_stop_cli_flag" == "1" ]]; then
-    isce_stop="$isce_stop_cli"
-elif [[ "$platform_str" == *"SENTINEL-1"* && "$isce_start_cli_flag" == "1" ]]; then
-    # For Sentinel: if user provides --isce-start but omits --isce-stop, run ifgram-only range.
-    isce_stop="$partial_isce_run_stop"
-else
-    isce_stop="$full_isce_run_stop"
-fi
+isce_stop="${isce_stop_cli:-$isce_stop}"
 
-# switch off mintpy for slc workflow, or when user explicitly limits ISCE range via --isce-stop
-if [[ ${template[topsStack.workflow]} == "slc" || "$isce_stop_cli_flag" == "1" ]]; then
+# switch off mintpy for slc workflow and if isce_stop less than required for full processing
+if [[ ${template[topsStack.workflow]} == "slc" ]]; then
    mintpy_flag=0
 fi
-
-# Starting at ifgram or later does not need orbit download.
-if [[ "$startstep" == "ifgram" || "$startstep" == "mintpy" || "$startstep" == "miaplpy" || "$startstep" == "finishup" ]]; then
-    orbit_download_flag=0
-fi
+[[ ${template[topsStack.coregistration]} == "geometry" ]] && [[ $isce_stop != 12 ]] && mintpy_flag=0      
+[[ ${template[topsStack.coregistration]} == "NESD" || ${template[topsStack.coregistration]} == "auto" ]] && [[ $isce_stop != 16 ]] && mintpy_flag=0
 
 
 echo "Switches: download_method: <$download_method> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
@@ -519,21 +464,24 @@ if [[ $download_flag == "1" ]]; then
 
     mkdir -p $download_dir
 
-    if [[ $download_method == "burst2safe" ]]; then
-        run_command "./download_burst2safe.sh  2>out_download_burst2safe.e 1>out_download_burst2safe.o"
-    elif [[ "$download_method" == "burst2stack" ]]; then
-        run_command "cmd2jobfile.py ./download_burst2stack.sh --submit"
-    elif [[ "$download_method" == "slc" ]]; then
-        run_command "./download_slc.sh 2>out_download_slc.e 1>out_download_slc.o"
+    if [[ $download_method == "asf-burst" ]]; then
+        run_command "./download_asf_burst.sh  2>out_download_asf_burst.e 1>out_download_asf_burst.o"
+    elif [[ "$download_method" == "asf-burst2stack" ]]; then
+        run_command "cmd2jobfile.py ./download_asf_burst2stack.sh --submit"
+    elif [[ "$download_method" == "asf-slc" ]]; then
+        run_command "./download_asf.sh 2>out_download_asf.e 1>out_download_asf.o"
     elif [[ $download_method == "ssara-python" ]]; then
         cd $download_dir
-        cmd=$(cat ../download_ssara_python.cmd)
-        run_command "$cmd"
+        # Looping to support multiple collections and seasonal (snow-free) download
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            [[ -n "$line" ]] && run_command "$line"
+        done < ../download_ssara_python.cmd
         cd ..
     elif [[ $download_method == "ssara-bash" || $download_method == "ssara" ]]; then
         cd $download_dir
-        cmd=$(cat ../download_ssara_bash.cmd)
-        run_command "$cmd"
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            [[ -n "$line" ]] && run_command "$line"
+        done < ../download_ssara_bash.cmd
         cd ..
     elif [[ $download_method == "remote_data_dir" ]]; then
         cd $download_dir
@@ -543,11 +491,6 @@ if [[ $download_flag == "1" ]]; then
     else
         echo "ERROR: Unknown download method <$download_method>, Exiting"
         exit 1
-    fi
-
-    # Remove S1 acquisitions affected by degraded burst sync
-    if [[ $platform_str == *"SENTINEL-1"* && -d "$download_dir" ]]; then
-        run_command "remove_problem_data.py $download_dir"
     fi
 
     # remove excluded dates
@@ -560,15 +503,15 @@ if [[ $download_flag == "1" ]]; then
            echo "Remove $date if exist"
            files="$download_dir/*$date*"
            echo "Removing: $files"
-           rm -rf $files
+           rm -f $files
        done
     fi
 fi
 
-# preprocess SLCs for non-Sentinel-1 platforms and burst2safe. No preprocessing needed for slc and burst2stack.
+# preprocess SLCs for non-Sentinel-1 platforms and asf-burst. No preprocessing needed for asf-slc and asf-burst2stack.
 if [[ $preprocess_flag == "1" ]]; then
     if [[ $platform_str == *"SENTINEL-1"*  ]]; then
-        if [[ $download_method == "burst2safe" ]]; then
+        if [[ $download_method == "asf-burst" ]]; then
             run_command "./pack_bursts.sh SLC"
         fi
     else
@@ -686,7 +629,7 @@ if [[ $mintpy_flag == "1" ]]; then
 
     if [[ $skip_mintpy_flag != "1" ]]; then
         # run MintPy
-        run_command "run_workflow.bash --dostep mintpy"
+        run_command "run_workflow.bash --append --dostep mintpy"
     fi
 
     # summarize profiling logs
@@ -732,20 +675,22 @@ if [[ $miaplpy_flag == "1" ]]; then
        run_command "run_workflow.bash $template_file --jobfile $PWD/create_miaplpy_jobfiles.job"
 
        # run miaplpy jobfiles
-       run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start $miaplpy_startstep --stop $miaplpy_stopstep"
+       run_command "run_workflow.bash $template_file --append --dir $miaplpy_dir_name --start $miaplpy_startstep --stop $miaplpy_stopstep"
     fi
 
     # add missing ORBIT_DIRECTION / relative_orbit to inputs H5 (for saarvey / upload)
     run_command "add_missing_attributes.py ${miaplpy_dir_name}/inputs/slcStack.h5 ${miaplpy_dir_name}/inputs/geometryRadar.h5"
+    if [[ $platform_str == *"SENTINEL-1"* ]]; then
+        run_command "flip_sign_bperp.py ${miaplpy_dir_name}/inputs/slcStack.h5"
+    fi
 
-    # create and run save_hdf5 jobfile (only when running full miaplpy through step 9)
-    if [[ "$miaplpy_stopstep" == "9" ]]; then
+    # create and run save_hdf5 jobfile
+    if [[ "$miaplpy_stopstep" == 9 ]]; then
         run_command "create_save_hdfeos5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME --walltime 0:30"
         run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 10"
 
         # create index.html with all images
         run_command "create_html.py ${network_dir}/pic"
-
     fi
 
     # summarize profiling logs
@@ -754,7 +699,7 @@ if [[ $miaplpy_flag == "1" ]]; then
     fi
 
     ## insarmaps
-    if [[ $insarmaps_flag == "1" && "$miaplpy_stopstep" == "9" ]]; then
+    if [[ $insarmaps_flag == "1" ]]; then
         run_command "create_ingest_insarmaps_jobfile.py $network_dir --dataset $insarmaps_dataset"
 
         # run jobfile
@@ -764,7 +709,13 @@ if [[ $miaplpy_flag == "1" ]]; then
     fi
 
     # upload data products
-    run_command "upload_data_products.py $network_dir ${template[minsar.upload_option]}"
+    if [[ $upload_flag == "1" ]]; then
+        if [[ "$miaplpy_stopstep" == "1" ]]; then
+            run_command "upload_data_products.py ${miaplpy_dir_name}/inputs ${template[minsar.upload_option]}"
+        else
+            run_command "upload_data_products.py $network_dir ${template[minsar.upload_option]}"
+        fi
+    fi
 
 fi
 
