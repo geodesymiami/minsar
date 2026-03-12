@@ -476,42 +476,6 @@ EOF
 }
 
 #####################################################################
-# Function: get_reference_date:  prints the reference date for a processed dataset
-# Usage: get_reference_date
-function get_reference_date(){
-   reference_date=( $(xmllint --xpath 'string(/productmanager_name/component[@name="instance"]/component[@name="bursts"]/component[@name="burst1"]/property[@name="burststartutc"]/value)' \
-                    reference/IW*.xml | cut -d ' ' -f 1 | sed "s|-||g") )
-   echo $reference_date
-}
-
-#####################################################################
-# Function: countbursts: Counts the number of bursts in a dataset.
-# Usage: countbursts <dataset>
-function countbursts(){
-                   #set -xv
-                   subswaths=geom_reference/*
-                   unset array
-                   declare -a array
-                   for subswath in $subswaths; do
-                       icount=`ls $subswath/hgt*rdr | wc -l`
-                       array+=($(basename $icount))
-                   done;
-                   reference_date=$(get_reference_date)
-                   echo "geom_reference/$reference_date   #of_bursts: `ls geom_reference/IW*/hgt*rdr | wc -l`   ${array[@]}"
-
-                   dates="coreg_secondarys/*"
-                   for date in $dates; do
-                       subswaths=$date/???
-                       unset array
-                       declare -a array
-                       for subswath in $subswaths; do
-                           icount=`ls $subswath/burst*xml | wc -l`
-                           array+=($(basename $icount))
-                       done;
-                       echo "$date #of_bursts: `ls $date/IW*/burst*xml | wc -l`   ${array[@]}"
-                   done;
-                   }
-
 # Function to exttract hvGalapagos from hvGalapagosSenA106/mintpy
 # Works for both relative paths (StromboliSenD124/...) and absolute paths (/data/HDF5EOS/StromboliSenD124/...)
 get_base_projectname() {

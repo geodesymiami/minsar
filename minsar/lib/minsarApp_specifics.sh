@@ -133,27 +133,45 @@ function get_reference_date(){
 #####################################################################
 function countbursts(){
                    #set -xv
-                   subswaths=geom_reference/*
+                   # geom_reference: only IW* subdirs have hgt*rdr; overlap has none
+                   subswaths="geom_reference"/IW*
                    unset array
                    declare -a array
                    for subswath in $subswaths; do
-                       icount=`ls $subswath/hgt*rdr | wc -l`
-                       array+=($(basename $icount))
-                   done;
+                       [[ -d "$subswath" ]] || continue
+                       icount=$(ls "$subswath"/hgt*rdr 2>/dev/null | wc -l)
+                       array+=("$icount")
+                   done
                    reference_date=$(get_reference_date)
-                   echo "geom_reference/$reference_date   #of_bursts: `ls geom_reference/IW*/hgt*rdr | wc -l`   ${array[@]}"
+                   total_geom=$(ls geom_reference/IW*/hgt*rdr 2>/dev/null | wc -l)
+                   echo "geom_reference/$reference_date   #of_bursts: $total_geom   ${array[*]}"
 
                    dates="coreg_secondarys/*"
                    for date in $dates; do
-                       subswaths=$date/???
+                       [[ -d "$date" ]] || continue
+                       # Prefer date/IW* (standard); fallback to date/overlap/IW*
+                       subswaths=("$date"/IW*)
+                       if [[ ! -d "${subswaths[0]}" ]]; then
+                           subswaths=("$date"/overlap/IW*)
+                       fi
                        unset array
                        declare -a array
-                       for subswath in $subswaths; do
-                           icount=`ls $subswath/burst*xml | wc -l`
-                           array+=($(basename $icount))
-                       done;
-                       echo "$date #of_bursts: `ls $date/IW*/burst*xml | wc -l`   ${array[@]}"
-                   done;
+                       total=0
+                       for subswath in "${subswaths[@]}"; do
+                           [[ -d "$subswath" ]] || continue
+                           icount=$(ls "$subswath"/burst*xml 2>/dev/null | wc -l)
+                           array+=("$icount")
+                           total=$((total + icount))
+                       done
+                       # 1-burst: ISCE may write only overlap (IW1_top.xml, IW1_bottom.xml), no burst_01.slc.xml
+                       if [[ "$total" -eq 0 ]] && [[ -d "$date/overlap" ]]; then
+                           if [[ -d "$date/overlap/IW1" ]] || [[ -f "$date/overlap/IW1_top.xml" ]] || [[ -f "$date/overlap/IW1_bottom.xml" ]]; then
+                               total=1
+                               array=(1)
+                           fi
+                       fi
+                       echo "$date #of_bursts: $total   ${array[*]}"
+                   done
                    }
 #####################################################################
 function check_bursts(){
