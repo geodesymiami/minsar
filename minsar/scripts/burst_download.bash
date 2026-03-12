@@ -213,7 +213,7 @@ d = datetime.strptime('$d', '%Y-%m-%d')
 print((d + timedelta(days=1)).strftime('%Y-%m-%d'))
 ")
     d_compact=$(echo "$d" | tr -d '-')
-    echo "burst2stack --rel-orbit $rel_orbit --start-date $d --end-date $end_date --extent $extent --keep-files --all-anns 2> burst2stack_${d_compact}.e" >> "$run_file"
+    echo "burst2stack --rel-orbit $rel_orbit --start-date $d --end-date $end_date --extent $extent --keep-files --all-anns --pols VV 2> burst2stack_${d_compact}.e" >> "$run_file"
 done
 
 echo "Wrote $run_file with $(wc -l < "$run_file" | tr -d ' \n') burst2stack commands."
