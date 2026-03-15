@@ -77,6 +77,7 @@ Python scripts called by bash entry points:
 | `create_save_hdfeos5_jobfile.py` | Create HDF-EOS5 save job |
 | `add_missing_attributes.py` | Add ORBIT_DIRECTION and relative_orbit to slcStack.h5 / geometryRadar.h5 when missing |
 | `upload_data_products.py` | Upload products to Jetstream |
+| `get_sar_coverage.py` | Show SAR coverage (orbits, incidence, subswath) for an AOI using ASF Search |
 
 ### `minsar/defaults/` - Configuration
 
