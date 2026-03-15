@@ -12,7 +12,111 @@ import argparse
 import os
 import re
 import sys
-from datetime import date
+from datetime import date, datetime
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description='Download OPERA displacement products from ASF for a polygon AOI.',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+            Uses credentials from password_config.py (asfuser/asfpass), same as asf_search_args.py.
+            Falls back to .netrc or EARTHDATA_* env vars if password_config is not available.
+
+            Example:
+            %(prog)s "POLYGON((-86.6038 12.3781,-86.4486 12.3781,-86.4486 12.4899,-86.6038 12.4899,-86.6038 12.3781))" --print
+            %(prog)s "POLYGON((-86.6038 12.3781,-86.4486 12.3781,-86.4486 12.4899,-86.6038 12.4899,-86.6038 12.3781))" --download --dir ./opera_disp
+                    """,
+    )
+    parser.add_argument(
+        'polygon',
+        type=str,
+        help='WKT POLYGON string, e.g. POLYGON((-86.6 12.38,-86.45 12.38,-86.45 12.49,-86.6 12.49,-86.6 12.38))',
+    )
+    parser.add_argument(
+        '--dir',
+        type=str,
+        default='.',
+        metavar='FOLDER',
+        help='Output directory for downloaded granules (default: current directory)',
+    )
+    parser.add_argument(
+        '--print',
+        dest='do_print',
+        action='store_true',
+        help='List granules only, do not download',
+    )
+    parser.add_argument(
+        '--download',
+        action='store_true',
+        default=True,
+        help='Download the data (default)',
+    )
+    parser.add_argument(
+        '--ext',
+        type=str,
+        default=None,
+        help='Optional file extension filter (e.g., nc, tif). If omitted, download all file types.',
+    )
+
+    parser.add_argument('--period', type=str, help='Start and end date for search, format YYYYMMDD:YYYYMMDD or YYYY-MM-DD:YYYY-MM-DD.')
+    parser.add_argument('--start-date', type=str, default='20160701', help='Start date (YYYYMMDD or YYYY-MM-DD).')
+    parser.add_argument('--end-date', type=str, default=date.today().isoformat(), help='End date (YYYYMMDD or YYYY-MM-DD).')
+
+    args = parser.parse_args()
+
+    try:
+        if args.period:
+            period = args.period.split(':')
+            if len(period) != 2:
+                parser.error("Invalid --period. Use START:END (YYYYMMDD or YYYY-MM-DD).")
+            args.start_date = _to_iso_date(period[0])
+            args.end_date = _to_iso_date(period[1])
+        else:
+            if args.start_date:
+                args.start_date = _to_iso_date(args.start_date)
+            if args.end_date:
+                args.end_date = _to_iso_date(args.end_date)
+    except ValueError as e:
+        parser.error(str(e))
+
+    return args
+
+
+def collect_download_targets(results, ext=None):
+    """
+    If ext is provided (e.g., 'nc' or '.nc'), return matching file URLs.
+    If ext is None/empty, return results unchanged (download all types).
+    """
+    if not ext:
+        return results, "all file types"
+
+    wanted = f".{str(ext).lower().lstrip('.')}"
+    urls = []
+
+    for g in results:
+        try:
+            links = g.data_links() or []
+        except Exception:
+            links = []
+
+        for u in links:
+            base = str(u).split("?", 1)[0].lower()
+            if base.endswith(wanted):
+                urls.append(str(u))  # keep original URL (with query)
+
+    return urls, wanted
+
+
+def _to_iso_date(value: str) -> str:
+    """Accept YYYYMMDD or YYYY-MM-DD and return YYYY-MM-DD."""
+    value = (value or "").strip()
+    for fmt in ("%Y%m%d", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(value, fmt).date().isoformat()
+        except ValueError:
+            pass
+    raise ValueError(f"Invalid date '{value}'. Use YYYYMMDD or YYYY-MM-DD.")
 
 
 def parse_polygon(polygon_str: str) -> tuple[float, float, float, float]:
@@ -58,44 +162,7 @@ def _load_password_config():
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description='Download OPERA displacement products from ASF for a polygon AOI.',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Uses credentials from password_config.py (asfuser/asfpass), same as asf_search_args.py.
-  Falls back to .netrc or EARTHDATA_* env vars if password_config is not available.
-
-Example:
-  %(prog)s "POLYGON((-86.6038 12.3781,-86.4486 12.3781,-86.4486 12.4899,-86.6038 12.4899,-86.6038 12.3781))" --print
-  %(prog)s "POLYGON((-86.6038 12.3781,-86.4486 12.3781,-86.4486 12.4899,-86.6038 12.4899,-86.6038 12.3781))" --download --dir ./opera_disp
-        """,
-    )
-    parser.add_argument(
-        'polygon',
-        type=str,
-        help='WKT POLYGON string, e.g. POLYGON((-86.6 12.38,-86.45 12.38,-86.45 12.49,-86.6 12.49,-86.6 12.38))',
-    )
-    parser.add_argument(
-        '--dir',
-        type=str,
-        default='.',
-        metavar='FOLDER',
-        help='Output directory for downloaded granules (default: current directory)',
-    )
-    parser.add_argument(
-        '--print',
-        dest='do_print',
-        action='store_true',
-        help='List granules only, do not download',
-    )
-    parser.add_argument(
-        '--download',
-        action='store_true',
-        default=True,
-        help='Download the data (default)',
-    )
-    args = parser.parse_args()
-
+    args = parse_args()
     try:
         import earthaccess
     except ImportError:
@@ -124,17 +191,25 @@ Example:
 
     # Search for granules - bbox search returns all overlapping granules,
     # including both ascending and descending orbit directions
-    temporal = ('2016-07-01', date.today().isoformat())
+    # temporal = ('2016-07-01', date.today().isoformat())
     results = list(earthaccess.search_data(
         short_name='OPERA_L3_DISP-S1_V1',
         bounding_box=bbox,
-        temporal=temporal,
+        temporal=(args.start_date, args.end_date),
+
     ))
     print(f"Found {len(results)} granules (ascending + descending)")
 
     if not results:
         print("No granules found for this AOI and date range.")
         return 0
+
+    if results:
+        print(f"type(results[0]) = {type(results[0]).__name__}")
+        try:
+            print("data_links count:", len(results[0].data_links() or []))
+        except Exception:
+            print("No data_links() on first result (likely collection-level result)")
 
     if args.do_print:
         for g in results:
@@ -148,7 +223,16 @@ Example:
     # Download (default when --print not given)
     os.makedirs(args.dir, exist_ok=True)
     print(f"Downloading to {os.path.abspath(args.dir)}...")
-    downloaded = earthaccess.download(results, args.dir)
+
+    targets, label = collect_download_targets(results, args.ext)
+
+    if isinstance(targets, list):
+        print(f"Found {len(targets)} files matching {label}")
+        if not targets:
+            print("No matching files to download.")
+            return 0
+
+    downloaded = earthaccess.download(targets, args.dir)
     print(f"Downloaded {len(downloaded)} files")
     return 0
 
