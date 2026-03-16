@@ -11,9 +11,12 @@ Strategy:
     - S1/BURST: default period 2020-01-01 to 2020-02-01 (--start/--end). SLC maxResults=20, BURST maxResults=200.
     - NISAR: fixed period 2026-01-01 to 2026-02-28 for discovery.
     - ALOS-2: asf.search(maxResults=10000) over --start/--end.
-  Counting (only with --count):
+  Counting (always):
     - Date range: full period (2014-10-01 to today) unless --startDate/--endDate are set.
-    - S1: asf.search_count() per (orbit, direction). Others: ?output=count HTTP request.
+    - S1: search by intersection, then keep only dates where the product footprint covers/contains
+      the AOI (Shapely); report touch vs min distance per orbit (verbose); granules not covering
+      are removed; orbits with count 0 are omitted from the table.
+    - Others: ?output=count HTTP request.
     - Count requests run in parallel (default max_workers=8) to reduce time.
 
 Search product types:
@@ -25,6 +28,7 @@ Search product types:
 import argparse
 import concurrent.futures
 import datetime
+import math
 import re
 import sys
 from collections import defaultdict
@@ -32,6 +36,8 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import requests
 import asf_search as asf
+from shapely import wkt as _shapely_wkt
+from shapely.geometry import shape as _shapely_shape
 from asf_search.constants import INTERNAL
 
 INTERNAL.CMR_TIMEOUT = 90
@@ -40,16 +46,23 @@ EPILOG = """
 Examples:
   get_sar_coverage.py "POLYGON((25.3058 36.3221,25.5015 36.3221,25.5015 36.5019,25.3058 36.5019,25.3058 36.3221))"
   get_sar_coverage.py 36.322:36.502,25.306:25.502
-  get_sar_coverage.py 36.322:36.502,25.306:25.502 --count
-  get_sar_coverage.py 36.322:36.502,25.306:25.502 -c --platforms S1
-  get_sar_coverage.py 19.30:19.6,-155.8:-154.8 -c --platforms S1,ALOS2
+  get_sar_coverage.py 36.322:36.502,25.306:25.502 --platforms S1
+  get_sar_coverage.py 36.33:36.485,25.32:25.502 --platforms S1 -v
+  get_sar_coverage.py 19.30:19.6,-155.8:-154.8 --platforms S1,ALOS2 --all
+  get_sar_coverage.py 36.322:36.502,25.306:25.502 --platforms S1 --select   # parseable vars for bash
+
+Select (--select): requires exactly one platform (--platforms S1 or NISAR or ALOS2). Prints asc_relorbit, asc_label, desc_relorbit, desc_label to stdout (progress to stderr). In bash: eval $(get_sar_coverage.py AOI --platforms S1 --select); then use $asc_relorbit, $desc_relorbit, $asc_label, $desc_label.
 
 Notes:
   NISAR RSLC data availability depends on mission phase.
   ALOS-2 L1.1 covers all beam modes; use --platforms ALOS2 to search only ALOS-2.
+
+Caveats:
+  Coverage counts may be inaccurate due to orbit variations; only --all gives accurate counts.
+  Min distance to footprint edge is approximate (degrees-to-meters at AOI latitude).
 """
 
-# Lat/lon deltas for topsStack.boundingBox expansion (same as convert_polygon_string.py)
+# Lat/lon deltas for topsStack.boundingBox expansion (same as convert_bbox.py)
 _BBOX_LAT_DELTA = 0.15
 _BBOX_LON_DELTA = 1.5
 
@@ -226,48 +239,198 @@ def _get_direction(product) -> str:
 # ASF API count helper
 # ---------------------------------------------------------------------------
 
-def _s1_search_count(
-    wkt: str, start, end, orbit: int, direction: str, verbose: bool = False
-) -> int:
-    """Get S1 SLC count for one (orbit, direction) using asf.search_count() when available.
-
-    Falls back to _api_count() if search_count is missing or fails. direction should be
-    'Ascending' or 'Descending'. Returns count, or -1 on failure.
-    """
-    search_count = getattr(asf, 'search_count', None)
-    if search_count is not None:
-        try:
-            cnt = search_count(
-                platform=asf.PLATFORM.SENTINEL1,
-                processingLevel=asf.PRODUCT_TYPE.SLC,
-                dataset=asf.DATASET.SENTINEL1,
-                intersectsWith=wkt,
-                start=str(start),
-                end=str(end),
-                beamMode=asf.BEAMMODE.IW,
-                polarization=['VV', 'VV+VH'],
-                relativeOrbit=orbit,
-                flightDirection=direction.upper(),
-            )
-            return int(cnt) if cnt is not None else -1
-        except Exception as exc:
-            if verbose:
-                print(f"    [Warning] asf.search_count failed: {exc}", file=sys.stderr)
-    # Fallback: same params as _COUNT_API_PARAMS['Sentinel-1']
-    params = dict(
-        platform='SENTINEL-1',
-        processingLevel='SLC',
-        intersectsWith=wkt,
-        relativeOrbit=orbit,
-        flightDirection=direction.upper(),
-        start=str(start),
-        end=str(end),
-    )
-    return _api_count(params, verbose=verbose)
-
-
 # Max granules to fetch when counting ALOS-2 unique acquisitions (avoids inflated granule count)
 _ALOS2_COUNT_MAX_RESULTS = 1500
+
+# Max S1 SLC granules to fetch when counting dates that fully cover the AOI (per orbit/direction)
+_S1_FULL_COVERAGE_MAX_RESULTS = 5000
+_S1_FULL_COVERAGE_MAX_RESULTS_ALL = 10000  # when --all
+
+# Approximate meters per degree at equator; at latitude lat use 111320 * cos(radians(lat))
+_METERS_PER_DEGREE_AT_EQUATOR = 111320.0
+_MIN_DISTANCE_WARN_METERS = 300.0
+
+
+def _degrees_to_meters_approx(d_deg: float, lat_deg: float) -> float:
+    """Convert a small distance in degrees to meters (approximate, at given latitude)."""
+    return d_deg * _METERS_PER_DEGREE_AT_EQUATOR * math.cos(math.radians(lat_deg))
+
+
+def _s1_orbit_label(orbit: int, direction: str) -> str:
+    """Return concise Sentinel-1 orbit label, e.g. 'SenA29' or 'SenD36'."""
+    letter = 'A' if direction == 'Ascending' else 'D'
+    return f"Sen{letter}{orbit}"
+
+
+def _orbit_label(platform_short: str, orbit: int, direction: str) -> str:
+    """Return concise orbit label, e.g. 'NisarA159' or 'Alos2D24'."""
+    letter = 'A' if direction == 'Ascending' else 'D'
+    display = 'Nisar' if platform_short == 'NISAR' else ('Alos2' if platform_short == 'ALOS2' else platform_short)
+    return f"{display}{letter}{orbit}"
+
+
+def _min_distance_to_footprint_deg(
+    platform_name: str,
+    orbit: int,
+    direction: str,
+    wkt: str,
+    count_start,
+    count_end,
+    aoi_geom,
+    max_results: int = 2000,
+) -> Optional[float]:
+    """Return min distance (degrees) from AOI boundary to footprint edge for covering granules, or None."""
+    aoi_boundary = getattr(aoi_geom, 'boundary', None)
+    if aoi_boundary is None or aoi_boundary.is_empty:
+        return None
+    try:
+        if platform_name == 'NISAR':
+            results = list(asf.search(
+                platform=asf.PLATFORM.NISAR,
+                processingLevel=asf.PRODUCT_TYPE.RSLC,
+                dataset=asf.DATASET.NISAR,
+                intersectsWith=wkt,
+                start=str(count_start),
+                end=str(count_end),
+                relativeOrbit=orbit,
+                flightDirection=direction.upper(),
+                maxResults=max_results,
+            ))
+        elif platform_name in ('ALOS-2 HH', 'ALOS-2 HH+HV'):
+            pol = 'HH+HV' if 'HH+HV' in platform_name else 'HH'
+            pol_list = [p.strip() for p in pol.split('+')]
+            results = list(asf.search(
+                platform=asf.PLATFORM.ALOS,
+                dataset=[asf.DATASET.ALOS_2],
+                processingLevel=asf.PRODUCT_TYPE.L1_1,
+                intersectsWith=wkt,
+                start=str(count_start),
+                end=str(count_end),
+                polarization=pol_list,
+                relativeOrbit=orbit,
+                flightDirection=direction.upper(),
+                maxResults=max_results,
+            ))
+        else:
+            return None
+    except Exception:
+        return None
+    min_deg: Optional[float] = None
+    for p in results:
+        geom = getattr(p, 'geometry', None) or p.properties.get('geometry')
+        if not geom or not isinstance(geom, dict):
+            continue
+        try:
+            footprint = _shapely_shape(geom)
+        except Exception:
+            continue
+        if footprint.is_empty or not footprint.is_valid:
+            continue
+        if not (footprint.covers(aoi_geom) or aoi_geom.within(footprint)):
+            continue
+        fp_boundary = getattr(footprint, 'boundary', None)
+        if fp_boundary is None or getattr(fp_boundary, 'is_empty', True):
+            continue
+        d = aoi_boundary.distance(fp_boundary)
+        if min_deg is None or d < min_deg:
+            min_deg = d
+    return min_deg
+
+
+def _s1_search_count_full_coverage(
+    wkt: str,
+    count_start,
+    count_end,
+    orbit: int,
+    direction: str,
+    verbose: bool = False,
+    max_results: int = _S1_FULL_COVERAGE_MAX_RESULTS,
+) -> Tuple[int, int, int, Optional[float]]:
+    """Get S1 SLC count of acquisition dates where the product footprint covers/contains the AOI.
+
+    Searches SLC granules that intersect the AOI, then keeps only those whose footprint
+    (Shapely) covers or contains the AOI. Returns (unique_date_count, n_granules_removed, n_total_granules, min_dist_m).
+    min_dist_m is None or the min distance to footprint edge in meters. When verbose, prints
+    whether any granules touch the AOI boundary. Caller prints min distance and warning.
+    """
+    try:
+        aoi_geom = _shapely_wkt.loads(wkt)
+    except Exception as exc:
+        if verbose:
+            print(f"    [Warning] AOI WKT invalid: {exc}", file=sys.stderr)
+        return (-1, 0, 0, None)
+    aoi_boundary = getattr(aoi_geom, 'boundary', None)
+    if aoi_boundary is not None and aoi_boundary.is_empty:
+        aoi_boundary = None
+
+    try:
+        results = list(asf.search(
+            platform=asf.PLATFORM.SENTINEL1,
+            processingLevel=asf.PRODUCT_TYPE.SLC,
+            dataset=asf.DATASET.SENTINEL1,
+            intersectsWith=wkt,
+            start=str(count_start),
+            end=str(count_end),
+            beamMode=asf.BEAMMODE.IW,
+            polarization=['VV', 'VV+VH'],
+            relativeOrbit=orbit,
+            flightDirection=direction.upper(),
+            maxResults=max_results,
+        ))
+    except Exception as exc:
+        if verbose:
+            print(f"    [Warning] S1 full-coverage search failed: {exc}", file=sys.stderr)
+        return (-1, 0, 0, None)
+
+    n_total = len(results)
+    dates_full = set()
+    n_removed = 0
+    any_touch_boundary = False
+    min_boundary_distance: Optional[float] = None
+
+    for p in results:
+        geom = getattr(p, 'geometry', None) or p.properties.get('geometry')
+        if not geom or not isinstance(geom, dict):
+            n_removed += 1
+            continue
+        try:
+            footprint = _shapely_shape(geom)
+        except Exception:
+            n_removed += 1
+            continue
+        if footprint.is_empty or not footprint.is_valid:
+            n_removed += 1
+            continue
+
+        covers_aoi = footprint.covers(aoi_geom) or aoi_geom.within(footprint)
+        if covers_aoi:
+            d = _get_date(p)
+            if d:
+                dates_full.add(d)
+        else:
+            n_removed += 1
+
+        if aoi_boundary is not None and not aoi_boundary.is_empty:
+            if footprint.touches(aoi_geom):
+                any_touch_boundary = True
+            # Min distance only over granules that fully cover the AOI. For partial-coverage
+            # granules the footprint boundary touches/crosses the AOI boundary, so distance
+            # would be 0 and would dominate the min. For covering granules, distance from
+            # AOI boundary to footprint edge is the margin (gap) and is meaningful.
+            if covers_aoi:
+                fp_boundary = getattr(footprint, 'boundary', None)
+                if fp_boundary is not None and not getattr(fp_boundary, 'is_empty', True):
+                    d = aoi_boundary.distance(fp_boundary)
+                    if min_boundary_distance is None or d < min_boundary_distance:
+                        min_boundary_distance = d
+
+    if verbose and any_touch_boundary:
+        print(f"    {_s1_orbit_label(orbit, direction)}: some granules touch the AOI boundary")
+    min_dist_m: Optional[float] = None
+    if min_boundary_distance is not None:
+        lat_deg = aoi_geom.centroid.y
+        min_dist_m = _degrees_to_meters_approx(min_boundary_distance, lat_deg)
+    return (len(dates_full), n_removed, n_total, min_dist_m)
 
 
 def _alos2_search_count(
@@ -503,10 +666,16 @@ def _fetch_one_count(
     count_start,
     count_end,
     verbose: bool,
-) -> Tuple[Tuple[int, str], int]:
-    """Fetch count for one (orbit, direction). Returns ((orbit, direction), count)."""
+    s1_max_results: int = _S1_FULL_COVERAGE_MAX_RESULTS,
+) -> Tuple[Tuple[int, str], int, int, int, Optional[float]]:
+    """Fetch count for one (orbit, direction). Returns ((orbit, direction), count, n_removed, n_total, min_dist_m)."""
+    n_removed = 0
+    n_total = 0
+    min_dist_m: Optional[float] = None
     if platform_name == 'Sentinel-1':
-        cnt = _s1_search_count(wkt, count_start, count_end, orbit, direction, verbose=False)
+        cnt, n_removed, n_total, min_dist_m = _s1_search_count_full_coverage(
+            wkt, count_start, count_end, orbit, direction, verbose=verbose, max_results=s1_max_results
+        )
     elif platform_name in ('ALOS-2 HH', 'ALOS-2 HH+HV'):
         pol = 'HH+HV' if 'HH+HV' in platform_name else 'HH'
         cnt = _alos2_search_count(wkt, count_start, count_end, orbit, direction, pol, verbose=False)
@@ -521,7 +690,7 @@ def _fetch_one_count(
             end=str(count_end),
         )
         cnt = _api_count(params, verbose=False)
-    return ((orbit, direction), cnt)
+    return ((orbit, direction), cnt, n_removed, n_total, min_dist_m)
 
 
 def fetch_orbit_counts(
@@ -532,17 +701,25 @@ def fetch_orbit_counts(
     count_end,
     verbose: bool = False,
     parallel: bool = True,
-) -> Dict[Tuple[int, str], int]:
+    s1_max_results: int = _S1_FULL_COVERAGE_MAX_RESULTS,
+) -> Tuple[Dict[Tuple[int, str], int], Dict[Tuple[int, str], int], Dict[Tuple[int, str], int], Dict[Tuple[int, str], Optional[float]]]:
     """Fetch acquisition count for each (orbit, direction) pair.
 
     Uses count_start/count_end for the date range (full period by default).
-    For Sentinel-1 uses asf.search_count(); others use ASF API ?output=count.
-    When parallel=True (default), runs count requests concurrently.
+    For Sentinel-1: search by intersection then keep only dates where footprint covers AOI;
+    returns (counts_dict, removed_per_key, total_per_key, min_dist_per_key). Others use ASF API
+    ?output=count; removed_per_key, total_per_key, min_dist_per_key are empty. When parallel=True
+    (default), runs concurrently.
     """
     if not orbit_directions:
-        return {}
+        return ({}, {}, {}, {})
+    removed_per_key: Dict[Tuple[int, str], int] = {}
+    total_per_key: Dict[Tuple[int, str], int] = {}
+    min_dist_per_key: Dict[Tuple[int, str], Optional[float]] = {}
     if verbose:
         print(f"  count date range: {count_start} to {count_end}")
+        if platform_name == 'Sentinel-1':
+            print("  S1: counting only dates where product footprint covers/contains AOI")
         if parallel and len(orbit_directions) > 1:
             print(f"  fetching {len(orbit_directions)} counts in parallel (max_workers={_COUNT_MAX_WORKERS})")
     counts: Dict[Tuple[int, str], int] = {}
@@ -558,14 +735,20 @@ def fetch_orbit_counts(
                     count_start,
                     count_end,
                     verbose,
+                    s1_max_results,
                 ): (orbit, direction)
                 for orbit, direction in orbit_directions
             }
             for fut in concurrent.futures.as_completed(futures):
                 try:
-                    (orbit, direction), cnt = fut.result()
-                    counts[(orbit, direction)] = cnt
-                    if verbose:
+                    (orbit, direction), cnt, n_rem, n_tot, min_d = fut.result()
+                    key = (orbit, direction)
+                    counts[key] = cnt
+                    if platform_name == 'Sentinel-1':
+                        removed_per_key[key] = n_rem
+                        total_per_key[key] = n_tot
+                        min_dist_per_key[key] = min_d
+                    if verbose and platform_name != 'Sentinel-1':
                         print(f"  counted {platform_name} orbit={orbit} dir={direction}: {cnt}")
                 except Exception as exc:
                     key = futures[fut]
@@ -574,12 +757,17 @@ def fetch_orbit_counts(
                         print(f"  [Warning] count failed for {key}: {exc}", file=sys.stderr)
     else:
         for orbit, direction in orbit_directions:
-            if verbose:
+            if verbose and platform_name != 'Sentinel-1':
                 print(f"  counting {platform_name} orbit={orbit} dir={direction}")
             if platform_name == 'Sentinel-1':
-                counts[(orbit, direction)] = _s1_search_count(
-                    wkt, count_start, count_end, orbit, direction, verbose=verbose
+                cnt, n_rem, n_tot, min_d = _s1_search_count_full_coverage(
+                    wkt, count_start, count_end, orbit, direction, verbose=verbose, max_results=s1_max_results
                 )
+                key = (orbit, direction)
+                counts[key] = cnt
+                removed_per_key[key] = n_rem
+                total_per_key[key] = n_tot
+                min_dist_per_key[key] = min_d
             elif platform_name in ('ALOS-2 HH', 'ALOS-2 HH+HV'):
                 pol = 'HH+HV' if 'HH+HV' in platform_name else 'HH'
                 counts[(orbit, direction)] = _alos2_search_count(
@@ -595,7 +783,7 @@ def fetch_orbit_counts(
                     end=str(count_end),
                 )
                 counts[(orbit, direction)] = _api_count(params, verbose=verbose)
-    return counts
+    return (counts, removed_per_key, total_per_key, min_dist_per_key)
 
 
 # ---------------------------------------------------------------------------
@@ -688,6 +876,9 @@ def _aggregate(
             count = None
             if counts is not None:
                 count = counts.get((orbit, direction))
+                # Omit orbits with count 0 from the summary table
+                if count == 0:
+                    continue
 
             orbit_records.append({
                 'orbit': orbit,
@@ -706,6 +897,65 @@ def _aggregate(
 # Display
 # ---------------------------------------------------------------------------
 
+def _platform_key(platform_display_name: str) -> str:
+    """Return short key for parseable output: S1, NISAR, ALOS2."""
+    if platform_display_name == 'Sentinel-1':
+        return 'S1'
+    if platform_display_name == 'NISAR':
+        return 'NISAR'
+    if platform_display_name.startswith('ALOS-2'):
+        return 'ALOS2'
+    return platform_display_name.replace('-', '').replace(' ', '_')
+
+
+def _best_orbit_for_direction(orbit_records: List[Dict], direction: str, platform_display_name: str) -> Optional[Dict]:
+    """From orbit_records (same direction), return the orbit with highest incAngle, or first if no inc.
+
+    Returns dict with 'orbit', 'label'. Label uses SenA29 / NisarA57 / Alos2D109 style (concatenated).
+    """
+    if not orbit_records:
+        return None
+    # Sort by inc descending (None last so we prefer known incidence)
+    sorted_orbits = sorted(
+        orbit_records,
+        key=lambda x: (x['inc'] is None, -(x['inc'] or 0)),
+    )
+    best = sorted_orbits[0]
+    orbit = best['orbit']
+    if platform_display_name == 'Sentinel-1':
+        label = _s1_orbit_label(orbit, direction)
+    elif platform_display_name == 'NISAR':
+        label = _orbit_label('NISAR', orbit, direction)
+    else:
+        label = _orbit_label('ALOS2', orbit, direction)
+    return {'orbit': orbit, 'label': label}
+
+
+def print_best_only(all_rows: List[Tuple[str, List[Dict]]], stream) -> None:
+    """Print parseable key=value lines for best Asc/Desc orbit (max incAngle).
+
+    Call only when exactly one platform is in all_rows (enforced by --select validation).
+    Format: asc_relorbit=29, asc_label="SenA29", desc_relorbit=36, desc_label="SenD36".
+    Suitable for: eval $(get_sar_coverage.py AOI --platforms S1 --select) in bash.
+    """
+    if not all_rows:
+        return
+    platform_display_name, rows = all_rows[0]
+    best_by_dir = {}
+    for row in rows:
+        if not row['orbits']:
+            continue
+        direction = row['direction']
+        best = _best_orbit_for_direction(row['orbits'], direction, platform_display_name)
+        if best is not None:
+            best_by_dir[direction] = best
+    for direction, key_prefix in [('Ascending', 'asc'), ('Descending', 'desc')]:
+        if direction in best_by_dir:
+            b = best_by_dir[direction]
+            print(f"{key_prefix}_relorbit={b['orbit']}", file=stream)
+            print(f"{key_prefix}_label=\"{b['label']}\"", file=stream)
+
+
 def _has_s1_coverage(all_rows: List[Tuple[str, List[Dict]]]) -> bool:
     for name, rows in all_rows:
         if name == 'Sentinel-1':
@@ -723,47 +973,62 @@ def print_table(all_rows: List[Tuple[str, List[Dict]]], do_count: bool) -> None:
         default=1,
     )
 
-    W_PLAT  = 12
-    W_DIR   = 11
+    W_PLAT  = 11  # was 12; remove 1 space before flightDir
+    W_DIR   =  9  # was 11; remove 2 spaces after flightDir; Asc/Desc centered
     W_ORBIT =  8   # 'relOrbit'
     W_INC   =  8   # 'incAngle'
     W_SW    =  8   # 'subswath'
     W_CNT   =  5
     S = ' '
+    V = '|'
+    S_DIR   = ''   # no space between Platform and flightDir (removes 1 more before flightDir)
+
+    def _dir_short(direction: str) -> str:
+        return 'Asc' if direction == 'Ascending' else 'Desc'
 
     def _orbit_header() -> str:
-        h = f"{S}{'relOrbit':^{W_ORBIT}}{S}{'incAngle':^{W_INC}}"
+        h = f" {V}{S}{'relOrbit':^{W_ORBIT}}{S}{'incAngle':^{W_INC}}"
         if show_sw:
             h += f"{S}{'subswath':^{W_SW}}"
         if do_count:
             h += f"{S}{'count':>{W_CNT}}"
         return h
 
-    header = f"{'Platform':<{W_PLAT}}{S}{'flightDir':<{W_DIR}}"
+    header = f"{'Platform':<{W_PLAT}}{S_DIR}{'flightDir':^{W_DIR}}"
     for _ in range(max_orbits):
         header += _orbit_header()
     print(header)
-    print('-' * len(header))
+    sep = ''.join('|' if c == '|' else '-' for c in header)
+    print(sep)
 
     for platform_name, rows in all_rows:
         for row in rows:
+            dir_short = _dir_short(row['direction'])
             if not row['orbits']:
-                print(f"{platform_name:<{W_PLAT}}{S}{row['direction']:<{W_DIR}}  (no coverage)")
+                print(f"{platform_name:<{W_PLAT}}{S_DIR}{dir_short:^{W_DIR}}  (no coverage)")
                 continue
-            line = f"{platform_name:<{W_PLAT}}{S}{row['direction']:<{W_DIR}}"
-            for orb in row['orbits']:
-                inc_str = f"{orb['inc']:.1f}" if orb['inc'] is not None else '-'
-                line += f"{S}{str(orb['orbit']):^{W_ORBIT}}{S}{inc_str:^{W_INC}}"
-                if show_sw:
-                    line += f"{S}{orb['subswath']:^{W_SW}}"
-                if do_count:
-                    cnt = orb['count']
-                    line += f"{S}{str(cnt) if cnt is not None and cnt >= 0 else '?':>{W_CNT}}"
+            line = f"{platform_name:<{W_PLAT}}{S_DIR}{dir_short:^{W_DIR}}"
+            for i in range(max_orbits):
+                if i < len(row['orbits']):
+                    orb = row['orbits'][i]
+                    inc_str = f"{orb['inc']:.1f}" if orb['inc'] is not None else '-'
+                    line += f" {V}{S}{str(orb['orbit']):^{W_ORBIT}}{S}{inc_str:^{W_INC}}"
+                    if show_sw:
+                        line += f"{S}{orb['subswath']:^{W_SW}}"
+                    if do_count:
+                        cnt = orb['count']
+                        line += f"{S}{str(cnt) if cnt is not None and cnt >= 0 else '?':>{W_CNT}}"
+                else:
+                    line += f" {V}{S}{'-':^{W_ORBIT}}{S}{'-':^{W_INC}}"
+                    if show_sw:
+                        line += f"{S}{'-':^{W_SW}}"
+                    if do_count:
+                        line += f"{S}{'':>{W_CNT}}"
             print(line)
 
 
 def print_bbox_info(wkt: str) -> None:
-    """Print topsStack/mintpy bbox strings (same format as convert_polygon_string.py)."""
+    """Print topsStack/mintpy bbox strings (same format as convert_bbox.py)."""
     lon_min, lat_min, lon_max, lat_max = parse_bbox(wkt)
 
     lat_min_r = round(lat_min, 3)
@@ -793,8 +1058,6 @@ def create_parser() -> argparse.ArgumentParser:
         epilog=EPILOG,
     )
     parser.add_argument('aoi', help="WKT POLYGON or lat_min:lat_max,lon_min:lon_max")
-    parser.add_argument('--count', '-c', action='store_true', default=False,
-                        help='Show acquisition count per orbit (fast API count request)')
     parser.add_argument('--platforms', default='all', metavar='PLATFORMS',
                         help=(
                             'Comma-separated platform list, or "all" (default). '
@@ -809,14 +1072,19 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument('--end', default=_DISCOVERY_END_DEFAULT, metavar='YYYY-MM-DD',
                         help='End date for discovery queries (default: 2020-02-01). S1 and BURST use this; NISAR uses 2026-01-01 to 2026-02-28.')
     parser.add_argument('--startDate', default=None, metavar='YYYY-MM-DD',
-                        help='Start date for acquisition counts when --count (default: 2014-10-01). Only used with --count.')
+                        help='Start date for acquisition count range (default: 2014-10-01).')
     parser.add_argument('--endDate', default=None, metavar='YYYY-MM-DD',
-                        help='End date for acquisition counts when --count (default: today). Only used with --count.')
+                        help='End date for acquisition count range (default: today).')
     parser.add_argument('--max-discovery', type=int, default=_DISCOVERY_MAX_RESULTS_S1_DEFAULT,
                         metavar='N',
                         help='Max S1 SLC granules fetched for orbit discovery (default: %(default)s). Increase if orbits are missing.')
+    parser.add_argument('--all', action='store_true', default=False,
+                        help='Use full operating period and up to 10000 granules per orbit for accurate coverage counts (slower).')
     parser.add_argument('--verbose', '-v', action='store_true', default=False,
                         help='Print query parameters and URLs')
+    parser.add_argument('--select', action='store_true', default=False,
+                        help='Print parseable key=value lines for best Asc/Desc orbit (max incAngle). Requires exactly one --platforms (e.g. S1). '
+                             'Bash: eval $(get_sar_coverage.py AOI --platforms S1 --select); then use $asc_relorbit, $desc_relorbit, $asc_label, $desc_label. Python: parse stdout line by line (split on "=").')
     return parser
 
 
@@ -879,12 +1147,27 @@ def main(iargs=None):
               f"Use S1, NISAR, ALOS2 (or 'all').", file=sys.stderr)
         sys.exit(1)
 
+    if inps.select and len(platforms) != 1:
+        print("Error: --select requires exactly one platform. Use --platforms S1 (or NISAR or ALOS2).", file=sys.stderr)
+        sys.exit(1)
+
+    if inps.select:
+        inps._select_stdout = sys.stdout
+        sys.stdout = sys.stderr
+
     _vprint(inps.verbose, f"AOI (WKT) : {wkt}")
     _vprint(inps.verbose, f"Discovery date range: {start} to {end}")
-    if inps.count:
-        _vprint(inps.verbose, f"Count date range: {count_start} to {count_end} (use --startDate/--endDate to override)")
+    _vprint(inps.verbose, f"Count date range: {count_start} to {count_end} (use --startDate/--endDate to override)")
     _vprint(inps.verbose, f"Platforms : {', '.join(sorted(platforms))}\n")
 
+    aoi_geom = None
+    try:
+        aoi_geom = _shapely_wkt.loads(wkt)
+    except Exception:
+        pass
+
+    s1_removed_per_key: Dict[Tuple[int, str], int] = {}
+    s1_total_per_key: Dict[Tuple[int, str], int] = {}
     all_rows = []
 
     if 'S1' in platforms:
@@ -895,19 +1178,38 @@ def main(iargs=None):
         )
         orbit_sw_map = _build_orbit_metadata_map(burst_results)
 
-        counts = None
-        if inps.count:
-            orbit_dirs = list(dict.fromkeys([
-                (int(orb), _get_direction(p))
-                for p in slc_sample
-                for orb in [_get_orbit(p)]
-                if orb is not None and _get_direction(p)
-            ]))
-            _vprint(inps.verbose, f"  [Sentinel-1 counts via API]")
-            counts = fetch_orbit_counts(
-                'Sentinel-1', orbit_dirs, wkt, count_start, count_end,
-                verbose=inps.verbose,
-            )
+        orbit_dirs = list(dict.fromkeys([
+            (int(orb), _get_direction(p))
+            for p in slc_sample
+            for orb in [_get_orbit(p)]
+            if orb is not None and _get_direction(p)
+        ]))
+        _vprint(inps.verbose, "  [Sentinel-1 counts: footprint covers AOI]")
+        s1_max = _S1_FULL_COVERAGE_MAX_RESULTS_ALL if inps.all else _S1_FULL_COVERAGE_MAX_RESULTS
+        counts, removed_per_key, total_per_key, min_dist_per_key = fetch_orbit_counts(
+            'Sentinel-1', orbit_dirs, wkt, count_start, count_end,
+            verbose=inps.verbose,
+            s1_max_results=s1_max,
+        )
+        s1_removed_per_key = removed_per_key
+        s1_total_per_key = total_per_key
+
+        if not inps.verbose:
+            print(f"  {len(orbit_dirs)} orbit(s) found")
+        for (orbit, direction) in sorted(orbit_dirs):
+            n_rem = s1_removed_per_key.get((orbit, direction), 0)
+            if n_rem > 0:
+                n_tot = s1_total_per_key.get((orbit, direction), 0)
+                if n_tot and n_rem == n_tot:
+                    print(f"    {_s1_orbit_label(orbit, direction)}: all granules removed by AOI check")
+                else:
+                    print(f"    {_s1_orbit_label(orbit, direction)}: {n_rem} out of {n_tot} granules removed by AOI check")
+        print()
+        for (orbit, direction) in sorted(orbit_dirs):
+            dist_m = min_dist_per_key.get((orbit, direction))
+            if dist_m is not None:
+                warn = " [Warning] [ AOI coverage may not apply to all dates; use --all ]." if dist_m < _MIN_DISTANCE_WARN_METERS else ""
+                print(f"    {_s1_orbit_label(orbit, direction)}: min distance to footprint edge = {int(round(dist_m))} m{warn}")
 
         rows = _aggregate(slc_sample, orbit_sw_map, counts, verbose=inps.verbose)
         all_rows.append(('Sentinel-1', rows))
@@ -920,7 +1222,7 @@ def main(iargs=None):
         )
 
         counts = None
-        if inps.count and nisar_sample:
+        if nisar_sample:
             orbit_dirs = list(dict.fromkeys([
                 (int(orb), _get_direction(p))
                 for p in nisar_sample
@@ -928,13 +1230,22 @@ def main(iargs=None):
                 if orb is not None and _get_direction(p)
             ]))
             _vprint(inps.verbose, "  [NISAR counts via API]")
-            counts = fetch_orbit_counts(
+            counts, _, _, _ = fetch_orbit_counts(
                 'NISAR', orbit_dirs, wkt, count_start, count_end,
                 verbose=inps.verbose,
             )
-
-        if not inps.verbose:
-            print(f"  {len(nisar_sample)} results (orbit discovery)")
+            if not inps.verbose:
+                print(f"  {len(orbit_dirs)} orbit(s) found")
+            if aoi_geom is not None:
+                for (orbit, direction) in sorted(orbit_dirs):
+                    min_deg = _min_distance_to_footprint_deg(
+                        'NISAR', orbit, direction, wkt, count_start, count_end, aoi_geom
+                    )
+                    if min_deg is not None:
+                        lat_deg = aoi_geom.centroid.y
+                        dist_m = _degrees_to_meters_approx(min_deg, lat_deg)
+                        warn = " [Warning] [ AOI coverage may not apply to all dates; use --all ]." if dist_m < _MIN_DISTANCE_WARN_METERS else ""
+                        print(f"    {_orbit_label('NISAR', orbit, direction)}: min distance to footprint edge = {int(round(dist_m))} m{warn}")
         rows = _aggregate(nisar_sample, None, counts, verbose=inps.verbose)
         all_rows.append(('NISAR', rows))
 
@@ -948,7 +1259,7 @@ def main(iargs=None):
             )
 
             counts = None
-            if inps.count and alos_sample:
+            if alos_sample:
                 orbit_dirs = list(dict.fromkeys([
                     (int(orb), _get_direction(p))
                     for p in alos_sample
@@ -956,19 +1267,34 @@ def main(iargs=None):
                     if orb is not None and _get_direction(p)
                 ]))
                 _vprint(inps.verbose, f"  [{pol_label} counts via API]")
-                counts = fetch_orbit_counts(
+                counts, _, _, _ = fetch_orbit_counts(
                     pol_label, orbit_dirs, wkt, count_start, count_end,
                     verbose=inps.verbose,
                 )
+                if not inps.verbose:
+                    print(f"  {len(orbit_dirs)} orbit(s) found")
+                if aoi_geom is not None:
+                    for (orbit, direction) in sorted(orbit_dirs):
+                        min_deg = _min_distance_to_footprint_deg(
+                            pol_label, orbit, direction, wkt, count_start, count_end, aoi_geom
+                        )
+                        if min_deg is not None:
+                            lat_deg = aoi_geom.centroid.y
+                            dist_m = _degrees_to_meters_approx(min_deg, lat_deg)
+                            warn = " [Warning] [ AOI coverage may not apply to all dates; use --all ]." if dist_m < _MIN_DISTANCE_WARN_METERS else ""
+                            print(f"    {_orbit_label('ALOS2', orbit, direction)}: min distance to footprint edge = {int(round(dist_m))} m{warn}")
 
-            if not inps.verbose and alos_sample:
-                print(f"  {len(alos_sample)} results (orbit discovery)")
             rows = _aggregate(alos_sample, None, counts, verbose=inps.verbose)
             all_rows.append((pol_label, rows))
 
-    print()
-    print_table(all_rows, inps.count)
-    print_bbox_info(wkt)
+    if inps.select:
+        if hasattr(inps, '_select_stdout'):
+            sys.stdout = inps._select_stdout
+        print_best_only(all_rows, sys.stdout)
+    else:
+        print()
+        print_table(all_rows, do_count=True)
+        print_bbox_info(wkt)
 
 
 if __name__ == '__main__':
