@@ -39,7 +39,7 @@ def convert_intersectsWith_string_to_boundingBox_string(intersectsWith_str, delt
     """ converts polygon string of the form:
         POLYGON((-86.581 12.3995,-86.4958 12.3995,-86.4958 12.454,-86.581 12.454,-86.581 12.3995))
         48.1153435942954,32.48224314182711,0 48.1460783620229,32.49847964019297,0 48.1153435942954,32.48224314182711,0
-           same functions convert_polygon_str() in convert_polygon_string.py, should move into ustilities
+           same functions convert_bbox.py, should move into utilities
     """
     longs = []
     lats = []
