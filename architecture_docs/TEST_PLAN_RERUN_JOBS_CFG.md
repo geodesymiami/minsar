@@ -4,7 +4,7 @@ This document describes how to test the config-driven timeout rerun behavior (se
 
 ## Summary of behavior
 
-- **job_defaults.cfg**: Each job has `rerun_walltime_factor`, `switch_queue_at_max_walltime`, `rerun_walltime_factor_switch`. On timeout, new walltime = current × factor; if new walltime > queue’s `MAX_WALLTIME`, either switch to `QUEUE_AT_MAX_WALLTIME` (using `rerun_walltime_factor_switch`) or cap at `MAX_WALLTIME`.
+- **job_defaults.cfg**: Each job has `rerun_walltime_factor`, `switch_queue`, `rerun_walltime_factor_switch`. On timeout, new walltime = current × factor; if new walltime > queue’s `MAX_WALLTIME`, either switch to `QUEUE_AT_MAX_WALLTIME` (using `rerun_walltime_factor_switch`) or cap at `MAX_WALLTIME`.
 - **queues.cfg**: Each queue has `MAX_WALLTIME` and `QUEUE_AT_MAX_WALLTIME` (e.g. skx-dev: `02:00:00`, `skx`).
 - **run_workflow.bash** calls `update_walltime_queuename.py` on TIMEOUT; that script (and the rerun block in `job_submission.py`) uses the config to update the job file and resubmit.
 
@@ -47,7 +47,7 @@ execute_runfiles 00:02:00  0  0  1000  0  1  1  1.2  no  n/a
 miaplpy_invert_network  00:02:00  0  0  4000  0  1  1  1.2  yes  2.0
 ```
 
-Keep the rerun columns (`rerun_walltime_factor`, `switch_queue_at_max_walltime`, `rerun_walltime_factor_switch`) as in the current schema.
+Keep the rerun columns (`rerun_walltime_factor`, `switch_queue`, `rerun_walltime_factor_switch`) as in the current schema.
 
 ### 3. Short queue cap so reruns switch queue
 
@@ -70,7 +70,7 @@ Change the skx-dev line to:
 stampede3  skx-dev  ...  00:02:00  skx
 ```
 
-So: jobs on skx-dev will timeout at 2 minutes; after timeout, the script will see new walltime > 00:02:00 and (for jobs with `switch_queue_at_max_walltime=yes`) switch to `skx` and use `rerun_walltime_factor_switch` for the new walltime.
+So: jobs on skx-dev will timeout at 2 minutes; after timeout, the script will see new walltime > 00:02:00 and (for jobs with `switch_queue=yes`) switch to `skx` and use `rerun_walltime_factor_switch` for the new walltime.
 
 ### 4. Run the workflow
 

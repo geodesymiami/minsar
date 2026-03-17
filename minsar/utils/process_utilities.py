@@ -473,7 +473,7 @@ def get_config_defaults(config_file='job_defaults.cfg'):
     if os.path.basename(config_file) in ['job_defaults.cfg']:
 
         fields = ['c_walltime', 's_walltime', 'seconds_factor', 'c_memory', 's_memory', 'num_threads', 'io_load',
-                  'rerun_walltime_factor', 'switch_queue_at_max_walltime', 'rerun_walltime_factor_switch']
+                  'rerun_walltime_factor', 'switch_queue', 'rerun_walltime_factor_switch']
         with open(config_file, 'r') as f:
             lines = f.readlines()
 
@@ -1366,7 +1366,7 @@ def compute_rerun_walltime_and_queue(job_file_path):
     if step_name not in config.sections():
         step_name = 'default'
     rerun_factor = float(config[step_name].get('rerun_walltime_factor', '1.2'))
-    switch_yes = config[step_name].get('switch_queue_at_max_walltime', 'no').strip().lower() == 'yes'
+    switch_yes = config[step_name].get('switch_queue', 'no').strip().lower() == 'yes'
     factor_switch_str = config[step_name].get('rerun_walltime_factor_switch', 'n/a').strip().lower()
     if factor_switch_str in ('n/a', 'na', ''):
         factor_switch = rerun_factor

@@ -34,7 +34,7 @@ QUEUES_CFG_OPTIONAL_COLUMNS = ['MAX_NODES_PER_JOB', 'SJOBS_STEP_MAX_TASKS', 'SJO
 # Fields required by get_config_defaults for job_defaults.cfg (used by job_submission.get_memory_walltime and rerun logic)
 JOB_DEFAULTS_REQUIRED_FIELDS = [
     'c_walltime', 's_walltime', 'seconds_factor', 'c_memory', 's_memory',
-    'num_threads', 'io_load', 'rerun_walltime_factor', 'switch_queue_at_max_walltime', 'rerun_walltime_factor_switch',
+    'num_threads', 'io_load', 'rerun_walltime_factor', 'switch_queue', 'rerun_walltime_factor_switch',
 ]
 
 

@@ -26,10 +26,10 @@ Add these columns to each job row in `minsar/defaults/job_defaults.cfg`:
 | Column | Required | Type | Description |
 |--------|----------|------|-------------|
 | **rerun_walltime_factor** | Yes | float | Multiplier for walltime on rerun (1.2 = +20%, 2.0 = +100%). Default: 1.2. |
-| **switch_queue_at_max_walltime** | Yes | yes/no | When computed new_walltime > queue's MAX_WALLTIME: `yes` = switch to QUEUE_AT_MAX_WALLTIME; `no` = cap at MAX_WALLTIME and stay on current queue. |
+| **switch_queue** | Yes | yes/no | When computed new_walltime > queue's MAX_WALLTIME: `yes` = switch to QUEUE_AT_MAX_WALLTIME; `no` = cap at MAX_WALLTIME and stay on current queue. |
 | **rerun_walltime_factor_switch** | No | float | When switching queue, use this factor instead of rerun_walltime_factor. Omit or n/a to use rerun_walltime_factor. |
 
-**Rename**: `switch_dev_to_normal_at_cap` → `switch_queue_at_max_walltime` (shorter, queue-agnostic).
+**Rename**: `switch_dev_to_normal_at_cap` → `switch_queue` (shorter, queue-agnostic).
 
 ### Remove copy_to_tmp
 
@@ -38,7 +38,7 @@ Remove the `copy_to_tmp` column from `job_defaults.cfg`; it is no longer used.
 ### Example job_defaults.cfg Schema (after changes)
 
 ```
-jobname   c_walltime  s_walltime  seconds_factor  c_memory  s_memory  num_threads  io_load  rerun_walltime_factor  switch_queue_at_max_walltime  rerun_walltime_factor_switch
+jobname   c_walltime  s_walltime  seconds_factor  c_memory  s_memory  num_threads  io_load  rerun_walltime_factor  switch_queue  rerun_walltime_factor_switch
 default   02:00:00    0           0               3000      0         1            1        1.2                    yes                  1.2
 miaplpy_invert_network  02:00:00  0  0  4000  0  1  1  1.2  yes  2.0
 smallbaseline  01:20:00  00:02:00  0  all  0  1  1  1.2  no  n/a
@@ -52,7 +52,7 @@ download_burst2stack  02:00:00  0  0  3000  1  1  1  1.2  no  n/a
 | Column | Description | Example values |
 |--------|-------------|----------------|
 | **MAX_WALLTIME** | Max walltime for this queue. Used to determine whether rerun must cap or switch. | skx-dev: `02:00:00`; all others: `2-00:00:00` (or equivalent long limit) |
-| **QUEUE_AT_MAX_WALLTIME** | Target queue when job hits MAX_WALLTIME and switch_queue_at_max_walltime=yes. | skx-dev: `skx`; all others: `n/a` |
+| **QUEUE_AT_MAX_WALLTIME** | Target queue when job hits MAX_WALLTIME and switch_queue=yes. | skx-dev: `skx`; all others: `n/a` |
 
 ### Logic
 
@@ -61,7 +61,7 @@ download_burst2stack  02:00:00  0  0  3000  1  1  1  1.2  no  n/a
    - Other queues: `2-00:00:00` (effectively no cap for rerun purposes)
 
 2. **QUEUE_AT_MAX_WALLTIME**: Used when creating the rerun jobfile.
-   - When new_walltime > MAX_WALLTIME and job's switch_queue_at_max_walltime=yes, replace the queue in the job file with QUEUE_AT_MAX_WALLTIME.
+   - When new_walltime > MAX_WALLTIME and job's switch_queue=yes, replace the queue in the job file with QUEUE_AT_MAX_WALLTIME.
    - For skx-dev: use `skx`.
    - For others: `n/a` (no switch).
 
