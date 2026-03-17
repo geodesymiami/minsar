@@ -489,11 +489,15 @@ class JOB_SUBMIT:
                 if len(rerun_job_files) > 0:
                    for job_file_name in rerun_job_files:
                        wall_time = putils.extract_walltime_from_job_file(job_file_name)
-                       new_wall_time = putils.multiply_walltime(wall_time, factor=1.2)
+                       new_wall_time, new_queue = putils.compute_rerun_walltime_and_queue(job_file_name)
                        putils.replace_walltime_in_job_file(job_file_name, new_wall_time)
+                       if new_queue is not None:
+                           putils.replace_queuename_in_job_file(job_file_name, new_queue)
 
-                       dateStr=datetime.strftime(datetime.now(), '%Y%m%d:%H-%M')
-                       string = dateStr + ': re-running: ' + os.path.basename(job_file_name) + ': ' + wall_time + ' --> ' + new_wall_time
+                       dateStr = datetime.strftime(datetime.now(), '%Y%m%d:%H-%M')
+                       string = dateStr + ': re-running: ' + os.path.basename(job_file_name) + ': ' + wall_time + ' --> ' + new_wall_time + '\n'
+                       if new_queue is not None:
+                           string += dateStr + ': queue switch: ' + os.path.basename(job_file_name) + ' --> ' + new_queue + '\n'
 
                        with open(self.out_dir + '/rerun.log', 'a') as rerun:
                           rerun.writelines(string)

@@ -208,13 +208,13 @@ echot "Jobfile: $(basename $job_file)"
 echot "Step: $step_name"
 
 # Get io_load for step from job_defaults.cfg file.
-# io_load needs to remain as column 8 in the .cfg file.
+# io_load is column 8 (jobname and 7 fields before io_load).
 defaults_file="${MINSAR_HOME}/minsar/defaults/job_defaults.cfg"
-step_io_load=$(grep ^$step_name $defaults_file | awk '{print $9}')
+step_io_load=$(grep ^$step_name $defaults_file | awk '{print $8}')
 
 # FA 2/2026: defaults fix: if step not in job_defaults.cfg, use default row io_load (avoids bc syntax error)
 if [[ -z "$step_io_load" ]]; then
-    step_io_load=$(grep ^default $defaults_file | awk '{print $9}')
+    step_io_load=$(grep ^default $defaults_file | awk '{print $8}')
 fi
 if [[ -z "$step_io_load" ]]; then
     step_io_load=1
