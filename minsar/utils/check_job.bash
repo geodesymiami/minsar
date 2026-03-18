@@ -49,8 +49,9 @@ if command -v scontrol &>/dev/null; then
     job_info=$(scontrol show job "$jobid" 2>/dev/null || true)
 fi
 if [[ -n "$job_info" ]]; then
-    job_state=$(echo "$job_info" | tr ' ' '\n' | sed -n 's/^JobState=//p' | head -1)
-    if [[ -n "$job_state" && "$job_state" != "RUNNING" ]]; then
+    job_state=$(echo "$job_info" | tr ' ' '\n' | sed -n 's/^JobState=//p' | head -1 | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    job_state_upper=$(echo "$job_state" | tr '[:lower:]' '[:upper:]')
+    if [[ -n "$job_state" && "$job_state_upper" != "RUNNING" ]]; then
         echo "Job $jobid is not running (state: $job_state). This script reports utilization only for running jobs." >&2
         exit 1
     fi
@@ -127,16 +128,17 @@ resolve_launcher_tasks() {
         launcher_file_lines=$(grep -c . "$resolved" 2>/dev/null) || launcher_file_lines=""
         [[ -z "$launcher_file_lines" ]] && launcher_file_lines=0
     fi
+    return 0
 }
 
-if [[ -n "$jobfile" ]]; then
-    parsed=$(parse_sbatch "$jobfile")
-    read -r sbatch_nodes sbatch_ntasks sbatch_walltime sbatch_partition sbatch_cpus_per_task sbatch_omp_threads sbatch_launcher_job_file <<< "$parsed"
+if [[ -n "$jobfile" && -f "$jobfile" && -r "$jobfile" ]]; then
+    parsed=$(parse_sbatch "$jobfile" 2>/dev/null) || parsed=""
+    read -r sbatch_nodes sbatch_ntasks sbatch_walltime sbatch_partition sbatch_cpus_per_task sbatch_omp_threads sbatch_launcher_job_file <<< "${parsed:-}"
     resolve_launcher_tasks "$jobfile" "$sbatch_launcher_job_file"
     echo "From job file: $jobfile"
     echo "  Nodes: ${sbatch_nodes:-n/a}   Ntasks: ${sbatch_ntasks:-n/a}   CPUs/task: ${sbatch_cpus_per_task:-1}   Walltime: ${sbatch_walltime:-n/a}   Partition: ${sbatch_partition:-n/a}"
-    total_cores=$(( (sbatch_ntasks ? sbatch_ntasks : 0) * (sbatch_cpus_per_task ? sbatch_cpus_per_task : 1) ))
-    if [[ -n "$sbatch_ntasks" && "$sbatch_ntasks" -gt 0 ]]; then
+    total_cores=$(( (sbatch_ntasks ? sbatch_ntasks : 0) * (sbatch_cpus_per_task ? sbatch_cpus_per_task : 1) )) || total_cores=0
+    if [[ -n "${sbatch_ntasks:-}" && "${sbatch_ntasks:-0}" -gt 0 ]] 2>/dev/null; then
         echo "  Total requested CPUs: $total_cores"
     fi
     if [[ -n "$sbatch_omp_threads" ]]; then
@@ -151,18 +153,21 @@ if [[ -n "$jobfile" ]]; then
     echo ""
 fi
 
-# Get nodelist: from squeue if job is running, else from scontrol (recently finished)
+# Get nodelist: from squeue if job is running, else from scontrol (recently finished).
+# Handle both single-node and multi-node jobs; some systems use compact form (e.g. c454-[043-044],c455-082).
 nodelist=$(squeue -j "$jobid" -h -o %N 2>/dev/null || true)
 if [[ -z "$nodelist" ]]; then
-    nodelist=$(scontrol show job "$jobid" 2>/dev/null | sed -E 's/.* NodeList=([^[:space:]]+).*/\1/')
+    nodelist=$(scontrol show job "$jobid" 2>/dev/null | sed -E 's/.* NodeList=([^[:space:]]+).*/\1/' || true)
 fi
-# Trim whitespace/newlines so scontrol show hostnames gets a clean list
-nodelist=$(printf '%s' "$nodelist" | tr -d '\n\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+# Trim and normalize: remove \r, fold newlines to commas so single-line and multi-line nodelist both work
+nodelist=$(printf '%s' "$nodelist" | tr -d '\r' | tr '\n' ',' | sed 's/,$//;s/^[[:space:]]*//;s/[[:space:]]*$//')
 nodes=$(scontrol show hostnames "$nodelist" 2>/dev/null || true)
-# Single-node jobs: some systems leave nodelist as one hostname; scontrol show hostnames may return nothing
+# Single-node fallback: some systems leave nodelist as one hostname; scontrol show hostnames may return nothing
 if [[ -z "$nodes" && -n "$nodelist" && "$nodelist" != *,* && "$nodelist" != *[* && "$nodelist" != *]* ]]; then
     nodes="$nodelist"
 fi
+# Normalize nodes for loop: trim so single-node and multi-node both iterate correctly
+nodes=$(printf '%s' "$nodes" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr -s '\n' '\n' | sed '/^$/d' || true)
 if [[ -z "$nodes" ]]; then
     echo "Job $jobid not found or no node list (squeue/scontrol). Showing no nodes." >&2
     exit 0
