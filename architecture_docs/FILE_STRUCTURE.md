@@ -77,7 +77,8 @@ Python scripts called by bash entry points:
 | `create_save_hdfeos5_jobfile.py` | Create HDF-EOS5 save job |
 | `add_missing_attributes.py` | Add ORBIT_DIRECTION and relative_orbit to slcStack.h5 / geometryRadar.h5 when missing |
 | `upload_data_products.py` | Upload products to Jetstream |
-| `get_sar_coverage.py` | Show SAR coverage (orbits, incidence, subswath) for an AOI using ASF Search |
+| `get_sar_coverage.py` | Show SAR coverage (orbits, incidence, subswath, S1 counts) for an AOI via ASF Search; prints MintPy/Miaplpy `subset.lalo` when AOI is given as POLYGON WKT (not for `lat:lat,lon:lon` bounds); `--select` emits `processing_subset`, relorbits, labels; `--show-removed` lists SLC granules dropped when footprint does not fully cover the AOI |
+| `create_opposite_orbit_template.bash` | Copy a template for the opposite pass (asc/desc), set `ssaraopt.relativeOrbit`; writes under `$AUTO_TEMPLATES` by default |
 
 ### `minsar/defaults/` - Configuration
 
@@ -110,6 +111,7 @@ Mixed Python and Bash utilities:
 | Template management | `generate_template_files.py`, `create_insar_template.py`, `create_annual_template_files.bash` |
 | Job utilities | `examine_job_stdout_files.py`, `summarize_job_run_times.py`, `benchmark_workflow.bash` (OMP thread scaling → benchmark_threads.txt) |
 | Geospatial | `convert_boundingbox.py`, `get_boundingBox_from_kml.py` |
+| ASF Vertex URLs | `burst2stack2vertex.bash` (burst2stack args → map search), `granule2vertex.bash` (S1 product ID → ASF API lookup → Geographic Search URL with `granule=...-SLC`; macOS opens Safari) |
 
 `create_annual_template_files.bash` generates year-shifted template copies from a base template and writes `$SCRATCHDIR/run_templates.sh` (overwritten each run; not version-controlled) to batch-run minsarApp.bash on those templates. See [burst_testing.md](burst_testing.md).
 
