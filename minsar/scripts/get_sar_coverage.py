@@ -14,7 +14,7 @@ Strategy:
   Counting (always):
     - Date range: full period (2014-10-01 to today) unless --startDate/--endDate are set.
     - S1: search by intersection, then keep only dates where the product footprint covers/contains
-      the AOI (Shapely); report touch vs min distance per orbit (verbose); granules not covering
+      the AOI (Shapely); report touch vs min distance per orbit (verbose); acquisitions not covering
       are removed; orbits with count 0 are omitted from the table.
     - Others: ?output=count HTTP request.
     - Count requests run in parallel (default max_workers=8) to reduce time.
@@ -949,11 +949,25 @@ def print_best_only(all_rows: List[Tuple[str, List[Dict]]], stream) -> None:
         best = _best_orbit_for_direction(row['orbits'], direction, platform_display_name)
         if best is not None:
             best_by_dir[direction] = best
+    # Print relorbits first, then labels (expected by shell callers).
     for direction, key_prefix in [('Ascending', 'asc'), ('Descending', 'desc')]:
         if direction in best_by_dir:
             b = best_by_dir[direction]
             print(f"{key_prefix}_relorbit={b['orbit']}", file=stream)
+    for direction, key_prefix in [('Ascending', 'asc'), ('Descending', 'desc')]:
+        if direction in best_by_dir:
+            b = best_by_dir[direction]
             print(f"{key_prefix}_label=\"{b['label']}\"", file=stream)
+
+
+def _subset_str_from_wkt(wkt: str) -> str:
+    """Return subset string lat_min:lat_max,lon_min:lon_max rounded to 3 decimals."""
+    lon_min, lat_min, lon_max, lat_max = parse_bbox(wkt)
+    lat_min_r = round(lat_min, 3)
+    lat_max_r = round(lat_max, 3)
+    lon_min_r = round(lon_min, 3)
+    lon_max_r = round(lon_max, 3)
+    return f"{lat_min_r}:{lat_max_r},{lon_min_r}:{lon_max_r}"
 
 
 def _has_s1_coverage(all_rows: List[Tuple[str, List[Dict]]]) -> bool:
@@ -1041,10 +1055,9 @@ def print_bbox_info(wkt: str) -> None:
     lon_min_bbox = round(lon_min_r - _BBOX_LON_DELTA, 1)
     lon_max_bbox = round(lon_max_r + _BBOX_LON_DELTA, 1)
 
-    subset_str = f"{lat_min_r}:{lat_max_r},{lon_min_r}:{lon_max_r}"
-
-    print(f"\nmintpy.subset.lalo                   = {subset_str}    #[S:N,W:E / no], auto for no")
-    print(f"miaplpy.subset.lalo                  = {subset_str}    #[S:N,W:E / no], auto for no\n")
+    subset_str = _subset_str_from_wkt(wkt)
+    print(f"mintpy.subset.lalo                   = {subset_str}    #[S:N,W:E / no], auto for no")
+    print(f"miaplpy.subset.lalo                  = {subset_str}    #[S:N,W:E / no], auto for no")
 
 
 # ---------------------------------------------------------------------------
@@ -1159,6 +1172,7 @@ def main(iargs=None):
     _vprint(inps.verbose, f"Discovery date range: {start} to {end}")
     _vprint(inps.verbose, f"Count date range: {count_start} to {count_end} (use --startDate/--endDate to override)")
     _vprint(inps.verbose, f"Platforms : {', '.join(sorted(platforms))}\n")
+    print_bbox_info(wkt)
 
     aoi_geom = None
     try:
@@ -1201,15 +1215,17 @@ def main(iargs=None):
             if n_rem > 0:
                 n_tot = s1_total_per_key.get((orbit, direction), 0)
                 if n_tot and n_rem == n_tot:
-                    print(f"    {_s1_orbit_label(orbit, direction)}: all granules removed by AOI check")
+                    print(f"    {_s1_orbit_label(orbit, direction)}: all acquisitions removed by AOI check")
                 else:
-                    print(f"    {_s1_orbit_label(orbit, direction)}: {n_rem} out of {n_tot} granules removed by AOI check")
+                    print(f"    {_s1_orbit_label(orbit, direction)}: {n_rem} out of {n_tot} acquisitions removed by AOI check")
         print()
         for (orbit, direction) in sorted(orbit_dirs):
             dist_m = min_dist_per_key.get((orbit, direction))
             if dist_m is not None:
                 warn = " [Warning] [ AOI coverage may not apply to all dates; use --all ]." if dist_m < _MIN_DISTANCE_WARN_METERS else ""
                 print(f"    {_s1_orbit_label(orbit, direction)}: min distance to footprint edge = {int(round(dist_m))} m{warn}")
+        if inps.select:
+            print()
 
         rows = _aggregate(slc_sample, orbit_sw_map, counts, verbose=inps.verbose)
         all_rows.append(('Sentinel-1', rows))
@@ -1246,6 +1262,8 @@ def main(iargs=None):
                         dist_m = _degrees_to_meters_approx(min_deg, lat_deg)
                         warn = " [Warning] [ AOI coverage may not apply to all dates; use --all ]." if dist_m < _MIN_DISTANCE_WARN_METERS else ""
                         print(f"    {_orbit_label('NISAR', orbit, direction)}: min distance to footprint edge = {int(round(dist_m))} m{warn}")
+                if inps.select:
+                    print()
         rows = _aggregate(nisar_sample, None, counts, verbose=inps.verbose)
         all_rows.append(('NISAR', rows))
 
@@ -1283,6 +1301,8 @@ def main(iargs=None):
                             dist_m = _degrees_to_meters_approx(min_deg, lat_deg)
                             warn = " [Warning] [ AOI coverage may not apply to all dates; use --all ]." if dist_m < _MIN_DISTANCE_WARN_METERS else ""
                             print(f"    {_orbit_label('ALOS2', orbit, direction)}: min distance to footprint edge = {int(round(dist_m))} m{warn}")
+                    if inps.select:
+                        print()
 
             rows = _aggregate(alos_sample, None, counts, verbose=inps.verbose)
             all_rows.append((pol_label, rows))
@@ -1290,11 +1310,11 @@ def main(iargs=None):
     if inps.select:
         if hasattr(inps, '_select_stdout'):
             sys.stdout = inps._select_stdout
+        print(f"processing_subset=\"{_subset_str_from_wkt(wkt)}\"", file=sys.stdout)
         print_best_only(all_rows, sys.stdout)
     else:
         print()
         print_table(all_rows, do_count=True)
-        print_bbox_info(wkt)
 
 
 if __name__ == '__main__':
