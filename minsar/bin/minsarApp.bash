@@ -498,6 +498,11 @@ if [[ "$startstep" == "ifgram" || "$startstep" == "mintpy" || "$startstep" == "m
     orbit_download_flag=0
 fi
 
+# If ssaraopt.endDate is explicitly set to a non-auto value, skip orbit download.
+if [[ -v template[ssaraopt.endDate] && "${template[ssaraopt.endDate]}" != "auto" ]]; then
+    orbit_download_flag=0
+fi
+
 
 echo "Switches: download_method: <$download_method> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
 echo "Flags for processing steps:"
