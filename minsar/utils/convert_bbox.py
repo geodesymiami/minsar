@@ -179,10 +179,7 @@ def run_convert_bbox(input_str, lat_delta, lon_delta, asf_only=False, asf_start=
         print(wkt)
         return
 
-    print("WKT POLYGON:")
     print(wkt)
-    print("")
-    print("Desired strings: ")
     print("")
     print("topsStack.boundingBox                = " + bbox_str)
     print("")
