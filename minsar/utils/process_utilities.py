@@ -1337,6 +1337,24 @@ def get_queue_rerun_params(platform_name, queue_name):
     return {'MAX_WALLTIME': '48:00:00', 'QUEUE_AT_MAX_WALLTIME': 'n/a'}
 
 
+def count_reruns_for_job(job_file_path):
+    """
+    Count how many times this job file has been rerun (from rerun.log).
+    Used for switch_queue=after_2: switch only after the second timeout.
+    """
+    job_dir = os.path.dirname(os.path.abspath(job_file_path))
+    job_basename = os.path.basename(job_file_path)
+    rerun_log = os.path.join(job_dir, 'rerun.log')
+    if not os.path.isfile(rerun_log):
+        return 0
+    count = 0
+    with open(rerun_log, 'r') as f:
+        for line in f:
+            if job_basename in line:
+                count += 1
+    return count
+
+
 def extract_step_name_from_job_file(job_file_path):
     """
     Extract step name for job_defaults lookup from a job file path.
@@ -1366,7 +1384,14 @@ def compute_rerun_walltime_and_queue(job_file_path):
     if step_name not in config.sections():
         step_name = 'default'
     rerun_factor = float(config[step_name].get('rerun_walltime_factor', '1.2'))
-    switch_yes = config[step_name].get('switch_queue', 'no').strip().lower() == 'yes'
+    switch_raw = config[step_name].get('switch_queue', 'no').strip().lower()
+    rerun_count = count_reruns_for_job(job_file_path)
+    if switch_raw == 'yes':
+        switch_yes = True
+    elif switch_raw == 'after_2':
+        switch_yes = rerun_count >= 1
+    else:
+        switch_yes = False
     factor_switch_str = config[step_name].get('rerun_walltime_factor_switch', 'n/a').strip().lower()
     if factor_switch_str in ('n/a', 'na', ''):
         factor_switch = rerun_factor
