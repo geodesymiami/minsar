@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Convert bounding box or polygon to topsStack/MintPy/MiaplPy strings (and optionally ASF Vertex URL).
+# Convert bounding box or polygon to POLYGON WKT + MintPy/MiaplPy subset lines (and optionally ASF Vertex URL).
 # Accepts: POLYGON WKT, GoogleEarth-style points, or S:N,W:E bbox (lat_min:lat_max,lon_min:lon_max).
 # Author: Falk Amelung
 # Created: 8/2023; renamed and extended for bbox + --asf
@@ -7,6 +7,11 @@
 
 import sys
 import argparse
+
+from minsar.utils.bbox_cli_argv import (
+    CONVERT_BBOX_ARGV_KW,
+    fix_argv_for_negative_bbox_sn_we,
+)
 
 # Optional: avoid hard dependency on minsar.objects for standalone use
 try:
@@ -29,18 +34,30 @@ EXAMPLE = """examples:
   convert_bbox.py   12.3995:12.454,-86.581:-86.4958
   convert_bbox.py   "48.1153435942954,32.48224314182711,0 48.1460783620229,32.49847964019297,0 48.1153435942954,32.48224314182711,0"
   convert_bbox.py   12.399:12.454,-86.581:-86.496 --asf
+  convert_bbox.py   -23.393:-23.097,-68.356:-68.175   # negative lat (see -- below if needed)
+  convert_bbox.py   -- -23.393:-23.097,-68.356:-68.175
 """
 
 
 def create_parser():
     parser = argparse.ArgumentParser(
-        description="Convert POLYGON or bbox string (S:N,W:E) from ASF Vertex / GoogleEarth to topsStack, MintPy, MiaplPy subset strings.",
+        description="Convert POLYGON or bbox string (S:N,W:E) from ASF Vertex / GoogleEarth to WKT + MintPy, MiaplPy subset strings.",
         formatter_class=argparse.RawTextHelpFormatter,
         epilog=EXAMPLE,
     )
     parser.add_argument("input_str", nargs="?", help="POLYGON WKT, or lat_min:lat_max,lon_min:lon_max (S:N,W:E), or GoogleEarth points")
-    parser.add_argument("--lat_delta", type=float, default=0.15, help="Latitude delta for topsStack bbox expansion")
-    parser.add_argument("--lon_delta", type=float, default=1.5, help="Longitude delta for topsStack bbox expansion")
+    parser.add_argument(
+        "--lat_delta",
+        type=float,
+        default=0.15,
+        help="Unused; kept for backward compatibility (topsStack.boundingBox line was removed).",
+    )
+    parser.add_argument(
+        "--lon_delta",
+        type=float,
+        default=1.5,
+        help="Unused; kept for backward compatibility (topsStack.boundingBox line was removed).",
+    )
     parser.add_argument("--asf", action="store_true", help="Print ASF Vertex / Search URL for S1 BURST coverage (default dates as in get_sar_coverage.py)")
     parser.add_argument("--start", default=ASF_DEFAULT_START, metavar="YYYY-MM-DD", help=f"Start date for ASF URL when --asf (default: {ASF_DEFAULT_START})")
     parser.add_argument("--end", default=ASF_DEFAULT_END, metavar="YYYY-MM-DD", help=f"End date for ASF URL when --asf (default: {ASF_DEFAULT_END})")
@@ -49,6 +66,7 @@ def create_parser():
 
 def cmd_line_parse(args):
     parser = create_parser()
+    args = fix_argv_for_negative_bbox_sn_we(list(args), **CONVERT_BBOX_ARGV_KW)
     return parser.parse_args(args)
 
 
@@ -142,7 +160,8 @@ def _asf_vertex_url(wkt, min_lat, max_lat, min_lon, max_lon, start, end, dataset
 
 
 def run_convert_bbox(input_str, lat_delta, lon_delta, asf_only=False, asf_start=None, asf_end=None):
-    """Convert input (POLYGON or S:N,W:E or GoogleEarth) to bounds and print topsStack/MintPy/MiaplPy strings (and optional ASF URL)."""
+    """Convert input (POLYGON or S:N,W:E or GoogleEarth) to bounds; print WKT, blank line, MintPy/MiaplPy lines (optional ASF URL)."""
+    _ = (lat_delta, lon_delta)  # CLI backward compatibility; no longer affect output
     min_lat, max_lat, min_lon, max_lon = _input_to_bounds(input_str)
 
     min_lat = round(min_lat, 3)
@@ -150,12 +169,6 @@ def run_convert_bbox(input_str, lat_delta, lon_delta, asf_only=False, asf_start=
     min_lon = round(min_lon, 3)
     max_lon = round(max_lon, 3)
 
-    min_lat_bbox = round(min_lat - lat_delta, 1)
-    max_lat_bbox = round(max_lat + lat_delta, 1)
-    min_lon_bbox = round(min_lon - lon_delta, 1)
-    max_lon_bbox = round(max_lon + lon_delta, 1)
-
-    bbox_str = f"{min_lat_bbox} {max_lat_bbox} {min_lon_bbox} {max_lon_bbox}"
     subset_str = f"{min_lat}:{max_lat},{min_lon}:{max_lon}"
     wkt = _bbox_to_wkt(min_lat, max_lat, min_lon, max_lon)
 
@@ -180,8 +193,6 @@ def run_convert_bbox(input_str, lat_delta, lon_delta, asf_only=False, asf_start=
         return
 
     print(wkt)
-    print("")
-    print("topsStack.boundingBox                = " + bbox_str)
     print("")
     print("mintpy.subset.lalo                   = " + subset_str + "    #[S:N,W:E / no], auto for no")
     print("miaplpy.subset.lalo                  = " + subset_str + "    #[S:N,W:E / no], auto for no")

@@ -32,6 +32,11 @@ import datetime
 import math
 import re
 import sys
+
+from minsar.utils.bbox_cli_argv import (
+    GET_SAR_COVERAGE_ARGV_KW,
+    fix_argv_for_negative_bbox_sn_we,
+)
 from collections import defaultdict
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -47,26 +52,23 @@ EPILOG = """
 Examples:
   get_sar_coverage.py "POLYGON((25.3058 36.3221,25.5015 36.3221,25.5015 36.5019,25.3058 36.5019,25.3058 36.3221))"
   get_sar_coverage.py 36.322:36.502,25.306:25.502
-  get_sar_coverage.py 36.322:36.502,25.306:25.502 --platforms S1
-  get_sar_coverage.py 36.33:36.485,25.32:25.502 --platforms S1 -v
-  get_sar_coverage.py 19.30:19.6,-155.8:-154.8 --platforms S1,ALOS2 --all
-  get_sar_coverage.py 36.322:36.502,25.306:25.502 --platforms S1 --select   # parseable vars for bash
-  get_sar_coverage.py AOI --platforms S1 --show-removed   # list SLC granules dropped (partial footprint vs AOI)
+  get_sar_coverage.py 36.322:36.502,25.306:25.502 --platform S1
+  get_sar_coverage.py 36.33:36.485,25.32:25.502 --platform S1 -v
+  get_sar_coverage.py 19.30:19.6,-155.8:-154.8 --platform S1,ALOS2 --all
+  get_sar_coverage.py 36.322:36.502,25.306:25.502 --platform S1 --select   # parseable vars for bash
+  get_sar_coverage.py AOI --platform S1 --show-removed   # list SLC granules dropped (partial footprint vs AOI)
+  get_sar_coverage.py -23.393:-23.097,-68.356:-68.175 --platform S1   # negative lat (or use -- before AOI)
 
-Select (--select): requires exactly one platform (--platforms S1 or NISAR or ALOS2). Prints asc_relorbit, asc_label, desc_relorbit, desc_label to stdout (progress to stderr). In bash: eval $(get_sar_coverage.py AOI --platforms S1 --select); then use $asc_relorbit, $desc_relorbit, $asc_label, $desc_label.
+Select (--select): requires exactly one platform (--platform S1 or NISAR or ALOS2). Prints asc_relorbit, asc_label, desc_relorbit, desc_label to stdout (progress to stderr). In bash: eval $(get_sar_coverage.py AOI --platform S1 --select); then use $asc_relorbit, $desc_relorbit, $asc_label, $desc_label.
 
 Notes:
   NISAR RSLC data availability depends on mission phase.
-  ALOS-2 L1.1 covers all beam modes; use --platforms ALOS2 to search only ALOS-2.
+  ALOS-2 L1.1 covers all beam modes; use --platform ALOS2 to search only ALOS-2.
 
 Caveats:
   Coverage counts may be inaccurate due to orbit variations; only --all gives accurate counts.
   Min distance to footprint edge is approximate (degrees-to-meters at AOI latitude).
 """
-
-# Lat/lon deltas for topsStack.boundingBox expansion (same as convert_bbox.py)
-_BBOX_LAT_DELTA = 0.15
-_BBOX_LON_DELTA = 1.5
 
 # ASF Search API endpoint used for count-only requests
 _ASF_API_URL = "https://api.daac.asf.alaska.edu/services/search/param"
@@ -1073,7 +1075,7 @@ def print_best_only(all_rows: List[Tuple[str, List[Dict]]], stream) -> None:
 
     Call only when exactly one platform is in all_rows (enforced by --select validation).
     Format: asc_relorbit=29, asc_label="SenA29", desc_relorbit=36, desc_label="SenD36".
-    Suitable for: eval $(get_sar_coverage.py AOI --platforms S1 --select) in bash.
+    Suitable for: eval $(get_sar_coverage.py AOI --platform S1 --select) in bash.
     """
     if not all_rows:
         return
@@ -1179,7 +1181,7 @@ def print_table(all_rows: List[Tuple[str, List[Dict]]], do_count: bool) -> None:
 
 
 def print_bbox_info(wkt: str) -> None:
-    """Print topsStack/MintPy/Miaplpy subset.lalo lines (same format as convert_bbox.py).
+    """Print normalized POLYGON WKT then MintPy/Miaplpy subset.lalo (same layout as convert_bbox.py).
 
     Only called when the AOI was given as POLYGON WKT; bounds-style AOIs skip this output.
     """
@@ -1190,12 +1192,13 @@ def print_bbox_info(wkt: str) -> None:
     lon_min_r = round(lon_min, 3)
     lon_max_r = round(lon_max, 3)
 
-    lat_min_bbox = round(lat_min_r - _BBOX_LAT_DELTA, 1)
-    lat_max_bbox = round(lat_max_r + _BBOX_LAT_DELTA, 1)
-    lon_min_bbox = round(lon_min_r - _BBOX_LON_DELTA, 1)
-    lon_max_bbox = round(lon_max_r + _BBOX_LON_DELTA, 1)
-
+    wkt_display = (
+        f"POLYGON(({lon_min_r} {lat_min_r},{lon_max_r} {lat_min_r},"
+        f"{lon_max_r} {lat_max_r},{lon_min_r} {lat_max_r},{lon_min_r} {lat_min_r}))"
+    )
     subset_str = _subset_str_from_wkt(wkt)
+    print(wkt_display)
+    print("")
     print(f"mintpy.subset.lalo                   = {subset_str}    #[S:N,W:E / no], auto for no")
     print(f"miaplpy.subset.lalo                  = {subset_str}    #[S:N,W:E / no], auto for no")
 
@@ -1214,17 +1217,18 @@ def create_parser() -> argparse.ArgumentParser:
         'aoi',
         help=(
             "WKT POLYGON or lat_min:lat_max,lon_min:lon_max. "
-            "MintPy/Miaplpy subset.lalo lines are printed only for POLYGON input."
+            "For POLYGON input, prints normalized POLYGON WKT then MintPy/Miaplpy subset.lalo (same as convert_bbox.py); "
+            "bounds-style AOIs skip that block."
         ),
     )
-    parser.add_argument('--platforms', default='all', metavar='PLATFORMS',
+    parser.add_argument('--platform', default='all', dest='platforms', metavar='PLATFORM',
                         help=(
                             'Comma-separated platform list, or "all" (default). '
                             'Accepted names: '
                             'S1 / Sentinel-1 / SENTINEL-1 / SENTINEL1 for Sentinel-1; '
                             'NISAR for NISAR; '
                             'ALOS2 / ALOS-2 for ALOS-2. '
-                            'Example: --platforms S1,ALOS2'
+                            'Example: --platform S1,ALOS2'
                         ))
     parser.add_argument('--start', default='2020-01-01', metavar='YYYY-MM-DD',
                         help='Start date for discovery queries (default: 2020-01-01)')
@@ -1246,14 +1250,16 @@ def create_parser() -> argparse.ArgumentParser:
                              'does not fully cover the AOI (after intersectsWith search). '
                              'Shows granule id, date, and reason.')
     parser.add_argument('--select', action='store_true', default=False,
-                        help='Print parseable key=value lines for best Asc/Desc orbit (max incAngle). Requires exactly one --platforms (e.g. S1). '
-                             'Bash: eval $(get_sar_coverage.py AOI --platforms S1 --select); then use $asc_relorbit, $desc_relorbit, $asc_label, $desc_label. Python: parse stdout line by line (split on "=").')
+                        help='Print parseable key=value lines for best Asc/Desc orbit (max incAngle). Requires exactly one --platform (e.g. S1). '
+                             'Bash: eval $(get_sar_coverage.py AOI --platform S1 --select); then use $asc_relorbit, $desc_relorbit, $asc_label, $desc_label. Python: parse stdout line by line (split on "=").')
     return parser
 
 
 def main(iargs=None):
+    argv = sys.argv[1:] if iargs is None else list(iargs)
+    argv = fix_argv_for_negative_bbox_sn_we(argv, **GET_SAR_COVERAGE_ARGV_KW)
     parser = create_parser()
-    inps = parser.parse_args(iargs)
+    inps = parser.parse_args(argv)
 
     try:
         wkt = parse_aoi(inps.aoi)
@@ -1311,7 +1317,7 @@ def main(iargs=None):
         sys.exit(1)
 
     if inps.select and len(platforms) != 1:
-        print("Error: --select requires exactly one platform. Use --platforms S1 (or NISAR or ALOS2).", file=sys.stderr)
+        print("Error: --select requires exactly one platform. Use --platform S1 (or NISAR or ALOS2).", file=sys.stderr)
         sys.exit(1)
 
     if inps.select:

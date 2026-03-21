@@ -11,6 +11,11 @@ import contextily as ctx
 
 import webbrowser
 
+from minsar.utils.bbox_cli_argv import (
+    DISPLAY_BBOX_ARGV_KW,
+    fix_argv_for_negative_bbox_sn_we,
+)
+
 try:
     from minsar.utils.system_utils import detect_operating_system, are_we_on_slurm_system
 except ImportError:
@@ -31,6 +36,8 @@ Examples:
   display_bbox.py --lat 25.937 25.958 --lon -80.125 -80.118
   display_bbox.py 'POLYGON((-82.04 26.53, -81.92 26.53, -81.92 26.61, -82.04 26.61, -82.04 26.53))'
   display_bbox.py 25.937:25.958,-80.125:-80.118 --asf
+  display_bbox.py -23.393:-23.097,-68.356:-68.175
+  display_bbox.py -- -23.393:-23.097,-68.356:-68.175
 
 Note:
   If you are using a POLYGON, you **must** wrap it in single quotes to prevent a shell syntax error.
@@ -120,7 +127,8 @@ def main():
         sys.exit(1)
 
     parser = create_parser()
-    inps = parser.parse_args(args=sys.argv[1:])
+    argv = fix_argv_for_negative_bbox_sn_we(sys.argv[1:], **DISPLAY_BBOX_ARGV_KW)
+    inps = parser.parse_args(args=argv)
 
     if inps.subset:
         arg = inps.subset
