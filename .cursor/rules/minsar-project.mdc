@@ -163,6 +163,24 @@ For `run_workflow.bash` internals: `minsar/bin/ARCHITECTURE.md`
 - Use `pathlib.Path` for file paths
 - Include docstrings for modules/functions
 
+### Area of interest (AOI) in CLIs (REQUIRED)
+
+When a script accepts a geographic **AOI** (area of interest):
+
+1. **Naming and UX** — Use **AOI** in all caps in user-facing text: help strings, `metavar="AOI"`, epilog examples, errors, and docs. The internal `argparse` `dest` may stay lowercase (e.g. `aoi`); what users see should say **AOI**.
+
+2. **Negative latitude (S:N,W:E bounds)** — Before `parse_args`, apply the same argv fix as `convert_bbox.py`:
+   - Import `fix_argv_for_negative_bbox_sn_we` from `minsar.utils.bbox_cli_argv`.
+   - Pass a kwargs dict listing every option that takes one or two following tokens (`consume_one` / `consume_two`) and boolean flags (`flags`), matching the script’s `add_argument` names — see `CONVERT_BBOX_ARGV_KW` and `CREATE_TEMPLATE_ARGV_KW` in `minsar/utils/bbox_cli_argv.py` as patterns.
+   - If the CLI has **two or more leading positionals** after options (e.g. AOI then project name), set `multiple_initial_positionals=True` so AOI and name are not swapped (see `create_template.py`).
+
+3. **Accepted AOI forms** — Behavior must match **`minsar/utils/convert_bbox.py`**: support at least
+   - bounds `lat_min:lat_max,lon_min:lon_max` (S:N,W:E), and
+   - **WKT** `POLYGON((lon lat, ...))` (quote in shell when needed),
+   - plus other formats `_input_to_bounds` already handles (e.g. GoogleEarth-style points) when you reuse that helper.
+
+4. **Implementation** — Prefer reusing **`minsar.utils.convert_bbox._input_to_bounds`** (and related helpers there) for parsing/normalizing AOI to bounds or subset strings, rather than duplicating parsing logic. For subprocess calls to tools that take the same AOI string (e.g. `get_sar_coverage.py`), pass the raw AOI after argv has been fixed.
+
 ## Testing
 
 ### Running Tests
