@@ -24,6 +24,9 @@ Options:
 Environment:
   TEMPLATES, AUTO_TEMPLATES — used for default --outdir (see above)
 
+After a successful write, opposite_orbit.txt is written in the current working directory
+(typically the MinSAR project / WORK_DIR) with one line: absolute path to the new template.
+
 Example:
   create_opposite_orbit_template.bash $TE/ChilesSenA120.template
 EOF
@@ -137,9 +140,9 @@ if [[ -z "$subset" ]]; then
 fi
 [[ -n "$subset" ]] || die "no active miaplpy.subset.lalo or mintpy.subset.lalo in $template_path"
 
-echo "Running get_sar_coverage.py \"$subset\" --platforms \"$platform\" --select ..."
+echo "Running get_sar_coverage.py \"$subset\" --platform \"$platform\" --select ..."
 # shellcheck disable=SC1090
-eval "$(python3 "$GET_SAR_COVERAGE" "$subset" --platforms "$platform" --select)"
+eval "$(python3 "$GET_SAR_COVERAGE" "$subset" --platform "$platform" --select)"
 
 [[ -n "${asc_label:-}" && -n "${desc_label:-}" ]] || die "get_sar_coverage.py did not set asc_label/desc_label (check AOI and platform)"
 [[ -n "${asc_relorbit:-}" && -n "${desc_relorbit:-}" ]] || die "get_sar_coverage.py did not set asc_relorbit/desc_relorbit"
@@ -175,5 +178,14 @@ awk -v rorb="$opposite_relorbit" '
     { print }
 ' "$out_file" >"$tmp"
 mv -f "$tmp" "$out_file"
+
+# Record path in the caller's project directory (current working dir, e.g. WORK_DIR).
+_opposite_record="$out_file"
+if command -v realpath >/dev/null 2>&1; then
+    _opposite_record=$(realpath "$out_file")
+else
+    _opposite_record="$(cd "$(dirname "$out_file")" && pwd)/$(basename "$out_file")"
+fi
+printf '%s\n' "$_opposite_record" > "${PWD}/opposite_orbit.txt"
 
 print_wrote_line "$outdir" "$out_base"
