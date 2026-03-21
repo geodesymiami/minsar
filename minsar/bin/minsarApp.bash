@@ -48,6 +48,8 @@ helptext="                                                                      
    --no-mintpy --miaplpy use only miaplpyApp.py                                  \n\
                                                                                  \n\
    --no-orbit-download   don't download orbits prior to jobfile creation         \n\
+   --opposite-orbit [--no-opposite-orbit]  run opposite-orbit step (default: off)       \n\
+   --horzvert [--no-horzvert]       run horzvert post-step after MiaplPy (default: off) \n\
                                                                                  \n\
    --sleep SECS           sleep seconds before running                           \n\
    --chunks               process in form of multiple chunks.                    \n\
@@ -119,7 +121,8 @@ dem_flag=1
 ifgram_flag=1
 mintpy_flag=1
 miaplpy_flag=0
-finishup_flag=1
+opposite_orbit_flag=0
+horzvert_flag=0
 
 download_method="burst2stack"
 miaplpy_startstep=1
@@ -231,6 +234,22 @@ do
             upload_flag=0
             shift
             ;;
+        --opposite-orbit)
+            opposite_orbit_flag=1
+            shift
+            ;;
+        --no-opposite-orbit)
+            opposite_orbit_flag=0
+            shift
+            ;;
+        --horzvert)
+            horzvert_flag=1
+            shift
+            ;;
+        --no-horzvert)
+            horzvert_flag=0
+            shift
+            ;;
         --no-orbit-download)
             orbit_download_flag=0
             shift
@@ -284,7 +303,7 @@ if [[ "$miaplpy_start_cli_flag" == "1" && "$startstep_cli_flag" == "1" && "$star
     exit 1
 fi
 
-if [[ "$isce_start_cli_flag" == "1" && "$startstep_cli_flag" == "1" && ( "$startstep" == "mintpy" || "$startstep" == "miaplpy" || "$startstep" == "finishup" ) ]]; then
+if [[ "$isce_start_cli_flag" == "1" && "$startstep_cli_flag" == "1" && ( "$startstep" == "mintpy" || "$startstep" == "miaplpy" ) ]]; then
     echo "USER ERROR: Inconsistent options: --isce-start cannot be combined with --start $startstep." >&2
     exit 1
 fi
@@ -381,15 +400,6 @@ elif [[ $startstep == "miaplpy" ]]; then
     ifgram_flag=0
     mintpy_flag=0
     miaplpy_flag=1
-elif [[ $startstep == "finishup" ]]; then
-    download_flag=0
-    preprocess_flag=0
-    dem_flag=0
-    jobfiles_flag=0
-    ifgram_flag=0
-    mintpy_flag=0
-    miaplpy_flag=0
-    insarmaps_flag=0
 elif [[ $startstep != "" ]]; then
     echo "USER ERROR: startstep received value of "${startstep}". Exiting."
     exit 1
@@ -402,7 +412,8 @@ if [[ $stopstep == "download" ]]; then
     ifgram_flag=0
     mintpy_flag=0
     miaplpy_flag=0
-    finishup_flag=0
+    horzvert_flag=0
+    opposite_orbit_flag=0
 elif [[ $stopstep == "preprocess" ]]; then
     dem_flag=0
     jobfiles_flag=0
@@ -414,21 +425,26 @@ elif [[ $stopstep == "dem" ]]; then
     ifgram_flag=0
     mintpy_flag=0
     miaplpy_flag=0
-    finishup_flag=0
+    horzvert_flag=0
+    opposite_orbit_flag=0
 elif [[ $stopstep == "jobfiles" ]]; then
     ifgram_flag=0
     mintpy_flag=0
     miaplpy_flag=0
-    finishup_flag=0
+    horzvert_flag=0
+    opposite_orbit_flag=0
 elif [[ $stopstep == "ifgram" ]]; then
     mintpy_flag=0
     miaplpy_flag=0
-    finishup_flag=0
+    horzvert_flag=0
+    opposite_orbit_flag=0
 elif [[ $stopstep == "mintpy" ]]; then
     miaplpy_flag=0
-    finishup_flag=0
+    horzvert_flag=0
+    opposite_orbit_flag=0
 elif [[ $stopstep == "miaplpy" ]]; then
-    finishup_flag=0
+    horzvert_flag=0
+    opposite_orbit_flag=0
 elif [[ $stopstep != "" ]]; then
     echo "stopstep received value of "${stopstep}". Exiting."
     exit 1
@@ -494,7 +510,7 @@ if [[ ${template[topsStack.workflow]} == "slc" || "$isce_stop_cli_flag" == "1" ]
 fi
 
 # Starting at ifgram or later does not need orbit download.
-if [[ "$startstep" == "ifgram" || "$startstep" == "mintpy" || "$startstep" == "miaplpy" || "$startstep" == "finishup" ]]; then
+if [[ "$startstep" == "ifgram" || "$startstep" == "mintpy" || "$startstep" == "miaplpy" ]]; then
     orbit_download_flag=0
 fi
 
@@ -506,8 +522,8 @@ fi
 
 echo "Switches: download_method: <$download_method> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
 echo "Flags for processing steps:"
-echo "download preprocess dem jobfiles ifgram mintpy miaplpy upload insarmaps finishup"
-echo "    $download_flag        $preprocess_flag       $dem_flag      $jobfiles_flag       $ifgram_flag       $mintpy_flag      $miaplpy_flag      $upload_flag       $insarmaps_flag        $finishup_flag"
+echo "download preprocess dem jobfiles ifgram mintpy miaplpy upload insarmaps opposite_orbit horzvert"
+echo "    $download_flag        $preprocess_flag       $dem_flag      $jobfiles_flag       $ifgram_flag       $mintpy_flag      $miaplpy_flag      $upload_flag       $insarmaps_flag        $opposite_orbit_flag        $horzvert_flag"
 
 step_ranges="Step ranges: isce: $isce_start $isce_stop"
 [[ "$miaplpy_flag" == "1" ]] && step_ranges="$step_ranges  miaplpy: $miaplpy_startstep $miaplpy_stopstep"
@@ -516,7 +532,6 @@ echo ""
 echo "$step_ranges"
 
 sleep 5
-
 
 ####################################
 ###       Processing Steps       ###
@@ -786,6 +801,33 @@ if [[ $miaplpy_flag == "1" ]]; then
     fi
 
 fi
+
+########################
+#   Opposite orbit (post MiaplPy)
+########################
+if [[ $opposite_orbit_flag == "1" ]]; then
+    echo "Running minsarApp.bash for opposite orbit ..."
+    run_command "create_opposite_orbit_template.bash $template_file"
+    [[ -f "${WORK_DIR}/opposite_orbit.txt" ]] || { echo "missing ${WORK_DIR}/opposite_orbit.txt"; exit 1; }
+    opposite_orbit_template_file=$(tr -d '\r\n' < "${WORK_DIR}/opposite_orbit.txt")
+    [[ -f "$opposite_orbit_template_file" ]] || { echo "opposite-orbit template not found: $opposite_orbit_template_file"; exit 1; }
+    reduced_args="$(get_modified_command_line_for_opposite_orbit)"
+    run_command "${SCRIPT_DIR}/${SCRIPT_NAME} $opposite_orbit_template_file $reduced_args"
+fi
+
+
+########################
+#   Horzvert 
+########################
+if [[ $horzvert_flag == "1" ]]; then
+    ref_lalo="$(get_ref_lalo_from_template_file)"
+    if [[ mintpy_flag == "1" ]]; then
+       cmd="horzvert_timeseries.bash $template_file%.template}/mintpy $opposite_orbit_template_file%.template}/mintpy"
+       run_command "$cmd"
+    fi
+fi
+
+
 
 echo
 if ls mintpy/*he5 1> /dev/null 2>&1; then

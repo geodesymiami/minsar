@@ -158,7 +158,7 @@ test_geometry_does_not_disable_mintpy() {
 
     assert_contains "$output" "Flags for processing steps:" \
         "minsarApp prints final resolved processing flags"
-    assert_contains "$output" "jobfiles ifgram mintpy miaplpy upload insarmaps finishup" \
+    assert_contains "$output" "jobfiles ifgram mintpy miaplpy upload insarmaps opposite_orbit horzvert" \
         "Flag header is present"
     assert_contains "$output" "0        0       0      1       1       1" \
         "Resolved flags show mintpy enabled for geometry (workflow not slc, no --isce-stop)"
