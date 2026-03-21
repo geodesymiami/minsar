@@ -81,9 +81,10 @@ ln -sf $MINSAR_HOME/additions/mintpy/cli/geocode_orig.py $MINSAR_HOME/tools/Mint
 #cp -p additions/mintpy/cli/save_hdfeos5.py tools/MintPy/src/mintpy/cli/
 
 ### Adding not-committed MiaplPy fixes (for the first Sara said she will do it; the second is wrongly out-commented isce imports)
-ln -sf $MINSAR_HOME/additions/miaplpy/prep_slc_isce.py $MINSAR_HOME/tools/MiaplPy/src/miaplpy
-ln -sf $MINSAR_HOME/additions/miaplpy/unwrap_ifgram.py $MINSAR_HOME/tools/MiaplPy/src/miaplpy
-ln -sf $MINSAR_HOME/additions/miaplpy/utils.py $MINSAR_HOME/tools/MiaplPy/src/miaplpy/objects
+ln -sf $MINSAR_HOME/additions/miaplpy/prep_slc_isce.py $MINSAR_HOME/tools/MiaplPy/src/miaplpy/prep_slc_isce.py
+ln -sf $MINSAR_HOME/additions/miaplpy/unwrap_ifgram.py $MINSAR_HOME/tools/MiaplPy/src/miaplpy/unwrap_ifgram.py
+ln -sf $MINSAR_HOME/additions/miaplpy/utils.py $MINSAR_HOME/tools/MiaplPy/src/miaplpy/objects/utils.py
+ln -sf $MINSAR_HOME/additions/miaplpy/miaplpyApp_auto.cfg $MINSAR_HOME/tools/MiaplPy/src/miaplpy/defaults/miaplpyApp_auto.cfg
 
 ### Adding ISCE fixes and copying checked-out ISCE version (the latest) into miniforge directory ###
 if [[ "$(uname)" == "Linux" ]]; then
