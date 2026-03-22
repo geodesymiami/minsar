@@ -166,7 +166,8 @@ Examples:
       --dataset TYPE                  Select .he5 by type when argument is a directory: PS, DS, filtDS, filt*DS, or geo.
                                         When not given, resolve_he5 is used (newest .he5 or get_eos5_file).
       --mask-thresh FLOAT             Coherence threshold for masking (default: 0.55)
-      --ref-lalo LAT,LON or LAT LON   Reference point (lat,lon or lat lon)
+      --ref-lalo LAT,LON or LAT LON   Reference point (required). Comma form or two numbers;
+                                        also --ref-lalo=LAT,LON
       --lat-step FLOAT                Latitude step for geocoding (LON_STEP computed automatically)
       --lalo-step LAT LON             Lat and lon step for geocoding (overrides --lat-step)
       --horz-az-angle FLOAT           Horizontal azimuth angle (default: 90)
@@ -226,6 +227,10 @@ do
         --mask-thresh)
             mask_thresh="$2"
             shift 2
+            ;;
+        --ref-lalo=*)
+            ref_lalo=("${key#*=}")
+            shift
             ;;
         --ref-lalo)
             shift
@@ -309,9 +314,11 @@ validate_ref_lalo() {
         [[ "${arr[0]}" != *","* ]] && { echo "Error: --ref-lalo must be LAT,LON or LAT LON (e.g. --ref-lalo 36.87,25.94)"; exit 1; }
         IFS=',' read -ra parts <<< "${arr[0]}"
         [[ ${#parts[@]} -ne 2 ]] && { echo "Error: --ref-lalo must be LAT,LON or LAT LON"; exit 1; }
-        lat="${parts[0]}" lon="${parts[1]}"
+        lat=$(echo "${parts[0]}" | xargs)
+        lon=$(echo "${parts[1]}" | xargs)
     else
-        lat="${arr[0]}" lon="${arr[1]}"
+        lat=$(echo "${arr[0]}" | xargs)
+        lon=$(echo "${arr[1]}" | xargs)
     fi
     if ! [[ "$lat" =~ ^-?[0-9]+\.?[0-9]*$ ]] || ! [[ "$lon" =~ ^-?[0-9]+\.?[0-9]*$ ]]; then
         echo "Error: --ref-lalo requires numeric lat,lon (e.g. --ref-lalo 36.87 25.94)"
@@ -319,6 +326,11 @@ validate_ref_lalo() {
     fi
 }
 validate_ref_lalo "${ref_lalo[@]}"
+
+if [[ ${#ref_lalo[@]} -eq 0 ]]; then
+    echo "Error: --ref-lalo is required. Use LAT,LON or LAT LON (see $SCRIPT_NAME --help)"
+    exit 1
+fi
 
 # Validate --dataset if provided (same allowed values as ingest_insarmaps.bash)
 validate_dataset() {
