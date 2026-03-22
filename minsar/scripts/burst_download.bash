@@ -264,10 +264,29 @@ failures_file="$slc_dir/burst2stack_failures.txt"
 rerun_file="$slc_dir/run_burst2stack_rerun"
 : > "$failures_file"
 
+_get_burst2stack_error() {
+    local date_str="$1"
+    local d_compact="${date_str//-/}"
+    local errfile="$slc_dir/burst2stack_${d_compact}.e"
+    if [[ -f "$errfile" && -s "$errfile" ]]; then
+        local err_line
+        err_line=$(grep -E 'ValueError:|Error:' "$errfile" | tail -1 2>/dev/null)
+        [[ -z "$err_line" ]] && err_line=$(tail -1 "$errfile" 2>/dev/null)
+        if [[ -n "$err_line" ]]; then
+            echo "$err_line" | head -c 120
+        else
+            echo "(empty stderr)"
+        fi
+    else
+        echo "(no stderr file)"
+    fi
+}
+
 _verify_and_build_rerun() {
     local run_f="$1"
     local fail_f="$2"
     local rerun_f="$3"
+    local reason_suffix="$4"
     : > "$rerun_f"
     while IFS= read -r line; do
         [[ -z "$line" ]] && continue
@@ -283,7 +302,8 @@ _verify_and_build_rerun() {
             fi
         done
         if [[ $has_safe -eq 0 ]]; then
-            echo "$date_from_line  no SAFE produced" >> "$fail_f"
+            err_summary=$(_get_burst2stack_error "$date_from_line")
+            echo "$date_from_line  $reason_suffix; $err_summary" >> "$fail_f"
             echo "$line" >> "$rerun_f"
         fi
     done < "$run_f"
@@ -296,7 +316,7 @@ elif command -v check_SAFE_completeness.py &>/dev/null; then
     check_SAFE_completeness.py "$slc_dir" || true
 fi
 
-_verify_and_build_rerun "$run_file" "$failures_file" "$rerun_file"
+_verify_and_build_rerun "$run_file" "$failures_file" "$rerun_file" "no SAFE produced"
 
 # One retry pass for failed dates
 if [[ -s "$rerun_file" ]]; then
@@ -311,25 +331,7 @@ if [[ -s "$rerun_file" ]]; then
     fi
     # Re-verify after retry; rebuild failures_file and rerun_file with only still-failed dates
     : > "$failures_file"
-    : > "${rerun_file}.tmp"
-    while IFS= read -r line; do
-        [[ -z "$line" ]] && continue
-        date_from_line=$(echo "$line" | sed -E 's/.*--start-date ([0-9]{4}-[0-9]{2}-[0-9]{2}) .*/\1/')
-        [[ "$date_from_line" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || continue
-        has_safe=0
-        for safe in "$slc_dir"/*.SAFE; do
-            [[ -d "$safe" ]] || continue
-            safe_date=$(basename "$safe" .SAFE | sed -E 's/.*([0-9]{4})([0-9]{2})([0-9]{2})T.*/\1-\2-\3/')
-            if [[ "$safe_date" == "$date_from_line" ]]; then
-                has_safe=1
-                break
-            fi
-        done
-        if [[ $has_safe -eq 0 ]]; then
-            echo "$date_from_line  no SAFE produced (retry)" >> "$failures_file"
-            echo "$line" >> "${rerun_file}.tmp"
-        fi
-    done < "$rerun_file"
+    _verify_and_build_rerun "$rerun_file" "$failures_file" "${rerun_file}.tmp" "no SAFE produced (retry)"
     mv "${rerun_file}.tmp" "$rerun_file"
 fi
 
