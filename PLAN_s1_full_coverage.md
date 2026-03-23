@@ -56,7 +56,7 @@ Extend `get_sar_coverage.py` so that, after identifying Sentinel-1 products inte
 
 ## Key Commands & Flows
 - Run S1 coverage with full-coverage and boundary diagnostics:
-  - `get_sar_coverage.py 36.33:36.485,25.32:25.502 --platforms S1 --count --full-coverage-only -v`
+  - `get_sar_coverage.py 36.33:36.485,25.32:25.502 --platform S1 --count --full-coverage-only -v`
   - Expect per-orbit lines indicating whether any granules touch the AOI boundary, or the minimum boundary distance, plus the usual count table.
 
 ## TODO List

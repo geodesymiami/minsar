@@ -473,15 +473,21 @@ for g in "${globlist[@]}"; do
                 #step_max_tasks=$(echo "$SJOBS_STEP_MAX_TASKS/${step_io_load_list[$step_name]}" | bc | awk '{print int($1)}')
         
                 if [[ $state == *"TIMEOUT"* ]]; then
-                    init_walltime=$(grep -oP '(?<=#SBATCH -t )[0-9]+:[0-9]+:[0-9]+' $file)
+                    init_walltime=$(grep -oP '(?<=#SBATCH -t )[0-9]+:[0-9]+:[0-9]+' "$file")
+                    init_queue=$(grep -oP '(?<=#SBATCH -p )[^[:space:]]+' "$file" || true)
                     echo "Job file ${file} timed out with walltime of ${init_walltime}."
-                                    
-                    # Compute a new walltime and update the job file
+
+                    # Compute a new walltime and (if configured) update queue in the job file
                     update_walltime_queuename.py "$file" &> /dev/null
-                    updated_walltime=$(grep -oP '(?<=#SBATCH -t )[0-9]+:[0-9]+:[0-9]+' $file)
+                    updated_walltime=$(grep -oP '(?<=#SBATCH -t )[0-9]+:[0-9]+:[0-9]+' "$file")
+                    updated_queue=$(grep -oP '(?<=#SBATCH -p )[^[:space:]]+' "$file" || true)
 
                     datetime=$(date +"%Y-%m-%d:%H-%M")
-                    echo "${datetime}: re-running: ${file}: ${init_walltime} --> ${updated_walltime}" >> "${RUNFILES_DIR}"/rerun.log
+                    rerun_line="${datetime}: re-running: ${file}: ${init_walltime} --> ${updated_walltime}"
+                    if [[ -n "$init_queue" && -n "$updated_queue" && "$init_queue" != "$updated_queue" ]]; then
+                        rerun_line="${rerun_line}   ${init_queue} --> ${updated_queue}"
+                    fi
+                    echo "$rerun_line" >> "${RUNFILES_DIR}"/rerun.log
                     echo "Resubmitting file (${file}) with new walltime of ${updated_walltime}"
                 fi
 

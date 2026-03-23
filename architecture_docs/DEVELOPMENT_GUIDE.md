@@ -147,6 +147,7 @@ if __name__ == '__main__':
 - Use `pathlib.Path` for file paths
 - Include docstrings for modules and functions
 - Type hints encouraged for new code
+- **AOI in CLIs**: For scripts that take a geographic area of interest, follow **Area of interest (AOI) in CLIs** in `.cursor/rules/minsar-project.mdc`: user-facing **AOI** in caps; `fix_argv_for_negative_bbox_sn_we` from `minsar/utils/bbox_cli_argv.py` (same pattern as `convert_bbox.py`); `multiple_initial_positionals=True` when two leading positionals (e.g. AOI + name); parse bounds `lat_min:lat_max,lon_min:lon_max` and WKT `POLYGON(...)` via `minsar.utils.convert_bbox._input_to_bounds` (or equivalent), not ad-hoc parsers.
 
 ## Adding New Features
 

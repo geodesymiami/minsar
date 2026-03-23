@@ -46,6 +46,7 @@ Templates are read using an associative array in bash:
 source minsar/lib/minsarApp_specifics.sh
 create_template_array $template_file
 # Access: ${template[mintpy.reference.lalo]}
+# Horzvert reference resolution: ref_lalo="$(get_ref_lalo_from_template_file)"
 ```
 
 ## Processing Pipelines

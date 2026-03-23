@@ -1,3 +1,37 @@
+# Plan: Use bare `horzvert_timeseries.bash` in horzvert jobfile creator
+
+## Summary
+Adjust `create_horzvert_timeseries_jobfile.py` so the generated jobfile invokes `horzvert_timeseries.bash` by bare name (relying on `PATH`), instead of resolving it to an absolute repo-relative path.
+
+## Key Components Affected
+- `minsar/scripts/create_horzvert_timeseries_jobfile.py`
+  - Replace `_resolve_horzvert_timeseries_bash()` usage with fixed command `horzvert_timeseries.bash`
+  - Optionally remove now-unused resolver helper and imports (`Path`, `shutil`) to keep lint clean.
+
+## Action Items
+- [ ] Update `create_horzvert_timeseries_jobfile.py` to set `hv_bash = "horzvert_timeseries.bash"`
+- [ ] Remove `_resolve_horzvert_timeseries_bash()` helper and related unused imports if no longer needed
+- [ ] Run `python3 -m py_compile` on the modified script
+
+## Execution Plan (Detailed Change Instructions)
+1. Edit `/work2/05861/tg851601/stampede2/code/minsar/minsar/scripts/create_horzvert_timeseries_jobfile.py`:
+   1. Remove (or stop using) `_resolve_horzvert_timeseries_bash()`.
+   2. In `main()`, set:
+      - `hv_bash = "horzvert_timeseries.bash"`
+      - `command_parts = [hv_bash, inps.file1, inps.file2]`
+2. If the resolver helper is removed, also remove related imports (`shutil`, `Path`) to avoid dead code / lint warnings.
+3. Validate syntax with:
+   - `python3 -m py_compile minsar/scripts/create_horzvert_timeseries_jobfile.py`
+
+## Key Commands & Flows
+- Flow remains the same: Python script builds the final job command line; job submission uses `JOB_SUBMIT.submit_script(...)`.
+- Only the `horzvert_timeseries.bash` invocation token changes.
+
+## TODO List
+- [ ] Write/adjust tests (if existing ones cover this generator)
+- [ ] Implement the edit after approval
+- [ ] Run full test suite if feasible in this environment
+
 # Plan: Split ASF burst output into download_asf_burst.sh and pack_bursts.sh
 
 ## Summary

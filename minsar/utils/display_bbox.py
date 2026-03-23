@@ -11,6 +11,11 @@ import contextily as ctx
 
 import webbrowser
 
+from minsar.utils.bbox_cli_argv import (
+    DISPLAY_BBOX_ARGV_KW,
+    fix_argv_for_negative_bbox_sn_we,
+)
+
 try:
     from minsar.utils.system_utils import detect_operating_system, are_we_on_slurm_system
 except ImportError:
@@ -31,6 +36,8 @@ Examples:
   display_bbox.py --lat 25.937 25.958 --lon -80.125 -80.118
   display_bbox.py 'POLYGON((-82.04 26.53, -81.92 26.53, -81.92 26.61, -82.04 26.61, -82.04 26.53))'
   display_bbox.py 25.937:25.958,-80.125:-80.118 --asf
+  display_bbox.py -23.393:-23.097,-68.356:-68.175
+  display_bbox.py -- -23.393:-23.097,-68.356:-68.175
 
 Note:
   If you are using a POLYGON, you **must** wrap it in single quotes to prevent a shell syntax error.
@@ -120,7 +127,8 @@ def main():
         sys.exit(1)
 
     parser = create_parser()
-    inps = parser.parse_args(args=sys.argv[1:])
+    argv = fix_argv_for_negative_bbox_sn_we(sys.argv[1:], **DISPLAY_BBOX_ARGV_KW)
+    inps = parser.parse_args(args=argv)
 
     if inps.subset:
         arg = inps.subset
@@ -142,17 +150,22 @@ def main():
         sys.exit(1)
 
     if arg.lower().startswith("polygon"):
-        # Extract WKT coordinates and derive bounds
+        # Extract WKT coordinates and derive bounds (same bounds logic as convert_bbox.py)
         coords = list(wkt.loads(arg).exterior.coords)
         lons, lats = zip(*coords)
         lat_min, lat_max = min(lats), max(lats)
         lon_min, lon_max = min(lons), max(lons)
-        wkt_str = arg
     else:
         lat_part, lon_part = arg.split(',')
         lat_min, lat_max = map(float, lat_part.split(':'))
         lon_min, lon_max = map(float, lon_part.split(':'))
-        wkt_str = _bounds_to_wkt(lat_min, lat_max, lon_min, lon_max)
+
+    # Match convert_bbox.py: round bounds, then axis-aligned POLYGON WKT string
+    lat_min = round(lat_min, 3)
+    lat_max = round(lat_max, 3)
+    lon_min = round(lon_min, 3)
+    lon_max = round(lon_max, 3)
+    wkt_str = _bounds_to_wkt(lat_min, lat_max, lon_min, lon_max)
 
     if inps.asf:
         if _asf_vertex_url is not None:
@@ -185,13 +198,11 @@ def main():
                 subprocess.run(["open", "-a", "Safari", url], check=False)
         print("")
 
-    print('\nFor topsStack:')
-    print(f'topsStack.boundingBox                = {lat_min:.1f} {lat_max:.1f} {lon_min:.1f} {lon_max:.1f}')
-    print('\nFor miaplpy:')
-    print(f'mintpy.subset.lalo                   = {lat_min:.3f}:{lat_max:.3f},{lon_min:.3f}:{lon_max:.3f}    #[S:N,W:E / no], auto for no')
-    print(f'miaplpy.subset.lalo                  = {lat_min:.3f}:{lat_max:.3f},{lon_min:.3f}:{lon_max:.3f}    #[S:N,W:E / no], auto for no')
+    # Same WKT line as convert_bbox.py (non-ASF path); avoid duplicating when --asf already printed WKT
+    if not inps.asf:
+        print(wkt_str)
+
     print('\nFor subsetting:')
-    print('setmintpyfalk')
     print(f'subset.py slcStack.h5 --lat {lat_min:.3f} {lat_max:.3f} --lon {lon_min:.3f} {lon_max:.3f}')
     print(f'subset.py geometryRadar.h5 --lat {lat_min:.3f} {lat_max:.3f} --lon {lon_min:.3f} {lon_max:.3f}\n')
     output_file = "bbox_map.html"

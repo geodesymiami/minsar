@@ -24,6 +24,38 @@ done
 }
 
 ###########################################
+# Reference lat/lon for horzvert (and similar): prefer minsar.reference.lalo, else
+# mintpy.reference.lalo, else empty minsar key. Uses global associative array
+# `template` (populate with create_template_array first).
+function get_ref_lalo_from_template_file() {
+    if [[ -n "${template[minsar.reference.lalo]:-}" ]]; then
+        printf '%s' "${template[minsar.reference.lalo]}"
+    elif [[ -n "${template[mintpy.reference.lalo]:-}" ]]; then
+        printf '%s' "${template[mintpy.reference.lalo]}"
+    else
+        printf '%s' "${template[minsar.reference.lalo]:-}"
+    fi
+}
+
+###########################################
+# Args for recursive minsarApp after opposite-orbit: copy of CLI args from global array
+# `args` (see minsarApp.bash), excluding --opposite-orbit / --no-opposite-orbit.
+# Does not include the template (args[0]); join with spaces for use in run_command.
+function get_modified_command_line_for_opposite_orbit() {
+    local -a out=()
+    local a
+    for a in "${args[@]:1}"; do
+        [[ "$a" == "--opposite-orbit" ]] && continue
+        [[ "$a" == "--no-opposite-orbit" ]] && continue
+        out+=("$a")
+    done
+    local saved_ifs="$IFS"
+    IFS=' '
+    printf '%s' "${out[*]}"
+    IFS="$saved_ifs"
+}
+
+###########################################
 function run_command() {
     local cmd="$*"
 
@@ -157,11 +189,19 @@ function countbursts(){
                        unset array
                        declare -a array
                        total=0
+                       off_xml_total=0
                        for subswath in "${subswaths[@]}"; do
                            [[ -d "$subswath" ]] || continue
-                           icount=$(ls "$subswath"/burst*xml 2>/dev/null | wc -l)
+                           burst_xml_count=$(ls "$subswath"/burst*xml 2>/dev/null | wc -l)
+                           off_count=$(ls "$subswath"/range_*.off.xml 2>/dev/null | wc -l)
+                           # If burst*xml files are absent (older/newer layouts), use range_*.off.xml as burst count.
+                           icount="$burst_xml_count"
+                           if [[ "$icount" -eq 0 && "$off_count" -gt 0 ]]; then
+                               icount="$off_count"
+                           fi
                            array+=("$icount")
                            total=$((total + icount))
+                           off_xml_total=$((off_xml_total + off_count))
                        done
                        # 1-burst: ISCE may write only overlap (IW1_top.xml, IW1_bottom.xml), no burst_01.slc.xml
                        if [[ "$total" -eq 0 ]] && [[ -d "$date/overlap" ]]; then

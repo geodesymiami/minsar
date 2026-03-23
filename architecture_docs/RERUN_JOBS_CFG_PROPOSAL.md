@@ -26,7 +26,7 @@ Add these columns to each job row in `minsar/defaults/job_defaults.cfg`:
 | Column | Required | Type | Description |
 |--------|----------|------|-------------|
 | **rerun_walltime_factor** | Yes | float | Multiplier for walltime on rerun (1.2 = +20%, 2.0 = +100%). Default: 1.2. |
-| **switch_queue** | Yes | yes/no | When computed new_walltime > queue's MAX_WALLTIME: `yes` = switch to QUEUE_AT_MAX_WALLTIME; `no` = cap at MAX_WALLTIME and stay on current queue. |
+| **switch_queue** | Yes | yes/no/after_2 | When computed new_walltime > queue's MAX_WALLTIME: `yes` = switch to QUEUE_AT_MAX_WALLTIME; `no` = cap at MAX_WALLTIME and stay; `after_2` = first timeout stay on same queue, second timeout switch. |
 | **rerun_walltime_factor_switch** | No | float | When switching queue, use this factor instead of rerun_walltime_factor. Omit or n/a to use rerun_walltime_factor. |
 
 **Rename**: `switch_dev_to_normal_at_cap` → `switch_queue` (shorter, queue-agnostic).
@@ -61,9 +61,11 @@ download_burst2stack  02:00:00  0  0  3000  1  1  1  1.2  no  n/a
    - Other queues: `2-00:00:00` (effectively no cap for rerun purposes)
 
 2. **QUEUE_AT_MAX_WALLTIME**: Used when creating the rerun jobfile.
-   - When new_walltime > MAX_WALLTIME and job's switch_queue=yes, replace the queue in the job file with QUEUE_AT_MAX_WALLTIME.
+   - When new_walltime > MAX_WALLTIME and job's switch_queue=yes (or after_2 with second timeout), replace the queue in the job file with QUEUE_AT_MAX_WALLTIME.
    - For skx-dev: use `skx`.
    - For others: `n/a` (no switch).
+
+3. **switch_queue=after_2**: Rerun once on the same queue; only after the second timeout switch to QUEUE_AT_MAX_WALLTIME. Rerun count is read from `rerun.log` in the run_files directory.
 
 ### Example queues.cfg Addition
 
