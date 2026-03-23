@@ -123,6 +123,11 @@ done
 
 cd "$work_dir" || { echo "Error: cannot cd to $work_dir" >&2; exit 1; }
 
+# AOI extension loop: when burst2stack fails with "Products from swaths * do not overlap"
+AOI_EXTENSION_INIT=0.01      # degrees per step (~1 km at mid-latitudes)
+AOI_EXTENSION_MAX=0.05       # max total extension
+AOI_EXTENSION_ITER_MAX=5     # max iterations
+
 standalone_mode=0
 if [[ -n "$relative_orbit" && -n "$intersects_with" ]]; then
     standalone_mode=1
@@ -200,6 +205,8 @@ if [[ -z "$rel_orbit" || -z "$extent" ]]; then
     echo "Error: could not get rel_orbit or extent (standalone: check --relativeOrbit/--intersectsWith; template: check burst2stack_cmd.sh)" >&2
     exit 1
 fi
+
+extent_orig="$extent"   # Store for AOI extension loop (extend from original each iteration)
 
 # 4. Write run_burst2stack (one burst2stack per date)
 # burst2stack needs --end-date = start + 1 day (exclusive end)
@@ -309,6 +316,58 @@ _verify_and_build_rerun() {
     done < "$run_f"
 }
 
+# AOI extension: detect "Products from swaths * do not overlap" in failures
+_has_overlap_errors() {
+    [[ -f "$failures_file" ]] && grep -q "Products from swaths" "$failures_file" 2>/dev/null && grep -q "do not overlap" "$failures_file" 2>/dev/null
+}
+
+_extract_overlap_failed_dates() {
+    if [[ ! -f "$failures_file" ]]; then
+        return
+    fi
+    grep "Products from swaths" "$failures_file" 2>/dev/null | grep "do not overlap" | sed -E 's/^([0-9]{4}-[0-9]{2}-[0-9]{2}).*/\1/' | sort -u
+}
+
+# Extend extent (W S E N) by buffer_deg; output extent on line 1, polygon on line 2
+_extend_extent_and_polygon() {
+    local extent_str="$1"
+    local buf="$2"
+    python3 -c "
+import sys
+w, s, e, n = [float(x) for x in sys.argv[1].split()]
+b = float(sys.argv[2])
+w -= b; s -= b; e += b; n += b
+extent = ' '.join(str(x) for x in [w, s, e, n])
+polygon = f'Polygon(({w} {s}, {e} {s}, {e} {n}, {w} {n}, {w} {s}))'
+print(extent)
+print(polygon)
+" "$extent_str" "$buf"
+}
+
+# Re-fetch ASF burst listing with extended AOI polygon
+_refetch_listing_with_extended_aoi() {
+    local polygon="$1"
+    echo "Re-fetching burst listing with extended AOI ..."
+    if [[ $standalone_mode -eq 1 ]]; then
+        asf_download.sh --processingLevel=BURST --relativeOrbit="$relative_orbit" \
+            --intersectsWith="$polygon" --platform=SENTINEL-1A,SENTINEL-1B \
+            --start="$start_date" --end="$end_date" --parallel="$parallel" --dir="$slc_dir" --print \
+            > "$slc_dir/asf_burst_listing.txt"
+    else
+        first_line=$(grep 'asf_download' download_burst2safe.sh | head -1)
+        mod_cmd=$(python3 -c "
+import re, sys
+line = sys.argv[1]
+poly = sys.argv[2]
+out_path = sys.argv[3]
+new_line = re.sub(r\"--intersectsWith='[^']*'\", \"--intersectsWith='\" + poly + \"'\", line)
+new_line = re.sub(r'>[^\\s]+asf_burst_listing\\.txt', '>' + out_path, new_line)
+print(new_line)
+" "$first_line" "$polygon" "$slc_dir/asf_burst_listing.txt")
+        eval "$mod_cmd"
+    fi
+}
+
 # Run check_SAFE_completeness again (remove any incomplete SAFEs from main pass)
 if [[ -f "$SCRIPT_DIR/check_SAFE_completeness.py" ]]; then
     python3 "$SCRIPT_DIR/check_SAFE_completeness.py" "$slc_dir" || true
@@ -333,6 +392,67 @@ if [[ -s "$rerun_file" ]]; then
     : > "$failures_file"
     _verify_and_build_rerun "$rerun_file" "$failures_file" "${rerun_file}.tmp" "no SAFE produced (retry)"
     mv "${rerun_file}.tmp" "$rerun_file"
+fi
+
+# AOI extension loop: if "Products from swaths * do not overlap", extend AOI and retry
+aoi_extension_log="$slc_dir/burst2stack_aoi_extension.log"
+total_extension=0
+iteration=0
+while _has_overlap_errors && [[ $iteration -lt $AOI_EXTENSION_ITER_MAX ]] && \
+      [[ $(echo "$total_extension $AOI_EXTENSION_MAX" | awk '{print ($1 < $2)}') -eq 1 ]]; do
+    if [[ $skip_listing -eq 1 ]]; then
+        echo "Error: AOI extension requires re-fetching listing. Re-run without --skip-listing." >&2
+        exit 1
+    fi
+
+    [[ $iteration -eq 0 ]] && : > "$aoi_extension_log"
+    iteration=$((iteration + 1))
+    total_extension=$(echo "$total_extension $AOI_EXTENSION_INIT" | awk '{printf "%.4f", $1 + $2}')
+    echo "AOI extension attempt $iteration: extending by $AOI_EXTENSION_INIT deg (total $total_extension)"
+
+    ext_output=$(_extend_extent_and_polygon "$extent_orig" "$total_extension")
+    extent=$(echo "$ext_output" | head -1)
+    extended_polygon=$(echo "$ext_output" | tail -1)
+    _refetch_listing_with_extended_aoi "$extended_polygon"
+
+    overlap_dates=$(_extract_overlap_failed_dates)
+    echo "iteration=$iteration total_extension=$total_extension extent=$extent dates=$(echo $overlap_dates | tr '\n' ' ')" >> "$aoi_extension_log"
+    : > "$rerun_file"
+    for d in $overlap_dates; do
+        end_d=$(python3 -c "
+from datetime import datetime, timedelta
+d = datetime.strptime('$d', '%Y-%m-%d')
+print((d + timedelta(days=1)).strftime('%Y-%m-%d'))
+")
+        d_compact=$(echo "$d" | tr -d '-')
+        echo "burst2stack --rel-orbit $rel_orbit --start-date $d --end-date $end_d --extent $extent --keep-files --all-anns --pols VV 2> burst2stack_${d_compact}.e" >> "$rerun_file"
+    done
+
+    if [[ ! -s "$rerun_file" ]]; then
+        echo "Warning: no overlap-failed dates to retry after re-fetch." >&2
+        break
+    fi
+
+    echo "Running burst2stack for $(wc -l < "$rerun_file" | tr -d ' \n') overlap-failed date(s) with extended AOI ..."
+    xargs -P "$num_parallel" -I {} bash -c "cd \"$work_dir/$slc_dir\" && {}" < "$rerun_file" || true
+
+    if [[ -f "$SCRIPT_DIR/check_SAFE_completeness.py" ]]; then
+        python3 "$SCRIPT_DIR/check_SAFE_completeness.py" "$slc_dir" || true
+    elif command -v check_SAFE_completeness.py &>/dev/null; then
+        check_SAFE_completeness.py "$slc_dir" || true
+    fi
+
+    # Preserve non-overlap failures; rebuild overlap failures from rerun
+    non_overlap_failures=$(grep -v "Products from swaths" "$failures_file" 2>/dev/null || true)
+    : > "$failures_file"
+    [[ -n "$non_overlap_failures" ]] && echo "$non_overlap_failures" >> "$failures_file"
+    _verify_and_build_rerun "$rerun_file" "$failures_file" "${rerun_file}.tmp" "no SAFE produced (AOI ext $iteration)"
+    mv "${rerun_file}.tmp" "$rerun_file"
+done
+
+if _has_overlap_errors; then
+    echo "Error: 'Products from swaths * do not overlap' still present after $iteration AOI extension(s) (max $AOI_EXTENSION_MAX deg). See $failures_file." >&2
+    exit 1
 fi
 
 if [[ -s "$failures_file" ]]; then
