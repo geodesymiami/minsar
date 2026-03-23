@@ -55,7 +55,7 @@ def parse_args():
     parser.add_argument(
         '--ext',
         type=str,
-        default=nc,
+        default='nc',
         help='Optional file extension filter (e.g., nc, tif). If omitted, download all file types.',
     )
 
