@@ -98,7 +98,6 @@ export PYTHONPATH=${PYTHONPATH}:${SARVEY_HOME}
 export PYTHONPATH=${PYTHONPATH}:${SARVEY_HOME}/sarvey
 export PYTHONPATH=${SOURCEINVERSION_HOME}/src:${SOURCEINVERSION_HOME}/src/VSM/VSM:$PYTHONPATH
 export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools/sarplotter-main
-export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools/emirhan_insarmaps_utils
 #export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools      # needed for mimt. Need to talk to Sara on how to do this smarter
 ######### Ignore warnings ############
 export PYTHONWARNINGS="ignore"
@@ -125,6 +124,7 @@ export PATH=${PATH}:${SARVEY_HOME}/sarvey
 export PATH=${PATH}:${MINSAR_HOME}/tools/snaphu-v2.0.5/bin
 export PATH=${PATH}:${MINSAR_HOME}/tools/insarmaps_scripts
 export PATH=${PATH}:${MINSAR_HOME}/tools/VolcDef_web/volcdef_web
+export PATH=${PATH}:${MINSAR_HOME}/tools/emirhan_insarmaps_utils
 export PATH=${PATH}:${MINSAR_HOME}/tools/autoencoder
 export PATH=${PATH}:${MINSAR_HOME}/tools/MakeTemplate/src/maketemplate/cli
 export PATH=${PATH}:${PROJ_LIB}
