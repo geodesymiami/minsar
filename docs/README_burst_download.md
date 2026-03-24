@@ -47,10 +47,23 @@ The script groups bursts so that **each burst2safe call receives a valid set of 
 ## burst_download.bash (burst2stack path)
 
 - **Script:** `minsar/scripts/burst_download.bash`
-- **Purpose:** Run `asf_download.sh --print` to get the burst listing, parse it for unique dates, write one burst2stack command per date (with per-date stderr to `burst2stack_YYYYMMDD.e`), and run them in parallel via xargs. After the main pass, runs `check_SAFE_completeness.py` (removes incomplete SAFEs), verifies which dates lack a complete SAFE, writes `burst2stack_failures.txt` and `run_burst2stack_rerun`, runs one retry pass, runs `check_SAFE_completeness.py` again (so incomplete SAFEs from failed retries are removed and failures are correctly recorded), then re-verifies.
+- **Purpose:** Run `asf_download.sh --print` to get the burst listing, parse it for unique dates, write one burst2stack command per date (with per-date stderr to `burst2stack_YYYYMMDD.e`), and run them in parallel via xargs. After the main pass, runs `check_SAFE_completeness.py` (removes incomplete SAFEs), verifies which dates lack a complete SAFE, writes `burst2stack_failures.txt` and `run_burst2stack_rerun`, runs one retry pass, runs `check_SAFE_completeness.py` again (so incomplete SAFEs from failed retries are removed and failures are correctly recorded), then re-verifies. If failures include "Products from swaths * do not overlap", an **AOI extension loop** runs: extends the search polygon, re-fetches the listing, retries only the overlap-failed dates, and repeats until success or threshold.
 - **Prerequisites:** Run `generate_download_command.py` first (template mode), or pass `--relativeOrbit` and `--intersectsWith` (standalone mode).
-- **Usage:** `burst_download.bash [--work-dir DIR] [--slc-dir SLC] [--parallel N] [--skip-listing]` (run from work dir or pass `--work-dir`).
-- **Output files (under SLC/):** `burst2stack_failures.txt` (one line per failed date: `YYYY-MM-DD  reason`), `run_burst2stack_rerun` (burst2stack commands for manual rerun), `burst2stack_YYYYMMDD.e` (per-date stderr, e.g. burst2stack_20141022.e).
+- **Usage:** `burst_download.bash [--work-dir DIR] [--slc-dir SLC] [--parallel N] [--skip-listing]` (run from work dir or pass `--work-dir`). The AOI extension loop is disabled when `--skip-listing` is used (re-fetch requires a fresh listing).
+- **Output files (under SLC/):** `burst2stack_failures.txt` (one line per failed date: `YYYY-MM-DD  reason; err_summary`, where `err_summary` is extracted from `burst2stack_YYYYMMDD.e` when available), `run_burst2stack_rerun` (burst2stack commands for manual rerun), `burst2stack_YYYYMMDD.e` (per-date stderr, e.g. burst2stack_20141022.e), `burst2stack_aoi_extension.log` (one line per AOI extension attempt when the overlap loop runs).
+
+### AOI extension loop (overlap errors)
+
+When burst2stack fails with `ValueError: Products from swaths IW1 and IW2 do not overlap` (or IW2/IW3), the AOI may be too tight. The script detects these overlap errors in `burst2stack_failures.txt`, extends the search polygon and extent by a configurable buffer, re-fetches the burst listing from ASF, and retries only the overlap-failed dates. It repeats up to `AOI_EXTENSION_ITER_MAX` iterations (default 5) or until total extension reaches `AOI_EXTENSION_MAX` (default 0.05 deg). Constants at the top of the script: `AOI_EXTENSION_INIT` (degrees per step, default 0.01), `AOI_EXTENSION_MAX`, `AOI_EXTENSION_ITER_MAX`. If overlap errors remain at threshold, the script exits with an error.
+
+**Documentation of extension runs:**
+
+| What | Where | Format / content |
+|------|-------|------------------|
+| Console output | stdout | `AOI extension attempt N: extending by X deg (total Y)`, `Re-fetching burst listing with extended AOI ...`, `Running burst2stack for M overlap-failed date(s) with extended AOI ...` |
+| Extension log | `SLC/burst2stack_aoi_extension.log` | One line per attempt: `iteration total_extension extent dates_retried` (created when loop runs) |
+| Failure entries | `burst2stack_failures.txt` | Reason suffix `no SAFE produced (AOI ext N)` when failure occurs during extension attempt N |
+| Rerun commands | `run_burst2stack_rerun` | burst2stack commands use the **extended** extent (W S E N) for manual rerun |
 
 ## Script and help (burst2safe path)
 

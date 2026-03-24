@@ -10,6 +10,15 @@ import subprocess
 from minsar.objects import message_rsmas
 from minsar.job_submission import JOB_SUBMIT
 
+
+def _positive_int(string):
+    """argparse type: integer >= 1."""
+    value = int(string)
+    if value < 1:
+        raise argparse.ArgumentTypeError('must be a positive integer')
+    return value
+
+
 ############################################################
 EXAMPLE = """Examples:
     create_ingest_insarmaps_jobfile.py mintpy
@@ -25,6 +34,9 @@ EXAMPLE = """Examples:
     
     # Additional examples with SLURM options:
     create_ingest_insarmaps_jobfile.py miaplpy_SN_201606_201608/network_single_reference --dataset PS --queue skx --walltime 0:45
+    
+    create_ingest_insarmaps_jobfile.py mintpy --step 1
+    create_ingest_insarmaps_jobfile.py mintpy --step 2
 """
 ###########################################################################################
 def create_parser():
@@ -44,6 +56,18 @@ def create_parser():
                              'Use comma-separated values to ingest multiple types: --dataset PS,DS or --dataset PS,DS,filt*DS')
     parser.add_argument('--debug', dest='debug', action='store_true',
                         help='Enable debug mode (set -x)')
+    parser.add_argument('--num-workers', dest='num_workers', type=_positive_int, default=None, metavar='N',
+                        help='HDFEOS_NUM_WORKERS for hdfeos5_2json_mbtiles (default: env HDFEOS_NUM_WORKERS or 6)')
+    parser.add_argument('--mbtiles-num-workers', dest='mbtiles_num_workers', type=_positive_int, default=None, metavar='N',
+                        help='MBTILES_NUM_WORKERS for json_mbtiles2insarmaps (default: env MBTILES_NUM_WORKERS or 6)')
+
+    step_group = parser.add_mutually_exclusive_group()
+    step_group.add_argument('--hdfeos5_2json_mbtiles', dest='ingest_step', action='store_const', const='step1',
+                            help='Job runs only HDFEOS5→JSON/mbtiles (ingest_insarmaps.bash --hdfeos5_2json_mbtiles)')
+    step_group.add_argument('--json_mbtiles2insarmaps', dest='ingest_step', action='store_const', const='step2',
+                            help='Job runs only insarmaps upload; requires prior step 1')
+    step_group.add_argument('--step', dest='ingest_step_arg', type=int, choices=[1, 2], default=None, metavar='N',
+                            help='Job runs only step N (ingest_insarmaps.bash --step N): 1=HDFEOS5→JSON/mbtiles, 2=insarmaps')
     
     # SLURM job options (from create_insarmaps_jobfile.py)
     parser.add_argument("--queue", dest="queue", metavar="QUEUE", 
@@ -91,6 +115,20 @@ def main(iargs=None):
     
     if inps.debug:
         command_parts.append('--debug')
+
+    if inps.num_workers is not None:
+        command_parts.extend(['--num-workers', str(inps.num_workers)])
+    if inps.mbtiles_num_workers is not None:
+        command_parts.extend(['--mbtiles-num-workers', str(inps.mbtiles_num_workers)])
+
+    if getattr(inps, 'ingest_step', None) == 'step1':
+        command_parts.append('--hdfeos5_2json_mbtiles')
+    elif getattr(inps, 'ingest_step', None) == 'step2':
+        command_parts.append('--json_mbtiles2insarmaps')
+    elif getattr(inps, 'ingest_step_arg', None) == 1:
+        command_parts.extend(['--step', '1'])
+    elif getattr(inps, 'ingest_step_arg', None) == 2:
+        command_parts.extend(['--step', '2'])
     
     final_command = [' '.join(command_parts)]
     
