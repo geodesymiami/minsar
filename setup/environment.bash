@@ -98,7 +98,7 @@ export PYTHONPATH=${PYTHONPATH}:${SARVEY_HOME}
 export PYTHONPATH=${PYTHONPATH}:${SARVEY_HOME}/sarvey
 export PYTHONPATH=${SOURCEINVERSION_HOME}/src:${SOURCEINVERSION_HOME}/src/VSM/VSM:$PYTHONPATH
 export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools/sarplotter-main
-export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools/MakeTemplate/src
+export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools/emirhan_insarmaps_utils
 #export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools      # needed for mimt. Need to talk to Sara on how to do this smarter
 ######### Ignore warnings ############
 export PYTHONWARNINGS="ignore"
