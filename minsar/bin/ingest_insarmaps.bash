@@ -11,8 +11,9 @@ source ${SCRIPT_DIR}/../lib/minsarApp_specifics.sh
 echo "sourcing ${SCRIPT_DIR}/../lib/utils.sh ..."
 source ${SCRIPT_DIR}/../lib/utils.sh
 
-# Dependencies (PATH): reference_point_hdfeos5.bash, hdfeos5_2json_mbtiles.py, json_mbtiles2insarmaps.py,
-#   get_data_footprint_centroid.py, get_zoomfactor_from_data_footprint.py. Sourced: minsarApp_specifics.sh, utils.sh.
+# Dependencies (PATH): reference_point_hdfeos5.bash, hdfeos5_2json_mbtiles.py, hdfeos5_or_csv_2json_mbtiles.py,
+#   json_mbtiles2insarmaps.py, get_data_footprint_centroid.py, get_zoomfactor_from_data_footprint.py.
+#   Sourced: minsarApp_specifics.sh, utils.sh.
 # Output: With --ref-lalo the selected .he5 in the input dir is modified in place. insarmaps.log appended. No backup files.
 
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
@@ -21,6 +22,7 @@ Examples:
     $SCRIPT_NAME mintpy
     $SCRIPT_NAME miaplpy/network_single_reference
     $SCRIPT_NAME S1_IW1_128_20180303_XXXXXXXX__S00878_S00791_W091201_W091113.he5
+    $SCRIPT_NAME TSX_036_20170923_20251008_N2598W08016_N2576W08016_N2576W08011_N2598W08011.csv
     $SCRIPT_NAME hvGalapagosSenD128/mintpy --ref-lalo -0.81,-91.190
     $SCRIPT_NAME hvGalapagosSenD128/miaplpy/network_single_reference
     $SCRIPT_NAME miaplpy/network_single_reference --dataset geo
@@ -39,6 +41,7 @@ Examples:
       --dataset {PS,DS,filtDS,filt*DS,geo} or comma-separated {PS,DS,filt*DS}  Dataset to upload (default: geo)
                                           Use comma-separated values to ingest multiple types: --dataset PS,DS or --dataset PS,DS,filt*DS
       --hdfeos5_2json_mbtiles         Run only HDFEOS5 → JSON/mbtiles (no insarmaps upload); same as --step 1
+                                      For a .csv input, step 1 runs hdfeos5_or_csv_2json_mbtiles.py instead of hdfeos5_2json_mbtiles.py
       --json_mbtiles2insarmaps        Run only insarmaps upload (assumes step 1 succeeded); same as --step 2
       --step N                        N is 1 or 2; same effect as the long names above. Also --step=N
       --num-workers N                 Parallel workers for hdfeos5_2json_mbtiles (sets HDFEOS_NUM_WORKERS; default 6 or env)
@@ -239,7 +242,7 @@ _validate_positive_int_opt() {
 # Check for required positional arguments
 if [[ ${#positional[@]} -lt 1 ]]; then
     echo "Error: One input file or directory is required"
-    echo "Usage: $SCRIPT_NAME <directory_or_file.he5> [options]"
+    echo "Usage: $SCRIPT_NAME <directory | file.he5 | file.csv> [options]"
     echo "Use --help for more information"
     exit 1
 fi
@@ -275,11 +278,18 @@ file_matches_dataset() {
 }
 
 
+# Input format: he5 (default) or csv when the path is a file whose extension is .csv (case-insensitive)
+input_format="he5"
+
 # Check if input is a file or directory
 if [[ -f "$INPUT_PATH" ]]; then
     # Input is a file - use it directly
     DATA_DIR=$(dirname "$INPUT_PATH")
-    he5_files=("$INPUT_PATH")
+    ingest_files=("$INPUT_PATH")
+    ext_lc=$(echo "${INPUT_PATH##*.}" | tr '[:upper:]' '[:lower:]')
+    if [[ "$ext_lc" == "csv" ]]; then
+        input_format="csv"
+    fi
 elif [[ -d "$INPUT_PATH" ]]; then
     # Input is a directory - find .he5 files based on dataset option(s)
     DATA_DIR="$INPUT_PATH"
@@ -294,7 +304,7 @@ elif [[ -d "$INPUT_PATH" ]]; then
     IFS=',' read -ra DATASET_TYPES <<< "$dataset"
     
     # Find the youngest (latest) matching file for each dataset type
-    he5_files=()
+    ingest_files=()
     
     # Iterate through dataset types in order (PS,DS means PS file first, then DS file)
     for ds_type in "${DATASET_TYPES[@]}"; do
@@ -302,13 +312,13 @@ elif [[ -d "$INPUT_PATH" ]]; then
         # Find the youngest file matching this dataset type
         for file in "${all_he5_files[@]}"; do
             if file_matches_dataset "$file" "$ds_type"; then
-                he5_files+=("$file")
+                ingest_files+=("$file")
                 break  # Only take the first (youngest) match for this dataset type
             fi
         done
     done
     
-    if [[ ${#he5_files[@]} -eq 0 ]]; then
+    if [[ ${#ingest_files[@]} -eq 0 ]]; then
         echo "Error: No .he5 files found matching dataset option(s) '$dataset' in directory: $DATA_DIR"
         exit 1
     fi
@@ -341,10 +351,10 @@ else
     MBTILES_NUM_WORKERS="${MBTILES_NUM_WORKERS:-6}"
 fi
 
-# Process each he5 file
-for he5_file in "${he5_files[@]}"; do
+# Process each input file (.he5 or .csv)
+for ingest_file in "${ingest_files[@]}"; do
     echo "####################################"
-    echo "Processing: $he5_file"
+    echo "Processing: $ingest_file"
     if [[ "$ingest_step" != "all" ]]; then
         echo "Ingest mode: $ingest_step"
     fi
@@ -353,41 +363,49 @@ for he5_file in "${he5_files[@]}"; do
         echo "Warning: --ref-lalo ignored with --step 2 / --json_mbtiles2insarmaps (step 1 must have produced JSON/mbtiles)" >&2
     fi
 
-    # If --ref-lalo was provided, update the reference point in the he5 file (step 1 or full run only)
+    # If --ref-lalo was provided, update the reference point in the he5 file (step 1 or full run only; not CSV)
     if [[ "$ingest_step" == "all" || "$ingest_step" == "step1" ]] && [[ ${#ref_lalo[@]} -gt 0 ]]; then
-        echo "####################################"
-        echo "Updating reference point in HDFEOS5 file"
-        echo "####################################"
-
-        # Parse reference point coordinates
-        if [[ ${#ref_lalo[@]} -eq 1 ]]; then
-            # Comma-separated format
-            IFS=',' read -ra COORDS <<< "${ref_lalo[0]}"
-            REF_LAT="${COORDS[0]}"
-            REF_LON="${COORDS[1]}"
+        if [[ "$input_format" == "csv" ]]; then
+            echo "Warning: --ref-lalo applies to HDFEOS5 (.he5) only; skipping for CSV input" >&2
         else
-            # Space-separated format
-            REF_LAT="${ref_lalo[0]}"
-            REF_LON="${ref_lalo[1]}"
-        fi
+            echo "####################################"
+            echo "Updating reference point in HDFEOS5 file"
+            echo "####################################"
 
-        echo "Running: reference_point_hdfeos5.bash $he5_file --ref-lalo $REF_LAT $REF_LON"
-        reference_point_hdfeos5.bash "$he5_file" --ref-lalo "$REF_LAT" "$REF_LON"
+            # Parse reference point coordinates
+            if [[ ${#ref_lalo[@]} -eq 1 ]]; then
+                # Comma-separated format
+                IFS=',' read -ra COORDS <<< "${ref_lalo[0]}"
+                REF_LAT="${COORDS[0]}"
+                REF_LON="${COORDS[1]}"
+            else
+                # Space-separated format
+                REF_LAT="${ref_lalo[0]}"
+                REF_LON="${ref_lalo[1]}"
+            fi
+
+            echo "Running: reference_point_hdfeos5.bash $ingest_file --ref-lalo $REF_LAT $REF_LON"
+            reference_point_hdfeos5.bash "$ingest_file" --ref-lalo "$REF_LAT" "$REF_LON"
+        fi
     fi
 
     # Determine JSON directory suffix based on file pattern
     JSON_SUFFIX=""
-    if [[ "$he5_file" == *"PS"* ]]; then
+    if [[ "$ingest_file" == *"PS"* ]]; then
         JSON_SUFFIX="_PS"
-    elif [[ "$he5_file" == *"filt"* && "$he5_file" == *"DS"* ]]; then
+    elif [[ "$ingest_file" == *"filt"* && "$ingest_file" == *"DS"* ]]; then
         JSON_SUFFIX="_filtDS"
-    elif [[ "$he5_file" == *"DS"* ]]; then
+    elif [[ "$ingest_file" == *"DS"* ]]; then
         JSON_SUFFIX="_DS"
     fi
 
     JSON_DIR=$DATA_DIR/JSON${JSON_SUFFIX}
 
-    MBTILES_FILE="$JSON_DIR/$(basename "${he5_file%.he5}.mbtiles")"
+    if [[ "$input_format" == "csv" ]]; then
+        MBTILES_FILE="$JSON_DIR/$(basename "${ingest_file%.csv}.mbtiles")"
+    else
+        MBTILES_FILE="$JSON_DIR/$(basename "${ingest_file%.he5}.mbtiles")"
+    fi
 
     if [[ "$ingest_step" == "step2" ]]; then
         if [[ ! -d "$JSON_DIR" ]]; then
@@ -403,7 +421,11 @@ for he5_file in "${he5_files[@]}"; do
     if [[ "$ingest_step" == "all" || "$ingest_step" == "step1" ]]; then
         echo "####################################"
         rm -rf "$JSON_DIR"
-        cmd="hdfeos5_2json_mbtiles.py \"$he5_file\" \"$JSON_DIR\" --num-workers $HDFEOS_NUM_WORKERS"
+        if [[ "$input_format" == "csv" ]]; then
+            cmd="hdfeos5_or_csv_2json_mbtiles.py \"$ingest_file\" \"$JSON_DIR\" --num-workers $HDFEOS_NUM_WORKERS"
+        else
+            cmd="hdfeos5_2json_mbtiles.py \"$ingest_file\" \"$JSON_DIR\" --num-workers $HDFEOS_NUM_WORKERS"
+        fi
         run_command "$cmd"
     fi
 
@@ -419,10 +441,14 @@ for he5_file in "${he5_files[@]}"; do
         wait   # Wait for all ingests to complete (parallel uinsg & is not implemented)
 
         # Get center coordinates and zoom factorfrom data_footprint
-        read CENTER_LAT CENTER_LON < <(get_data_footprint_centroid.py "$he5_file" 2>/dev/null || echo "0.0000 0.0000")
-        ZOOM_FACTOR=$(get_zoomfactor_from_data_footprint.py "$he5_file" 2>/dev/null || echo "11.0")
+        read CENTER_LAT CENTER_LON < <(get_data_footprint_centroid.py "$ingest_file" 2>/dev/null || echo "0.0000 0.0000")
+        ZOOM_FACTOR=$(get_zoomfactor_from_data_footprint.py "$ingest_file" 2>/dev/null || echo "11.0")
 
-        DATASET_NAME=$(basename "${he5_file%.he5}")
+        if [[ "$input_format" == "csv" ]]; then
+            DATASET_NAME=$(basename "${ingest_file%.csv}")
+        else
+            DATASET_NAME=$(basename "${ingest_file%.he5}")
+        fi
 
         # Generate insarmaps URLs and store in array
         INSARMAPS_URLS=()

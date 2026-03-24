@@ -2,22 +2,32 @@
 """
 Calculate appropriate zoom factor from data_footprint attribute in HDFEOS5 files.
 Uses the bounding box extent to determine zoom level that fits the data nicely.
+
+For .csv inputs, extent is taken from min/max of latitude and longitude columns
+(same column detection as hdfeos5_or_csv_2json_mbtiles.py).
 """
 import argparse
 import h5py
+import os
 import re
 import sys
 import math
+
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_INSARMAPS_UTILS = os.path.normpath(os.path.join(_SCRIPT_DIR, "..", "insarmaps_utils"))
+if _INSARMAPS_UTILS not in sys.path:
+    sys.path.insert(0, _INSARMAPS_UTILS)
+from insarmaps_csv_geo import csv_lat_lon_spans
 
 EXAMPLE = """example:
   get_zoomfactor_from_data_footprint.py file.he5
   get_zoomfactor_from_data_footprint.py file.he5 --min-zoom 8 --max-zoom 15
   get_zoomfactor_from_data_footprint.py file.he5 --default 11.0
+  get_zoomfactor_from_data_footprint.py timeseries.csv
 """
 
 DESCRIPTION = (
-    "Calculates appropriate zoom factor from data_footprint attribute in HDFEOS5 files.\n"
-    "Uses the bounding box extent to determine zoom level that fits the data.\n"
+    "Calculates zoom from data_footprint in HDFEOS5 files, or from lat/lon extent in CSV.\n"
     "Outputs a single zoom factor value."
 )
 
@@ -31,7 +41,7 @@ def create_parser():
     )
     parser.add_argument(
         'he5_file',
-        help='Path to HDFEOS5 file (.he5)'
+        help='Path to HDFEOS5 file (.he5) or Insarmaps CSV (.csv)'
     )
     parser.add_argument(
         '--min-zoom',
@@ -105,12 +115,12 @@ def calculate_zoom_from_extent(lat_span, lon_span, min_zoom=8.0, max_zoom=15.0):
 
 def get_zoom_factor(he5_file, min_zoom=8.0, max_zoom=15.0, default_zoom=11.0):
     """
-    Extract zoom factor from data_footprint attribute.
+    Extract zoom factor from data_footprint (.he5) or lat/lon extent (.csv).
     
     Parameters:
     -----------
     he5_file : str
-        Path to HDFEOS5 file
+        Path to HDFEOS5 file or CSV
     min_zoom : float
         Minimum allowed zoom level (default: 8.0)
     max_zoom : float
@@ -123,6 +133,16 @@ def get_zoom_factor(he5_file, min_zoom=8.0, max_zoom=15.0, default_zoom=11.0):
     zoom_factor : float
         Calculated zoom factor
     """
+    path_str = str(he5_file)
+    if path_str.lower().endswith(".csv"):
+        try:
+            lat_span, lon_span = csv_lat_lon_spans(path_str)
+            if lat_span <= 0 and lon_span <= 0:
+                return default_zoom
+            return calculate_zoom_from_extent(lat_span, lon_span, min_zoom, max_zoom)
+        except Exception:
+            return default_zoom
+
     try:
         with h5py.File(he5_file, 'r') as f:
             data_footprint = f.attrs.get('data_footprint', '')
