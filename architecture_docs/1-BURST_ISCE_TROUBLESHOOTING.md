@@ -75,18 +75,44 @@ If the region of interest (ROI) leaves only one burst available for that calcula
 
 With **one burst**, ISCE may write coregistered secondaries differently:
 
-- **geom_reference** has `geom_reference/IW1/hgt_01.rdr` (and other rdr), so `countbursts` counts 1 burst from `geom_reference/IW*/hgt*rdr`.
-- **coreg_secondarys** for each date may have only **overlap** output: `coreg_secondarys/DATE/overlap/IW1_top.xml`, `IW1_bottom.xml`, and an empty or absent `overlap/IW1/` with no `burst_01.slc.xml`. The full-burst resample step does not always write `burst_01.slc` / `burst_01.slc.xml` for a single burst, so there are no `burst*xml` files for `countbursts` to count.
+- **geom_reference** usually has `hgt_*.rdr` or `lat_*.rdr` per burst under `geom_reference/IW*/`, so `_minsar_count_bursts_one_iw_dir` returns **1** per swath that has geometry.
+- **coreg_secondarys** for each date may have only **overlap** output: `coreg_secondarys/DATE/overlap/IW1_top.xml`, `IW1_bottom.xml`, and an empty or absent `overlap/IW1/` with no `burst_01.slc.xml` / `hgt*rdr` in `date/IW*/`. Then every per-`IW*` count is **0** until the overlap fallback runs.
 
 So you see: `geom_reference/YYYYMMDD #of_bursts: 1` and `coreg_secondarys/YYYYMMDD #of_bursts: 0` for every secondary date.
 
-### MinSAR fix: countbursts fallback
+### MinSAR fix: countbursts overlap fallback
 
 **File:** `minsar/lib/minsarApp_specifics.sh` (function `countbursts`).
 
-When counting coreg_secondarys, if the usual logic finds **0** `burst*xml` files for a date but that date has overlap output indicating one swath (e.g. `date/overlap/IW1` directory, or `date/overlap/IW1_top.xml` or `date/overlap/IW1_bottom.xml`), `countbursts` treats that date as **1 burst**. That keeps burst counts consistent with the reference (1 burst) and avoids downstream logic (e.g. `check_bursts`) treating secondaries as missing.
+After summing per-`IW*` counts with **`_minsar_count_bursts_one_iw_dir`**, if **`total -eq 0`** for that secondary date but `date/overlap` exists and (a) `date/overlap/IW1` is a directory, or (b) `date/overlap/IW1_top.xml` or `date/overlap/IW1_bottom.xml` exists, then set `total=1` and `array=(1)`. That keeps burst counts consistent with the reference (1 burst) and avoids downstream logic (e.g. `check_bursts`) treating secondaries as missing.
 
-**Logic added:** After the loop that counts `burst*xml` in `date/IW*` or `date/overlap/IW*`, if `total -eq 0` and `date/overlap` exists and (a) `date/overlap/IW1` is a directory, or (b) `date/overlap/IW1_top.xml` or `date/overlap/IW1_bottom.xml` exists, then set `total=1` and `array=(1)`.
+---
+
+## countbursts: geom_reference vs coreg_secondarys (unified counting)
+
+### Same rule everywhere
+
+`countbursts` (`minsar/lib/minsarApp_specifics.sh`) uses one helper **`_minsar_count_bursts_one_iw_dir`** for every `IW*` directory under **`geom_reference`**, **`coreg_secondarys/<date>`**, or **`coreg_secondarys/<date>/overlap`**. Per directory, the **first** of these that yields a positive count wins:
+
+1. `hgt*rdr`
+2. `lat_*.rdr`
+3. `burst*xml`
+4. `range_*.off.xml`
+5. `burst_*.slc`
+
+Subswaths are visited in **`IW*`** order (`sort -V`). So reference and secondary lines are **comparable**: if totals still differ, one tree really lacks burst indicators in that `IW*` (not a counting-method mismatch).
+
+### 1-burst overlap fallback (unchanged)
+
+If the per-`IW*` total is **0** but `coreg_secondarys/<date>/overlap` has the usual IW1 overlap markers, `countbursts` still sets that date to **1** (see the 1-burst section above).
+
+### ISCE steps (context)
+
+- **Step 7** is **`pairs_misreg`**; full burst SLC/XML under `coreg_secondarys/<date>/IW*/` is mainly **steps 9–10** (`fullBurst_geo2rdr` / `fullBurst_resample`). Incomplete secondaries can still show lower counts until those steps finish.
+
+### What to run on disk
+
+For a mismatch, list the same patterns under each `IW*`: `hgt*rdr`, `lat_*.rdr`, `burst*xml`, `range_*.off.xml`, `burst_*.slc`.
 
 ---
 
@@ -94,7 +120,7 @@ When counting coreg_secondarys, if the usual logic finds **0** `burst*xml` files
 
 ### Why it happens
 
-The **misregistration** step runs `generateIgram` with **--overlap**. That loads products from `reference/overlap/IW*_top.xml` (and `_bottom.xml`) and `coreg_secondarys/<date>/overlap/...`. Overlap products describe the boundary between **consecutive** bursts (e.g. burst 1–2, 2–3). With **one burst** there are no such boundaries, so the overlap XMLs may exist but have **0 bursts**. `countbursts` reports 1 because it counts the **main** swath (`reference/IW1/`, `coreg_secondarys/.../IW1/` or the countbursts fallback from overlap dirs), not the burst count inside the overlap products.
+The **misregistration** step runs `generateIgram` with **--overlap**. That loads products from `reference/overlap/IW*_top.xml` (and `_bottom.xml`) and `coreg_secondarys/<date>/overlap/...`. Overlap products describe the boundary between **consecutive** bursts (e.g. burst 1–2, 2–3). With **one burst** there are no such boundaries, so the overlap XMLs may exist but have **0 bursts**. `countbursts` reports 1 because of the **overlap fallback** when all per-`IW*` counts are zero (see above), not because it reads burst count inside the overlap products.
 
 ### MinSAR fix: generateIgram overlap skip
 
@@ -112,7 +138,7 @@ The run then completes. No overlap interferograms are produced for that swath.
 |--------|--------------------------------------------------------|----------|
 | `overlap_withDEM.py` | Skip swath when overlap interferogram files (`IW*_top.xml`, `_bottom.xml`) are missing. | No ESD output for that swath; script exits successfully. |
 | `estimateAzimuthMisreg.py` | If no ESD swaths or no coherent points, write dummy azimuth misreg file (median/mean/std 0.0) and return. | Misreg step completes; downstream uses zero correction. |
-| `estimateRangeMisreg.py` | If overlap products have no bursts, skip swath; if no range offsets collected, write dummy range misreg file (0.0) and return. | Misreg step completes; downstream uses zero correction. |
+| `estimateRangeMisreg.py` | If overlap products have no bursts, skip swath; if no range offsets collected, write dummy range misreg file (0.0) and return. After the loop, range scaling must use **`referenceRangePixelSize`** from the last **processed** swath (set inside the loop after the skip check). Using **`referenceTop.bursts[0]`** is wrong when the last swath in the list was skipped — `referenceTop` was reloaded for that swath and has **empty** `bursts`, causing `IndexError`. | Misreg step completes; downstream uses zero correction. |
 
 After applying these patches (via `install_minsar.bash` symlinks), `SentinelWrapper.py -c config_misreg_REF_SEC` completes successfully for 1-burst stacks.
 
