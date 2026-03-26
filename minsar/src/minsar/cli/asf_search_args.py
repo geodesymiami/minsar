@@ -44,7 +44,7 @@ def create_parser(iargs=None, namespace=None):
     parser.add_argument('--end', metavar='YYYY-MM-DD or YYYYMMDD', help='End date of the search')
     parser.add_argument('--start-date', metavar='YYYY-MM-DD or YYYYMMDD', default=None, help='Start date of the search')
     parser.add_argument('--end-date', metavar='YYYY-MM-DD or YYYYMMDD', default=None, help='End date of the search')
-    parser.add_argument('--processingLevel', dest='processing_level', choices=['SLC', 'CSLC', 'BURST', '1.1'], default='SLC', help='Product type to download')
+    parser.add_argument('--processingLevel', dest='processing_level', choices=['SLC', 'CSLC', 'BURST', '1.1', 'DISP'], default='SLC', help='Product type to download')
     parser.add_argument('--beamMode', dest='beam_mode',  default=None, help='Beam mode (IW, S1 to S7)')
     parser.add_argument('--flightDirection', choices=['ASC', 'DESC', 'ASCENDING', 'DESCENDING'], default=None, help='Flight direction of the satellite (ASCENDING or DESCENDING)')
     parser.add_argument('--relativeOrbit', dest='relative_orbit', type=int, default=None, metavar='ORBIT', help='Relative Orbit Path')
@@ -78,6 +78,10 @@ def create_parser(iargs=None, namespace=None):
         inps.processing_level = asf.PRODUCT_TYPE.SLC
     elif "1.1" in inps.processing_level:
         inps.processing_level = asf.PRODUCT_TYPE.L1_1
+    elif "DISP" in inps.processing_level:
+        inps.processing_level = asf.PRODUCT_TYPE.DISP_S1
+        inps.dataset = [asf.DATASET.OPERA_S1]
+        inps.platform = []
 
     if inps.start or inps.start_date:
         try:
@@ -183,6 +187,8 @@ def main(iargs=None, namespace=None):
             session = asf.ASFSession(),
             processes = inps.parallel
         )
+        print("Done")
+        return results
 
     print("Done.")
 
