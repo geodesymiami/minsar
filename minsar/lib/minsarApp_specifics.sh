@@ -163,45 +163,62 @@ function get_reference_date(){
 }
 
 #####################################################################
+# Burst count for one topsStack IW* directory (geom_reference, coreg_secondarys, or overlap).
+# Same priority everywhere: geometry rasters first, then burst products/metadata.
+function _minsar_count_bursts_one_iw_dir() {
+    local d="$1"
+    local c
+    [[ -d "$d" ]] || { printf '%s\n' 0; return; }
+    c=$(ls "$d"/hgt*rdr 2>/dev/null | wc -l | tr -d '[:space:]')
+    [[ "${c:-0}" -gt 0 ]] && { printf '%s\n' "$c"; return; }
+    c=$(ls "$d"/lat_*.rdr 2>/dev/null | wc -l | tr -d '[:space:]')
+    [[ "${c:-0}" -gt 0 ]] && { printf '%s\n' "$c"; return; }
+    c=$(ls "$d"/burst*xml 2>/dev/null | wc -l | tr -d '[:space:]')
+    [[ "${c:-0}" -gt 0 ]] && { printf '%s\n' "$c"; return; }
+    c=$(ls "$d"/range_*.off.xml 2>/dev/null | wc -l | tr -d '[:space:]')
+    [[ "${c:-0}" -gt 0 ]] && { printf '%s\n' "$c"; return; }
+    c=$(ls "$d"/burst_*.slc 2>/dev/null | wc -l | tr -d '[:space:]')
+    [[ "${c:-0}" -gt 0 ]] && { printf '%s\n' "$c"; return; }
+    printf '%s\n' 0
+}
+
+#####################################################################
 function countbursts(){
-                   #set -xv
-                   # geom_reference: only IW* subdirs have hgt*rdr; overlap has none
-                   subswaths="geom_reference"/IW*
-                   unset array
-                   declare -a array
-                   for subswath in $subswaths; do
+                   local subswath date total icount reference_date total_geom
+                   local -a array iwdirs
+
+                   # geom_reference and coreg_secondarys: identical per-IW* counting (see _minsar_count_bursts_one_iw_dir)
+                   array=()
+                   total_geom=0
+                   while IFS= read -r subswath; do
                        [[ -d "$subswath" ]] || continue
-                       icount=$(ls "$subswath"/hgt*rdr 2>/dev/null | wc -l)
+                       icount=$(_minsar_count_bursts_one_iw_dir "$subswath")
                        array+=("$icount")
-                   done
+                       total_geom=$((total_geom + icount))
+                   done < <(ls -d geom_reference/IW* 2>/dev/null | sort -V)
+
                    reference_date=$(get_reference_date)
-                   total_geom=$(ls geom_reference/IW*/hgt*rdr 2>/dev/null | wc -l)
                    echo "geom_reference/$reference_date   #of_bursts: $total_geom   ${array[*]}"
 
-                   dates="coreg_secondarys/*"
-                   for date in $dates; do
+                   for date in coreg_secondarys/*; do
                        [[ -d "$date" ]] || continue
-                       # Prefer date/IW* (standard); fallback to date/overlap/IW*
-                       subswaths=("$date"/IW*)
-                       if [[ ! -d "${subswaths[0]}" ]]; then
-                           subswaths=("$date"/overlap/IW*)
+                       iwdirs=()
+                       while IFS= read -r subswath; do
+                           iwdirs+=("$subswath")
+                       done < <(ls -d "$date"/IW* 2>/dev/null | sort -V)
+                       if [[ ${#iwdirs[@]} -eq 0 ]] || [[ ! -d "${iwdirs[0]:-}" ]]; then
+                           iwdirs=()
+                           while IFS= read -r subswath; do
+                               iwdirs+=("$subswath")
+                           done < <(ls -d "$date"/overlap/IW* 2>/dev/null | sort -V)
                        fi
-                       unset array
-                       declare -a array
+                       array=()
                        total=0
-                       off_xml_total=0
-                       for subswath in "${subswaths[@]}"; do
+                       for subswath in "${iwdirs[@]}"; do
                            [[ -d "$subswath" ]] || continue
-                           burst_xml_count=$(ls "$subswath"/burst*xml 2>/dev/null | wc -l)
-                           off_count=$(ls "$subswath"/range_*.off.xml 2>/dev/null | wc -l)
-                           # If burst*xml files are absent (older/newer layouts), use range_*.off.xml as burst count.
-                           icount="$burst_xml_count"
-                           if [[ "$icount" -eq 0 && "$off_count" -gt 0 ]]; then
-                               icount="$off_count"
-                           fi
+                           icount=$(_minsar_count_bursts_one_iw_dir "$subswath")
                            array+=("$icount")
                            total=$((total + icount))
-                           off_xml_total=$((off_xml_total + off_count))
                        done
                        # 1-burst: ISCE may write only overlap (IW1_top.xml, IW1_bottom.xml), no burst_01.slc.xml
                        if [[ "$total" -eq 0 ]] && [[ -d "$date/overlap" ]]; then

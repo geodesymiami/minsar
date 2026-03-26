@@ -13,7 +13,7 @@ topsStack.azimuthLooks             = 4    # comment
 topsStack.rangeLooks               = 16   # comment
 topsStack.filtStrength             = 0.2  # comment
 topsStack.unwMethod                = snaphu  # comment
-topsStack.coregistration           = geometry  # [NESD geometry], auto for NESD
+topsStack.coregistration           = NESD  # [NESD geometry], auto for NESD
 ######################################################
 mintpy.load.autoPath               = yes
 mintpy.compute.cluster             = local #[local / slurm / pbs / lsf / none], auto for none, cluster type
@@ -24,7 +24,7 @@ mintpy.save.hdfEos5                = yes   #[yes / update / no], auto for no, sa
 mintpy.save.hdfEos5.update         = yes   #[yes / no], auto for no, put XXXXXXXX as endDate in output filename
 mintpy.save.hdfEos5.subset         = yes   #[yes / no], auto for no, put subset range info in output filename
 mintpy.save.kmz                    = yes   #[yes / no], auto for yes, save geocoded velocity to Google Earth KMZ file
-mintpy.reference.minCoherence      = auto      #[0.0-1.0], auto for 0.85, minimum coherence for auto method
+mintpy.reference.minCoherence      = 0.7      #[0.0-1.0], auto for 0.85, minimum coherence for auto method
 mintpy.troposphericDelay.method    = auto   # pyaps  #[pyaps / height_correlation / base_trop_cor / no], auto for pyaps
 mintpy.networkInversion.minTempCoh = 0.6 #[0.0-1.0], auto for 0.7, min temporal coherence for mask
 ######################################################
