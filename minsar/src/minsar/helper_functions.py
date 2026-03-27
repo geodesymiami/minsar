@@ -3,22 +3,51 @@ import h5py
 import numpy as np
 import os
 
+def parse_polygon(polygon):
+    """
+    Parses a polygon string retreive from ASF vertex tool and extracts the latitude and longitude coordinates.
+
+    Args:
+        polygon (str): The polygon string in the format "POLYGON((lon1 lat1, lon2 lat2, ...))".
+
+    Returns:
+        tuple: A tuple containing the latitude and longitude coordinates as lists.
+               The latitude list contains the minimum and maximum latitude values.
+               The longitude list contains the minimum and maximum longitude values.
+    """
+    latitude = []
+    longitude = []
+    pol = polygon.replace("POLYGON((", "").replace("))", "")
+
+    # Split the string into a list of coordinates
+    for word in pol.split(','):
+        if (float(word.split(' ')[1])) not in latitude:
+            latitude.append(float(word.split(' ')[1]))
+        if (float(word.split(' ')[0])) not in longitude:
+            longitude.append(float(word.split(' ')[0]))
+
+    longitude = [round(min(longitude),2), round(max(longitude),2)]
+    latitude = [round(min(latitude),2), round(max(latitude),2)]
+    region = [longitude[0], longitude[1], latitude[0], latitude[1]]
+
+    return region
+
 def get_flight_direction(fname):
     """Extract flight direction from HDF5/HDFEOS file.
-    
+
     Based on MintPy's info.py approach for reading attributes.
-    
+
     Parameters:
     -----------
     fname : str
         Path to HDF5/HDFEOS file (.h5 or .he5)
-    
+
     Returns:
     --------
     str
         Flight direction: 'asc' for ascending or 'desc' for descending
         Returns None if neither ORBIT_DIRECTION nor flight_direction is found
-    
+
     Notes:
     ------
     - First tries to read ORBIT_DIRECTION attribute
@@ -26,27 +55,27 @@ def get_flight_direction(fname):
     - Maps: ASCENDING/A -> 'asc', DESCENDING/D -> 'desc'
     """
     fname = os.fspath(fname)  # Convert from possible pathlib.Path
-    
+
     if not os.path.isfile(fname):
         raise FileNotFoundError(f'Input file does not exist: {fname}')
-    
+
     fext = os.path.splitext(fname)[1].lower()
     if fext not in ['.h5', '.he5']:
         raise ValueError(f'Input file must be HDF5/HDFEOS format (.h5 or .he5): {fname}')
-    
+
     # Read attributes from file (similar to MintPy's read_attribute)
     # Try root level first, then check groups/datasets if needed
     with h5py.File(fname, 'r') as f:
         # Check root level attributes first
         root_atr = dict(f.attrs)
-        
+
         # Decode string format (like MintPy does)
         for key, value in root_atr.items():
             try:
                 root_atr[key] = value.decode('utf8')
             except:
                 root_atr[key] = value
-        
+
         # Try to find ORBIT_DIRECTION or flight_direction in root attributes first
         if 'ORBIT_DIRECTION' in root_atr or 'flight_direction' in root_atr:
             atr = root_atr
@@ -56,24 +85,24 @@ def get_flight_direction(fname):
         else:
             # Look for attributes in groups/datasets (HDFEOS structure)
             global atr_list
-            
+
             def get_hdf5_attrs(name, obj):
                 global atr_list
                 if len(obj.attrs) > 0:
                     # Prefer attributes with WIDTH, but also collect any with our target attributes
                     if 'WIDTH' in obj.attrs.keys() or 'ORBIT_DIRECTION' in obj.attrs.keys() or 'flight_direction' in obj.attrs.keys():
                         atr_list.append(dict(obj.attrs))
-            
+
             atr_list = []
             f.visititems(get_hdf5_attrs)
-            
+
             # Prioritize attributes with ORBIT_DIRECTION or flight_direction
             priority_atr = None
             for a in atr_list:
                 if 'ORBIT_DIRECTION' in a or 'flight_direction' in a:
                     priority_atr = a
                     break
-            
+
             if priority_atr:
                 atr = priority_atr
             # Otherwise, use the attrs with most items
@@ -83,14 +112,14 @@ def get_flight_direction(fname):
             else:
                 # Fall back to root attributes even if empty
                 atr = root_atr
-        
+
         # Decode string format for all attributes
         for key, value in atr.items():
             try:
                 atr[key] = value.decode('utf8')
             except:
                 atr[key] = value
-    
+
     # Try ORBIT_DIRECTION first
     orbit_dir = atr.get('ORBIT_DIRECTION', None)
     if orbit_dir:
@@ -99,7 +128,7 @@ def get_flight_direction(fname):
             return 'asc'
         elif orbit_dir == 'DESCENDING':
             return 'desc'
-    
+
     # Fall back to flight_direction
     flight_dir = atr.get('flight_direction', None)
     if flight_dir:
@@ -108,7 +137,7 @@ def get_flight_direction(fname):
             return 'asc'
         elif flight_dir in ['D', 'DESCENDING']:
             return 'desc'
-    
+
     # Not found
     return None
 

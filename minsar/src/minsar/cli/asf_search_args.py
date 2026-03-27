@@ -190,6 +190,8 @@ def main(iargs=None, namespace=None):
             session = asf.ASFSession(),
             processes = inps.parallel
         )
+        print("Done")
+        return results
 
     print("Done.")
 
