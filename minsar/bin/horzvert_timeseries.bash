@@ -144,6 +144,116 @@ compute_lon_step() {
     python3 -c "from plotdata.helper_functions import find_longitude_degree; print(find_longitude_degree($ref_lat, $lat_step))"
 }
 
+# First path segment that matches a sensor token (e.g. SantoriniSenA29 from SantoriniSenA29/miaplpy/.../).
+hv_mother_sensor_dir() {
+    local file_path="$1"
+    local patterns=("Alos2A" "Alos2D" "SenA" "SenD" "CskA" "CskD" "TsxA" "TsxD" "AlosA" "AlosD")
+    local segment
+    while IFS= read -r -d '/' segment; do
+        [[ -z "$segment" ]] && continue
+        for pattern in "${patterns[@]}"; do
+            if [[ "$segment" == *"$pattern"* ]]; then
+                echo "$segment"
+                return 0
+            fi
+        done
+    done <<< "${file_path}/"
+    local stripped="${file_path#/}"
+    stripped="${stripped%/}"
+    [[ -n "$stripped" ]] && echo "${stripped%%/*}"
+}
+
+# Absolute path to dataset "mother" directory (WORK_DIR-relative or existing dir).
+hv_resolve_mother_abs() {
+    local name="$1"
+    [[ -z "$name" ]] && return 1
+    if [[ -d "$name" ]]; then
+        (cd "$name" && pwd)
+        return 0
+    fi
+    if [[ -n "${WORK_DIR:-}" && -d "$WORK_DIR/$name" ]]; then
+        (cd "$WORK_DIR/$name" && pwd)
+        return 0
+    fi
+    realpath "$name" 2>/dev/null || echo "${WORK_DIR:-.}/$name"
+}
+
+# True if string looks like a sensor dataset dir (SantoriniSenA29, ChilesSenD142, ...).
+hv_mother_name_is_plausible() {
+    local n="$1"
+    [[ -z "$n" || "$n" == *"/"* ]] && return 1
+    [[ "$n" == *"SenA"* || "$n" == *"SenD"* || "$n" == *"Alos"* || "$n" == *"Csk"* || "$n" == *"Tsx"* ]]
+}
+
+# Mother project name for an .he5 used with geocode (path text, resolved file path, file's directory, or PWD).
+hv_resolve_mother_name_for_he5_path() {
+    local f="$1"
+    local m dir_here abs_f d
+    [[ -z "$f" ]] && return 1
+
+    m=$(hv_mother_sensor_dir "$f")
+    if hv_mother_name_is_plausible "$m"; then
+        echo "$m"
+        return 0
+    fi
+
+    abs_f=$(realpath "$f" 2>/dev/null)
+    if [[ -n "$abs_f" ]]; then
+        m=$(hv_mother_sensor_dir "$abs_f")
+        if hv_mother_name_is_plausible "$m"; then
+            echo "$m"
+            return 0
+        fi
+    fi
+
+    d=$(dirname "$f")
+    if [[ -d "$d" ]]; then
+        dir_here=$(cd "$d" && pwd)
+        m=$(hv_mother_sensor_dir "$dir_here")
+        if hv_mother_name_is_plausible "$m"; then
+            echo "$m"
+            return 0
+        fi
+    fi
+    if [[ -n "${WORK_DIR:-}" && "$d" != "." && -d "$WORK_DIR/$d" ]]; then
+        dir_here=$(cd "$WORK_DIR/$d" && pwd)
+        m=$(hv_mother_sensor_dir "$dir_here")
+        if hv_mother_name_is_plausible "$m"; then
+            echo "$m"
+            return 0
+        fi
+    fi
+
+    m=$(hv_mother_sensor_dir "$PWD")
+    if hv_mother_name_is_plausible "$m"; then
+        echo "$m"
+        return 0
+    fi
+    echo ""
+}
+
+# Append geocode.py log line only to the project dir that owns this .he5 path.
+append_hv_geocode_log_for_file() {
+    local file_path="$1"
+    local line="$2"
+    local mother_name mother_abs
+    [[ -z "$line" ]] && return 0
+    mother_name=$(hv_resolve_mother_name_for_he5_path "$file_path")
+    [[ -z "$mother_name" ]] && return 0
+    mother_abs=$(hv_resolve_mother_abs "$mother_name")
+    [[ -n "$mother_abs" && -d "$mother_abs" ]] && echo "$line" >> "${mother_abs}/log"
+}
+
+# Append one line to each input dataset log (same style as run_workflow.bash: date + script ...).
+append_hv_to_project_logs() {
+    local line="$1"
+    [[ -z "$line" ]] && return 0
+    [[ -n "${HV_MOTHER1_ABS:-}" && -d "$HV_MOTHER1_ABS" ]] && echo "$line" >> "${HV_MOTHER1_ABS}/log"
+    if [[ -n "${HV_MOTHER2_ABS:-}" && -d "$HV_MOTHER2_ABS" && "$HV_MOTHER2_ABS" != "$HV_MOTHER1_ABS" ]]; then
+        echo "$line" >> "${HV_MOTHER2_ABS}/log"
+    fi
+}
+
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     helptext="
 Examples:
@@ -180,8 +290,16 @@ Examples:
       --no-insarmaps                  Skip running ingest_insarmaps.bash (default: insarmaps ingestion is enabled)
       --debug                         Enable debug mode (set -x)
 
+  Geocoding: If inputs are radar S1*.he5, an existing geo_S1*.he5 in the same directory is reused
+  only when it is newer than the radar file; otherwise geocode.py is run (refreshes stale geo).
+  If a geo_S1*.he5 is selected and the sibling radar file is newer, geocode is re-run from radar.
+
   Output: data_files.txt, *vert*.he5, *horz*.he5, maskTempCoh.h5, image_pairs.txt.
   Other: overlay.html, index.html (copy of overlay), matrix.html, insarmaps.log, urls.log, download_commands.txt. Overwritten/recreated; no backups.
+  Logging: run_workflow-style lines (YYYYMMDD:HH-MM + ...) go to each input dataset mother log for the
+  full horzvert invocation and horzvert_timeseries.py. Each geocode.py line goes only to the project log
+  for that .he5 path (e.g. SantoriniSenA29/log vs SantoriniSenD109/log), using the file path, its
+  directory, or PWD when the project dir is on the path. CWD ./log unchanged.
     "
     printf "$helptext"
     exit 0
@@ -190,6 +308,8 @@ fi
 # Log file in the directory where script is invoked (current working directory)
 WORK_DIR="$PWD"
 LOG_FILE="$WORK_DIR/log"
+# Full command line before option parsing (for dataset log files under each sensor dir)
+HV_INVOCATION_CMDLINE="$*"
 
 echo "##############################################" | tee -a "$LOG_FILE"
 echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $*" | tee -a "$LOG_FILE"
@@ -363,6 +483,13 @@ fi
 DIR_OR_FILE1="${positional[0]}"
 DIR_OR_FILE2="${positional[1]}"
 
+HV_MOTHER1_NAME=$(hv_mother_sensor_dir "$DIR_OR_FILE1")
+HV_MOTHER2_NAME=$(hv_mother_sensor_dir "$DIR_OR_FILE2")
+HV_MOTHER1_ABS=$(hv_resolve_mother_abs "$HV_MOTHER1_NAME")
+HV_MOTHER2_ABS=$(hv_resolve_mother_abs "$HV_MOTHER2_NAME")
+_ts_proj="$(date +"%Y%m%d:%H-%M")"
+append_hv_to_project_logs "${_ts_proj} + horzvert_timeseries.bash ${HV_INVOCATION_CMDLINE}"
+
 if [[ ${#positional[@]} -gt 2 ]]; then
     echo "Warning: Unknown parameters provided: ${positional[@]:2}"
     echo "These will be ignored"
@@ -428,31 +555,71 @@ else
 fi
 
 # Writes result path to $2 (temp file). All other output (messages + geocode.py) goes to stdout.
+# Refreshes stale geo_*.he5 when sibling radar *.he5 is newer (mtime). Reuses geo only when geo is newer than radar.
 geocode_if_needed() {
     local file="$1"
     local out_path="$2"
+    local file_dir file_base geo_out radar_in
+
+    file_dir=$(dirname "$file")
+    file_base=$(basename "$file")
+
+    if [[ "$file_base" == geo_* ]]; then
+        geo_out="${file_dir}/${file_base}"
+        radar_in="${file_dir}/${file_base#geo_}"
+        if [[ -f "$radar_in" ]] && [[ "$radar_in" -nt "$geo_out" ]] && is_geocoded "$file"; then
+            echo "Radar stack newer than geo; re-geocoding from: $radar_in"
+            file="$radar_in"
+            file_dir=$(dirname "$file")
+            file_base=$(basename "$file")
+        elif is_geocoded "$file"; then
+            echo "Already geocoded: $file"
+            echo "$file" > "$out_path"
+            return
+        elif [[ -f "$radar_in" ]]; then
+            echo "Geo file not usable as geocoded input; geocoding from radar: $radar_in"
+            file="$radar_in"
+            file_dir=$(dirname "$file")
+            file_base=$(basename "$file")
+        fi
+    elif is_geocoded "$file"; then
+        echo "Already geocoded: $file"
+        echo "$file" > "$out_path"
+        return
+    fi
+
+    file_dir=$(dirname "$file")
+    file_base=$(basename "$file")
+    if [[ "$file_base" == geo_* ]]; then
+        echo "Error: Cannot geocode: expected radar-coded S1*.he5 beside geo file, missing: ${file_dir}/${file_base#geo_}" >&2
+        exit 1
+    fi
+
+    geo_out="${file_dir}/geo_${file_base}"
+
     if is_geocoded "$file"; then
         echo "Already geocoded: $file"
         echo "$file" > "$out_path"
         return
     fi
 
+    if [[ -f "$geo_out" ]] && [[ "$geo_out" -nt "$file" ]]; then
+        echo "Using existing geocoded file (newer than radar): $geo_out"
+        echo "$geo_out" > "$out_path"
+        return
+    fi
+
     echo ""
     echo "Geocoding: $file"
-    local file_dir
-    file_dir=$(dirname "$file")
-    local file_base
-    file_base=$(basename "$file")
-
     echo "Running: geocode.py \"$file\" $GEOCODE_LALO_ARGS"
+    append_hv_geocode_log_for_file "$file" "$(date +"%Y%m%d:%H-%M") + geocode.py \"$file\" $GEOCODE_LALO_ARGS"
     geocode.py "$file" $GEOCODE_LALO_ARGS
 
-    local geo_file="${file_dir}/geo_${file_base}"
-    if [[ ! -f "$geo_file" ]]; then
-        echo "Error: Expected geocoded file not found: $geo_file"
+    if [[ ! -f "$geo_out" ]]; then
+        echo "Error: Expected geocoded file not found: $geo_out"
         exit 1
     fi
-    echo "$geo_file" > "$out_path"
+    echo "$geo_out" > "$out_path"
 }
 
 TMP1=$(mktemp)
@@ -506,6 +673,7 @@ CMD="horzvert_timeseries.py \"$FILE1_ABS\" \"$FILE2_ABS\""
 echo ""
 echo "Full horzvert_timeseries.py command (for verification):"
 echo "$CMD"
+append_hv_to_project_logs "$(date +"%Y%m%d:%H-%M") + ${CMD}"
 echo ""
 eval $CMD
 

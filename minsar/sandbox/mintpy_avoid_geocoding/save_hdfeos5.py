@@ -200,8 +200,16 @@ def metadata_mintpy2unavco(meta_in, dateList, geom_file):
     unavco_meta['last_frame'] = int(meta.get('last_frame', unavco_meta['first_frame']))
 
     unavco_meta['atmos_correct_method']   = meta.get('atmos_correct_method', 'None')
-    
-    if 'miaplpy' in os.getcwd():
+
+    # Preserve post_processing_method from input HDFEOS / stack metadata when present.
+    # Do not infer from cwd alone: geocode.py and other CLIs are often run from a neutral
+    # working directory, so os.getcwd() would wrongly force MintPy for MiaplPy stacks.
+    _ppm = meta.get('post_processing_method')
+    if _ppm is not None and str(_ppm).strip() and str(_ppm).strip().lower() not in ('none', 'unknown'):
+        unavco_meta['post_processing_method'] = str(_ppm).strip()
+    elif 'miaplpy' in os.getcwd().lower():
+        unavco_meta['post_processing_method'] = 'MiaplPy'
+    elif geom_file and 'miaplpy' in os.path.normpath(str(geom_file)).lower():
         unavco_meta['post_processing_method'] = 'MiaplPy'
     else:
         unavco_meta['post_processing_method'] = 'MintPy'
