@@ -5,6 +5,17 @@ alwaysApply: true
 
 # MinSAR Project Guidelines
 
+## Paths: `scripts` and `utils` (REQUIRED)
+
+When the user asks to create or place a file in **`scripts`** or **`utils`** (without a longer path), they mean under the MinSAR package tree, not the repository root:
+
+| User says | Actual location |
+|-----------|-----------------|
+| `scripts/…` | `$MINSAR_HOME/minsar/scripts/…` |
+| `utils/…` | `$MINSAR_HOME/minsar/utils/…` |
+
+`$MINSAR_HOME` is the repository root (the directory that contains `minsar/`, `setup/`, `additions/`, etc.). Do not create a top-level `scripts/` or `utils/` at repo root unless the user explicitly asks for that.
+
 ## Development Workflow (REQUIRED)
 
 **Always follow this workflow for any non-trivial changes:**
