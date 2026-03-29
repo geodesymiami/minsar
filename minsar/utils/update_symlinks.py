@@ -10,14 +10,20 @@ Interprets the same lines the installer would run:
 - **Linux-only ISCE/miniforge symlinks:** in ``install_minsar.bash`` these are the ``ln -sf``
   lines whose destination path contains ``tools/miniforge3/envs/minsar``. That matches the block
   under ``if [[ "$(uname)" == "Linux" ]]; then`` (without relying on fragile nested ``if``/``fi``
-  parsing). On non-Linux hosts those lines are skipped unless ``--force-linux-isce`` is set.
+  parsing). On macOS and other non-Linux hosts those lines are skipped (same as the installer).
 
 When a symlink already exists and points at the correct additions file, the script does nothing
-and prints nothing for that entry (including in ``--dry-run``). Output is only for creates,
-replacements, skips (missing parent dir), warnings, or errors.
+for that entry (including in ``--dry-run``). Per-entry output is only for creates, replacements,
+skips (missing parent dir), or warnings. If every link is already correct and there are no
+warnings or skips, it prints ``All sym links are in place``.
 
-``--dry-run`` ends with a block: ``cd <MINSAR_HOME>``, then ``Will run:`` and one ``ln -s <rel> <rel>``
-line per needed symlink (paths relative to MINSAR_HOME; the installer uses ``ln -sf``).
+When changes are applied, output is ``Ran:`` followed by one ``ln -s <rel> <rel>`` line per symlink
+(paths relative to MINSAR_HOME; the installer uses ``ln -sf``).
+
+``--dry-run`` ends with a block when changes are needed: ``cd <MINSAR_HOME>``, then ``Will run:`` and
+the same ``ln -s`` lines (no writes on disk).
+
+Must be run with the shell current directory set to the repository root (``$MINSAR_HOME``).
 
 Usage (from repository root):
     python3 minsar/utils/update_symlinks.py
@@ -75,16 +81,14 @@ def _is_linux_only_install_line(dst_token: str) -> bool:
 
 
 def parse_executable_ln_sf_lines(
-    install_bash: Path, *, on_linux: bool | None = None
+    install_bash: Path, *, on_linux: bool
 ) -> list[tuple[str, str]]:
     """
     Return (src_token, dst_token) for each ``ln -sf`` that would run in install_minsar.bash.
 
     Omits lines that bash would not execute (full-line comments). Omits Linux-only miniforge
-    ISCE symlinks when ``on_linux`` is False.
+    ISCE symlinks when ``on_linux`` is False (e.g. on macOS).
     """
-    if on_linux is None:
-        on_linux = platform.system() == "Linux"
 
     pairs: list[tuple[str, str]] = []
     text = install_bash.read_text(encoding="utf-8", errors="replace")
@@ -175,48 +179,28 @@ def main(argv: list[str] | None = None) -> int:
         )
     )
     parser.add_argument(
-        "--install-bash",
-        type=Path,
-        default=None,
-        help="Path to install_minsar.bash (default: <MINSAR_HOME>/setup/install_minsar.bash)",
-    )
-    parser.add_argument(
-        "--minsar-home",
-        type=Path,
-        default=None,
-        help="Repository root MINSAR_HOME (default: inferred from this file location)",
-    )
-    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Print only symlinks that would be created or replaced (no changes on disk)",
     )
-    parser.add_argument(
-        "--strict",
-        action="store_true",
-        help="Exit with error if any source under additions/ is missing",
-    )
-    parser.add_argument(
-        "--force-linux-isce",
-        action="store_true",
-        help=(
-            "Apply Linux-only ISCE→miniforge symlinks even when not on Linux "
-            "(default: same as install_minsar.bash uname check)"
-        ),
-    )
     args = parser.parse_args(argv)
 
-    minsar_home = (args.minsar_home or repo_root_from_script()).resolve()
-    install_bash = args.install_bash or (minsar_home / "setup" / "install_minsar.bash")
+    minsar_home = repo_root_from_script().resolve()
+    if Path.cwd().resolve() != minsar_home:
+        print(
+            "update_symlinks can only be run from $MINSAR_HOME",
+            file=sys.stderr,
+        )
+        return 1
+
+    install_bash = minsar_home / "setup" / "install_minsar.bash"
 
     if not install_bash.is_file():
         print(f"Error: install script not found: {install_bash}", file=sys.stderr)
         return 1
 
-    if args.force_linux_isce:
-        pairs = parse_executable_ln_sf_lines(install_bash, on_linux=True)
-    else:
-        pairs = parse_executable_ln_sf_lines(install_bash)
+    on_linux = platform.system() == "Linux"
+    pairs = parse_executable_ln_sf_lines(install_bash, on_linux=on_linux)
 
     if not pairs:
         print(f"No executable ln -sf ... additions/ ... lines parsed from {install_bash}", file=sys.stderr)
@@ -224,6 +208,10 @@ def main(argv: list[str] | None = None) -> int:
 
     errors = 0
     dry_run_commands: list[tuple[str, str]] = []
+    run_commands: list[tuple[str, str]] = []
+    any_action = False
+    any_skip_parent = False
+    any_warn_missing = False
 
     for src_t, dst_t in pairs:
         try:
@@ -234,22 +222,20 @@ def main(argv: list[str] | None = None) -> int:
             continue
 
         if not src.is_file():
-            msg = f"WARN source missing: {src}"
-            if args.strict:
-                print(f"Error: {msg}", file=sys.stderr)
-                errors += 1
-            else:
-                print(msg, file=sys.stderr)
+            any_warn_missing = True
+            print(f"WARN source missing: {src}", file=sys.stderr)
 
         status = ensure_symlink(src, link_path, args.dry_run)
 
         if status == "noop":
             continue
         if status == "skipped_no_parent":
+            any_skip_parent = True
             print(f"SKIP (parent dir missing): {link_path.parent}", file=sys.stderr)
             continue
         if args.dry_run:
             if status in ("would_create", "would_replace"):
+                any_action = True
                 dry_run_commands.append(
                     (
                         posix_rel_to_minsar_home(src, minsar_home),
@@ -257,13 +243,32 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 )
             continue
-        print(f"{status}: {link_path} -> {src}")
+        any_action = True
+        if status in ("created", "replaced"):
+            run_commands.append(
+                (
+                    posix_rel_to_minsar_home(src, minsar_home),
+                    posix_rel_to_minsar_home(link_path, minsar_home),
+                )
+            )
 
     if args.dry_run and dry_run_commands:
         print(f"cd {minsar_home.as_posix()}")
         print("Will run:")
         for src_rel, dst_rel in dry_run_commands:
             print(f"ln -s {src_rel} {dst_rel}")
+    elif run_commands:
+        print("Ran:")
+        for src_rel, dst_rel in run_commands:
+            print(f"ln -s {src_rel} {dst_rel}")
+
+    if (
+        errors == 0
+        and not any_action
+        and not any_skip_parent
+        and not any_warn_missing
+    ):
+        print("All sym links are in place")
 
     return 1 if errors else 0
 
