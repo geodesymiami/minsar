@@ -365,7 +365,7 @@ def main():
     # Processing section
     if inps.process:
         min_lon, max_lon, min_lat, max_lat = parse_polygon(inps.intersectsWith)
-        lon, lat = (min_lon + max_lon) / 2, (min_lat + max_lat) / 2 
+        lon, lat = (min_lon + max_lon) / 2, (min_lat + max_lat) / 2
         # utm_to_latlon(x, y, get_utm_crs_from_bbox(lon, lat))
         indir = inps.dir
         outdir = os.path.join(indir, 'cropped')
