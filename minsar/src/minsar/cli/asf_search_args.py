@@ -49,8 +49,8 @@ def create_parser(iargs=None, namespace=None):
     parser.add_argument('--flightDirection', choices=['ASC', 'DESC', 'ASCENDING', 'DESCENDING'], default=None, help='Flight direction of the satellite (ASCENDING or DESCENDING)')
     parser.add_argument('--relativeOrbit', dest='relative_orbit', type=int, default=None, metavar='ORBIT', help='Relative Orbit Path')
     parser.add_argument('--burst-id', nargs='*', type=str, metavar='BURST', default=None, help='Burst ID')
-    parser.add_argument('--frame', type=int, metavar='FRAME', help='Frame number (Default: None')
-    parser.add_argument('--platform', nargs='?',metavar='SENTINEL1, ALOS2', help='Platform to search')
+    parser.add_argument('--frame', type=int, metavar='FRAME', help='Frame number (Default: None)')
+    parser.add_argument('--platform', nargs='?',metavar='SENTINEL1, ALOS2, NISAR', help='Platform to search')
     parser.add_argument('--parallel', type=int, default=6, help='Number of parallel downloads (Default: 1)')
     parser.add_argument('--print', dest='print', action='store_true', help='Print the whole search results')
     parser.add_argument('--download', action='store_true', help='Download the data')
@@ -115,11 +115,20 @@ def create_parser(iargs=None, namespace=None):
         inps.dataset = [asf.DATASET.ALOS_2]
         inps.polarization=['HH', 'HV']
 
+    elif 'NISAR' in inps.platform:
+        inps.platform = asf.PLATFORM.NISAR
+        inps.dataset = asf.DATASET.NISAR
+
+        if inps.processing_level == asf.PRODUCT_TYPE.SLC:
+            inps.processing_level = asf.PRODUCT_TYPE.GUNW
+
     if inps.processing_level==asf.PRODUCT_TYPE.SLC:
-        inps.polarization = ['VV','VV+VH'] 
+        inps.polarization = ['VV','VV+VH']
     elif inps.processing_level==asf.PRODUCT_TYPE.BURST:
         inps.polarization = ['VV']
         inps.dataset = [asf.DATASET.SLC_BURST]
+    elif inps.processing_level==asf.PRODUCT_TYPE.GUNW:
+        inps.polarization = None
     else:
         inps.polarization = ['VV', 'VV+VH']
 
