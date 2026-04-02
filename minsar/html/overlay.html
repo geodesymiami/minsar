@@ -1,0 +1,2020 @@
+<!DOCTYPE html>
+<!--
+  ╔═══════════════════════════════════════════════════════════════════════════════╗
+  ║  CONFIGURATION: To switch between URL formats (view=desc vs startDataset=...) ║
+  ║  Go to line ~295 and comment/uncomment USE_FULL_DATASET_IN_URL               ║
+  ╚═══════════════════════════════════════════════════════════════════════════════╝
+-->
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Insarmaps - Frame Overlay</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 10px;
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+        }
+        .controls-bar {
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: white;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        .frame-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .frame-selector label {
+            font-weight: bold;
+            font-size: 14px;
+            color: #333;
+        }
+        .frame-selector select {
+            padding: 6px 12px;
+            font-size: 14px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: white;
+            cursor: pointer;
+            max-width: 300px;
+            overflow: auto;
+        }
+        .frame-selector select:focus {
+            outline: none;
+            border-color: #4a90e2;
+        }
+        .time-controls-column {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 4px;
+            margin-left: auto;
+        }
+        .time-controls-toggle {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .time-controls-toggle input[type="checkbox"] {
+            margin: 0;
+            cursor: pointer;
+            width: 16px;
+            height: 16px;
+        }
+        .time-controls-toggle label {
+            font-size: 13px;
+            color: #333;
+            cursor: pointer;
+        }
+        /* Time controls inline - same row as dropdown, no box */
+        .time-controls-panel {
+            display: none;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        .time-controls-panel.visible {
+            display: flex;
+            margin-left: auto;
+        }
+        .time-control-group {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .time-control-group label {
+            font-size: 13px;
+            color: #333;
+            white-space: nowrap;
+        }
+        .time-control-group input[type="number"] {
+            width: 50px;
+            padding: 4px 6px;
+            font-size: 13px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .time-control-group .unit {
+            font-size: 13px;
+            color: #666;
+        }
+        .time-control-group input[type="checkbox"] {
+            margin: 0;
+            cursor: pointer;
+        }
+        .nav-btn {
+            padding: 4px 8px;
+            font-size: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f8f8f8;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .nav-btn:hover {
+            background-color: #e8e8e8;
+        }
+        .nav-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .period-indicator {
+            font-size: 12px;
+            font-weight: bold;
+            color: #333;
+            min-width: 40px;
+            text-align: center;
+        }
+        .play-btn {
+            padding: 4px 8px;
+            font-size: 11px;
+            font-weight: bold;
+            border: 1px solid #27ae60;
+            border-radius: 4px;
+            background-color: #27ae60;
+            color: white;
+            cursor: pointer;
+        }
+        .play-btn:hover {
+            background-color: #219a52;
+        }
+        .play-btn.playing {
+            background-color: #e74c3c;
+            border-color: #e74c3c;
+        }
+        .memory-display {
+            font-size: 11px;
+            color: #888;
+            padding: 4px 8px;
+            background-color: #fff3e0;
+            border-radius: 4px;
+            font-family: monospace;
+            display: none;
+        }
+        .memory-display.visible {
+            display: block;
+        }
+        .loading-indicator {
+            font-size: 11px;
+            color: #e65100;
+            padding: 4px 8px;
+            background-color: #ffe0b2;
+            border: 1px solid #ffb74d;
+            border-radius: 4px;
+            font-family: monospace;
+            display: none;
+        }
+        .loading-indicator.visible {
+            display: block;
+        }
+        .add-period-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .add-period-boxes {
+            display: none;
+            align-items: center;
+            gap: 6px;
+        }
+        .add-period-group.expanded .add-period-boxes {
+            display: flex;
+        }
+        .add-period-group label {
+            font-size: 13px;
+            color: #333;
+            white-space: nowrap;
+        }
+        .add-period-group input[type="text"].date-input {
+            width: 90px;
+            padding: 4px 6px;
+            font-size: 13px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .add-period-group input[type="text"].date-input.greyed {
+            background-color: #e9ecef;
+            color: #6c757d;
+            cursor: not-allowed;
+        }
+        .add-period-btn {
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            font-size: 18px;
+            font-weight: bold;
+            line-height: 1;
+            border: 2px solid #27ae60;
+            border-radius: 4px;
+            background-color: #27ae60;
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s;
+        }
+        .add-period-btn:hover {
+            background-color: #219a52;
+        }
+        .add-period-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background-color: #999;
+            border-color: #999;
+        }
+        .add-period-btn.state-need-point {
+            background-color: #95a5a6;
+            border-color: #7f8c8d;
+        }
+        .add-period-btn.state-need-start {
+            background-color: #f39c12;
+            border-color: #e67e22;
+        }
+        .add-period-btn.state-need-end {
+            background-color: #f5b041;
+            border-color: #f8c471;
+        }
+        .add-period-btn.state-need-end:hover {
+            background-color: #f9e79f;
+        }
+        .add-period-btn.mode-close {
+            background-color: #e74c3c;
+            border-color: #c0392b;
+        }
+        .add-period-btn.mode-close:hover {
+            background-color: #c0392b;
+        }
+        .container {
+            width: 100%;
+            height: calc(100vh - 120px);
+            max-width: 100%;
+            position: relative;
+        }
+        .panel {
+            background-color: white;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+            transition: box-shadow 0.2s;
+            /* Visibility and z-index controlled by JavaScript */
+        }
+        .panel.active {
+            box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.5);
+        }
+        .panel-header {
+            background-color: #4a90e2;
+            color: white;
+            padding: 8px 12px;
+            font-size: 14px;
+            font-weight: bold;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            height: 38px;
+            box-sizing: border-box;
+        }
+        .panel-header-title {
+            position: absolute;
+            left: 12px;
+        }
+        .panel-header-period {
+            font-size: 13px;
+            font-weight: normal;
+        }
+        .panel iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            display: block;
+        }
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #666;
+            font-size: 14px;
+        }
+        /* Loading overlay - shown until data loads */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+        }
+        .loading-overlay.hidden {
+            display: none;
+        }
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #e0e0e0;
+            border-top: 4px solid #4a90e2;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .loading-overlay-text {
+            font-size: 18px;
+            color: #333;
+            font-weight: 500;
+        }
+        .loading-overlay-subtext {
+            font-size: 13px;
+            color: #666;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading overlay - shown until first iframe data loads -->
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-overlay-text">Data loading...</div>
+        <div class="loading-overlay-subtext">Please wait while the map data is retrieved</div>
+    </div>
+    
+    <div id="loading" class="loading">Loading insarmaps data...</div>
+    <div class="controls-bar" id="controls-bar" style="display:none;">
+        <div class="frame-selector" id="frame-selector">
+            <label for="frame-select">Dataset:</label>
+            <select id="frame-select"></select>
+        </div>
+        <!-- Time controls panel - shown when checkbox checked -->
+        <div class="time-controls-panel" id="time-controls-panel">
+            <div class="time-control-group" id="period-input-group">
+                <label for="period-value">Period:</label>
+                <input type="number" id="period-value" value="2" min="0.1" step="0.1">
+                <span class="unit">years</span>
+            </div>
+            <div class="time-control-group">
+                <button class="nav-btn" id="btn-backward" title="Previous period" disabled>◀</button>
+                <span class="period-indicator" id="period-indicator">-/-</span>
+                <button class="nav-btn" id="btn-forward" title="Next period" disabled>▶</button>
+            </div>
+            <div class="time-control-group">
+                <span id="period-date-range" style="font-size: 15px; color: #333; min-width: 220px; font-weight: 500;"></span>
+            </div>
+            <div class="time-control-group">
+                <button class="play-btn" id="btn-play">▶ Play</button>
+            </div>
+            <div class="time-control-group">
+                <label for="frame-delay">Delay:</label>
+                <input type="number" id="frame-delay" value="2" min="0.5" step="0.5">
+                <span class="unit">secs</span>
+            </div>
+            <div class="time-control-group add-period-group" id="add-period-group">
+                <span class="add-period-boxes">
+                    <label for="add-start-date">Start:</label>
+                    <input type="text" id="add-start-date" class="date-input" placeholder="YYYYMMDD" maxlength="8">
+                    <label for="add-end-date">End:</label>
+                    <input type="text" id="add-end-date" class="date-input" placeholder="YYYYMMDD" maxlength="8">
+                </span>
+                <button type="button" class="add-period-btn" id="add-period-btn" title="Click to select periods">+</button>
+            </div>
+        </div>
+        <div class="time-controls-column">
+            <div class="time-controls-toggle">
+                <input type="checkbox" id="time-controls-checkbox">
+                <label for="time-controls-checkbox">Time Controls</label>
+            </div>
+            <span class="memory-display" id="memory-display" title="Estimated memory usage">Mem: 0 MB</span>
+            <span class="loading-indicator" id="loading-indicator" title="Background frames loading">Loading...</span>
+        </div>
+    </div>
+    <div class="container" id="container"></div>
+    
+    <script>
+        // ===== CONFIGURATION (EDIT THIS LINE TO SWITCH BETWEEN FORMATS) =====
+        // To switch: comment out one line and uncomment the other
+        //const USE_FULL_DATASET_IN_URL = false;  // Use short codes: view=desc/asc/vert/horz
+        const USE_FULL_DATASET_IN_URL = true;   // Use full dataset names: startDataset=S1_desc_142_mintpy_...
+        
+        // ===== URL STATE MANAGEMENT =====
+        // Map view labels to short codes for URL
+        const viewCodes = {
+            'Descending': 'desc',
+            'Ascending': 'asc',
+            'Vertical': 'vert',
+            'Horizontal': 'horz'
+        };
+        const codeToLabel = { 'desc': 'Descending', 'asc': 'Ascending', 'vert': 'Vertical', 'horz': 'Horizontal' };
+
+        // Helper: Parse YYYYMMDD to Date
+        function parseDate(yyyymmdd) {
+            if (!yyyymmdd) return null;
+            const str = String(yyyymmdd);
+            if (str.length !== 8) return null;
+            const year = parseInt(str.substring(0, 4));
+            const month = parseInt(str.substring(4, 6)) - 1;
+            const day = parseInt(str.substring(6, 8));
+            return new Date(year, month, day);
+        }
+        
+        // Helper: Format Date to YYYYMMDD
+        function formatDate(date) {
+            if (!date) return null;
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}${month}${day}`;
+        }
+        
+        // Helper: Format Date for display (29 Oct 2024)
+        function formatDateDisplay(yyyymmdd) {
+            const d = parseDate(yyyymmdd);
+            if (!d) return yyyymmdd;
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+            return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+        }
+
+        // Get URL parameters from overlay.html's URL (supports hash-based routing)
+        function getOverlayUrlParams() {
+            let pathPart = '';
+            let queryPart = '';
+            
+            // Check for hash-based URL first (e.g., overlay.html#/start/lat/lon/zoom?params)
+            if (window.location.hash) {
+                const hash = window.location.hash.substring(1); // Remove leading #
+                const queryIdx = hash.indexOf('?');
+                if (queryIdx !== -1) {
+                    pathPart = hash.substring(0, queryIdx);
+                    queryPart = hash.substring(queryIdx + 1);
+                } else {
+                    pathPart = hash;
+                }
+            } else {
+                // Fallback to regular URL
+                pathPart = window.location.pathname;
+                queryPart = window.location.search.substring(1);
+            }
+            
+            // Parse path: /start/{lat}/{lon}/{zoom}
+            const pathMatch = pathPart.match(/\/start\/([^\/]+)\/([^\/]+)\/([^\/?\#]+)/);
+            const params = new URLSearchParams(queryPart);
+            
+            return {
+                view: params.get('view'),
+                startDataset: params.get('startDataset'),
+                lat: pathMatch ? pathMatch[1] : null,
+                lon: pathMatch ? pathMatch[2] : null,
+                zoom: pathMatch ? pathMatch[3] : null,
+                minScale: params.get('minScale'),
+                maxScale: params.get('maxScale'),
+                startDate: params.get('startDate'),
+                endDate: params.get('endDate'),
+                pixelSize: params.get('pixelSize'),
+                background: params.get('background'),
+                opacity: params.get('opacity'),
+                contour: params.get('contour'),
+                colorscale: params.get('colorscale'),
+                refPointLat: params.get('refPointLat'),
+                refPointLon: params.get('refPointLon'),
+                pointLat: params.get('pointLat'),
+                pointLon: params.get('pointLon'),
+                timeControls: params.get('timeControls'),
+                periods: params.get('periods')
+            };
+        }
+
+        // Periods URL format: periods=20140902:20151003,20151003:20163110,20163110:20251231
+        // (start:end,start:end,...) - comma separates periods, : separates start from end within each
+        // Also accepts @ as separator for backwards compatibility
+        function serializePeriods(periodsArray) {
+            if (!periodsArray || periodsArray.length === 0) return null;
+            return periodsArray.map(p => `${p.startDate}:${p.endDate}`).join(',');
+        }
+        function parsePeriodsFromUrl(periodsStr) {
+            if (!periodsStr || typeof periodsStr !== 'string') return null;
+            const parts = periodsStr.trim().split(/[,@]/).filter(Boolean);
+            const result = [];
+            for (const part of parts) {
+                const [start, end] = part.split(':').map(s => (s || '').trim());
+                if (start && end && start.length === 8 && end.length === 8) {
+                    result.push({ startDate: start, endDate: end });
+                }
+            }
+            return result.length > 0 ? result : null;
+        }
+
+        // Normalize contour to "true"/"false" for URL (insarmaps accepts true/false/on/1 for enabled)
+        function normalizeContourValue(value) {
+            if (!value) return null;
+            const v = String(value).toLowerCase();
+            if (v === 'on' || v === 'true' || v === '1') return 'true';
+            if (v === 'off' || v === 'false' || v === '0') return 'false';
+            return value;
+        }
+
+        // Update overlay.html's browser URL with current state
+        // Uses hash-based URL format for shareability: overlay.html#/start/lat/lon/zoom?params
+        // Optional: timeControlsActive (bool), periodsArray (array of {startDate,endDate})
+        // When periodsArray is not provided but current URL has timeControls and periods, preserve them (e.g. before TC open)
+        function updateOverlayUrl(viewCodeOrDataset, mapParams, currentDataset, timeControlsActive, periodsArray) {
+            const params = new URLSearchParams();
+            if (USE_FULL_DATASET_IN_URL && currentDataset) params.set('startDataset', currentDataset);
+            else if (viewCodeOrDataset) params.set('view', viewCodeOrDataset);
+            if (mapParams.minScale) params.set('minScale', mapParams.minScale);
+            if (mapParams.maxScale) params.set('maxScale', mapParams.maxScale);
+            if (mapParams.startDate) params.set('startDate', mapParams.startDate);
+            if (mapParams.endDate) params.set('endDate', mapParams.endDate);
+            if (mapParams.pixelSize) params.set('pixelSize', mapParams.pixelSize);
+            if (mapParams.background) params.set('background', mapParams.background);
+            if (mapParams.opacity) params.set('opacity', mapParams.opacity);
+            const nc = normalizeContourValue(mapParams.contour);
+            if (nc) params.set('contour', nc);
+            if (mapParams.colorscale) params.set('colorscale', mapParams.colorscale);
+            if (mapParams.refPointLat) params.set('refPointLat', mapParams.refPointLat);
+            if (mapParams.refPointLon) params.set('refPointLon', mapParams.refPointLon);
+            if (mapParams.pointLat) params.set('pointLat', mapParams.pointLat);
+            if (mapParams.pointLon) params.set('pointLon', mapParams.pointLon);
+            if (timeControlsActive && periodsArray && periodsArray.length > 0) {
+                params.set('timeControls', 'true');
+                params.set('periods', serializePeriods(periodsArray));
+            } else {
+                const cur = getOverlayUrlParams();
+                if (cur.timeControls === 'true' && cur.periods) {
+                    params.set('timeControls', 'true');
+                    params.set('periods', cur.periods);
+                }
+            }
+            let hashUrl;
+            if (mapParams.lat && mapParams.lon && mapParams.zoom) {
+                hashUrl = `/start/${mapParams.lat}/${mapParams.lon}/${mapParams.zoom}?${params.toString()}`;
+            } else {
+                hashUrl = `?${params.toString()}`;
+            }
+            const newHash = `#${hashUrl}`;
+            if (window.location.hash !== newHash) {
+                window.history.replaceState({}, '', newHash);
+            }
+        }
+
+        // Build insarmaps URL with given parameters
+        // uniqueId is optional - used to ensure unique cache-busting for multiple iframes
+        let urlCounter = 0;
+        function buildInsarmapsUrl(baseUrl, dataset, lat, lon, zoom, mapParams, uniqueId) {
+            const params = new URLSearchParams();
+            params.set('flyToDatasetCenter', 'false');
+            params.set('startDataset', dataset);
+            if (mapParams.minScale) params.set('minScale', mapParams.minScale);
+            if (mapParams.maxScale) params.set('maxScale', mapParams.maxScale);
+            if (mapParams.startDate) params.set('startDate', mapParams.startDate);
+            if (mapParams.endDate) params.set('endDate', mapParams.endDate);
+            if (mapParams.pixelSize) params.set('pixelSize', mapParams.pixelSize);
+            if (mapParams.background) params.set('background', mapParams.background);
+            if (mapParams.opacity) params.set('opacity', mapParams.opacity);
+            const normalizedContour = normalizeContourValue(mapParams.contour);
+            if (normalizedContour) params.set('contours', normalizedContour);
+            if (mapParams.colorscale) params.set('colorscale', mapParams.colorscale);
+            if (mapParams.refPointLat) params.set('refPointLat', mapParams.refPointLat);
+            if (mapParams.refPointLon) params.set('refPointLon', mapParams.refPointLon);
+            // Unique cache-buster: timestamp + counter + optional uniqueId
+            const cacheBuster = uniqueId !== undefined ? `${Date.now()}_${urlCounter++}_${uniqueId}` : `${Date.now()}_${urlCounter++}`;
+            params.set('_t', cacheBuster);
+            
+            return `${baseUrl}/start/${lat}/${lon}/${zoom}?${params.toString()}`;
+        }
+
+        // Extract lat/lon/zoom from an insarmaps URL
+        function parseInsarmapsUrl(url) {
+            try {
+                const urlObj = new URL(url);
+                const pathMatch = urlObj.pathname.match(/\/start\/([^\/]+)\/([^\/]+)\/([^\/]+)/);
+                if (pathMatch) {
+                    return { lat: pathMatch[1], lon: pathMatch[2], zoom: pathMatch[3] };
+                }
+            } catch (e) {}
+            return null;
+        }
+        // ===== END URL STATE MANAGEMENT =====
+
+        // Global state
+        let iframeDatasets = new Map();  // index -> dataset name
+        let iframeLabels = new Map();    // index -> label (Descending, etc.)
+        let iframeSynced = new Map();    // index -> sync key (tracks if iframe has current params)
+        let baseUrl = '';
+        let currentViewCode = 'desc';
+        let currentDataset = null;  // Current active dataset name
+        let currentMapParams = {};
+        let urlsList = [];
+        
+        // Sync control - defined early so it's available everywhere
+        let lastSyncTime = 0;
+        const SYNC_COOLDOWN_MS = 3000;
+        
+        // Background period iframe loading tracker
+        let loadingPeriodIndices = new Set();
+        function updateLoadingIndicator() {
+            const el = document.getElementById('loading-indicator');
+            if (!el) return;
+            if (loadingPeriodIndices.size > 0) {
+                el.textContent = `Loading... (${loadingPeriodIndices.size})`;
+                el.classList.add('visible');
+            } else {
+                el.classList.remove('visible');
+            }
+        }
+        
+        // Loading overlay control
+        let dataLoaded = false;
+        function hideLoadingOverlay() {
+            if (!dataLoaded) {
+                dataLoaded = true;
+                const overlay = document.getElementById('loading-overlay');
+                if (overlay) {
+                    overlay.classList.add('hidden');
+                }
+            }
+        }
+        
+        // Generate a sync key from current params
+        function getSyncKey(params) {
+            return JSON.stringify({
+                lat: params.lat,
+                lon: params.lon,
+                zoom: params.zoom,
+                minScale: params.minScale,
+                maxScale: params.maxScale,
+                startDate: params.startDate,
+                endDate: params.endDate,
+                pixelSize: params.pixelSize,
+                background: params.background,
+                opacity: params.opacity,
+                contour: params.contour,
+                colorscale: params.colorscale,
+                refPointLat: params.refPointLat,
+                refPointLon: params.refPointLon
+            });
+        }
+
+        // Parse insarmaps.log and create iframes dynamically
+        fetch('insarmaps.log')
+            .then(response => response.text())
+            .then(data => {
+                const lines = data.split('\n');
+                const urls = lines
+                    .map(line => line.trim())
+                    .filter(line => line && (line.startsWith('http://') || line.startsWith('https://')));
+                
+                if (urls.length === 0) {
+                    document.getElementById('loading').textContent = 'No URLs found in insarmaps.log';
+                    return;
+                }
+                
+                // Sort URLs by dataset type: desc (0), asc (1), horz (2), vert (3), others (4)
+                urls.sort((a, b) => {
+                    const getSortKey = (url) => {
+                        try {
+                            const urlObj = new URL(url);
+                            const startDataset = urlObj.searchParams.get('startDataset') || '';
+                            const lower = startDataset.toLowerCase();
+                            if (lower.includes('desc')) return 0;
+                            if (lower.includes('asc')) return 1;
+                            if (lower.includes('horz')) return 2;
+                            if (lower.includes('vert')) return 3;
+                            return 4;
+                        } catch (e) {
+                            return 5;
+                        }
+                    };
+                    return getSortKey(a) - getSortKey(b);
+                });
+                
+                urlsList = urls;
+                
+                // Extract labels from URLs
+                const getLabel = (url) => {
+                    try {
+                        const urlObj = new URL(url);
+                        const startDataset = urlObj.searchParams.get('startDataset') || '';
+                        const lower = startDataset.toLowerCase();
+                        if (lower.includes('desc')) return 'Descending';
+                        if (lower.includes('asc')) return 'Ascending';
+                        if (lower.includes('vert')) return 'Vertical';
+                        if (lower.includes('horz')) return 'Horizontal';
+                        return startDataset || 'Dataset';
+                    } catch (e) {
+                        return 'Dataset';
+                    }
+                };
+                
+                // Get initial params from overlay.html URL
+                const initialParams = getOverlayUrlParams();
+                
+                // When URL has timeControls=true and periods, startDate/endDate come from first period
+                let initialStartDate = initialParams.startDate;
+                let initialEndDate = initialParams.endDate;
+                if (initialParams.timeControls === 'true') {
+                    const urlPeriods = parsePeriodsFromUrl(initialParams.periods);
+                    if (urlPeriods && urlPeriods.length > 0) {
+                        initialStartDate = urlPeriods[0].startDate;
+                        initialEndDate = urlPeriods[0].endDate;
+                    }
+                }
+                
+                // Initialize current map params from overlay URL or first insarmaps URL
+                const firstUrlCoords = parseInsarmapsUrl(urls[0]);
+                currentMapParams = {
+                    lat: initialParams.lat || (firstUrlCoords ? firstUrlCoords.lat : null),
+                    lon: initialParams.lon || (firstUrlCoords ? firstUrlCoords.lon : null),
+                    zoom: initialParams.zoom || (firstUrlCoords ? firstUrlCoords.zoom : null),
+                    minScale: initialParams.minScale,
+                    maxScale: initialParams.maxScale,
+                    startDate: initialStartDate,
+                    endDate: initialEndDate,
+                    pixelSize: initialParams.pixelSize,
+                    background: initialParams.background,
+                    opacity: initialParams.opacity,
+                    contour: initialParams.contour,
+                    colorscale: initialParams.colorscale,
+                    refPointLat: initialParams.refPointLat,
+                    refPointLon: initialParams.refPointLon
+                };
+                
+                // Create panels for each URL
+                const container = document.getElementById('container');
+                
+                // Determine initial active panel based on URL view param
+                let initialActiveIndex = 0;
+                
+                urls.forEach((url, index) => {
+                    let dataset = null;  // Declare outside try block so it's accessible below
+                    try {
+                        const urlObj = new URL(url);
+                        dataset = urlObj.searchParams.get('startDataset');
+                        iframeDatasets.set(index, dataset);
+                        
+                        // Extract base URL from first URL
+                        if (!baseUrl) {
+                            baseUrl = urlObj.origin;
+                        }
+                    } catch (e) {
+                        console.warn('Could not parse URL:', url);
+                    }
+                    
+                    const label = getLabel(url);
+                    iframeLabels.set(index, label);
+                    const labelCode = viewCodes[label] || label.toLowerCase();
+                    
+                    // Check if this should be the active panel based on URL param
+                    // Support both view=desc and startDataset=<full_name>
+                    if (initialParams.startDataset && dataset === initialParams.startDataset) {
+                        initialActiveIndex = index;
+                        currentViewCode = labelCode;
+                        currentDataset = dataset;
+                    } else if (initialParams.view && labelCode === initialParams.view) {
+                        initialActiveIndex = index;
+                        currentViewCode = labelCode;
+                        currentDataset = dataset;
+                    }
+                    
+                    // Dataset list items will be created after all URLs are processed
+                });
+                
+                // Set default view code and dataset if not specified in URL
+                if (!initialParams.view && !initialParams.startDataset) {
+                    const firstLabel = iframeLabels.get(0);
+                    currentViewCode = viewCodes[firstLabel] || 'desc';
+                    currentDataset = iframeDatasets.get(0);
+                } else if (!currentDataset) {
+                    currentDataset = iframeDatasets.get(initialActiveIndex);
+                }
+                
+                // Create panels with potentially modified URLs
+                urls.forEach((url, index) => {
+                    // Create panel
+                    const panel = document.createElement('div');
+                    panel.className = 'panel';
+                    panel.id = `panel${index}`;
+                    
+                    // Set initial visibility - only show the active panel
+                    if (index === initialActiveIndex) {
+                        panel.classList.add('active');
+                        panel.style.visibility = 'visible';
+                        panel.style.zIndex = '10';
+                        panel.style.pointerEvents = 'auto';
+                    } else {
+                        panel.style.visibility = 'hidden';
+                        panel.style.zIndex = '-1';
+                        panel.style.pointerEvents = 'none';
+                    }
+                    
+                    // Build iframe URL - use overlay params if available
+                    let iframeSrc = url;
+                    const dataset = iframeDatasets.get(index);
+                    if (currentMapParams.lat && currentMapParams.lon && currentMapParams.zoom && dataset) {
+                        iframeSrc = buildInsarmapsUrl(
+                            baseUrl, 
+                            dataset, 
+                            currentMapParams.lat, 
+                            currentMapParams.lon, 
+                            currentMapParams.zoom, 
+                            currentMapParams
+                        );
+                    } else {
+                        iframeSrc = url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now();
+                    }
+                    
+                    // Create iframe
+                    const iframe = document.createElement('iframe');
+                    iframe.id = `iframe${index}`;
+                    iframe.title = iframeLabels.get(index);
+                    iframe.src = iframeSrc;
+                    iframe.setAttribute('allowfullscreen', '');
+                    
+                    // Mark iframe as synced with initial params
+                    iframeSynced.set(index, getSyncKey(currentMapParams));
+                    
+                    panel.appendChild(iframe);
+                    container.appendChild(panel);
+                });
+                
+                // Show controls bar and hide loading
+                document.getElementById('controls-bar').style.display = 'flex';
+                document.getElementById('loading').style.display = 'none';
+                
+                // Set a timeout to hide the loading overlay if no postMessage received
+                // This ensures the overlay eventually disappears even if insarmaps doesn't send messages
+                setTimeout(() => {
+                    hideLoadingOverlay();
+                }, 15000);  // 15 second fallback
+                
+                // Single-file mode: hide frame selector if only one dataset
+                const isSingleFileMode = urls.length === 1;
+                if (isSingleFileMode) {
+                    document.getElementById('frame-selector').style.display = 'none';
+                }
+                
+                // Create dropdown options
+                const frameSelect = document.getElementById('frame-select');
+                iframeLabels.forEach((label, index) => {
+                    const option = document.createElement('option');
+                    option.value = index;
+                    option.textContent = label;
+                    frameSelect.appendChild(option);
+                });
+                
+                // Set select size to show all options (max 6)
+                const numOptions = frameSelect.options.length;
+                frameSelect.size = Math.min(numOptions, 6);
+                frameSelect.value = initialActiveIndex.toString();
+                
+                // Active dataset index
+                let activeDatasetIdx = initialActiveIndex;
+                
+                // Frame selector change handler
+                frameSelect.addEventListener('change', (e) => {
+                    const selectedIndex = parseInt(e.target.value);
+                    selectDataset(selectedIndex);
+                });
+                
+                // Function to select a dataset
+                function selectDataset(index) {
+                    const previousIdx = activeDatasetIdx;
+                    activeDatasetIdx = index;
+                    const label = iframeLabels.get(index);
+                    currentViewCode = viewCodes[label] || label.toLowerCase();
+                    currentDataset = iframeDatasets.get(index);
+                    
+                    // Check if time controls are active (defined later, use typeof check)
+                    const isTimeControlsActive = (typeof timeControlsActive !== 'undefined' && timeControlsActive);
+                    
+                    if (isTimeControlsActive && previousIdx !== index) {
+                        // Time controls active and dataset changed → restore to BASELINE STATE for the new dataset
+                        restoreToBaselineState();
+                        return;
+                    }
+                    
+                    // Hide all panels (push to back)
+                    document.querySelectorAll('.panel').forEach(panel => {
+                        panel.style.visibility = 'hidden';
+                        panel.style.zIndex = '-1';
+                        panel.style.pointerEvents = 'none';
+                        panel.classList.remove('active');
+                    });
+                    
+                    // Show the selected panel (no reload – contour applied when we switch, see below)
+                    const selectedPanel = document.getElementById(`panel${index}`);
+                    if (selectedPanel) {
+                        selectedPanel.style.visibility = 'visible';
+                        selectedPanel.style.zIndex = '10';
+                        selectedPanel.style.pointerEvents = 'auto';
+                        selectedPanel.classList.add('active');
+                    }
+                    
+                    // Send contour state to the newly visible iframe so it matches currentMapParams
+                    const contourOn = (currentMapParams.contour === 'true' || currentMapParams.contour === 'on');
+                    const visibleIframe = document.getElementById(`iframe${index}`);
+                    if (visibleIframe && visibleIframe.contentWindow) {
+                        try {
+                            visibleIframe.contentWindow.postMessage({ type: 'insarmaps-set-contour', value: contourOn }, '*');
+                        } catch (e) {}
+                    }
+                    
+                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, false);
+                    updatePeriodHeader();
+                }
+                
+                // Update overlay URL with initial state. Preserve timeControls and periods from URL when present
+                // (avoids wiping shared links; auto-open will use them)
+                const currentUrl = getOverlayUrlParams();
+                const urlHasTC = currentUrl.timeControls === 'true';
+                const urlPeriods = parsePeriodsFromUrl(currentUrl.periods);
+                const preserveTC = urlHasTC && urlPeriods && urlPeriods.length > 0;
+                updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, preserveTC, preserveTC ? urlPeriods : undefined);
+                
+                // ===== IFRAME SYNCHRONIZATION =====
+                let syncTimeout = null;
+                const SYNC_DEBOUNCE_MS = 1500;
+                let lastSyncedKey = '';
+                
+                // Listen for URL updates and time-series date clicks from any iframe
+                window.addEventListener('message', (event) => {
+                    if (!event.data) return;
+                    // Time series dot click: insarmaps sends { type: 'insarmaps-timeseries-date', date: 'YYYYMMDD' } or date: 'YYYY-MM-DD'
+                    if (event.data.type === 'insarmaps-timeseries-date' && event.data.date) {
+                        let dateStr = String(event.data.date).trim().replace(/-/g, '');
+                        if (dateStr.length === 8) {
+                            console.log('[overlay] insarmaps-timeseries-date received', dateStr, 'addPeriodState:', addPeriodState);
+                            // Accept as start date when waiting for start (need_start, or idle/need_point so we're forgiving)
+                            if (addPeriodState === 'need_start' || addPeriodState === 'need_point' || addPeriodState === 'idle') {
+                                if (addStartDateInput) { addStartDateInput.value = dateStr; addStartDateInput.disabled = false; addStartDateInput.classList.remove('greyed'); }
+                                addPeriodState = 'need_end';
+                                updateAddPeriodButton();
+                            } else if (addPeriodState === 'need_end') {
+                                if (addEndDateInput) addEndDateInput.value = dateStr;
+                                commitPeriodFromDotSelection();
+                            }
+                        }
+                        return;
+                    }
+                    if (event.data.type !== 'insarmaps-url-update') return;
+                    
+                    // Debug: log full event.data to see what insarmaps sends
+                    console.log('postMessage received:', JSON.stringify(event.data, null, 2));
+                    
+                    // Hide loading overlay on first data received
+                    hideLoadingOverlay();
+                    
+                    // Check if message is from the active iframe
+                    // In Time Controls mode, the visible period iframe is the active one
+                    let isFromActiveIframe = false;
+                    const activeIframe = document.getElementById(`iframe${activeDatasetIdx}`);
+                    if (activeIframe && event.source === activeIframe.contentWindow) {
+                        isFromActiveIframe = true;
+                    }
+                    // Also treat the visible period iframe as active (in Time Controls mode)
+                    // so user interactions (pan/zoom/param changes) bypass the cooldown
+                    if (!isFromActiveIframe &&
+                        typeof timeControlsActive !== 'undefined' && timeControlsActive &&
+                        typeof periodPanels !== 'undefined' && periodPanels && periodPanels.size > 0 &&
+                        typeof currentPeriodIndex !== 'undefined') {
+                        const visiblePeriodPanel = periodPanels.get(currentPeriodIndex);
+                        if (visiblePeriodPanel) {
+                            const visiblePeriodIframe = visiblePeriodPanel.querySelector('iframe');
+                            if (visiblePeriodIframe && event.source === visiblePeriodIframe.contentWindow) {
+                                isFromActiveIframe = true;
+                            }
+                        }
+                    }
+                    
+                    // Only apply cooldown to messages from non-active iframes (prevents sync loops)
+                    // Active iframe messages are always processed (user actions)
+                    const now = Date.now();
+                    if (!isFromActiveIframe && now - lastSyncTime < SYNC_COOLDOWN_MS) {
+                        console.log('Ignoring message from non-active iframe during cooldown');
+                        return;
+                    }
+                    
+                    if (syncTimeout) clearTimeout(syncTimeout);
+                    
+                    syncTimeout = setTimeout(() => {
+                        // Identify sender first. Ignore postMessages from period iframes entirely -
+                        // they drive reload/update loops that cause full-page reloads. Period state is
+                        // controlled by the overlay; we don't sync from period iframes.
+                        // Exception: accept point selection (pointLat/pointLon or refPointLat/refPointLon) from period iframes
+                        // so the + button title updates correctly when user selects a point in Time Controls mode.
+                        let senderPeriodIdx = -1;
+                        if (typeof periodPanels !== 'undefined' && periodPanels && periodPanels.size > 0) {
+                            periodPanels.forEach((panel, idx) => {
+                                const ifr = panel && panel.querySelector('iframe');
+                                if (ifr && event.source === ifr.contentWindow) senderPeriodIdx = idx;
+                            });
+                        }
+                        
+                        const newUrlPath = event.data.url;
+                        
+                        // Parse query parameters to check for point selection
+                        const queryStart = newUrlPath.indexOf('?');
+                        const params = queryStart >= 0 ? new URLSearchParams(newUrlPath.substring(queryStart)) : new URLSearchParams();
+                        const hasPointSelection = params.has('pointLat') || params.has('pointLon') || params.has('refPointLat') || params.has('refPointLon');
+                        
+                        // If from period iframe, only process if it has point selection; otherwise ignore
+                        if (senderPeriodIdx >= 0) {
+                            if (hasPointSelection) {
+                                // Extract and update point selection from period iframe
+                                const pointLat = params.get('pointLat') ?? currentMapParams.pointLat ?? null;
+                                const pointLon = params.get('pointLon') ?? currentMapParams.pointLon ?? null;
+                                const refPointLat = params.get('refPointLat') ?? currentMapParams.refPointLat ?? null;
+                                const refPointLon = params.get('refPointLon') ?? currentMapParams.refPointLon ?? null;
+                                if (pointLat != null || pointLon != null || refPointLat != null || refPointLon != null) {
+                                    currentMapParams.pointLat = pointLat;
+                                    currentMapParams.pointLon = pointLon;
+                                    currentMapParams.refPointLat = refPointLat;
+                                    currentMapParams.refPointLon = refPointLon;
+                                    if (typeof updateAddPeriodButton === 'function') updateAddPeriodButton();
+                                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, 
+                                        (typeof timeControlsActive !== 'undefined' && timeControlsActive),
+                                        (typeof timeControlsActive !== 'undefined' && timeControlsActive && typeof periods !== 'undefined' && periods.length > 0) ? periods : undefined);
+                                }
+                            }
+                            return;
+                        }
+                        
+                        // Parse path: /start/{lat}/{lon}/{zoom}?params...
+                        const pathMatch = newUrlPath.match(/^\/start\/([^\/]+)\/([^\/]+)\/([^?]+)/);
+                        if (!pathMatch) return;
+                        
+                        const [, lat, lon, zoom] = pathMatch;
+                        
+                        // Get contour value - insarmaps sends contour=on or contour=off; we normalize to true/false
+                        // (params already parsed above)
+                        const getContourValue = () => {
+                            // First check URL params (primary source)
+                            if (params.has('contour')) return params.get('contour');
+                            // Check alternate names just in case
+                            if (params.has('contours')) return params.get('contours');
+                            // Then check event.data properties
+                            if (event.data.contour !== undefined) return String(event.data.contour);
+                            if (event.data.contours !== undefined) return String(event.data.contours);
+                            // Fall back to current value
+                            return currentMapParams.contour;
+                        };
+                        const rawContourValue = getContourValue();
+                        const contourValue = normalizeContourValue(rawContourValue);
+                        console.log('Contour value detected:', rawContourValue, '-> normalized:', contourValue);
+                        
+                        const colorscaleValue = params.get('colorscale') || currentMapParams.colorscale;
+                        const refPointLat = params.get('refPointLat') ?? currentMapParams.refPointLat ?? null;
+                        const refPointLon = params.get('refPointLon') ?? currentMapParams.refPointLon ?? null;
+                        const pointLat = params.get('pointLat') ?? currentMapParams.pointLat ?? null;
+                        const pointLon = params.get('pointLon') ?? currentMapParams.pointLon ?? null;
+                        // Resolve params from URL with fallback to currentMapParams so contour-only messages
+                        // (insarmaps often omits minScale, startDate, etc.) are detected and don't trigger reloads
+                        const minScale = params.get('minScale') ?? currentMapParams.minScale;
+                        const maxScale = params.get('maxScale') ?? currentMapParams.maxScale;
+                        const startDate = params.get('startDate') ?? currentMapParams.startDate;
+                        const endDate = params.get('endDate') ?? currentMapParams.endDate;
+                        const pixelSize = params.get('pixelSize') ?? currentMapParams.pixelSize;
+                        const background = params.get('background') ?? currentMapParams.background;
+                        const opacity = params.get('opacity') ?? currentMapParams.opacity;
+                        const syncKey = JSON.stringify({
+                            lat, lon, zoom,
+                            minScale, maxScale, startDate, endDate,
+                            pixelSize, background, opacity,
+                            contour: contourValue,
+                            colorscale: colorscaleValue,
+                            refPointLat, refPointLon,
+                            pointLat, pointLon
+                        });
+                        
+                        if (syncKey === lastSyncedKey) return;
+                        lastSyncedKey = syncKey;
+                        
+                        // Detect display-param change (lat, lon, zoom, minScale, maxScale, etc.) so we can reload ALL period iframes
+                        // Includes lat/lon/zoom so map view changes override the period sync cooldown
+                        const prevContourNorm = normalizeContourValue(currentMapParams.contour);
+                        const displayParamsChanged = (
+                            lat !== currentMapParams.lat ||
+                            lon !== currentMapParams.lon ||
+                            zoom !== currentMapParams.zoom ||
+                            minScale !== currentMapParams.minScale ||
+                            maxScale !== currentMapParams.maxScale ||
+                            contourValue !== prevContourNorm ||
+                            colorscaleValue !== currentMapParams.colorscale ||
+                            pixelSize !== currentMapParams.pixelSize ||
+                            background !== currentMapParams.background ||
+                            opacity !== currentMapParams.opacity
+                        );
+                        
+                        // Update current map params (use resolved values so state is consistent)
+                        currentMapParams = {
+                            lat, lon, zoom,
+                            minScale, maxScale, startDate, endDate,
+                            pixelSize, background, opacity,
+                            contour: contourValue,
+                            colorscale: colorscaleValue,
+                            refPointLat, refPointLon,
+                            pointLat, pointLon
+                        };
+                        
+                        if (typeof updateAddPeriodButton === 'function') updateAddPeriodButton();
+                        
+                        // Update overlay.html's browser URL
+                        const inTC = (typeof timeControlsActive !== 'undefined' && timeControlsActive);
+                        updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, inTC, inTC && typeof periods !== 'undefined' ? periods : undefined);
+                        
+                        // Identify sender (dataset or period iframe) before using it below
+                        let senderIndex = -1;
+                        for (let i = 0; i < urlsList.length; i++) {
+                            const iframe = document.getElementById(`iframe${i}`);
+                            if (iframe && event.source === iframe.contentWindow) {
+                                senderIndex = i;
+                                break;
+                            }
+                        }
+                        let senderPeriodIndex = -1;
+                        if ((typeof periodPanels !== 'undefined' && periodPanels && periodPanels.size > 0)) {
+                            periodPanels.forEach((panel, periodIdx) => {
+                                const iframe = panel.querySelector('iframe');
+                                if (iframe && event.source === iframe.contentWindow) {
+                                    senderPeriodIndex = periodIdx;
+                                }
+                            });
+                        }
+                        
+                        // Store the dataset's full date range (firstDate/lastDate or first_date/last_date from postMessage).
+                        // Only from dataset iframes: period iframes send their period's range, which would corrupt
+                        // the dataset range and cause periods to be recalculated incorrectly.
+                        const firstDateVal = event.data.firstDate || event.data.first_date;
+                        const lastDateVal = event.data.lastDate || event.data.last_date;
+                        if (firstDateVal && lastDateVal && senderPeriodIndex < 0) {
+                            const first = parseDate(firstDateVal);
+                            const last = parseDate(lastDateVal);
+                            if (first && last) {
+                                dataFirstDate = first;
+                                dataLastDate = last;
+                                if (senderIndex >= 0) {
+                                    datasetDateRanges.set(senderIndex, { firstDate: first, lastDate: last });
+                                }
+                                console.log(`Dataset date range: ${firstDateVal} - ${lastDateVal}`);
+                                // If Time Controls are open but waiting for date range, try loading periods now
+                                if (typeof waitingForDateRangeForTC !== 'undefined' && waitingForDateRangeForTC) {
+                                    if (dateRangeWaitTimer) { clearTimeout(dateRangeWaitTimer); dateRangeWaitTimer = null; }
+                                    waitingForDateRangeForTC = false;
+                                    if (typeof loadPeriodsForDataset === 'function' && loadPeriodsForDataset(activeDatasetIdx)) {
+                                        if (typeof showPeriod === 'function') showPeriod(0);
+                                        if (typeof updateControls === 'function') updateControls();
+                                    } else {
+                                        periodIndicator.textContent = '-/-';
+                                        if (typeof closeTimeControls === 'function') closeTimeControls();
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if (typeof timeControlsActive === 'undefined' || !timeControlsActive) {
+                            updatePeriodHeader();
+                        }
+                        
+                        lastSyncTime = Date.now();
+                        const newSyncKey = getSyncKey(currentMapParams);
+                        if (senderIndex >= 0) {
+                            iframeSynced.set(senderIndex, newSyncKey);
+                        }
+                        
+                        // Reload other iframes with new params (including contour). Reload ensures contours apply
+                        // reliably via URL (contours=true) instead of postMessage, which often fails when
+                        // target iframes are not ready. Also fixes contours-below-data ordering.
+                            // When message is from a period iframe, skip reloading dataset iframes (they're hidden in TC mode;
+                            // avoids cascade of reloads -> postMessage -> reload that can trigger full-page reload in Safari).
+                            if (senderPeriodIndex < 0) {
+                                iframeDatasets.forEach((originalDataset, index) => {
+                                    if (index === senderIndex || index === activeDatasetIdx) return;
+                                    const newUrl = buildInsarmapsUrl(
+                                        baseUrl, originalDataset, lat, lon, zoom, currentMapParams
+                                    );
+                                    const iframe = document.getElementById(`iframe${index}`);
+                                    if (iframe) {
+                                        iframe.src = newUrl;
+                                        iframeSynced.set(index, newSyncKey);
+                                    }
+                                });
+                            }
+                            // Reload period iframes with new params (lat, lon, zoom, minScale, maxScale, pixelSize, background, opacity, colorscale).
+                            // When message is from a period iframe, only reload after cooldown unless display params changed.
+                            const exitSuppressActive = typeof periodSelectionModeExitSuppressUntil !== 'undefined' && Date.now() < periodSelectionModeExitSuppressUntil;
+                            const periodSyncAllowed = !exitSuppressActive && (senderPeriodIndex < 0 ||
+                                (Date.now() - (typeof periodPanelsCreatedAt !== 'undefined' ? periodPanelsCreatedAt : 0) > PERIOD_SYNC_COOLDOWN_MS) ||
+                                (typeof displayParamsChanged !== 'undefined' && displayParamsChanged));
+                            if (periodSyncAllowed &&
+                                typeof timeControlsActive !== 'undefined' && timeControlsActive &&
+                                typeof periodPanels !== 'undefined' && periodPanels && periodPanels.size > 0 &&
+                                typeof loadedDatasetIdx !== 'undefined' && loadedDatasetIdx >= 0) {
+                                const dataset = iframeDatasets.get(loadedDatasetIdx);
+                                if (dataset) {
+                                    periodPanels.forEach((panel, periodIdx) => {
+                                        if (periodIdx === senderPeriodIndex) return;
+                                        const startDate = panel.dataset.startDate;
+                                        const endDate = panel.dataset.endDate;
+                                        if (!startDate || !endDate) return;
+                                        const periodParams = {
+                                            lat: currentMapParams.lat,
+                                            lon: currentMapParams.lon,
+                                            zoom: currentMapParams.zoom,
+                                            minScale: currentMapParams.minScale,
+                                            maxScale: currentMapParams.maxScale,
+                                            startDate: startDate,
+                                            endDate: endDate,
+                                            pixelSize: currentMapParams.pixelSize,
+                                            background: currentMapParams.background,
+                                            opacity: currentMapParams.opacity,
+                                            contour: currentMapParams.contour,
+                                            colorscale: currentMapParams.colorscale,
+                                            refPointLat: currentMapParams.refPointLat,
+                                            refPointLon: currentMapParams.refPointLon
+                                        };
+                                        const iframe = panel.querySelector('iframe');
+                                        if (iframe) {
+                                            loadingPeriodIndices.add(periodIdx);
+                                            updateLoadingIndicator();
+                                            iframe.onload = () => { loadingPeriodIndices.delete(periodIdx); updateLoadingIndicator(); };
+                                            iframe.src = buildInsarmapsUrl(
+                                                baseUrl, dataset,
+                                                currentMapParams.lat, currentMapParams.lon, currentMapParams.zoom,
+                                                periodParams,
+                                                `period_${periodIdx}`
+                                            );
+                                        }
+                                    });
+                                }
+                            }
+                    }, SYNC_DEBOUNCE_MS);
+                });
+                // ===== END IFRAME SYNCHRONIZATION =====
+                
+                // ===== TIME NAVIGATION CONTROLS =====
+                const timeControlsCheckbox = document.getElementById('time-controls-checkbox');
+                const timeControlsPanel = document.getElementById('time-controls-panel');
+                const periodInput = document.getElementById('period-value');
+                const btnBackward = document.getElementById('btn-backward');
+                const btnForward = document.getElementById('btn-forward');
+                const periodIndicator = document.getElementById('period-indicator');
+                const btnPlay = document.getElementById('btn-play');
+                const frameDelayInput = document.getElementById('frame-delay');
+                const memoryDisplay = document.getElementById('memory-display');
+                const addStartDateInput = document.getElementById('add-start-date');
+                const addEndDateInput = document.getElementById('add-end-date');
+                const addPeriodBtn = document.getElementById('add-period-btn');
+                const addPeriodGroup = document.getElementById('add-period-group');
+                
+                // Time controls state
+                let timeControlsActive = false;
+                let periods = [];
+                let currentPeriodIndex = 0;
+                let periodPanels = new Map();  // periodIndex -> panel element
+                let periodPanelsCreatedAt = 0;  // Timestamp when period panels were created (avoids reload on initial load)
+                const PERIOD_SYNC_COOLDOWN_MS = 5000;  // Don't reload other periods on message from a period iframe within this window
+                let movieInterval = null;
+                let loadedDatasetIdx = -1;  // Which dataset has periods loaded
+                let totalLoadedIframes = 0;
+                const ESTIMATED_MB_PER_IFRAME = 80;
+                let waitingForDateRangeForTC = false;
+                let dateRangeWaitTimer = null;
+                const DATE_RANGE_WAIT_MS = 5000;
+                
+                // Add-period flow: user must select point, then +, then click dot (start), then dot (end)
+                // States: 'idle' | 'need_point' | 'need_start' | 'need_end'
+                let addPeriodState = 'idle';
+                // True when + has been clicked and we have not yet committed a period (first period replaces; then we append)
+                let replaceNextPeriodWithNew = true;
+                // When false: Start/End boxes hidden, button "+" and "Click to select periods". When true: boxes visible, button "−" and "Close period selection mode".
+                let periodSelectionModeActive = false;
+                
+                // Data date range (first and last date of the dataset)
+                let dataFirstDate = null;
+                let dataLastDate = null;
+                // Per-dataset date range so Time Controls uses the correct range when switching datasets
+                const datasetDateRanges = new Map();  // datasetIdx -> { firstDate: Date, lastDate: Date }
+                
+                // ═══ BASELINE STATE ═══
+                // State right after first load of the URL, before Time Controls are selected:
+                // - Time Controls closed (checkbox unchecked, panel hidden, no period panels)
+                // - Only the selected dataset panel visible; URL/state show that dataset's full date range
+                // We restore to this state when: (1) Time Controls are unchecked, (2) user selects a different dataset while TC is open
+                
+                // Get period in days
+                function getPeriodDays() {
+                    const years = parseFloat(periodInput.value) || 2;
+                    return Math.round(years * 365.25);
+                }
+                
+                // Calculate all periods
+                function calculatePeriods() {
+                    if (!dataFirstDate || !dataLastDate) return [];
+                    
+                    const periodDays = getPeriodDays();
+                    const result = [];
+                    let periodStart = new Date(dataFirstDate);
+                    
+                    while (periodStart < dataLastDate) {
+                        let periodEnd = new Date(periodStart);
+                        periodEnd.setDate(periodEnd.getDate() + periodDays);
+                        
+                        if (periodEnd > dataLastDate) periodEnd = new Date(dataLastDate);
+                        
+                        result.push({
+                            startDate: formatDate(periodStart),
+                            endDate: formatDate(periodEnd)
+                        });
+                        
+                        periodStart = new Date(periodEnd);
+                    }
+                    return result;
+                }
+                
+                // Update memory display
+                function updateMemoryDisplay() {
+                    const estimatedMB = totalLoadedIframes * ESTIMATED_MB_PER_IFRAME;
+                    if (estimatedMB >= 1000) {
+                        memoryDisplay.textContent = `Mem: ${(estimatedMB / 1000).toFixed(1)} GB`;
+                    } else {
+                        memoryDisplay.textContent = `Mem: ${estimatedMB} MB`;
+                    }
+                }
+                
+                // Update period display in controls (panel headers removed)
+                function updatePeriodHeader() {
+                    // Period info is now shown in the period indicator area
+                    // This function is kept for compatibility but the display logic
+                    // is handled by updateControls() and the period indicator
+                }
+                
+                // True if user has selected a point on the map (required before adding a period via +)
+                // Checks currentMapParams (from postMessage) and overlay URL as fallback
+                function pointSelected() {
+                    const fromParams = (currentMapParams.pointLat != null && currentMapParams.pointLon != null) ||
+                        (currentMapParams.refPointLat != null && currentMapParams.refPointLon != null);
+                    if (fromParams) return true;
+                    const urlParams = getOverlayUrlParams();
+                    const fromUrl = (urlParams.pointLat != null && urlParams.pointLon != null) ||
+                        (urlParams.refPointLat != null && urlParams.refPointLon != null);
+                    return !!fromUrl;
+                }
+                
+                // Update +/− button appearance, title, and Start/End box visibility/grey state
+                // When periodSelectionModeActive is false: button "+", title "Click to select periods". When true: button "−", title "Close period selection mode". Greyed boxes count as no date.
+                function updateAddPeriodButton() {
+                    if (!addPeriodBtn) return;
+                    if (addPeriodGroup) addPeriodGroup.classList.toggle('expanded', periodSelectionModeActive);
+                    if (!periodSelectionModeActive) {
+                        addPeriodBtn.textContent = '+';
+                        addPeriodBtn.title = 'Click to select periods';
+                        addPeriodBtn.classList.remove('state-need-point', 'state-need-start', 'state-need-end', 'mode-close');
+                        return;
+                    }
+                    addPeriodBtn.textContent = '−';
+                    addPeriodBtn.title = 'Close period selection mode';
+                    addPeriodBtn.classList.add('mode-close');
+                    addPeriodBtn.classList.remove('state-need-point', 'state-need-start', 'state-need-end');
+                    // Grey out Start/End: need_start or idle or need_point = both greyed; need_end = only End greyed. Keep dates in boxes when greyed.
+                    if (addStartDateInput) {
+                        const startGreyed = addPeriodState === 'need_start' || addPeriodState === 'idle' || addPeriodState === 'need_point';
+                        addStartDateInput.disabled = startGreyed;
+                        addStartDateInput.classList.toggle('greyed', startGreyed);
+                    }
+                    if (addEndDateInput) {
+                        const endGreyed = addPeriodState !== 'need_end';
+                        addEndDateInput.disabled = endGreyed;
+                        addEndDateInput.classList.toggle('greyed', endGreyed);
+                    }
+                }
+                
+                // Show the main dataset panel (no reload). Use when entering period selection so time series stays visible.
+                function showMainDatasetPanel() {
+                    document.querySelectorAll('.panel').forEach(panel => {
+                        panel.style.zIndex = '-1';
+                        panel.style.pointerEvents = 'none';
+                        panel.classList.remove('active');
+                    });
+                    const mainPanel = document.getElementById(`panel${activeDatasetIdx}`);
+                    if (mainPanel) {
+                        mainPanel.style.visibility = 'visible';
+                        mainPanel.style.zIndex = '10';
+                        mainPanel.style.pointerEvents = 'auto';
+                        mainPanel.classList.add('active');
+                    }
+                }
+                
+                // Reset the visible iframe to full date range (first_date to last_date) so user can use slider/dots
+                function resetVisibleIframeToFullRange() {
+                    if (!dataFirstDate || !dataLastDate) return;
+                    const firstStr = formatDate(dataFirstDate);
+                    const lastStr = formatDate(dataLastDate);
+                    currentMapParams.startDate = firstStr;
+                    currentMapParams.endDate = lastStr;
+                    lastSyncedKey = getSyncKey(currentMapParams);
+                    showMainDatasetPanel();
+                    const iframe = document.getElementById(`iframe${activeDatasetIdx}`);
+                    if (iframe && iframeDatasets.get(activeDatasetIdx)) {
+                        iframe.src = buildInsarmapsUrl(
+                            baseUrl, iframeDatasets.get(activeDatasetIdx),
+                            currentMapParams.lat, currentMapParams.lon, currentMapParams.zoom,
+                            currentMapParams,
+                            'fullrange'
+                        );
+                        iframeSynced.set(activeDatasetIdx, lastSyncedKey);
+                    }
+                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, timeControlsActive, periods.length > 0 ? periods : undefined);
+                }
+                
+                // Commit the current Start/End as one period: first after + replaces, subsequent append; update URL only (no reload)
+                function commitPeriodFromDotSelection() {
+                    const startStr = addStartDateInput && addStartDateInput.value ? addStartDateInput.value.trim() : '';
+                    const endStr = addEndDateInput && addEndDateInput.value ? addEndDateInput.value.trim() : '';
+                    if (!isValidYyyymmdd(startStr) || !isValidYyyymmdd(endStr)) return false;
+                    const startD = parseDate(startStr);
+                    const endD = parseDate(endStr);
+                    if (startD > endD) return false;
+                    const newPeriod = { startDate: startStr, endDate: endStr };
+                    if (replaceNextPeriodWithNew) {
+                        periods = [newPeriod];
+                        replaceNextPeriodWithNew = false;  // next completion will append
+                    } else {
+                        periods = [...periods, newPeriod];
+                    }
+                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, true, periods);
+                    currentPeriodIndex = periods.length - 1;
+                    addPeriodState = 'idle';
+                    // Keep dates in boxes but grey them out (greyed = count as no start/end for next flow)
+                    if (addStartDateInput) { addStartDateInput.disabled = true; addStartDateInput.classList.add('greyed'); }
+                    if (addEndDateInput) { addEndDateInput.disabled = true; addEndDateInput.classList.add('greyed'); }
+                    updateAddPeriodButton();
+                    updateControls();
+                    // Rebuild period panels (e.g. after + reset cleared them) so this period is shown
+                    if (periodPanels.size === 0 && periods.length > 0 && loadPeriodsForDataset(activeDatasetIdx, false, periods)) {
+                        showPeriod(currentPeriodIndex);
+                    }
+                    return true;
+                }
+                
+                // Sync Start/End inputs for "Add period" from current period or map params
+                // When idle/need_start/need_point the boxes are greyed and count as empty - do not fill them
+                function syncAddPeriodInputs() {
+                    if (!addStartDateInput || !addEndDateInput) return;
+                    if (addPeriodState === 'need_start' || addPeriodState === 'need_end' || addPeriodState === 'idle' || addPeriodState === 'need_point') return;
+                    if (periods.length > 0 && currentPeriodIndex >= 0 && periods[currentPeriodIndex]) {
+                        const p = periods[currentPeriodIndex];
+                        addStartDateInput.value = p.startDate || '';
+                        addEndDateInput.value = p.endDate || '';
+                    } else if (currentMapParams.startDate && currentMapParams.endDate) {
+                        addStartDateInput.value = currentMapParams.startDate;
+                        addEndDateInput.value = currentMapParams.endDate;
+                    }
+                }
+                
+                // Validate YYYYMMDD string
+                function isValidYyyymmdd(s) {
+                    if (!s || typeof s !== 'string') return false;
+                    const t = s.trim();
+                    if (t.length !== 8) return false;
+                    const d = parseDate(t);
+                    return d !== null;
+                }
+                
+                // Update controls state
+                function updateControls() {
+                    const periodDateRange = document.getElementById('period-date-range');
+                    if (currentPeriodIndex >= 0 && periods.length > 0) {
+                        periodIndicator.textContent = `${currentPeriodIndex + 1}/${periods.length}`;
+                        btnBackward.disabled = currentPeriodIndex <= 0;
+                        btnForward.disabled = currentPeriodIndex >= periods.length - 1;
+                        // Show current period's date range
+                        const p = periods[currentPeriodIndex];
+                        if (p && periodDateRange) {
+                            periodDateRange.textContent = `${formatDateDisplay(p.startDate)} - ${formatDateDisplay(p.endDate)}`;
+                        }
+                    } else {
+                        periodIndicator.textContent = '-/-';
+                        btnBackward.disabled = true;
+                        btnForward.disabled = true;
+                        if (periodDateRange) {
+                            periodDateRange.textContent = '';
+                        }
+                    }
+                    syncAddPeriodInputs();
+                }
+                
+                // Clear loaded periods and free memory
+                function clearPeriods() {
+                    // Stop any playing movie
+                    if (movieInterval) {
+                        clearInterval(movieInterval);
+                        movieInterval = null;
+                        btnPlay.textContent = '▶ Play';
+                        btnPlay.classList.remove('playing');
+                    }
+                    
+                    // Remove period panels from DOM
+                    periodPanels.forEach((panel) => {
+                        if (panel && panel.parentElement) {
+                            panel.parentElement.removeChild(panel);
+                        }
+                    });
+                    periodPanels.clear();
+                    periods = [];
+                    currentPeriodIndex = 0;
+                    loadedDatasetIdx = -1;
+                    loadingPeriodIndices.clear();
+                    updateLoadingIndicator();
+                    totalLoadedIframes = iframeDatasets.size;  // Only original iframes
+                    updateMemoryDisplay();
+                }
+                
+                // Load periods for specified dataset
+                // forceUsePeriodInput: when true (e.g. user changed Period input), use calculatePeriods and ignore URL periods
+                // customPeriods: optional array of { startDate, endDate }; when provided, use it instead of URL or calculated periods
+                function loadPeriodsForDataset(datasetIdx, forceUsePeriodInput, customPeriods) {
+                    // Use this dataset's stored date range when available (so switching back to a dataset uses its range)
+                    const stored = datasetDateRanges.get(datasetIdx);
+                    if (stored && stored.firstDate && stored.lastDate) {
+                        dataFirstDate = stored.firstDate;
+                        dataLastDate = stored.lastDate;
+                    } else if (dataFirstDate && dataLastDate) {
+                        // Global date range from any prior postMessage (e.g. another dataset with same AOI)
+                        // already set; no action needed
+                    } else if (currentMapParams.startDate && currentMapParams.endDate) {
+                        dataFirstDate = parseDate(currentMapParams.startDate);
+                        dataLastDate = parseDate(currentMapParams.endDate);
+                    } else {
+                        // Fallback: use date range from any other dataset (same AOI often shares range)
+                        for (const [, r] of datasetDateRanges) {
+                            if (r && r.firstDate && r.lastDate) {
+                                dataFirstDate = r.firstDate;
+                                dataLastDate = r.lastDate;
+                                break;
+                            }
+                        }
+                    }
+                    if (!dataFirstDate || !dataLastDate) {
+                        // Last resort: try parsing startDate/endDate from the raw URL in urlsList
+                        try {
+                            const url = urlsList[datasetIdx];
+                            if (url) {
+                                const urlObj = new URL(url);
+                                const start = urlObj.searchParams.get('startDate');
+                                const end = urlObj.searchParams.get('endDate');
+                                if (start && end) {
+                                    dataFirstDate = parseDate(start);
+                                    dataLastDate = parseDate(end);
+                                }
+                            }
+                        } catch (e) {}
+                    }
+                    // Clear existing periods first
+                    clearPeriods();
+                    
+                    // Custom periods (e.g. from "+" button) take precedence
+                    if (customPeriods && customPeriods.length > 0) {
+                        periods = customPeriods;
+                        dataFirstDate = parseDate(periods[0].startDate);
+                        dataLastDate = parseDate(periods[periods.length - 1].endDate);
+                        datasetDateRanges.set(datasetIdx, { firstDate: dataFirstDate, lastDate: dataLastDate });
+                        const periodInputGroup = document.getElementById('period-input-group');
+                        if (periodInputGroup) periodInputGroup.style.display = 'none';
+                    } else {
+                    // Use URL periods only when not forcing period input (e.g. loaded from shared link)
+                    const urlPeriods = forceUsePeriodInput ? null : parsePeriodsFromUrl(getOverlayUrlParams().periods);
+                    if (urlPeriods && urlPeriods.length > 0) {
+                        // Use URL periods; derive date range from first/last period
+                        periods = urlPeriods;
+                        dataFirstDate = parseDate(periods[0].startDate);
+                        dataLastDate = parseDate(periods[periods.length - 1].endDate);
+                        datasetDateRanges.set(datasetIdx, { firstDate: dataFirstDate, lastDate: dataLastDate });
+                        const periodInputGroup = document.getElementById('period-input-group');
+                        if (periodInputGroup) periodInputGroup.style.display = 'none';
+                    } else {
+                        if (!dataFirstDate || !dataLastDate) {
+                            alert('Could not determine date range. Please interact with the map first to load date information.');
+                            return false;
+                        }
+                        datasetDateRanges.set(datasetIdx, { firstDate: dataFirstDate, lastDate: dataLastDate });
+                        const periodInputGroup = document.getElementById('period-input-group');
+                        if (periodInputGroup) periodInputGroup.style.display = '';
+                        periods = calculatePeriods();
+                    }
+                    }
+                    if (periods.length === 0) {
+                        alert('No periods to display.');
+                        return false;
+                    }
+                    
+                    console.log(`Loading ${periods.length} periods for dataset ${datasetIdx}`);
+                    console.log(`Date range: ${formatDate(dataFirstDate)} - ${formatDate(dataLastDate)}`);
+                    
+                    // Create panels for each period
+                    const container = document.getElementById('container');
+                    const dataset = iframeDatasets.get(datasetIdx);
+                    
+                    if (!dataset) {
+                        console.error(`Dataset not found for index ${datasetIdx}`);
+                        return false;
+                    }
+                    
+                    periods.forEach((period, periodIdx) => {
+                        const panel = document.createElement('div');
+                        panel.className = 'panel';
+                        panel.id = `period-panel-${datasetIdx}-${periodIdx}`;
+                        // Store period info as data attributes for display
+                        panel.dataset.startDate = period.startDate;
+                        panel.dataset.endDate = period.endDate;
+                        // Use visibility:visible but z-index:-1 so iframes load properly
+                        panel.style.visibility = 'visible';
+                        panel.style.zIndex = '-1';
+                        panel.style.pointerEvents = 'none';
+                        
+                        // Build URL with this period's dates
+                        const periodParams = {
+                            lat: currentMapParams.lat,
+                            lon: currentMapParams.lon,
+                            zoom: currentMapParams.zoom,
+                            minScale: currentMapParams.minScale,
+                            maxScale: currentMapParams.maxScale,
+                            startDate: period.startDate,
+                            endDate: period.endDate,
+                            pixelSize: currentMapParams.pixelSize,
+                            background: currentMapParams.background,
+                            opacity: currentMapParams.opacity,
+                            contour: currentMapParams.contour,
+                            colorscale: currentMapParams.colorscale,
+                            refPointLat: currentMapParams.refPointLat,
+                            refPointLon: currentMapParams.refPointLon
+                        };
+                        
+                        const iframeSrc = buildInsarmapsUrl(
+                            baseUrl,
+                            dataset,
+                            currentMapParams.lat,
+                            currentMapParams.lon,
+                            currentMapParams.zoom,
+                            periodParams,
+                            `period_${periodIdx}`  // Unique ID for cache-busting
+                        );
+                        
+                        console.log(`Period ${periodIdx}: startDate=${period.startDate}, endDate=${period.endDate}`);
+                        console.log(`  URL: ${iframeSrc}`);
+                        
+                        const iframe = document.createElement('iframe');
+                        iframe.id = `period-iframe-${datasetIdx}-${periodIdx}`;
+                        iframe.title = `${iframeLabels.get(datasetIdx)} - Period ${periodIdx + 1}`;
+                        iframe.src = iframeSrc;
+                        iframe.setAttribute('allowfullscreen', '');
+                        
+                        // Track loading for background period iframes (not the first one which is shown immediately)
+                        if (periodIdx > 0) {
+                            loadingPeriodIndices.add(periodIdx);
+                            iframe.onload = () => { loadingPeriodIndices.delete(periodIdx); updateLoadingIndicator(); };
+                        }
+                        
+                        panel.appendChild(iframe);
+                        container.appendChild(panel);
+                        
+                        periodPanels.set(periodIdx, panel);
+                        totalLoadedIframes++;
+                    });
+                    
+                    loadedDatasetIdx = datasetIdx;
+                    periodPanelsCreatedAt = Date.now();
+                    updateLoadingIndicator();
+                    updateMemoryDisplay();
+                    console.log(`Loaded ${periodPanels.size} period panels`);
+                    return true;
+                }
+                
+                // Show specific period
+                function showPeriod(periodIdx) {
+                    if (periodIdx < 0 || periodIdx >= periods.length) {
+                        console.warn(`Invalid period index: ${periodIdx}`);
+                        return;
+                    }
+                    
+                    console.log(`Showing period ${periodIdx} of ${periods.length}`);
+                    
+                    // Push all panels to back
+                    document.querySelectorAll('.panel').forEach(panel => {
+                        panel.style.zIndex = '-1';
+                        panel.style.pointerEvents = 'none';
+                        panel.classList.remove('active');
+                    });
+                    
+                    // Bring the selected period panel to front
+                    const panel = periodPanels.get(periodIdx);
+                    if (panel) {
+                        panel.style.visibility = 'visible';
+                        panel.style.zIndex = '10';
+                        panel.style.pointerEvents = 'auto';
+                        panel.classList.add('active');
+                        // Send contour state to the newly visible period iframe so it matches currentMapParams
+                        const contourOn = (currentMapParams.contour === 'true' || currentMapParams.contour === 'on');
+                        const periodIframe = panel.querySelector('iframe');
+                        if (periodIframe && periodIframe.contentWindow) {
+                            try {
+                                periodIframe.contentWindow.postMessage({ type: 'insarmaps-set-contour', value: contourOn }, '*');
+                            } catch (e) {}
+                        }
+                    }
+                    
+                    currentPeriodIndex = periodIdx;
+                    
+                    // Update currentMapParams
+                    const period = periods[periodIdx];
+                    currentMapParams.startDate = period.startDate;
+                    currentMapParams.endDate = period.endDate;
+                    
+                    // So contour toggle in this period is detected as "only contour changed" (message only, no reload)
+                    lastSyncedKey = getSyncKey(currentMapParams);
+                    
+                    updateControls();
+                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, true, periods);
+                }
+                
+                // When closing Time Controls: keep startDate/endDate from the last viewed period
+                // and apply that date range (and all other params) to all dataset iframes and overlay URL.
+                function restoreToBaselineState() {
+                    if (dateRangeWaitTimer) { clearTimeout(dateRangeWaitTimer); dateRangeWaitTimer = null; }
+                    waitingForDateRangeForTC = false;
+                    if (movieInterval) {
+                        clearInterval(movieInterval);
+                        movieInterval = null;
+                        btnPlay.textContent = '▶ Play';
+                        btnPlay.classList.remove('playing');
+                    }
+                    timeControlsActive = false;
+                    timeControlsCheckbox.checked = false;
+                    timeControlsPanel.classList.remove('visible');
+                    memoryDisplay.classList.remove('visible');
+                    clearPeriods();
+                    document.querySelectorAll('.panel').forEach(panel => {
+                        panel.style.visibility = 'hidden';
+                        panel.style.zIndex = '-1';
+                        panel.style.pointerEvents = 'none';
+                        panel.classList.remove('active');
+                    });
+                    const selectedPanel = document.getElementById(`panel${activeDatasetIdx}`);
+                    if (selectedPanel) {
+                        selectedPanel.style.visibility = 'visible';
+                        selectedPanel.style.zIndex = '10';
+                        selectedPanel.style.pointerEvents = 'auto';
+                        selectedPanel.classList.add('active');
+                    }
+                    // Do NOT reset startDate/endDate to full range: keep the period from the last view in TC.
+                    lastSyncedKey = getSyncKey(currentMapParams);
+                    // Reload every dataset iframe with current params (including startDate/endDate from last view)
+                    // so all frames and the overlay URL reflect the same date range.
+                    if (currentMapParams.lat && currentMapParams.lon && currentMapParams.zoom) {
+                        iframeDatasets.forEach((dataset, idx) => {
+                            const iframe = document.getElementById(`iframe${idx}`);
+                            if (iframe && dataset) {
+                                iframe.src = buildInsarmapsUrl(
+                                    baseUrl, dataset,
+                                    currentMapParams.lat, currentMapParams.lon, currentMapParams.zoom,
+                                    currentMapParams,
+                                    idx === activeDatasetIdx ? 'baseline' : `frame${idx}`
+                                );
+                                iframeSynced.set(idx, lastSyncedKey);
+                            }
+                        });
+                    }
+                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, false);
+                    updatePeriodHeader();
+                }
+                
+                // Open time controls
+                function openTimeControls() {
+                    timeControlsActive = true;
+                    periodInput.value = 2;
+                    timeControlsPanel.classList.add('visible');
+                    memoryDisplay.classList.add('visible');
+                    
+                    // Unset point selection when entering time controls so + shows "Select a point..." until user selects again
+                    currentMapParams.pointLat = null;
+                    currentMapParams.pointLon = null;
+                    currentMapParams.refPointLat = null;
+                    currentMapParams.refPointLon = null;
+                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, true, periods.length > 0 ? periods : undefined);
+                    
+                    // Load periods for current dataset if not already loaded
+                    if (loadedDatasetIdx !== activeDatasetIdx || periodPanels.size === 0) {
+                        if (!loadPeriodsForDataset(activeDatasetIdx)) {
+                            // Date range not yet available; wait for postMessage from insarmaps instead of alerting immediately
+                            waitingForDateRangeForTC = true;
+                            periodIndicator.textContent = 'Waiting for map data…';
+                            if (dateRangeWaitTimer) clearTimeout(dateRangeWaitTimer);
+                            dateRangeWaitTimer = setTimeout(() => {
+                                dateRangeWaitTimer = null;
+                                if (waitingForDateRangeForTC && (!dataFirstDate || !dataLastDate)) {
+                                    waitingForDateRangeForTC = false;
+                                    alert('Could not determine date range. Please interact with the map first to load date information.');
+                                    closeTimeControls();
+                                }
+                            }, DATE_RANGE_WAIT_MS);
+                            return;
+                        }
+                    }
+                    
+                    // Always open at first period (original state)
+                    currentPeriodIndex = 0;
+                    showPeriod(currentPeriodIndex);
+                    updateControls();
+                    syncAddPeriodInputs();
+                    addPeriodState = 'idle';
+                    updateAddPeriodButton();
+                }
+                
+                // Close time controls → restore to BASELINE STATE
+                function closeTimeControls() {
+                    addPeriodState = 'idle';
+                    updateAddPeriodButton();
+                    restoreToBaselineState();
+                }
+                
+                // Handle dataset change while time controls are open
+                function handleDatasetChangeInTimeControls(newDatasetIdx) {
+                    if (!timeControlsActive) return;
+                    
+                    // Reload periods for new dataset
+                    if (loadPeriodsForDataset(newDatasetIdx)) {
+                        showPeriod(0);  // Start at first period
+                        updateControls();
+                    }
+                }
+                
+                // Play/Stop movie
+                function togglePlay() {
+                    if (movieInterval) {
+                        // Stop
+                        clearInterval(movieInterval);
+                        movieInterval = null;
+                        btnPlay.textContent = '▶ Play';
+                        btnPlay.classList.remove('playing');
+                    } else {
+                        // Start from current period
+                        btnPlay.textContent = '■ Stop';
+                        btnPlay.classList.add('playing');
+                        
+                        const delayMs = (parseFloat(frameDelayInput.value) || 2) * 1000;
+                        
+                        movieInterval = setInterval(() => {
+                            if (currentPeriodIndex < periods.length - 1) {
+                                showPeriod(currentPeriodIndex + 1);
+                            } else {
+                                // Reached end - go back to first period
+                                showPeriod(0);
+                                // Stop playing
+                                clearInterval(movieInterval);
+                                movieInterval = null;
+                                btnPlay.textContent = '▶ Play';
+                                btnPlay.classList.remove('playing');
+                            }
+                        }, delayMs);
+                    }
+                }
+                
+                // Event listeners
+                timeControlsCheckbox.addEventListener('change', () => {
+                    if (timeControlsCheckbox.checked) {
+                        openTimeControls();
+                    } else {
+                        closeTimeControls();
+                    }
+                });
+                
+                btnPlay.addEventListener('click', togglePlay);
+                
+                btnForward.addEventListener('click', () => {
+                    if (currentPeriodIndex < periods.length - 1) {
+                        showPeriod(currentPeriodIndex + 1);
+                    }
+                });
+                
+                btnBackward.addEventListener('click', () => {
+                    if (currentPeriodIndex > 0) {
+                        showPeriod(currentPeriodIndex - 1);
+                    }
+                });
+                
+                // On hover over +, re-check status (point selected, start/end date) so title is always correct
+                addPeriodBtn.addEventListener('mouseenter', () => {
+                    updateAddPeriodButton();
+                });
+                
+                // Add period (+/−) button: toggle period selection mode, or enter add-period flow when opening.
+                addPeriodBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!timeControlsActive) return;
+                    if (periodSelectionModeActive) {
+                        periodSelectionModeActive = false;
+                        updateAddPeriodButton();
+                        return;
+                    }
+                    periodSelectionModeActive = true;
+                    // Reset periods when entering period selection: clear list and URL so next selection replaces
+                    clearPeriods();
+                    replaceNextPeriodWithNew = true;
+                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, true, undefined);
+                    updateControls();
+                    // Show main dataset panel (no reload) so time series stays open for picking start/end dates
+                    showMainDatasetPanel();
+                    // Tell insarmaps to keep time series window open (parent click must not minimize it)
+                    const mainIframe = document.getElementById(`iframe${activeDatasetIdx}`);
+                    if (mainIframe && mainIframe.contentWindow) {
+                        try {
+                            mainIframe.contentWindow.postMessage({ type: 'insarmaps-keep-charts-open' }, '*');
+                        } catch (err) {}
+                    }
+                    if (!pointSelected()) {
+                        addPeriodState = 'need_point';
+                        if (addStartDateInput) { addStartDateInput.value = ''; addStartDateInput.disabled = true; addStartDateInput.classList.add('greyed'); }
+                        if (addEndDateInput) { addEndDateInput.value = ''; addEndDateInput.disabled = true; addEndDateInput.classList.add('greyed'); }
+                        updateAddPeriodButton();
+                        return;
+                    }
+                    addPeriodState = 'need_start';
+                    if (addStartDateInput) { addStartDateInput.value = ''; addStartDateInput.disabled = true; addStartDateInput.classList.add('greyed'); }
+                    if (addEndDateInput) { addEndDateInput.value = ''; addEndDateInput.disabled = true; addEndDateInput.classList.add('greyed'); }
+                    updateAddPeriodButton();
+                });
+                
+                periodInput.addEventListener('change', () => {
+                    if (timeControlsActive) {
+                        loadPeriodsForDataset(activeDatasetIdx, true);  // Force use period input, ignore URL
+                        showPeriod(0);
+                        updateControls();
+                    }
+                });
+                
+                // Initialize
+                updateMemoryDisplay();
+                updateAddPeriodButton();
+                // Auto-open Time Controls if URL has timeControls=true and periods.
+                // All period iframes are created with src set and load in background; first period is shown.
+                // Delay allows initial map load; forward/backward arrows work without reloading.
+                if (initialParams.timeControls === 'true' && parsePeriodsFromUrl(initialParams.periods)) {
+                    setTimeout(() => {
+                        if (!timeControlsActive) {
+                            timeControlsCheckbox.checked = true;
+                            openTimeControls();
+                        }
+                    }, 1200);
+                }
+                // ===== END TIME NAVIGATION CONTROLS =====
+            })
+            .catch(error => {
+                console.error('Error loading insarmaps.log:', error);
+                document.getElementById('loading').textContent = 'Error loading insarmaps.log: ' + error.message;
+            });
+        
+        // Load download link dynamically
+        fetch('download_commands.txt')
+            .then(response => response.text())
+            .then(() => {
+                const p = document.createElement('p');
+                p.style.cssText = 'margin: 20px; font-family: Arial, sans-serif; text-align: center;';
+                p.innerHTML = 'Data download: <a href="download_commands.txt" target="_blank">link</a>';
+                document.body.appendChild(p);
+            })
+            .catch(() => {
+                console.log('download_commands.txt not found');
+            });
+    </script>
+</body>
+</html>

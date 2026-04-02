@@ -7,14 +7,37 @@ import os
 import sys
 import argparse
 import subprocess
+import shlex
+
 from minsar.objects import message_rsmas
 from minsar.job_submission import JOB_SUBMIT
+
+
+def _normalize_ref_lalo(ref_lalo):
+    """Normalize CLI --ref-lalo to (lat, lon) for forwarding as two arguments to horzvert_timeseries.bash."""
+    if len(ref_lalo) == 1:
+        tok = ref_lalo[0]
+        if "," not in tok:
+            raise ValueError(
+                "with one value after --ref-lalo use LAT,LON (comma-separated), e.g. --ref-lalo 0.649,-77.878"
+            )
+        lat, _, lon = tok.partition(",")
+        lat, lon = lat.strip(), lon.strip()
+        if not lat or not lon:
+            raise ValueError("--ref-lalo LAT,LON must include two numbers")
+        return lat, lon
+    if len(ref_lalo) == 2:
+        return str(ref_lalo[0]).strip(), str(ref_lalo[1]).strip()
+    raise ValueError("--ref-lalo: use LAT LON (two words) or LAT,LON (one word)")
+
 
 ############################################################
 EXAMPLE = """Examples:
     create_horzvert_timeseries_jobfile.py ChilesSenD142/mintpy ChilesSenA120/mintpy --ref-lalo 0.649 -77.878
     create_horzvert_timeseries_jobfile.py ChilesSenD142/mintpy ChilesSenA120/mintpy --ref-lalo 0.649 -77.878 --intervals 6
     create_horzvert_timeseries_jobfile.py hvGalapagosSenD128/mintpy hvGalapagosSenA106/mintpy --ref-lalo -0.81 -91.190
+    create_horzvert_timeseries_jobfile.py hvGalapagosSenD128/mintpy hvGalapagosSenA106/mintpy --ref-lalo=-0.81,-91.190
+    create_horzvert_timeseries_jobfile.py ChilesSenD142/mintpy ChilesSenA120/mintpy --ref-lalo 0.649,-77.878
     create_horzvert_timeseries_jobfile.py hvGalapagosSenD128/miaplpy/network_single_reference hvGalapagosSenA106/miaplpy/network_single_reference --ref-lalo -0.81 -91.190 --no-ingest-los
     create_horzvert_timeseries_jobfile.py hvGalapagosSenD128/miaplpy/network_single_reference hvGalapagosSenA106/miaplpy/network_single_reference --ref-lalo -0.81 -91.190 --no-insarmaps
     create_horzvert_timeseries_jobfile.py FernandinaSenD128/mintpy/ FernandinaSenA106/mintpy/ --ref-lalo -0.453 -91.390
@@ -24,6 +47,9 @@ EXAMPLE = """Examples:
     # Additional examples with SLURM options:
     create_horzvert_timeseries_jobfile.py ChilesSenD142/mintpy ChilesSenA120/mintpy --ref-lalo 0.649 -77.878 --queue skx --walltime 1:30
     create_horzvert_timeseries_jobfile.py hvGalapagosSenD128/mintpy hvGalapagosSenA106/mintpy --ref-lalo -0.81 -91.190 --submit
+
+    From the minsar scripts directory (same args as horzvert_timeseries.bash):
+    create_horzvert_timeseries_jobfile.bash hvGalapagosSenD128/mintpy hvGalapagosSenA106/mintpy --ref-lalo -0.81 -91.190
 """
 ###########################################################################################
 def create_parser():
@@ -35,13 +61,35 @@ def create_parser():
     parser.add_argument('file1', help='First input directory/file')
     parser.add_argument('file2', help='Second input directory/file')
     
-    # Options from horzvert_insarmaps.bash
+    # Options aligned with minsar/bin/horzvert_timeseries.bash (--help)
+    parser.add_argument(
+        '-g', '--geom-file',
+        dest='geom_file',
+        nargs=2,
+        metavar=('GEOM1', 'GEOM2'),
+        help='Two geometry file paths (same as horzvert_timeseries.bash -g/--geom-file)',
+    )
+    parser.add_argument('--dataset', dest='dataset', type=str,
+                        help='Select .he5 by type when input is a directory: PS, DS, filtDS, filt*DS, geo')
     parser.add_argument('--mask-thresh', dest='mask_thresh', type=float,
                         help='Coherence threshold for masking (default: 0.55)')
-    parser.add_argument('--ref-lalo', dest='ref_lalo', nargs='+', 
-                        help='Reference point (lat,lon or lat lon)')
+    parser.add_argument(
+        '--ref-lalo',
+        dest='ref_lalo',
+        nargs='+',
+        required=True,
+        metavar='REF',
+        help='Required. Two numbers LAT LON, or one LAT,LON (--ref-lalo=-0.81,-91.190 also works)',
+    )
     parser.add_argument('--lat-step', dest='lat_step', type=float,
-                        help='Latitude step for geocoding (default: -0.0002)')
+                        help='Latitude step for geocoding (LON_STEP derived in horzvert_timeseries.bash)')
+    parser.add_argument(
+        '--lalo-step',
+        dest='lalo_step',
+        nargs=2,
+        metavar=('LAT_STEP', 'LON_STEP'),
+        help='Lat and lon step for geocoding (overrides --lat-step; same as horzvert_timeseries.bash)',
+    )
     parser.add_argument('--horz-az-angle', dest='horz_az_angle', type=float,
                         help='Horizontal azimuth angle (default: 90)')
     parser.add_argument('--window-size', dest='window_size', type=int,
@@ -90,24 +138,32 @@ def main(iargs=None):
     job_name = f"horzvert_timeseries"
     job_file_name = job_name
     
-    command_parts = ['horzvert_timeseries.bash', inps.file1, inps.file2]
-    
-    # Add optional arguments
+    hv_bash = "horzvert_timeseries.bash"
+    try:
+        ref_lat, ref_lon = _normalize_ref_lalo(inps.ref_lalo)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        return 1
+
+    command_parts = [hv_bash, inps.file1, inps.file2]
+
+    if inps.geom_file:
+        command_parts.extend(['--geom-file', inps.geom_file[0], inps.geom_file[1]])
+
+    if inps.dataset:
+        command_parts.extend(['--dataset', inps.dataset])
+
     if inps.mask_thresh is not None:
         command_parts.extend(['--mask-thresh', str(inps.mask_thresh)])
-    
-    if inps.ref_lalo:
-        command_parts.append('--ref-lalo')
-        if len(inps.ref_lalo) == 1:
-            # Single argument like "lat,lon"
-            command_parts.append(inps.ref_lalo[0])
-        else:
-            # Two arguments like lat lon
-            command_parts.extend(inps.ref_lalo[:2])
-    
+
+    command_parts.extend(['--ref-lalo', ref_lat, ref_lon])
+
     if inps.lat_step is not None:
         command_parts.extend(['--lat-step', str(inps.lat_step)])
-    
+
+    if inps.lalo_step:
+        command_parts.extend(['--lalo-step', str(inps.lalo_step[0]), str(inps.lalo_step[1])])
+
     if inps.horz_az_angle is not None:
         command_parts.extend(['--horz-az-angle', str(inps.horz_az_angle)])
     
@@ -134,8 +190,9 @@ def main(iargs=None):
     
     if inps.debug:
         command_parts.append('--debug')
-    
-    final_command = [' '.join(command_parts)]
+
+    # Safe single line for the job body (paths with spaces)
+    final_command = [' '.join(shlex.quote(str(p)) for p in command_parts)]
     
     # Create the jobfile
     job_obj.submit_script(job_name, job_file_name, final_command, writeOnly='True')

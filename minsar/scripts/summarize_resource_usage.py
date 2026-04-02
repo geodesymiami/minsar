@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 """
-Summarize memory and wall time from multiple *.time_log files.
+Summarize memory, wall time, and efficiency from multiple *.time_log files.
+
+Output (walltimes_memory.log) is designed so that many such files (e.g. from 100 datasets)
+can be aggregated later to:
+  - Fit walltime/memory vs number of bursts (c_*, s_* in job_defaults.cfg).
+  - Assess whether num_threads per step is appropriate (CPU%, CPU_ratio).
+  - Determine tasks per node from memory per task and node size.
 
 Usage:
-    summarize_resource_usage.py $TE/GalapagosSenDT128.template run_files other_dir
+    summarize_resource_usage.py $TE/GalapagosSenD128.template run_files [other_dir ...]
 
-The script groups timing log files by run_file name, stripping only trailing numeric/date suffixes.
-It computes max, median, and mean of memory (MB), and max and mean wall time (HH:MM:SS). It gets the number of bursts and looks using teh *template file
-Output is written to summary.time_log.
+Output format: Header lines (bursts, looks, queue); then one line per step with
+MaxMem, MedMem, MeanMem, MaxWall, MeanWall, MeanCPU%%, MinCPU%%, CPU_ratio, MaxMajorFaults,
+Efficiency (OK/LOW_CPU/HIGH_MAJOR_FAULTS/CHECK), LAUNCHER_PPN, LAUNCHER_NHOSTS, launcher_file_lines (lines in launcher task file when available), OMP_NUM_THREADS.
 """
 
 import re
@@ -45,7 +51,7 @@ Examples:
     inps = putils.create_or_update_template(inps)
 
     if not os.path.isfile(inps.template_file) or not inps.template_file.endswith(".template"):
-        parser.error(f"Ttemplate file not found : {inps.template_file}")
+        parser.error(f"Template file not found: {inps.template_file}")
 
     log_files = []
     for pattern in inps.log_dirs:
@@ -61,21 +67,28 @@ Examples:
 
     return inps
 
+def _parse_optional_float(content, pattern, default=None):
+    m = re.search(pattern, content)
+    return float(m.group(1)) if m else default
+
+
 ##########################################################
 def parse_time_log_file(filepath):
-    """Extract memory in MB and wall time in seconds from a .time_log file."""
+    """
+    Extract from a .time_log file (GNU time -v style): memory (MB), wall time (s),
+    user/system time (s), CPU%, major page faults. Returns a dict or None if essential
+    fields are missing. Keys: mem_mb, wall_sec, user_sec, system_sec, cpu_pct, cpu_ratio, major_faults.
+    """
     with open(filepath) as f:
         content = f.read()
 
     mem_match = re.search(r"Maximum resident set size\s*\(kbytes\):\s*(\d+)", content)
     wall_match = re.search(r"Elapsed \(wall clock\) time.*: ([0-9:.]+)", content)
-
     if not mem_match or not wall_match:
-        print(f"Warning: failed to parse {filepath}")
-        return None, None
+        print(f"Warning: failed to parse {filepath}", file=sys.stderr)
+        return None
 
     mem_mb = int(mem_match.group(1)) / 1024
-
     hms = wall_match.group(1).split(":")
     try:
         if len(hms) == 3:
@@ -84,14 +97,33 @@ def parse_time_log_file(filepath):
             h, m = 0, float(hms[0])
             s = float(hms[1])
         else:
-            print(f"Warning: unrecognized wall time format in {filepath}")
-            return None, None
+            print(f"Warning: unrecognized wall time format in {filepath}", file=sys.stderr)
+            return None
         wall_sec = int(h) * 3600 + int(m) * 60 + float(s)
     except ValueError:
-        print(f"Warning: invalid wall time format in {filepath}")
-        return None, None
+        print(f"Warning: invalid wall time format in {filepath}", file=sys.stderr)
+        return None
 
-    return mem_mb, wall_sec
+    user_sec = _parse_optional_float(content, r"User time \(seconds\):\s*([\d.]+)")
+    system_sec = _parse_optional_float(content, r"System time \(seconds\):\s*([\d.]+)")
+    cpu_pct = _parse_optional_float(content, r"Percent of CPU this job got:\s*(\d+)")
+    major_faults = _parse_optional_float(content, r"Major \(requiring I/O\) page faults:\s*(\d+)")
+    if major_faults is not None:
+        major_faults = int(major_faults)
+
+    cpu_ratio = None
+    if user_sec is not None and system_sec is not None and wall_sec and wall_sec > 0:
+        cpu_ratio = (user_sec + system_sec) / wall_sec
+
+    return {
+        "mem_mb": mem_mb,
+        "wall_sec": wall_sec,
+        "user_sec": user_sec,
+        "system_sec": system_sec,
+        "cpu_pct": cpu_pct,
+        "cpu_ratio": cpu_ratio,
+        "major_faults": major_faults,
+    }
 
 
 ##########################################################
@@ -113,6 +145,50 @@ def extract_runfile_name(filename):
 def format_seconds(secs):
     """Format seconds as H:MM:SS."""
     return str(timedelta(seconds=int(round(secs))))
+
+
+##########################################################
+def get_launcher_params_from_job_file(job_file_path):
+    """
+    Read from a .job file: LAUNCHER_PPN, LAUNCHER_NHOSTS, OMP_NUM_THREADS. If LAUNCHER_JOB_FILE
+    is set, resolve it and count non-empty lines (launcher tasks) -> launcher_file_lines. The file
+    path is not written to the summary; only the task count is reported. Returns dict or None.
+    """
+    if not job_file_path or not os.path.isfile(job_file_path):
+        return None
+    params = {}
+    job_dir = os.path.dirname(job_file_path)
+    launcher_job_file_path = None
+    try:
+        with open(job_file_path) as f:
+            for line in f:
+                m = re.search(r"LAUNCHER_PPN\s*=\s*(\S+)", line)
+                if m:
+                    params["LAUNCHER_PPN"] = m.group(1).strip().strip("'\"")
+                m = re.search(r"LAUNCHER_NHOSTS\s*=\s*(\S+)", line)
+                if m:
+                    params["LAUNCHER_NHOSTS"] = m.group(1).strip().strip("'\"")
+                m = re.search(r"OMP_NUM_THREADS\s*=\s*(\S+)", line)
+                if m:
+                    params["OMP_NUM_THREADS"] = m.group(1).strip().strip("'\"")
+                m = re.search(r"LAUNCHER_JOB_FILE\s*=\s*(\S+)", line)
+                if m:
+                    launcher_job_file_path = m.group(1).strip().strip("'\"")
+
+        if launcher_job_file_path:
+            path = launcher_job_file_path
+            resolved = path if os.path.isabs(path) and os.path.isfile(path) else None
+            if not resolved and job_dir:
+                base = os.path.basename(path.split("/")[-1].split("$")[-1])
+                candidate = os.path.join(job_dir, base)
+                if os.path.isfile(candidate):
+                    resolved = candidate
+            if resolved and os.path.isfile(resolved):
+                with open(resolved) as lf:
+                    params["launcher_file_lines"] = sum(1 for ln in lf if ln.strip())
+    except (OSError, IOError):
+        pass
+    return params if params else None
 
 ##########################################################
 def get_slc_data_size_from_data(dir, number_of_bursts):
@@ -146,10 +222,9 @@ def get_miaplpy_data_size_from_data(dir):
 
 ##########################################################
 def get_number_of_bursts_from_out_create_jobfiles(file_path='out_create_jobfiles.o'):
-    """Extracts and returns the number of bursts from the output file."""
+    """Extracts and returns the number of bursts from the output file, or None if file missing."""
     if not os.path.isfile(file_path):
-        print(f"WARNING: {file_path} not found, exiting without creating walltimes_memory.log.")
-        sys.exit(0)   # exit with success code 0
+        return None
 
     number_of_bursts = None
 
@@ -163,8 +238,8 @@ def get_number_of_bursts_from_out_create_jobfiles(file_path='out_create_jobfiles
                 else:
                     raise ValueError("Line found but pattern did not match: " + line)
 
-    if number_of_bursts is None:
-        raise ValueError("No line containing 'number of bursts' found.")
+   # if number_of_bursts is None:
+   #     raise ValueError("No line containing 'number of bursts' found.")
 
     return number_of_bursts
 
@@ -192,23 +267,44 @@ def main(iargs=None):
 
     number_of_bursts = get_number_of_bursts_from_out_create_jobfiles()
 
+    if number_of_bursts is None:
+        print("Note: out_create_jobfiles.o not found; number of bursts will be reported as n/a.", file=sys.stderr)
+
     slc_size_units = miaplpy_size_units = 0
-    if isce_log_files:
+    if isce_log_files and number_of_bursts is not None:
        slc_size_units = number_of_bursts
     if miaplpy_log_files:
        miaplpy_size_units = get_miaplpy_data_size_from_data(miaplpy_dir + '/inputs/')
 
-    summary_lines=[]
-    summary_lines.append(f"Number of bursts, azimuth looks, range looks, miaplpy_file_size: {number_of_bursts} {az_looks} {range_looks}")
+    job_submission_scheme = os.environ.get('JOB_SUBMISSION_SCHEME', '')
+    summary_lines = []
+    summary_lines.append("# Fields per step: MaxMem,MedMem,MeanMem (MB); MaxWall,MeanWall; MeanCPU%%,MinCPU%%,CPU_ratio,MaxMajorFaults,Efficiency; LAUNCHER_PPN,LAUNCHER_NHOSTS,launcher_file_lines,OMP_NUM_THREADS (for aggregation across runs).")
+    number_of_bursts_str = str(number_of_bursts) if number_of_bursts is not None else "n/a"
+    summary_lines.append(f"Number of bursts, azimuth looks, range looks, miaplpy_file_size: {number_of_bursts_str} {az_looks} {range_looks}")
     summary_lines.append(f"SLC and miaplpy burst units: {slc_size_units:.2f} {miaplpy_size_units:.3f}")
     summary_lines.append(f"Queue: {os.getenv('QUEUENAME')}")
+    summary_lines.append(f"JOB_SUBMISSION_SCHEME: {job_submission_scheme}")
 
     data = defaultdict(list)
+    group_dirs = {}
     for file in isce_log_files + miaplpy_log_files:
-        mem_mb, wall_sec = parse_time_log_file(file)
-        if mem_mb is not None:
+        row = parse_time_log_file(file)
+        if row is not None:
             group = extract_runfile_name(file)
-            data[group].append((mem_mb, wall_sec))
+            data[group].append(row)
+            if group not in group_dirs:
+                group_dirs[group] = os.path.dirname(file)
+
+    def efficiency_label(mean_cpu_pct, max_major_faults):
+        if mean_cpu_pct is not None and max_major_faults is not None:
+            if mean_cpu_pct >= 85 and max_major_faults <= 10:
+                return "OK"
+            if mean_cpu_pct < 70:
+                return "LOW_CPU"
+            if max_major_faults > 100:
+                return "HIGH_MAJOR_FAULTS"
+            return "CHECK"
+        return "n/a"
 
     def group_sort_key(name):
         if "miaplpy" in name:
@@ -217,11 +313,15 @@ def main(iargs=None):
             return (2, name)
         return (0, name)
 
+    if not os.path.isdir(inps.outdir):
+        os.makedirs(inps.outdir, exist_ok=True)
+
     with open(f"{inps.outdir}/walltimes_memory.log", "w") as f:
-        f.write("\n".join(summary_lines) + "\n")        
+        f.write("\n".join(summary_lines) + "\n")
         for group in sorted(data, key=group_sort_key):
-            mem_vals = [x[0] for x in data[group]]
-            wall_vals = [x[1] for x in data[group]]
+            rows = data[group]
+            mem_vals = [r["mem_mb"] for r in rows]
+            wall_vals = [r["wall_sec"] for r in rows]
             max_mem = max(mem_vals)
             med_mem = median(mem_vals)
             mean_mem = mean(mem_vals)
@@ -231,6 +331,26 @@ def main(iargs=None):
                 f"{group}: MaxMem={max_mem:.2f} MB  MedMem={med_mem:.2f} MB  "
                 f"MeanMem={mean_mem:.2f} MB  MaxWall={max_wall}  MeanWall={mean_wall}"
             )
+            cpu_pcts = [r["cpu_pct"] for r in rows if r.get("cpu_pct") is not None]
+            cpu_ratios = [r["cpu_ratio"] for r in rows if r.get("cpu_ratio") is not None]
+            major_faults_list = [r["major_faults"] for r in rows if r.get("major_faults") is not None]
+            mean_cpu_pct = mean(cpu_pcts) if cpu_pcts else None
+            min_cpu_pct = min(cpu_pcts) if cpu_pcts else None
+            mean_cpu_ratio = mean(cpu_ratios) if cpu_ratios else None
+            max_major_faults = max(major_faults_list) if major_faults_list else None
+            eff = efficiency_label(mean_cpu_pct, max_major_faults)
+            line += f"  MeanCPU%={mean_cpu_pct:.0f}" if mean_cpu_pct is not None else "  MeanCPU%=n/a"
+            line += f"  MinCPU%={min_cpu_pct:.0f}" if min_cpu_pct is not None else "  MinCPU%=n/a"
+            line += f"  CPU_ratio={mean_cpu_ratio:.2f}" if mean_cpu_ratio is not None else "  CPU_ratio=n/a"
+            line += f"  MaxMajorFaults={max_major_faults}" if max_major_faults is not None else "  MaxMajorFaults=n/a"
+            line += f"  Efficiency={eff}"
+            job_file = os.path.join(group_dirs.get(group, ''), f"{group}_0.job")
+            launcher_params = get_launcher_params_from_job_file(job_file)
+            if launcher_params:
+                # Fixed order: LAUNCHER_PPN, LAUNCHER_NHOSTS, launcher_file_lines, OMP_NUM_THREADS
+                order = ("LAUNCHER_PPN", "LAUNCHER_NHOSTS", "launcher_file_lines", "OMP_NUM_THREADS")
+                launcher_str = "  ".join(f"{k}={launcher_params[k]}" for k in order if k in launcher_params)
+                line = f"{line}  {launcher_str}"
             print(line)
             f.write(line + "\n")
 

@@ -98,6 +98,29 @@ rename_stderr_stdout_file() {
     done
 }
 
+# Extract step name from job file path
+# Handles multiple patterns without hardcoded special job names:
+#   run_01_unpack_topo_reference_0.job -> unpack_topo_reference
+#   smallbaseline_wrapper.job -> smallbaseline_wrapper
+#   insarmaps.job -> insarmaps
+#   any_future_job.job -> any_future_job
+extract_step_name() {
+    local job_file="$1"
+    local basename step_name
+    
+    basename=$(basename "$job_file" .job)
+    
+    # Try to extract from run_XX_<stepname>_N pattern
+    if [[ $basename =~ ^run_[0-9]{2}_(.+)_[0-9]+$ ]]; then
+        step_name="${BASH_REMATCH[1]}"
+    else
+        # Fallback: use basename, removing trailing _N if present
+        step_name=$(echo "$basename" | sed -E 's/_[0-9]+$//')
+    fi
+    
+    echo "$step_name"
+}
+
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     helptext="
     Custom sbatch job submission wrapper. Conditionally submits jobs to the sbatch scheduler                     
@@ -121,14 +144,14 @@ if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     ADDITIONAL NOTES:                                                                                            
                                                                                                                     
     Maximum values for custom conditions are set using the following variables:                                  
-        1) \$SJOBS_MAX_JOBS_PER_QUEUE   (minsar/defaults/queues.cfg)                                             
+        1) \$SJOBS_MAX_SUBMIT           (minsar/defaults/queues.cfg, column MAX_SUBMIT)                             
         2) \$SJOBS_TOTAL_MAX_TASKS      (minsar/defaults/queues.cfg)                                             
         3) \$SJOBS_STEP_MAX_TASKS       (minsar/defaults/queues.cfg)                                             
                                                                                                                     
         Computation of \$SJOBS_STEP_MAX_TASKS also relies on a custom 'io_load' paramameter set in 
         minsar/defaults/job_defaults.cfg 
 
-        \$SJOBS_MAX_JOBS_PER_QUEUE, \$SJOBS_TOTAL_MAX_TASKS, and \$SJOBS_STEP_MAX_TASKS can be set in
+        \$SJOBS_MAX_SUBMIT, \$SJOBS_TOTAL_MAX_TASKS, and \$SJOBS_STEP_MAX_TASKS can be set in
         the default queues.cfg file or be overwritten by an external environmental variable of the same
         name (export SJOBS_STEP_MAX_TASKS=1).
         "
@@ -139,10 +162,7 @@ fi
 #echo $$
 
 job_file=$1
-step_name=$(echo $job_file | grep -oP "(?<=run_\d{2}_)(.*)(?=_\d{1,}.job)|smallbaseline_wrapper|insarmaps|ingest_insarmaps|horzvert_timeseries|create_miaplpy_jobfiles")
-if [ -z "$step_name" ]; then
-    step_name=${job_file%.*}
-fi
+step_name=$(extract_step_name "$job_file")
 verbose="false"
 
 while [[ $# -gt 0 ]]
@@ -188,9 +208,17 @@ echot "Jobfile: $(basename $job_file)"
 echot "Step: $step_name"
 
 # Get io_load for step from job_defaults.cfg file.
-# io_load needs to remain as column 8 in the .cfg file.
+# io_load is column 8 (jobname and 7 fields before io_load).
 defaults_file="${MINSAR_HOME}/minsar/defaults/job_defaults.cfg"
-step_io_load=$(grep ^$step_name $defaults_file | awk '{print $9}')
+step_io_load=$(grep ^$step_name $defaults_file | awk '{print $8}')
+
+# FA 2/2026: defaults fix: if step not in job_defaults.cfg, use default row io_load (avoids bc syntax error)
+if [[ -z "$step_io_load" ]]; then
+    step_io_load=$(grep ^default $defaults_file | awk '{print $8}')
+fi
+if [[ -z "$step_io_load" ]]; then
+    step_io_load=1
+fi
 
 # Get queue that job_file is being submitted to from job_file definition
 QUEUENAME=$(grep "#SBATCH -p" $job_file | awk -F'[ ]' '{print $3}')
@@ -199,20 +227,20 @@ queue_info=$(grep "^[^#;]" $queues_file | grep $PLATFORM_NAME | grep $QUEUENAME)
 
 # Parse custom resource allocation limits from queues.cfg
 # If environment variable already exists, use that instead.
-if [ -z "$SJOBS_MAX_JOBS_PER_QUEUE" ]; then
-    SJOBS_MAX_JOBS_PER_QUEUE=$(echo $queue_info | awk '{print $7}')
+if [ -z "$SJOBS_MAX_SUBMIT" ]; then
+    SJOBS_MAX_SUBMIT=$(echo $queue_info | awk '{print $9}')
 else
-    SJOBS_MAX_JOBS_PER_QUEUE="${SJOBS_MAX_JOBS_PER_QUEUE}"
+    SJOBS_MAX_SUBMIT="${SJOBS_MAX_SUBMIT}"
 fi
 
 if [ -z "$SJOBS_STEP_MAX_TASKS" ]; then
-    SJOBS_STEP_MAX_TASKS=$(echo $queue_info | awk '{print $9}')
+    SJOBS_STEP_MAX_TASKS=$(echo $queue_info | awk '{print $11}')
 else
     SJOBS_STEP_MAX_TASKS="${SJOBS_STEP_MAX_TASKS}"
 fi
 
 if [ -z "$SJOBS_TOTAL_MAX_TASKS" ]; then
-    SJOBS_TOTAL_MAX_TASKS=$(echo $queue_info | awk '{print $10}')
+    SJOBS_TOTAL_MAX_TASKS=$(echo $queue_info | awk '{print $12}')
 else
     SJOBS_TOTAL_MAX_TASKS="${SJOBS_TOTAL_MAX_TASKS}"
 fi
@@ -255,7 +283,7 @@ sbatch_message=$(sbatch --test-only -Q $job_file)
 echot -e "${sbatch_message[@]:1}"
 
 # Check if submitting job_file will exceed custom resource limits
-if [[ $new_active_jobs   -le $SJOBS_MAX_JOBS_PER_QUEUE  ]]; then job_count="OK";        else job_count="FAILED";        fi
+if [[ $new_active_jobs   -le $SJOBS_MAX_SUBMIT  ]]; then job_count="OK";        else job_count="FAILED";        fi
 if [[ $new_tasks_step    -le $SJOBS_STEP_MAX_TASKS      ]]; then steptask_count="OK";   else steptask_count="FAILED";   fi
 if [[ $new_tasks_total   -le $SJOBS_TOTAL_MAX_TASKS     ]]; then task_count="OK";       else task_count="FAILED";       fi
 
@@ -268,7 +296,7 @@ fi
 echot -e "\n"
 echot -e "--> Verifying job request is within custom resource limits...$resource_check"
 echot -e "\t--> $num_tasks_job additional tasks."
-echot -e "\t[*] Job count \t\t($num_active_jobs/$SJOBS_MAX_JOBS_PER_QUEUE) --> ($new_active_jobs/$SJOBS_MAX_JOBS_PER_QUEUE)...$job_count"
+echot -e "\t[*] Job count \t\t($num_active_jobs/$SJOBS_MAX_SUBMIT) --> ($new_active_jobs/$SJOBS_MAX_SUBMIT)...$job_count"
 echot -e "\t[*] Step task count \t($num_active_tasks_step/$SJOBS_STEP_MAX_TASKS) --> ($new_tasks_step/$SJOBS_STEP_MAX_TASKS)...$steptask_count"
 echot -e "\t[*] Total task count \t($num_active_tasks_total/$SJOBS_TOTAL_MAX_TASKS) --> ($new_tasks_total/$SJOBS_TOTAL_MAX_TASKS)...$task_count"
 echot -e "\n"

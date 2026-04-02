@@ -39,7 +39,7 @@ def convert_intersectsWith_string_to_boundingBox_string(intersectsWith_str, delt
     """ converts polygon string of the form:
         POLYGON((-86.581 12.3995,-86.4958 12.3995,-86.4958 12.454,-86.581 12.454,-86.581 12.3995))
         48.1153435942954,32.48224314182711,0 48.1460783620229,32.49847964019297,0 48.1153435942954,32.48224314182711,0
-           same functions convert_polygon_str() in convert_polygon_string.py, should move into ustilities
+           same functions convert_bbox.py, should move into utilities
     """
     longs = []
     lats = []
@@ -110,12 +110,6 @@ def get_bbox_from_template(inps, delta_lat, delta_lon):
 def main(iargs=None):
     inps = putils.cmd_line_parse(iargs, script='create_runfiles')
 
-    
-    if 'topsStack.boundingBox' in inps.template:
-        if inps.template['topsStack.boundingBox'] == 'None':
-            inps.template['topsStack.boundingBox'] = get_bbox_from_template(inps, delta_lat=0.0, delta_lon=3)
-            print('QQ0 New topsStack.boundingBox using delta_lat=0.0: ',inps.template['topsStack.boundingBox'])
-
     if not iargs is None:
         input_arguments = iargs
     else:
@@ -125,25 +119,17 @@ def main(iargs=None):
 
     os.chdir(inps.work_dir)
 
-    #time.sleep(putils.pause_seconds(inps.wait_time))
-
-    inps.out_dir = inps.work_dir
-    inps.num_data = 1
-
-
-    job_obj = JOB_SUBMIT(inps)  
-
+    # for further processing set inps.template['topsStack.demDir']
     if inps.template[inps.prefix + 'Stack.demDir'] == 'None':
        dem_dir = 'DEM'
     else:
        dem_dir = inps.template[inps.prefix + 'Stack.demDir']
 
     wgs84_list = glob.glob(os.path.join(dem_dir, '*.wgs84'))
-
     if wgs84_list:
          dem_file = wgs84_list[0]
     else:
-         dem_list = glob.glob(os.path.join(dem_dir, '*.dem'))
+         dem_list = sorted(glob.glob(os.path.join(dem_dir, '*.dem')))     # main .dem before *_orig.dem
          if dem_list:
              dem_file = dem_list[0]
          else:
@@ -151,32 +137,11 @@ def main(iargs=None):
              sys.exit(1)
     inps.template[inps.prefix + 'Stack.demDir'] = dem_file
 
-    slc_dir = inps.template[inps.prefix + 'Stack.slcDir']
-    os.makedirs(slc_dir, exist_ok=True)
-
-    if int(get_size(slc_dir)/1024**2) < 500:   # calculate slc_dir size in MB and see if there are SLCs according to size
-    #if int(get_size(slc_dir)/1024**2) < -1:    # calculate slc_dir size in MB and see if there are SLCs according to size
-
-        # Unpack Raw data:
-        if not inps.template['raw_image_dir'] in [None, 'None']:
-            #raw_image_dir = inps.template['raw_image_dir']               # FA 1/23: it would be better to have ORIG_DATA set in defaults for both CSK and TSX
-            raw_image_dir = os.path.join(inps.work_dir, inps.template['raw_image_dir'])
-        else:
-            raw_image_dir = os.path.join(inps.work_dir, 'RAW_data')
-
-        if os.path.exists(raw_image_dir):
-            unpackObj = Sensors(raw_image_dir, slc_dir, remove_file='False',
-                                multiple_raw_frame=inps.template['multiple_raw_frame'])
-            unpack_run_file = unpackObj.start()
-            unpackObj.close()
-
-            job_obj.write_batch_jobs(batch_file=unpack_run_file)
-            job_status = job_obj.submit_batch_jobs(batch_file=unpack_run_file)
-
-            if not job_status:
-                raise Exception('ERROR: Unpacking was failed')
-        else:
-            raise Exception('ERROR: No data (SLC or Raw) available')
+    # set inps.template['topsStack.boundingBox'] as needed (FA 1/2026: I don't understand what this does)
+    if 'topsStack.boundingBox' in inps.template:
+        if inps.template['topsStack.boundingBox'] == 'None':
+            inps.template['topsStack.boundingBox'] = get_bbox_from_template(inps, delta_lat=0.0, delta_lon=3)
+            print('New topsStack.boundingBox using delta_lat=0.0: ',inps.template['topsStack.boundingBox'])
 
     # make run file:
     run_files_dirname = "run_files"
@@ -194,6 +159,9 @@ def main(iargs=None):
             shutil.rmtree(inps.work_dir + '/tmp_coreg_secondarys', ignore_errors=True)
             shutil.move(inps.work_dir + '/coreg_secondarys', inps.work_dir + '/tmp_coreg_secondarys' ) 
 
+    inps.num_data = 1
+    inps.out_dir = run_dir
+    job_obj = JOB_SUBMIT(inps)
     runObj = CreateRun(inps)
     runObj.run_stack_workflow()
 

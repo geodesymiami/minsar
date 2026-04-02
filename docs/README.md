@@ -93,7 +93,6 @@ Downaloading DEM from the USGS
 ### 4.3. Process interferograms: --dostep ifgrams
 
 ```
-create_runfiles
-execute_run_files.py ....
+create_runfiles.py ...
 ```
 

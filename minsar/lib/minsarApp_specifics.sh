@@ -24,6 +24,38 @@ done
 }
 
 ###########################################
+# Reference lat/lon for horzvert (and similar): prefer minsar.reference.lalo, else
+# mintpy.reference.lalo, else empty minsar key. Uses global associative array
+# `template` (populate with create_template_array first).
+function get_ref_lalo_from_template_file() {
+    if [[ -n "${template[minsar.reference.lalo]:-}" ]]; then
+        printf '%s' "${template[minsar.reference.lalo]}"
+    elif [[ -n "${template[mintpy.reference.lalo]:-}" ]]; then
+        printf '%s' "${template[mintpy.reference.lalo]}"
+    else
+        printf '%s' "${template[minsar.reference.lalo]:-}"
+    fi
+}
+
+###########################################
+# Args for recursive minsarApp after opposite-orbit: copy of CLI args from global array
+# `args` (see minsarApp.bash), excluding --opposite-orbit / --no-opposite-orbit.
+# Does not include the template (args[0]); join with spaces for use in run_command.
+function get_modified_command_line_for_opposite_orbit() {
+    local -a out=()
+    local a
+    for a in "${args[@]:1}"; do
+        [[ "$a" == "--opposite-orbit" ]] && continue
+        [[ "$a" == "--no-opposite-orbit" ]] && continue
+        out+=("$a")
+    done
+    local saved_ifs="$IFS"
+    IFS=' '
+    printf '%s' "${out[*]}"
+    IFS="$saved_ifs"
+}
+
+###########################################
 function run_command() {
     local cmd="$*"
 
@@ -131,29 +163,72 @@ function get_reference_date(){
 }
 
 #####################################################################
-function countbursts(){
-                   #set -xv
-                   subswaths=geom_reference/*
-                   unset array
-                   declare -a array
-                   for subswath in $subswaths; do
-                       icount=`ls $subswath/hgt*rdr | wc -l`
-                       array+=($(basename $icount))
-                   done;
-                   reference_date=$(get_reference_date)
-                   echo "geom_reference/$reference_date   #of_bursts: `ls geom_reference/IW*/hgt*rdr | wc -l`   ${array[@]}"
+# Burst count for one topsStack IW* directory (geom_reference, coreg_secondarys, or overlap).
+# Same priority everywhere: geometry rasters first, then burst products/metadata.
+function _minsar_count_bursts_one_iw_dir() {
+    local d="$1"
+    local c
+    [[ -d "$d" ]] || { printf '%s\n' 0; return; }
+    c=$(ls "$d"/hgt*rdr 2>/dev/null | wc -l | tr -d '[:space:]')
+    [[ "${c:-0}" -gt 0 ]] && { printf '%s\n' "$c"; return; }
+    c=$(ls "$d"/lat_*.rdr 2>/dev/null | wc -l | tr -d '[:space:]')
+    [[ "${c:-0}" -gt 0 ]] && { printf '%s\n' "$c"; return; }
+    c=$(ls "$d"/burst*xml 2>/dev/null | wc -l | tr -d '[:space:]')
+    [[ "${c:-0}" -gt 0 ]] && { printf '%s\n' "$c"; return; }
+    c=$(ls "$d"/range_*.off.xml 2>/dev/null | wc -l | tr -d '[:space:]')
+    [[ "${c:-0}" -gt 0 ]] && { printf '%s\n' "$c"; return; }
+    c=$(ls "$d"/burst_*.slc 2>/dev/null | wc -l | tr -d '[:space:]')
+    [[ "${c:-0}" -gt 0 ]] && { printf '%s\n' "$c"; return; }
+    printf '%s\n' 0
+}
 
-                   dates="coreg_secondarys/*"
-                   for date in $dates; do
-                       subswaths=$date/???
-                       unset array
-                       declare -a array
-                       for subswath in $subswaths; do
-                           icount=`ls $subswath/burst*xml | wc -l`
-                           array+=($(basename $icount))
-                       done;
-                       echo "$date #of_bursts: `ls $date/IW*/burst*xml | wc -l`   ${array[@]}"
-                   done;
+#####################################################################
+function countbursts(){
+                   local subswath date total icount reference_date total_geom
+                   local -a array iwdirs
+
+                   # geom_reference and coreg_secondarys: identical per-IW* counting (see _minsar_count_bursts_one_iw_dir)
+                   array=()
+                   total_geom=0
+                   while IFS= read -r subswath; do
+                       [[ -d "$subswath" ]] || continue
+                       icount=$(_minsar_count_bursts_one_iw_dir "$subswath")
+                       array+=("$icount")
+                       total_geom=$((total_geom + icount))
+                   done < <(ls -d geom_reference/IW* 2>/dev/null | sort -V)
+
+                   reference_date=$(get_reference_date)
+                   echo "geom_reference/$reference_date   #of_bursts: $total_geom   ${array[*]}"
+
+                   for date in coreg_secondarys/*; do
+                       [[ -d "$date" ]] || continue
+                       iwdirs=()
+                       while IFS= read -r subswath; do
+                           iwdirs+=("$subswath")
+                       done < <(ls -d "$date"/IW* 2>/dev/null | sort -V)
+                       if [[ ${#iwdirs[@]} -eq 0 ]] || [[ ! -d "${iwdirs[0]:-}" ]]; then
+                           iwdirs=()
+                           while IFS= read -r subswath; do
+                               iwdirs+=("$subswath")
+                           done < <(ls -d "$date"/overlap/IW* 2>/dev/null | sort -V)
+                       fi
+                       array=()
+                       total=0
+                       for subswath in "${iwdirs[@]}"; do
+                           [[ -d "$subswath" ]] || continue
+                           icount=$(_minsar_count_bursts_one_iw_dir "$subswath")
+                           array+=("$icount")
+                           total=$((total + icount))
+                       done
+                       # 1-burst: ISCE may write only overlap (IW1_top.xml, IW1_bottom.xml), no burst_01.slc.xml
+                       if [[ "$total" -eq 0 ]] && [[ -d "$date/overlap" ]]; then
+                           if [[ -d "$date/overlap/IW1" ]] || [[ -f "$date/overlap/IW1_top.xml" ]] || [[ -f "$date/overlap/IW1_bottom.xml" ]]; then
+                               total=1
+                               array=(1)
+                           fi
+                       fi
+                       echo "$date #of_bursts: $total   ${array[*]}"
+                   done
                    }
 #####################################################################
 function check_bursts(){
@@ -267,7 +342,7 @@ generate_miaplpy_script() {
     printf "run_workflow.bash $template_file --jobfile ${PWD}/miaplpyApp.job\n" >> "$output_script"
     
     printf "\n# run miaplpy jobfiles\n" >> "$output_script"
-    printf "run_workflow.bash $template_file --append --dostep miaplpy --dir $miaplpy_dir_name\n" >> "$output_script"
+    printf "run_workflow.bash $template_file --dostep miaplpy --dir $miaplpy_dir_name\n" >> "$output_script"
     
     printf "\n# create and run run_10_save_hdfeos5_radar.job\n" >> "$output_script"
     printf "create_save_hdfeos5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME --walltime 0:30\n" >> "$output_script"

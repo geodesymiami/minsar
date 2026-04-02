@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+#
+# Pre-push hook: runs all tests before allowing a push
+# If tests fail, the push is aborted
+#
+# To bypass this hook (use sparingly!): git push --no-verify
+#
+
+set -e
+
+# Get the root of the git repository
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# Check if additions/mintpy has changes in this push; if not, skip its long-running tests
+RUN_MINTPY_ADDITIONS=0
+SEEN_REF=0
+while read -r local_ref local_sha remote_ref remote_sha; do
+    [[ -z "$local_sha" ]] && continue
+    SEEN_REF=1
+    if [[ "$remote_sha" == "0"* ]] && [[ "${#remote_sha}" -eq 40 ]]; then
+        RUN_MINTPY_ADDITIONS=1
+        break
+    fi
+    changed=$(git diff --name-only "$remote_sha" "$local_sha" 2>/dev/null || true)
+    if echo "$changed" | grep -q '^additions/mintpy/'; then
+        RUN_MINTPY_ADDITIONS=1
+        break
+    fi
+    RUN_MINTPY_ADDITIONS=0
+done
+
+if [[ "$SEEN_REF" -eq 1 ]] && [[ "$RUN_MINTPY_ADDITIONS" -eq 0 ]]; then
+    export MINSAR_SKIP_MINTPY_ADDITIONS_TESTS=1
+    echo "Skipping additions/mintpy tests (no changes in additions/mintpy in this push)"
+    echo ""
+fi
+
+echo ""
+echo "╔══════════════════════════════════════════════════════════════════════════╗"
+echo "║                     PRE-PUSH HOOK: Running tests...                      ║"
+echo "╚══════════════════════════════════════════════════════════════════════════╝"
+echo ""
+
+# Run the test suite
+if ! bash "$REPO_ROOT/run_all_tests.bash"; then
+    echo ""
+    echo "╔══════════════════════════════════════════════════════════════════════════╗"
+    echo "║  PUSH BLOCKED: Tests failed. Fix the issues and try again.              ║"
+    echo "║  To bypass (use sparingly!): git push --no-verify                       ║"
+    echo "╚══════════════════════════════════════════════════════════════════════════╝"
+    echo ""
+    exit 1
+fi
+
+echo ""
+echo "╔══════════════════════════════════════════════════════════════════════════╗"
+echo "║  PRE-PUSH HOOK: All tests passed. Proceeding with push...               ║"
+echo "╚══════════════════════════════════════════════════════════════════════════╝"
+echo ""
+
+exit 0

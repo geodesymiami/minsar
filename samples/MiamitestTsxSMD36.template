@@ -1,14 +1,10 @@
-processor                             = isce
-
 ssaraopt.collectionName               = TSX ARC_famelung_COA3837
-#ssaraopt.collectionName               = ARC_famelung_COA3837
 ssaraopt.beamSwath                    = strip_014
 ssaraopt.relativeOrbit                = 36
 unavco.relative_orbit                 = 36
 ssaraopt.startDate                    = 20160101
 ssaraopt.endDate                      = 20171110
 
-stripmapStack.sensor                  = tsx
 stripmapStack.zerodop                 = True
 stripmapStack.nofocus                 = True
 acquisition_mode                      = stripmap
@@ -24,6 +20,7 @@ stripmapStack.unwMethod               = snaphu
 
 mintpy.troposphericDelay.method       = no
 mintpy.reference.minCoherence         = 0.7   #[0.0-1.0], auto for 0.85, minimum coherence for auto method
+mintpy.load.waterMaskFile         = no  #[path of water  mask file], optional but recommended
 
 raw_image_dir                         =  ./SLC_ORIG
 
@@ -37,7 +34,8 @@ insarmaps_flag                        = False
 
 ###### South Surfside #
 #mintpy.reference.lalo                = 25.8791,-80.1259          
-mintpy.subset.lalo                   = 25.89:25.906,-80.129:-80.115            # Surfside_only
+#mintpy.subset.lalo                   = 25.89:25.906,-80.129:-80.115            # Surfside_only
+miaplpyy.subset.lalo                   = 25.89:25.906,-80.129:-80.115            # Surfside_only
 
 miaplpy.multiprocessing.numProcessor = 40
 ### crop the area to a small subset
@@ -45,7 +43,7 @@ miaplpy.load.processor               = isce
 miaplpy.interferograms.networkType   = sequential
 miaplpy.interferograms.networkType   = single_reference
 
-# Unwrapping Error Correction (optional)
-#mintpy.unwrapError.method          = bridging
-#mintpy.unwrapError.connCompMinArea = 200
-#mintpy.deramp                      = no
+######################################################
+minsar.zeroElevationDem              = True     # [True/False] replace DEM with zero-elevation DEM
+minsar.upload_flag                   = True
+minsar.insarmaps_dataset             = filt*DS

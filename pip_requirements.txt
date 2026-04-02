@@ -2,6 +2,8 @@ georaster           # for view_scatterplot
 bypy                # Baidu cloud interface
 burst2safe          # minsar 
 asf_search          # minsar ASF API
+shapely             # get_sar_coverage.py AOI cover/contain geometry
+folium              # display_bbox.py map HTML
 fuzzywuzzy          # string matching 
 jupyter-ai          # 
 geocoder            # insarmaps_sccripts

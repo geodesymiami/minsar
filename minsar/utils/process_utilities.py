@@ -23,7 +23,7 @@ import xml.etree.ElementTree as ET
 import shutil
 from shapely import wkt as _wkt
 from minsar.objects.dataset_template import Template
-from minsar.objects.auto_defaults import PathFind
+from minsar.objects.auto_defaults import PathFind, queue_config_file
 from mintpy.utils import readfile
 import time, datetime
 
@@ -472,7 +472,8 @@ def get_config_defaults(config_file='job_defaults.cfg'):
 
     if os.path.basename(config_file) in ['job_defaults.cfg']:
 
-        fields = ['c_walltime', 's_walltime', 'seconds_factor', 'c_memory', 's_memory', 'num_threads','io_load']
+        fields = ['c_walltime', 's_walltime', 'seconds_factor', 'c_memory', 's_memory', 'num_threads', 'io_load',
+                  'rerun_walltime_factor', 'switch_queue', 'rerun_walltime_factor_switch']
         with open(config_file, 'r') as f:
             lines = f.readlines()
 
@@ -480,8 +481,12 @@ def get_config_defaults(config_file='job_defaults.cfg'):
         for line in lines:
             if line.startswith('#') or line.startswith('----'):
                 continue
-            sections = line.split()
-            if len(sections) > 6:
+            # Strip trailing # comment for column count
+            raw = line.strip()
+            if '#' in raw:
+                raw = raw[:raw.index('#')].strip()
+            sections = raw.split()
+            if len(sections) > 10:
                 config.add_section(sections[0])
                 for t in range(0, len(fields)):
                     config.set(sections[0], fields[t], sections[t + 1])
@@ -1279,6 +1284,145 @@ def replace_queuename_in_job_file(file, new_queue_name):
             job_file.writelines(new_lines)
 
     return
+
+
+def walltime_to_seconds(wall_time_str):
+    """Convert walltime string (HH:MM:SS, MM:SS, or D-HH:MM:SS) to total seconds."""
+    s = wall_time_str.strip()
+    days = 0
+    if '-' in s and s.count('-') == 1:
+        days_part, s = s.split('-', 1)
+        try:
+            days = int(days_part.strip())
+        except ValueError:
+            pass
+    parts = [int(x) for x in s.split(':')]
+    if len(parts) == 2:
+        hours, minutes = 0, parts[0]
+        seconds = parts[1]
+    else:
+        hours, minutes, seconds = parts[0], parts[1], parts[2]
+    return days * 86400 + hours * 3600 + minutes * 60 + seconds
+
+
+def get_queue_rerun_params(platform_name, queue_name):
+    """
+    Read queues.cfg and return MAX_WALLTIME and QUEUE_AT_MAX_WALLTIME for the given platform+queue.
+    Returns dict with keys 'MAX_WALLTIME' (str, e.g. '02:00:00'), 'QUEUE_AT_MAX_WALLTIME' (str or 'n/a').
+    """
+    with open(queue_config_file, 'r') as f:
+        lines = f.readlines()
+    header = None
+    for line in lines:
+        if line.startswith('PLATFORM_NAME'):
+            header = line.split()
+            break
+    if not header or 'MAX_WALLTIME' not in header or 'QUEUE_AT_MAX_WALLTIME' not in header:
+        return {'MAX_WALLTIME': '48:00:00', 'QUEUE_AT_MAX_WALLTIME': 'n/a'}
+    idx_plat = header.index('PLATFORM_NAME')
+    idx_queue = header.index('QUEUENAME')
+    idx_max_wt = header.index('MAX_WALLTIME')
+    idx_queue_at = header.index('QUEUE_AT_MAX_WALLTIME')
+    for line in lines:
+        if line.startswith('#') or not line.strip():
+            continue
+        raw = line.strip()
+        if '#' in raw:
+            raw = raw[:raw.index('#')].strip()
+        parts = raw.split()
+        if len(parts) <= max(idx_max_wt, idx_queue_at):
+            continue
+        if parts[idx_plat] == platform_name and parts[idx_queue] == queue_name:
+            return {'MAX_WALLTIME': parts[idx_max_wt], 'QUEUE_AT_MAX_WALLTIME': parts[idx_queue_at]}
+    return {'MAX_WALLTIME': '48:00:00', 'QUEUE_AT_MAX_WALLTIME': 'n/a'}
+
+
+def count_reruns_for_job(job_file_path):
+    """
+    Count how many times this job file has been rerun (from rerun.log).
+    Used for switch_queue=after_2: switch only after the second timeout.
+    """
+    job_dir = os.path.dirname(os.path.abspath(job_file_path))
+    job_basename = os.path.basename(job_file_path)
+    rerun_log = os.path.join(job_dir, 'rerun.log')
+    if not os.path.isfile(rerun_log):
+        return 0
+    count = 0
+    with open(rerun_log, 'r') as f:
+        for line in f:
+            if job_basename in line:
+                count += 1
+    return count
+
+
+def extract_step_name_from_job_file(job_file_path):
+    """
+    Extract step name for job_defaults lookup from a job file path.
+    e.g. run_08_miaplpy_invert_network_0.job -> miaplpy_invert_network
+    """
+    basename = os.path.basename(job_file_path).replace('.job', '')
+    if re.match(r'^run_\d{2}_(.+)_\d+$', basename):
+        return re.match(r'^run_\d{2}_(.+)_\d+$', basename).group(1)
+    # Fallback: remove leading run_XX_ and trailing _N
+    parts = basename.split('_')
+    if len(parts) >= 3 and parts[0] == 'run' and parts[1].isdigit():
+        step = '_'.join(parts[2:])
+        if step.split('_')[-1].isdigit():
+            step = '_'.join(step.split('_')[:-1])
+        return step
+    return basename
+
+
+def compute_rerun_walltime_and_queue(job_file_path):
+    """
+    Compute new walltime and optionally new queue for a timeout rerun using job_defaults.cfg and queues.cfg.
+    Returns (new_walltime_str, new_queue_or_None). Caller should replace_walltime_in_job_file and, if
+    new_queue_or_None is not None, replace_queuename_in_job_file.
+    """
+    config = get_config_defaults(config_file='job_defaults.cfg')
+    step_name = extract_step_name_from_job_file(job_file_path)
+    if step_name not in config.sections():
+        step_name = 'default'
+    rerun_factor = float(config[step_name].get('rerun_walltime_factor', '1.2'))
+    switch_raw = config[step_name].get('switch_queue', 'no').strip().lower()
+    rerun_count = count_reruns_for_job(job_file_path)
+    if switch_raw == 'yes':
+        switch_yes = True
+    elif switch_raw == 'after_2':
+        switch_yes = rerun_count >= 1
+    else:
+        switch_yes = False
+    factor_switch_str = config[step_name].get('rerun_walltime_factor_switch', 'n/a').strip().lower()
+    if factor_switch_str in ('n/a', 'na', ''):
+        factor_switch = rerun_factor
+    else:
+        try:
+            factor_switch = float(factor_switch_str)
+        except ValueError:
+            factor_switch = rerun_factor
+
+    current_walltime = extract_walltime_from_job_file(job_file_path)
+    current_queue = extract_queuename_from_job_file(job_file_path)
+    platform_name = os.environ.get('PLATFORM_NAME', 'stampede3')
+    queue_params = get_queue_rerun_params(platform_name, current_queue)
+    max_wt_seconds = walltime_to_seconds(queue_params['MAX_WALLTIME'])
+    new_walltime = multiply_walltime(current_walltime, factor=rerun_factor)
+    new_wt_seconds = walltime_to_seconds(new_walltime)
+
+    new_queue = None
+    if new_wt_seconds > max_wt_seconds:
+        if switch_yes and queue_params['QUEUE_AT_MAX_WALLTIME'].lower() not in ('n/a', 'na', ''):
+            new_walltime = multiply_walltime(current_walltime, factor=factor_switch)
+            new_queue = queue_params['QUEUE_AT_MAX_WALLTIME']
+        else:
+            # Cap at MAX_WALLTIME (convert back to HH:MM:SS)
+            h = max_wt_seconds // 3600
+            m = (max_wt_seconds % 3600) // 60
+            s = max_wt_seconds % 60
+            new_walltime = '{:02d}:{:02d}:{:02d}'.format(h, m, s)
+    return (new_walltime, new_queue)
+
+
 ##########################################################################
 
 def run_remove_date_from_run_files(run_files_dir, date, start_run_file):

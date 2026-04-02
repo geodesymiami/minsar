@@ -476,53 +476,28 @@ EOF
 }
 
 #####################################################################
-# Function: get_reference_date:  prints the reference date for a processed dataset
-# Usage: get_reference_date
-function get_reference_date(){
-   reference_date=( $(xmllint --xpath 'string(/productmanager_name/component[@name="instance"]/component[@name="bursts"]/component[@name="burst1"]/property[@name="burststartutc"]/value)' \
-                    reference/IW*.xml | cut -d ' ' -f 1 | sed "s|-||g") )
-   echo $reference_date
-}
-
-#####################################################################
-# Function: countbursts: Counts the number of bursts in a dataset.
-# Usage: countbursts <dataset>
-function countbursts(){
-                   #set -xv
-                   subswaths=geom_reference/*
-                   unset array
-                   declare -a array
-                   for subswath in $subswaths; do
-                       icount=`ls $subswath/hgt*rdr | wc -l`
-                       array+=($(basename $icount))
-                   done;
-                   reference_date=$(get_reference_date)
-                   echo "geom_reference/$reference_date   #of_bursts: `ls geom_reference/IW*/hgt*rdr | wc -l`   ${array[@]}"
-
-                   dates="coreg_secondarys/*"
-                   for date in $dates; do
-                       subswaths=$date/???
-                       unset array
-                       declare -a array
-                       for subswath in $subswaths; do
-                           icount=`ls $subswath/burst*xml | wc -l`
-                           array+=($(basename $icount))
-                       done;
-                       echo "$date #of_bursts: `ls $date/IW*/burst*xml | wc -l`   ${array[@]}"
-                   done;
-                   }
-
 # Function to exttract hvGalapagos from hvGalapagosSenA106/mintpy
+# Works for both relative paths (StromboliSenD124/...) and absolute paths (/data/HDF5EOS/StromboliSenD124/...)
 get_base_projectname() {
     local file_path="$1"
     local dir_name
-    
-    # Get the directory name (first part of path before /)
-    dir_name=$(echo "$file_path" | cut -d'/' -f1)
-    
     # Patterns to match (order matters - check longer patterns first)
     local patterns=("Alos2A" "Alos2D" "SenA" "SenD" "CskA" "CskD" "TsxA" "TsxD" "AlosA" "AlosD")
-    
+
+    # Find the path component that contains a sensor pattern (handles absolute paths)
+    dir_name=""
+    while IFS= read -r -d '/' segment; do
+        [[ -z "$segment" ]] && continue
+        for pattern in "${patterns[@]}"; do
+            if [[ "$segment" == *"$pattern"* ]]; then
+                dir_name="$segment"
+                break 2
+            fi
+        done
+    done <<< "${file_path}/"
+    # Fallback: first path component (original behavior for relative paths)
+    [[ -z "$dir_name" ]] && dir_name=$(echo "$file_path" | cut -d'/' -f1)
+
     for pattern in "${patterns[@]}"; do
         if [[ "$dir_name" == *"$pattern"* ]]; then
             # Extract everything before the pattern
@@ -530,7 +505,7 @@ get_base_projectname() {
             return 0
         fi
     done
-    
+
     # If no pattern found, return the original directory name
     echo "$dir_name"
 }

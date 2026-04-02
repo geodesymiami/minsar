@@ -57,11 +57,16 @@ export GBIS_TESTDATA=${WORKDIR}/TESTDATA_GBIS
 export GEODMOD_TESTBENCH=${SCRATCHDIR}/GEODMOD_TESTBENCH
 export GBIS_INFILES=${WORKDIR}/infiles/${USER_PREFERRED}/GBIS_INFILES
 
+############## Envisat ##############
+export VOR_DIR="$WORKDIR/Envisat_DORIS/VOR_DIR"
+export INS_DIR="$WORKDIR/ASAR_Auxiliary_Files/ASA_INS_AX"
+
 ###########  USEFUL VARIABLES  #########
 export SAMPLESDIR=${MINSAR_HOME}/samples
 export DEMDIR=${WORKDIR}/DEMDIR
 export TEMPLATES=${WORKDIR}/infiles/${USER_PREFERRED}/TEMPLATES
 export TE=${TEMPLATES}
+export AUTO_TEMPLATES="${AUTO_TEMPLATES:-$(dirname "${TEMPLATES}")/AUTO_TEMPLATES}"
 
 ############## DASK ##############
 export DASK_CONFIG=${MINTPY_HOME}/src/mintpy/defaults/
@@ -93,7 +98,6 @@ export PYTHONPATH=${PYTHONPATH}:${SARVEY_HOME}
 export PYTHONPATH=${PYTHONPATH}:${SARVEY_HOME}/sarvey
 export PYTHONPATH=${SOURCEINVERSION_HOME}/src:${SOURCEINVERSION_HOME}/src/VSM/VSM:$PYTHONPATH
 export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools/sarplotter-main
-export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools/MakeTemplate/src
 #export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools      # needed for mimt. Need to talk to Sara on how to do this smarter
 ######### Ignore warnings ############
 export PYTHONWARNINGS="ignore"
@@ -108,6 +112,7 @@ export PATH=${PATH}:${MINSAR_HOME}/minsar
 export PATH=${PATH}:${MINSAR_HOME}/minsar/insarmaps_utils
 export PATH=${PATH}:${MINSAR_HOME}/minsar/utils
 export PATH=${PATH}:${MINSAR_HOME}/minsar/scripts
+export PATH=${PATH}:${MINSAR_HOME}/tests
 export PATH=${PATH}:${MINTPY_HOME}/src/mintpy/legacy         # for add_attribute.py
 export PATH=${PATH}:${MIAPLPY_HOME}/src/miaplpy
 export PATH=${PATH}:${SOURCEINVERSION_HOME}/src/cli
@@ -118,6 +123,8 @@ export PATH=${PATH}:${MIMTPY_HOME}/mimtpy
 export PATH=${PATH}:${SARVEY_HOME}/sarvey
 export PATH=${PATH}:${MINSAR_HOME}/tools/snaphu-v2.0.5/bin
 export PATH=${PATH}:${MINSAR_HOME}/tools/insarmaps_scripts
+export PATH=${PATH}:${MINSAR_HOME}/tools/VolcDef_web/volcdef_web
+export PATH=${PATH}:${MINSAR_HOME}/tools/emirhan_insarmaps_utils
 export PATH=${PATH}:${MINSAR_HOME}/tools/autoencoder
 export PATH=${PATH}:${MINSAR_HOME}/tools/MakeTemplate/src/maketemplate/cli
 export PATH=${PATH}:${PROJ_LIB}
@@ -152,4 +159,9 @@ if [[ -f ~/accounts/alias.bash ]]; then
 fi
 if [[ -f ~/accounts/login_alias.bash ]]; then
    source ~/accounts/login_alias.bash
+fi
+
+# Avoid Cursor/VS Code prompt hook error in subshells or SSH.
+if [[ -n "${PROMPT_COMMAND:-}" ]] && ! type __vsc_prompt_cmd_original &>/dev/null; then
+  unset PROMPT_COMMAND
 fi

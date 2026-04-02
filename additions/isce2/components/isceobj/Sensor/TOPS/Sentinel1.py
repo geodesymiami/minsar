@@ -255,7 +255,7 @@ class Sentinel1(Component):
                     zf.close()
 
                     if (len(match) == 0):
-                        raise Exception('No tiff file found in zip file: {0}'.format(dirname))
+                        raise Exception('No tiff file found in zip file: {0} for subswath IW{1}'.format(dirname, self.swathNumber))
 
                     ####Add /vsizip at the start to make it a zip file
                     self.tiff.append('/vsizip/' + os.path.join(dirname, match[0]) )
@@ -266,7 +266,7 @@ class Sentinel1(Component):
                     match = glob.glob(os.path.join(dirname, pattern))
 
                     if len(match) == 0 :
-                        raise Exception('No tiff file found in directory: {0}'.format(dirname))
+                        raise Exception('No tiff file found in directory: {0} for subswath IW{1}'.format(dirname, self.swathNumber))
 
                     self.tiff.append(match[0])
 

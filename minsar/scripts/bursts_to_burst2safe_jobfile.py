@@ -51,6 +51,22 @@ def clean_path(f):
         # Return only the filename (i.e., remove the "SLC/" part)
         return p.name
 
+
+def burst_hash(burst_basename):
+    """Extract hash from burst filename, e.g. S1_185679_IW1_20251112T161529_VV_8864-BURST -> 8864."""
+    return burst_basename.split('_')[-1].replace('-BURST', '')
+
+
+def burst_subswath(burst_basename):
+    """Extract subswath from burst filename, e.g. S1_185679_IW1_20251112T161529_VV_8864-BURST -> IW1."""
+    return burst_basename.split('_')[2]
+
+
+def sort_bursts_by_hash_subswath(bursts):
+    """Sort burst basenames by (hash, subswath, filename) for deterministic burst2safe command order."""
+    return sorted(bursts, key=lambda b: (burst_hash(b), burst_subswath(b), b))
+
+
 ###############################################
 
 def main(iargs=None):
@@ -70,30 +86,37 @@ def main(iargs=None):
 
     burst_list_fullpath = glob.glob(inps.burst_dir_path + '/*.tiff')
     burst_list = [clean_path(f) for f in burst_list_fullpath ]
-    
-    bursts_by_date = defaultdict(list)
+
+    # Group by (date, hash, subswath): one burst2safe call per group.
+    # - Same hash = same source SLC; never mix hashes.
+    # - One call per subswath avoids "Products from subswaths IW2 and IW3 do not overlap"
+    #   when adjacent subswaths' burst ID ranges do not satisfy burst2safe's overlap rule.
+    bursts_by_date_hash_swath = defaultdict(list)
     for burst in burst_list:
         date_str = burst.split('_')[3][:8]  # Extract YYYYMMDD
-        bursts_by_date[date_str].append(burst)
+        h = burst_hash(burst)
+        swath = burst_subswath(burst)
+        bursts_by_date_hash_swath[(date_str, h, swath)].append(burst)
 
-    max_date = max(bursts_by_date, key=lambda k: len(bursts_by_date[k]))
-    print("Date with most bursts:", max_date)
+    date_to_remove = ['20250429', '20250430', '20250501', '20250313']
+    # One line per (date, hash, subswath) group with >1 burst; skip excluded dates
+    groups = {
+        (date_str, h, swath): bursts
+        for (date_str, h, swath), bursts in bursts_by_date_hash_swath.items()
+        if len(bursts) > 1 and date_str not in date_to_remove
+    }
 
-    filtered_bursts_by_date = { date: bursts for date, bursts in bursts_by_date.items() if len(bursts) == len(bursts_by_date[max_date]) }
+    if not groups:
+        raise RuntimeError(
+            "USER ERROR: no (date, hash, subswath) group has more than 1 burst (required for ISCE run_07_merge*). "
+            "Check burst directory or date_to_remove list."
+        )
 
-    first_key = next(iter(filtered_bursts_by_date))
-    number_of_bursts = len(filtered_bursts_by_date[first_key])
-    if number_of_bursts <= 1:
-        raise RuntimeError("USER ERROR: need more than 1 burst for ISCE processing (in run_07_merge* step). For {first_key} there is only 1 burst")
-        sys.exit(1)
-
-    date_to_remove = [ '20250429', '20250430', '20250501', '20250313']
-    filtered_bursts_by_date = {date: bursts for date, bursts in filtered_bursts_by_date.items() if date not in date_to_remove}
-
+    output_dir = str(Path(inps.work_dir) / inps.burst_dir_path)
     with open(run_01_burst2safe_path, "w") as f:
-        for date, bursts in sorted(filtered_bursts_by_date.items()):
-            output_dir = str(Path(inps.work_dir) / inps.burst_dir_path)
-            f.write("burst2safe " + ' '.join(bursts) + " --keep-files --output-dir " + output_dir + "\n")
+        for (date_str, h, swath), bursts in sorted(groups.items()):
+            sorted_bursts = sort_bursts_by_hash_subswath(bursts)
+            f.write("burst2safe " + ' '.join(sorted_bursts) + " --all-anns --keep-files --output-dir " + output_dir + "\n")
 
     print("Created: ", run_01_burst2safe_path)
     

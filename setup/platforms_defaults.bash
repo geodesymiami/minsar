@@ -14,7 +14,7 @@ export MAX_MEMORY_PER_NODE=16000
 
 ###############################################
 # options: singleTask, multiTask_multiNode, multiTask_singleNode, launcher_multiTask_multiNode, launcher_multiTask_singleNode
-export JOB_SUBMISSION_SCHEME=launcher_multiTask_singleNode
+export JOB_SUBMISSION_SCHEME=launcher_multiTask_multiNode
 
 #############################################
 ########### known platforms ##################
@@ -50,13 +50,13 @@ then
   export SCRATCHDIR=/data/HDF5EOS
 fi
 ###############################################
-if  [[ ${HOSTNAME}} == *preceipvm* ]]
+if  [[ ${HOSTNAME}} =~ ^insarmaps[123]$ ]]
 then
-  export PLATFORM_NAME=precipvm
+  export PLATFORM_NAME="$HOSTNAME"
   export JOBSCHEDULER=NONE
   export QUEUENAME=NONE
-  export WORKDIR=~/insarlab
-  export SCRATCHDIR=/data
+  export WORKDIR=/data/$HOSTNAME/insarlab
+  export SCRATCHDIR=/data/HDF5EOS
 fi
 ###############################################
 if [[ ${HOSTNAME} == *stampede* ]] || [[ ${TACC_SYSTEM:-} == *stampede* ]]
@@ -109,6 +109,6 @@ then
   export JOBSCHEDULER=SLURM
   export QUEUENAME=skx
   export WORKDIR=~/oneDrive/insarlab
-  export SCRATCHDIR=~/onedrive/scratch
+  export SCRATCHDIR=~/scratch
   export GEOS_DIR=/opt/homebrew/Cellar/geos/3.12.0
 fi

@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 
-function abbreviate {
-    abb=$1
-    if [[ "${#abb}" -gt $2 ]]; then
-        abb=$(echo "$(echo $(basename $abb) | cut -c -$3)...$(echo $(basename $abb) | rev | cut -c -$4 | rev)")
-    fi
-    echo $abb
-}
+# Source shared utility functions (Task 4 refactor)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+MINSAR_LIB_DIR="${SCRIPT_DIR}/../lib"
+if [[ -f "${MINSAR_LIB_DIR}/workflow_utils.sh" ]]; then
+    source "${MINSAR_LIB_DIR}/workflow_utils.sh"
+elif [[ -n "${RSMASINSAR_HOME}" && -f "${RSMASINSAR_HOME}/minsar/lib/workflow_utils.sh" ]]; then
+    source "${RSMASINSAR_HOME}/minsar/lib/workflow_utils.sh"
+fi
 
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     helptext="
@@ -47,6 +48,9 @@ randomorder=false
 wait_time=300
 wait_time=120
 wait_time=60
+
+# SHORT_JOB_COMPLETION_WAITTIME=TRUE/True → 10 sec retry wait
+[[ "${SHORT_JOB_COMPLETION_WAITTIME:-}" == [Tt]rue ]] && wait_time=10
 
 while [[ $# -gt 0 ]]
 do

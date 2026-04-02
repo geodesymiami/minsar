@@ -18,6 +18,7 @@ from minsar.objects import message_rsmas
 import minsar.utils.process_utilities as putils
 import minsar.job_submission as js
 from minsar.src.minsar.create_html import create_html
+from minsar.src.minsar.add_missing_attributes import add_missing_attributes_for_upload
 
 sys.path.insert(0, os.getenv('SSARAHOME'))
 import password_config as password
@@ -147,13 +148,29 @@ def main(iargs=None):
     for data_dir in inps.data_dirs:
         data_dir = data_dir.rstrip('/')
 
-        if 'mintpy' in data_dir and data_dir.endswith('inputs'):
-            if os.path.isdir(data_dir):
-                print(f"Uploading contents of inputs directory: {data_dir}")
-                scp_list.extend(['/' + data_dir + '/*'])
-                continue  # Skip the normal mintpy processing below
+        # If path is a subdirectory (contains '/'), determine if it should upload all contents
+        # Upload all for: mintpy/inputs, test1/EnvD140, miaplpy_*/network_*/pic, etc.
+        # Use standard processing for: miaplpy_*/network_single_reference (network dirs themselves)
+        if '/' in data_dir and os.path.isdir(data_dir):
+            basename = os.path.basename(data_dir)
+            # If it's a network directory itself (ends with network_*), use standard processing
+            # Otherwise, if it's a subdirectory (like pic, inputs, geo), upload all contents
+            if not basename.startswith('network_'):
+                print(f"Uploading all contents of directory: {data_dir}")
+                if os.path.isdir(data_dir + '/pic'):
+                    create_html_if_needed(data_dir + '/pic')
+                scp_list.extend(['/' + data_dir])
+                continue
 
+        # Main directory processing (mintpy, miaplpy, etc.)
         if 'mintpy' in data_dir:
+            # Handle --all flag: upload entire directory
+            if inps.all_flag:
+                if os.path.isdir(data_dir + '/pic'):
+                    create_html_if_needed(data_dir + '/pic')
+                scp_list.extend(['/' + data_dir])
+                continue  # Skip specific file patterns
+
             if os.path.isdir(data_dir + '/pic'):
                create_html_if_needed(data_dir + '/pic')
 
@@ -180,11 +197,20 @@ def main(iargs=None):
                   '/'+ data_dir +'/geo/geo_*.shp',
                   '/'+ data_dir +'/geo/geo_*.shx',
                   ])
-        elif 'miaplpy' in data_dir and 'inputs' in data_dir:
-            #scp_list.extend(['/' + data_dir])
-            scp_list.extend(['/' + data_dir + '/*'])
+        elif 'miaplpy' in data_dir:
+            # Handle --all flag: upload entire directory
+            if inps.all_flag:
+                if 'network_' in data_dir:
+                    dir_list = [ data_dir ]
+                else:
+                    dir_list = glob.glob(data_dir + '/network_*')
 
-        elif 'miaplpy' in data_dir and not 'inputs' in data_dir:
+                for network_dir in dir_list:
+                    if os.path.isdir(network_dir + '/pic'):
+                        create_html_if_needed(network_dir + '/pic')
+                    scp_list.extend(['/' + network_dir])
+                continue  # Skip specific file patterns
+
             if 'network_' in data_dir:
                dir_list = [ data_dir ]
             else:
@@ -237,17 +263,6 @@ def main(iargs=None):
                        scp_list.extend([
                        '/'+ network_dir +'/numTriNonzeroIntAmbiguity.h5',
                        ])
-                    if inps.all_flag:
-                        scp_list.extend([
-                        '/'+ network_dir +'/numInvIfgram.h5',
-                        '/'+ network_dir +'/timeseries_demErr.h5',
-                        '/'+ network_dir +'/inputs/ifgramStack.h5',
-                        '/'+ network_dir +'/inputs/smallbaselineApp.cfg',
-                        '/'+ network_dir +'/inputs/*template',
-                        '/'+ network_dir +'/*.cfg',
-                        '/'+ network_dir +'/*.txt',
-                        '/'+ network_dir +'/geo',
-                        ])
 
                     # After completion of network_* loops
                     scp_list.extend([
@@ -260,13 +275,11 @@ def main(iargs=None):
                     '/'+ os.path.dirname(data_dir) +'/inverted/tempCoh_full*'
                     ])
         else:
-            # sarvey. May work for other directories containing images
+            # Other directories (e.g., EnvD140, sarvey, etc.) - upload entire directory
+            print(f"Uploading all contents of directory: {data_dir}")
             if os.path.isdir(data_dir + '/pic'):
-               create_html_if_needed(data_dir + '/pic')
-            scp_list.extend([ '/'+ data_dir +'/pic', ])
-            scp_list.extend([ '/'+ data_dir +'/../maskfiles/*', ])
-            #scp_list.extend([ '/'+ data_dir +'/shp', ])
-            #scp_list.extend([ '/'+ data_dir +'/outputs/output_csv/*.csv', ])
+                create_html_if_needed(data_dir + '/pic')
+            scp_list.extend(['/' + data_dir])
 
     print('################')
     print('Data to upload: ')
@@ -277,69 +290,120 @@ def main(iargs=None):
     import time
     time.sleep(2)
 
-    remote_url = 'http://' + REMOTEHOST_DATA + REMOTE_DIR + project_name + '/' + data_dir + '/pic'
-    with open('upload.log', 'a') as f:
-        f.write(remote_url + "\n")
-    
-    os.makedirs(data_dir + '/pic', exist_ok=True)
-    with open(data_dir + '/pic/upload.log', 'w') as f:
-        f.write(remote_url + "\n")
-
-    print('\n################')
-    print('Deleting remote directories...')
+    # Write upload.log for all uploaded directories
+    remote_urls = []
     for data_dir in inps.data_dirs:
         data_dir = data_dir.rstrip('/')
-        remote_path = f'{REMOTE_DIR}{project_name}/{data_dir}'
-        cleanup_cmd = f'ssh {REMOTE_CONNECTION} "rm -rf {remote_path}"'
-        print(f'Deleting: {cleanup_cmd}')
-        status = subprocess.Popen(cleanup_cmd, shell=True).wait()
-        if status != 0:
-            print(f'Warning: Could not delete {remote_path} (may not exist yet)')
+
+        # Check if this directory has a pic subdirectory
+        pic_dir = data_dir + '/pic'
+        if os.path.isdir(pic_dir):
+            # If pic exists, URL points to pic directory
+            remote_url = 'http://' + REMOTEHOST_DATA + REMOTE_DIR + project_name + '/' + data_dir + '/pic'
+
+            # Append to main upload.log
+            with open('upload.log', 'a') as f:
+                f.write(remote_url + "\n")
+
+            # Write to pic/upload.log (only if pic directory exists)
+            with open(pic_dir + '/upload.log', 'w') as f:
+                f.write(remote_url + "\n")
+
+            remote_urls.append(remote_url)
+        else:
+            # If no pic directory, URL points to the uploaded directory itself
+            remote_url = 'http://' + REMOTEHOST_DATA + REMOTE_DIR + project_name + '/' + data_dir
+
+            # Append to main upload.log
+            with open('upload.log', 'a') as f:
+                f.write(remote_url + "\n")
+
+            remote_urls.append(remote_url)
+
+    # If miaplpy/inputs is uploaded and contains slcStack.h5, add missing ORBIT_DIRECTION / relative_orbit
+    add_missing_attributes_for_upload(inps.work_dir, inps.data_dirs)
+
+    print('\n################')
+    for data_dir in inps.data_dirs:
+        data_dir = data_dir.rstrip('/')
+        # Only delete if directory name contains 'mintpy' or 'miaplpy'
+        if 'mintpy' in data_dir or 'miaplpy' in data_dir:
+            print('Deleting remote mintpy/miaplpy directories ...')
+            remote_path = f'{REMOTE_DIR}{project_name}/{data_dir}'
+            cleanup_cmd = f'ssh {REMOTE_CONNECTION} "rm -rf {remote_path}"'
+            print(f'Deleting: {cleanup_cmd}')
+            status = subprocess.Popen(cleanup_cmd, shell=True).wait()
+            if status != 0:
+                print(f'Warning: Could not delete {remote_path} (may not exist yet)')
 
     print('################\n')
+
+    # Step 1: Collect all unique directories that need to be created
+    unique_dirs = set()
+    upload_commands = []
+
     for pattern in scp_list:
-        if ( len(glob.glob(inps.work_dir + '/' + pattern)) >= 1 ):
-            #files=glob.glob(inps.work_dir + '/' + pattern)
-            files=glob.glob(inps.work_dir + pattern)
+        if len(glob.glob(inps.work_dir + pattern)) >= 1:
+            files = glob.glob(inps.work_dir + pattern)
 
             if os.path.isfile(files[0]):
-               full_dir_name = os.path.dirname(files[0])
+                full_dir_name = os.path.dirname(files[0])
             elif os.path.isdir(files[0]):
-               full_dir_name = os.path.dirname(files[0])
+                full_dir_name = os.path.dirname(files[0])
             else:
                 raise Exception('ERROR finding directory in pattern in upload_data_products.py')
 
-            dir_name = full_dir_name.removeprefix(inps.work_dir +'/')
+            dir_name = full_dir_name.removeprefix(inps.work_dir + '/')
+            unique_dirs.add(dir_name)
 
-            # create remote directory
-            print ('\nCreating remote directory:',dir_name)
-            command = 'ssh ' + REMOTE_CONNECTION + ' mkdir -p ' + REMOTE_DIR + project_name + '/' + dir_name
-            print (command)
-            status = subprocess.Popen(command, shell=True).wait()
-            if status is not 0:
-                raise Exception('ERROR creating remote directory in upload_data_products.py')
+            # Store upload command for later
+            upload_cmd = f'rsync -avz --progress {inps.work_dir}{pattern} {REMOTE_CONNECTION_DIR}/{project_name}/{"/".join(pattern.split("/")[0:-1])}'
+            upload_commands.append(upload_cmd)
 
-            # upload data
-            print ('\nUploading data:')
-            command = f'rsync -avz --progress {inps.work_dir}{pattern} {REMOTE_CONNECTION_DIR}/{project_name}/{"/".join(pattern.split("/")[0:-1])}'
-            print (command)
-            status = subprocess.Popen(command, shell=True).wait()
-            if status is not 0:
-                raise Exception('ERROR uploading using rsync in upload_data_products.py')
+    # Step 2: Create ALL remote directories with ONE SSH command
+    if unique_dirs:
+        print('\nCreating all remote directories with one SSH command...')
+        all_dirs = ' '.join([f'{REMOTE_DIR}{project_name}/{d}' for d in sorted(unique_dirs)])
+        command = f'ssh {REMOTE_CONNECTION} "mkdir -p {all_dirs}"'
+        print(command)
+        status = subprocess.Popen(command, shell=True).wait()
+        if status != 0:
+            raise Exception('ERROR creating remote directories in upload_data_products.py')
 
-    # adjust permissions
-    print ('\nAdjusting permissions:')
-    command = 'ssh ' + REMOTEUSER + '@' +REMOTEHOST_DATA + ' chmod -R u=rwX,go=rX ' + REMOTE_DIR + project_name  + '/' + os.path.dirname(data_dir)
-    print (command)
-    status = subprocess.Popen(command, shell=True).wait()
-    if status is not 0:
-        raise Exception('ERROR adjusting permissions in upload_data_products.py')
+    # Step 3: Upload all data
+    for command in upload_commands:
+        print('\nUploading data:')
+        print(command)
+        status = subprocess.Popen(command, shell=True).wait()
+        if status != 0:
+            raise Exception('ERROR uploading using rsync in upload_data_products.py')
+
+    # Step 4: Adjust permissions for all uploaded directories
+    print('\nAdjusting permissions for all uploaded directories...')
+
+    # Get all unique top-level directories from inps.data_dirs
+    unique_top_dirs = set()
+    for data_dir in inps.data_dirs:
+        data_dir = data_dir.rstrip('/')
+        # Get the top-level directory (e.g., 'mintpy' from 'mintpy/geo')
+        top_dir = data_dir.split('/')[0]
+        unique_top_dirs.add(top_dir)
+
+    # Adjust permissions for all top-level directories at once
+    if unique_top_dirs:
+        all_paths = ' '.join([f'{REMOTE_DIR}{project_name}/{d}' for d in sorted(unique_top_dirs)])
+        command = f'ssh {REMOTEUSER}@{REMOTEHOST_DATA} "chmod -R u=rwX,go=rX {all_paths}"'
+        print(command)
+        status = subprocess.Popen(command, shell=True).wait()
+        if status != 0:
+            raise Exception('ERROR adjusting permissions in upload_data_products.py')
 
 ##########################################
     add_log_remote_hdfeos5(scp_list, inps.work_dir)
 ##########################################
-    print('Data at:')
-    print(remote_url)
+    print('\nData at:')
+    for url in remote_urls:
+        print(url)
 
     return None
 
