@@ -261,7 +261,7 @@ topsStack.rangeLooks               = 20   # comment
 topsStack.filtStrength             = 0.2  # comment
 topsStack.unwMethod                = snaphu  # comment
 topsStack.coregistration           = auto  # [NESD geometry], auto for NESD
-#topsStack.excludeDates            =  20240926
+#topsStack.excludeDates            =  20240926, 20250325, 20250418
 ######################################################
 mintpy.load.autoPath               = yes
 mintpy.compute.cluster             = local #[local / slurm / pbs / lsf / none], auto for none, cluster type
