@@ -10,7 +10,7 @@ import datetime
 import subprocess
 import numpy as np
 from datetime import date
-from shapely import wkt as _wkt
+from shapely import wkt
 from mintpy.objects import HDFEOS
 from minsar.src.minsar.cli import asf_search_args as asf
 from minsar.src.minsar.helper_functions import parse_polygon, convert_to_coord, extract_identification_metadata, normalize_meta_value
@@ -274,6 +274,7 @@ def polygon_corners_string(polygon_str: str) -> str:
 
 def main():
     inps = create_parser()
+    centroid = None
 
     # DEM section
     if inps.dem_file and not os.path.exists(inps.dem_file):
@@ -286,14 +287,13 @@ def main():
 
     # Processing section
     files = glob.glob(os.path.join(inps.dir, "*.nc"))
-    centroid = [((parse_polygon(inps.intersectsWith)[0] + parse_polygon(inps.intersectsWith)[1]) / 2,(parse_polygon(inps.intersectsWith)[2] + parse_polygon(inps.intersectsWith)[3]) / 2)] * len(files)
 
     ref_x, ref_y, ref_temporal_coh = None, None, None
 
     # Initialize dictionary to store by secondary date
     pair_dict = {}
 
-    for f, c in tqdm.tqdm(zip(files, centroid), desc="Processing files", unit=" file", total=len(files)):
+    for f in tqdm.tqdm(files, desc="Processing files", unit=" file", total=len(files)):
         nc = netCDF4.Dataset(f, 'r')
         x = np.asarray(nc.variables["x"][:], dtype=float)
         y = np.asarray(nc.variables["y"][:], dtype=float)
@@ -329,6 +329,11 @@ def main():
             'temporal_coherence': temporal_coh,
             'meta': meta
         }
+
+        if not centroid:
+            wkt_str = meta.bounding_polygon if hasattr(meta, 'bounding_polygon') else meta.data_footprint
+            geom = wkt.loads(wkt_str)
+            centroid = geom.centroid
         nc.close()
 
     # Sort by secondary date
@@ -352,7 +357,7 @@ def main():
     if not hasattr(meta, 'PROJECT_NAME'):
         setattr(meta, 'PROJECT_NAME', 'OPERA')
 
-    longitude, latitude = convert_to_coord(x, y, c)
+    longitude, latitude = convert_to_coord(x, y, (centroid.x, centroid.y))
 
     out_file = get_output_filename(meta)
 
