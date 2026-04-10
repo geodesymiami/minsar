@@ -2,6 +2,7 @@ import os
 import tqdm
 import argparse
 import datetime
+import subprocess
 import numpy as np
 from datetime import date
 from shapely import wkt as _wkt
@@ -23,11 +24,15 @@ def create_parser():
     )
     parser.add_argument('--flightDirection', required=True, help='ASCENDING or DESCENDING')
     parser.add_argument('--intersectsWith', required=True, help='WKT POLYGON string')
+    parser.add_argument('--processingLevel', dest='processing_level', choices=['GUNW', 'RSLC'], default='GUNW', help='Product type to download')
     parser.add_argument('--start', default='20251029', help='Start date (YYYYMMDD or YYYY-MM-DD)')
     parser.add_argument('--end', default=date.today().isoformat(), help='End date (YYYYMMDD or YYYY-MM-DD)')
     parser.add_argument('--dir', help='Output directory for downloads')
     parser.add_argument('--download', action='store_true', help='Download the data (default if specified)')
     parser.add_argument('--process', action='store_true', help='Process/crop files after download')
+    parser.add_argument('--dem-file', default=None, help='DEM file to use for processing')
+    parser.add_argument('--mask-file', default=None, help='Mask file to use for processing')
+
     parser.add_argument('extra', nargs=argparse.REMAINDER, help='Other options for asf_search_args.py')
 
     inps = parser.parse_args()
@@ -37,6 +42,11 @@ def create_parser():
         inps.subset_lat = (min_lat, max_lat)
         inps.subset_lon = (min_lon, max_lon)
 
+    if not inps.dem_file:
+        inps.dem_file = os.path.join(inps.dir, "dem.tif")
+    else:
+        inps.dem_file = os.path.join(os.getcwd(), inps.dem_file) if not os.path.isabs(inps.dem_file) else inps.dem_file
+
     return inps
 
 
@@ -44,43 +54,6 @@ def get_utm_crs_from_bbox(lon, lat):
     zone = int((lon + 180) // 6) + 1
     epsg = 32600 + zone if lat >= 0 else 32700 + zone
     return CRS.from_epsg(epsg)
-
-
-def temporal_inversion(aggregated_time_1, aggregated_time_2, aggregated_displacement):
-    times = np.unique(np.array(aggregated_time_1 + aggregated_time_2))
-    times = np.sort(times)
-    nt = len(times)
-    time_to_idx = {t: i for i, t in enumerate(times)}
-    n_obs = len(aggregated_time_1)
-    A = np.zeros((n_obs + 1, nt))
-    for i in range(n_obs):
-        i1 = time_to_idx[aggregated_time_1[i]]
-        i2 = time_to_idx[aggregated_time_2[i]]
-        A[i, i2] = 1
-        A[i, i1] = -1
-    A[-1, 0] = 1
-    ny, nx = aggregated_displacement[0].shape
-    X = np.zeros((nt, ny, nx))
-    for y in tqdm.tqdm(range(ny), desc="Inverting pixels", unit="row"):
-        for xpix in range(nx):
-            b = np.zeros(n_obs + 1)
-            for i in range(n_obs):
-                b[i] = aggregated_displacement[i][y, xpix]
-            b[-1] = 0.0
-            valid = ~np.isnan(b[:-1])
-            if np.sum(valid) == 0:
-                X[:, y, xpix] = np.nan
-                continue
-            A_valid = A[:-1][valid]
-            b_valid = b[:-1][valid]
-            A_valid = np.vstack([A_valid, A[-1]])
-            b_valid = np.concatenate([b_valid, [0.0]])
-            sol, *_ = np.linalg.lstsq(A_valid, b_valid, rcond=None)
-            X[:, y, xpix] = sol
-    print("Done.")
-    print("Time steps:", nt)
-    print("Output shape:", X.shape)
-    return times, X
 
 
 def utm_to_latlon(x, y, utm_crs):
@@ -234,7 +207,7 @@ def main():
             '--intersectsWith', inps.intersectsWith,
             '--start', inps.start,
             '--end', inps.end,
-            '--processingLevel', 'GUNW',
+            '--processingLevel', inps.processing_level,
             '--platform', 'NISAR',
             '--dir', inps.dir,
             '--flightDirection', inps.flightDirection,
@@ -249,6 +222,15 @@ def main():
             files.append(os.path.join(inps.dir, r.properties['fileName']))
             centroid.append((r.centroid().x, r.centroid().y))
 
+        if not os.path.exists(inps.dem_file):
+            region = parse_polygon(inps.intersectsWith)
+            subprocess.run([
+                "sardem",
+                "--bbox", str(region[0]), str(region[2]), str(region[1]), str(region[3]),
+                "--data-source", "NISAR",
+                "--output", inps.dem_file,
+            ])
+
     # Processing section
     if inps.process:
         inps.input_glob = inps.dir + "/*.h5"
@@ -256,8 +238,10 @@ def main():
         inps.update_mode = False
 
 
-        nisar.load_nisar(inps)
+        utm_to_latlon(156014.47203984967, 71949.86577430287, get_utm_crs_from_bbox(-78.09, 0.65))
+        utm_to_latlon(448520.0, 263480.0, get_utm_crs_from_bbox(-78.09, 0.65))
 
+        nisar.load_nisar(inps)
 
         pass
 
