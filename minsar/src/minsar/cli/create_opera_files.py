@@ -26,11 +26,6 @@ def create_parser():
 
     inps = parser.parse_args()
 
-    if inps.intersectsWith:
-        min_lon, max_lon, min_lat, max_lat = parse_polygon(inps.intersectsWith)
-        inps.subset_lat = (min_lat, max_lat)
-        inps.subset_lon = (min_lon, max_lon)
-
     if inps.dem_file and not os.path.abspath(inps.dem_file):
         inps.dem_file = os.path.join(os.getcwd(), inps.dem_file)
 
