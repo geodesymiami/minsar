@@ -1,7 +1,70 @@
+import argparse
 import glob
 import h5py
 import numpy as np
 import os
+
+from pyproj import Transformer, CRS
+
+
+def normalize_meta_value(value):
+    def _collapse_singleton(v):
+        # Only collapse if not a scalar
+        while isinstance(v, (list, tuple)) and len(v) == 1 and not isinstance(v[0], (float, int, str)):
+            v = v[0]
+        return v
+
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    if isinstance(value, np.generic):
+        return value.item()
+    if isinstance(value, np.ndarray):
+        if value.ndim == 0:
+            return normalize_meta_value(value.item())
+        norm_list = [normalize_meta_value(item) for item in value.tolist()]
+        return _collapse_singleton(norm_list)
+    if isinstance(value, (list, tuple)):
+        # If the list/tuple contains only one scalar, return the scalar
+        if len(value) == 1 and isinstance(value[0], (float, int, str)):
+            return value[0]
+        norm_list = [normalize_meta_value(item) for item in value]
+        return _collapse_singleton(norm_list)
+    return value
+
+
+def extract_identification_metadata(opera):
+    # netCDF4
+    identification_group = None
+    if hasattr(opera, "groups") and hasattr(opera.groups, "get"):
+        identification_group = opera.groups.get("identification")
+    # h5py
+    elif hasattr(opera, "get"):
+        identification_group = opera.get("identification")
+
+    if identification_group is None:
+        return argparse.Namespace()
+
+    identification_variables = {}
+
+    # netCDF4 variables
+    if hasattr(identification_group, "variables"):
+        for var_name, var_obj in identification_group.variables.items():
+            identification_variables[var_name] = normalize_meta_value(var_obj[...])
+
+        if hasattr(identification_group, "ncattrs"):
+            for attr_name in identification_group.ncattrs():
+                identification_variables[attr_name] = normalize_meta_value(
+                    getattr(identification_group, attr_name)
+                )
+
+    # h5py datasets / attrs
+    else:
+        if hasattr(identification_group, "attrs"):
+            for attr_name, attr_val in identification_group.attrs.items():
+                identification_variables[attr_name] = normalize_meta_value(attr_val)
+
+    return argparse.Namespace(**identification_variables)
+
 
 def parse_polygon(polygon):
     """
@@ -31,6 +94,60 @@ def parse_polygon(polygon):
     region = [longitude[0], longitude[1], latitude[0], latitude[1]]
 
     return region
+
+
+def convert_to_coord(x, y, centroid):
+    print("Converting utm to lat/lon ...\n")
+
+    xx, yy = np.meshgrid(x, y)
+    lon, lat = centroid
+    zone = int((lon + 180) // 6) + 1
+    epsg = 32600 + zone if lat >= 0 else 32700 + zone
+    utm_crs = CRS.from_epsg(epsg)
+    return utm_to_lonlat(xx, yy, utm_crs)
+
+
+def utm_to_lonlat(x, y, utm_crs):
+    wgs84 = CRS.from_epsg(4326)
+    transformer = Transformer.from_crs(utm_crs, wgs84, always_xy=True)
+    lon, lat = transformer.transform(x, y)
+    return lon, lat
+
+
+def get_utm_crs_from_bbox(lon, lat):
+    zone = int((lon + 180) // 6) + 1
+    epsg = 32600 + zone if lat >= 0 else 32700 + zone
+    return CRS.from_epsg(epsg)
+
+
+def convert_to_utm(longitude, latitude):
+    """
+    Converts latitude and longitude to UTM coordinates.
+
+    Parameters:
+        longitude (array-like): Array of longitude values.
+        latitude (array-like): Array of latitude values.
+
+    Returns:
+        tuple: Arrays of UTM Eastings (x) and Northings (y).
+    """
+    # Calculate the UTM zone based on the longitude
+    utm_zone = int((np.nanmean(longitude) + 180) // 6) + 1
+
+    # Determine the hemisphere based on latitude
+    hemisphere = 'north' if np.nanmean(latitude) >= 0 else 'south'
+
+    # Determine the EPSG code based on the UTM zone and hemisphere
+    epsg_code = f"326{utm_zone:02d}" if hemisphere == 'north' else f"327{utm_zone:02d}"
+
+    # Create a Transformer object for WGS84 to UTM
+    transformer = Transformer.from_crs("epsg:4326", f"epsg:{epsg_code}", always_xy=True)
+
+    # Convert to UTM coordinates (Eastings, Northings)
+    x, y = transformer.transform(longitude, latitude)
+
+    return x, y
+
 
 def get_flight_direction(fname):
     """Extract flight direction from HDF5/HDFEOS file.
@@ -150,7 +267,7 @@ def get_he5_files(dir, dataset=None):
     file_PS = [file for file in all_files if 'PS'  in file]
     file_DS = [file for file in all_files if 'DS'  in file and 'filt' not in file]
     file_filtDS = [file for file in all_files if 'DS'  in file and 'filt' in file]
-        
+
     files = []
     suffixes = []
     if dataset == "geo":
