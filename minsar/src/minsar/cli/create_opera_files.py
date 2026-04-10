@@ -22,10 +22,10 @@ def create_parser():
     parser = argparse.ArgumentParser(
         description="Create OPERA timeseries file."
     )
-    parser.add_argument('--flightDirection', required=True, help='ASCENDING or DESCENDING')
-    parser.add_argument('--intersectsWith', required=True, help='WKT POLYGON string')
-    parser.add_argument('--start', default='20160101', help='Start date (YYYYMMDD or YYYY-MM-DD)')
-    parser.add_argument('--end', default=date.today().isoformat(), help='End date (YYYYMMDD or YYYY-MM-DD)')
+    # parser.add_argument('--flightDirection', help='ASCENDING or DESCENDING')
+    # parser.add_argument('--intersectsWith', help='WKT POLYGON string')
+    # parser.add_argument('--start', default='20160101', help='Start date (YYYYMMDD or YYYY-MM-DD)')
+    # parser.add_argument('--end', default=date.today().isoformat(), help='End date (YYYYMMDD or YYYY-MM-DD)')
     parser.add_argument('--dir', help='Output directory for downloads')
     parser.add_argument('--dem-file', default=None, help='DEM file to download')
 
@@ -287,22 +287,22 @@ def main():
     files = []
     centroid = []
 
-    asf_inps = [
-        '--intersectsWith', inps.intersectsWith,
-        '--start', inps.start,
-        '--end', inps.end,
-        '--processingLevel', 'DISP',
-        '--platform', 'S1',
-        '--dir', inps.dir,
-        '--flightDirection', inps.flightDirection,
-        "--fullcover",
-        ]
+        # asf_inps = [
+        #     '--intersectsWith', inps.intersectsWith,
+        #     '--start', inps.start,
+        #     '--end', inps.end,
+        #     '--processingLevel', 'DISP',
+        #     '--platform', 'S1',
+        #     '--dir', inps.dir,
+        #     '--flightDirection', inps.flightDirection,
+        #     "--fullcover",
+        #     ]
 
-    results = asf.main(asf_inps)
+        # results = asf.main(asf_inps)
 
-    for r in results:
-        files.append(os.path.join(inps.dir, r.properties['fileName']))
-        centroid.append((r.centroid().x, r.centroid().y))
+        # for r in results:
+        #     files.append(os.path.join(inps.dir, r.properties['fileName']))
+        #     centroid.append((r.centroid().x, r.centroid().y))
 
     # DEM section
     if inps.dem_file and not os.path.exists(inps.dem_file):
