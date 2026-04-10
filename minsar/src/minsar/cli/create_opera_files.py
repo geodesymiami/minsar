@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+
+
 import os
 import glob
 import tqdm
@@ -12,22 +15,14 @@ from mintpy.objects import HDFEOS
 from minsar.src.minsar.cli import asf_search_args as asf
 from minsar.src.minsar.helper_functions import parse_polygon, convert_to_coord, extract_identification_metadata, normalize_meta_value
 
-try:
-    from pyproj import CRS, Transformer
-except ImportError:
-    pass  # Will error if processing section is used without these
-
 
 def create_parser():
     parser = argparse.ArgumentParser(
         description="Create OPERA timeseries file."
     )
-    # parser.add_argument('--flightDirection', help='ASCENDING or DESCENDING')
-    # parser.add_argument('--intersectsWith', help='WKT POLYGON string')
-    # parser.add_argument('--start', default='20160101', help='Start date (YYYYMMDD or YYYY-MM-DD)')
-    # parser.add_argument('--end', default=date.today().isoformat(), help='End date (YYYYMMDD or YYYY-MM-DD)')
+
     parser.add_argument('--dir', help='Output directory for downloads')
-    parser.add_argument('--dem-file', default=None, help='DEM file to download')
+    parser.add_argument('--dem-file', default=None, help='DEM file to download (optional)')
 
     inps = parser.parse_args()
 
@@ -284,25 +279,6 @@ def polygon_corners_string(polygon_str: str) -> str:
 
 def main():
     inps = create_parser()
-    files = []
-    centroid = []
-
-        # asf_inps = [
-        #     '--intersectsWith', inps.intersectsWith,
-        #     '--start', inps.start,
-        #     '--end', inps.end,
-        #     '--processingLevel', 'DISP',
-        #     '--platform', 'S1',
-        #     '--dir', inps.dir,
-        #     '--flightDirection', inps.flightDirection,
-        #     "--fullcover",
-        #     ]
-
-        # results = asf.main(asf_inps)
-
-        # for r in results:
-        #     files.append(os.path.join(inps.dir, r.properties['fileName']))
-        #     centroid.append((r.centroid().x, r.centroid().y))
 
     # DEM section
     if inps.dem_file and not os.path.exists(inps.dem_file):
@@ -314,10 +290,8 @@ def main():
         ])
 
     # Processing section
-    if not files:
-        files = glob.glob(os.path.join(inps.dir, "*.nc"))
-    if not centroid:
-        centroid = [((parse_polygon(inps.intersectsWith)[0] + parse_polygon(inps.intersectsWith)[1]) / 2,(parse_polygon(inps.intersectsWith)[2] + parse_polygon(inps.intersectsWith)[3]) / 2)] * len(files)
+    files = glob.glob(os.path.join(inps.dir, "*.nc"))
+    centroid = [((parse_polygon(inps.intersectsWith)[0] + parse_polygon(inps.intersectsWith)[1]) / 2,(parse_polygon(inps.intersectsWith)[2] + parse_polygon(inps.intersectsWith)[3]) / 2)] * len(files)
 
     ref_x, ref_y, ref_temporal_coh = None, None, None
 
