@@ -322,9 +322,10 @@ def main():
         ref_date = netCDF4.num2date(ref_time[:], units=sec_time.units, calendar=getattr(sec_time, "calendar", "standard"), only_use_cftime_datetimes=False)[0].date()
         sec_date = netCDF4.num2date(sec_time[:], units=sec_time.units, calendar=getattr(sec_time, "calendar", "standard"), only_use_cftime_datetimes=False)[0].date()
         meta = extract_identification_metadata(nc)
+        ref = np.nanmean(displacement_data[0:10,0:10])
         pair_dict[sec_date] = {
             'ref_date': ref_date,
-            'displacement': displacement_data,
+            'displacement': displacement_data - ref,
             'mask': mask,
             'temporal_coherence': temporal_coh,
             'meta': meta
