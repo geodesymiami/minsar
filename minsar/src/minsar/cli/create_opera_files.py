@@ -315,7 +315,7 @@ def main():
                 print(f"Could not remove {f}: {e}")
             continue
 
-        displacement = nc.variables["short_wavelength_displacement"][:]
+        displacement = nc.variables["displacement"][:] * 100
         displacement_data = displacement.filled(np.nan) if hasattr(displacement, "filled") else np.asarray(displacement)
         ref_time = nc.variables["reference_time"][:]
         sec_time = nc.variables["time"]
