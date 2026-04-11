@@ -134,6 +134,7 @@ stopstep_cli_flag=0
 isce_start_cli_flag=0
 isce_stop_cli_flag=0
 miaplpy_start_cli_flag=0
+no_mintpy_cli_flag=0
 
 skip_mintpy_flag=0
 skip_miaplpy_flag=0
@@ -172,6 +173,7 @@ do
             ;;
         --no-mintpy)
             mintpy_flag=0
+            no_mintpy_cli_flag=1
             shift
             ;;
         --isce-start)
@@ -499,6 +501,10 @@ if [[ "$isce_stop_cli_flag" == "1" ]]; then
     isce_stop="$isce_stop_cli"
 elif [[ "$platform_str" == *"SENTINEL-1"* && "$isce_start_cli_flag" == "1" ]]; then
     # For Sentinel: if user provides --isce-start but omits --isce-stop, run ifgram-only range.
+    isce_stop="$partial_isce_run_stop"
+elif [[ "$platform_str" == *"SENTINEL-1"* && "$no_mintpy_cli_flag" == "1" && ${template[topsStack.coregistration]} != "geometry" ]]; then
+    # --no-mintpy (e.g. MiaplPy-only): default to partial ISCE (e.g. 1–12 for NESD burst stack), not full through unwrap (16).
+    # Geometry coregistration already uses full_isce_run_stop=12; do not override with partial_isce_run_stop=8 here.
     isce_stop="$partial_isce_run_stop"
 else
     isce_stop="$full_isce_run_stop"
