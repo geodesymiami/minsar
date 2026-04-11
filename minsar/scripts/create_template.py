@@ -4,8 +4,9 @@ Create a MinSAR template file for an AOI and project name.
 
 Runs get_sar_coverage.py --select to determine ascending/descending orbit labels,
 reads a dummy template, fills in ssaraopt.relativeOrbit, miaplpy.subset.lalo,
-and date range, writes the template to CWD, then creates the opposite-orbit
-template in AUTO_TEMPLATES.
+and date range (optional: --quick-run, --period, --start-date/--end-date, or
+--last-year for the full previous calendar year), writes the template to CWD,
+then creates the opposite-orbit template in AUTO_TEMPLATES.
 
 AOI may be lat_min:lat_max,lon_min:lon_max (S:N,W:E), WKT POLYGON((lon lat,...)),
 or other formats accepted by convert_bbox.py (e.g. GoogleEarth points).
@@ -19,6 +20,7 @@ import os
 import re
 import subprocess
 import sys
+from datetime import date
 from pathlib import Path
 
 from minsar.utils.bbox_cli_argv import (
@@ -115,6 +117,16 @@ def _quick_run_dates(year: int) -> tuple[str, str]:
     _, last_day = calendar.monthrange(year, 2)
     end = f"{year}02{last_day:02d}"
     return start, end
+
+
+def _last_calendar_year_full_range(ref: date | None = None) -> tuple[str, str]:
+    """Return (startDate, endDate) as YYYYMMDD for the full previous calendar year.
+
+    Uses ``ref``'s calendar year minus one (default: today's date).
+    """
+    d = ref if ref is not None else date.today()
+    y = d.year - 1
+    return f"{y}0101", f"{y}1231"
 
 
 def _parse_date_yyyy_mm_dd(s: str) -> str:
@@ -240,6 +252,7 @@ Examples:
   create_template.py 36.331:36.486,25.318:25.492 Santorini --period 2024
   create_template.py 36.331:36.486,25.318:25.492 Santorini --period 20210101:20221231
   create_template.py 36.331:36.486,25.318:25.492 Santorini --period 2021-01-01:2022-12-31
+  create_template.py 36.331:36.486,25.318:25.492 Santorini --last-year
   create_template.py "POLYGON((25.3058 36.3221,25.5015 36.3221,25.5015 36.5019,25.3058 36.5019,25.3058 36.3221))" Santorini
 """,
     )
@@ -290,6 +303,15 @@ Examples:
         default=None,
         help="Use Jan 1 - end Feb for the given year (default year: 2026)",
     )
+    parser.add_argument(
+        "--last-year",
+        action="store_true",
+        help=(
+            "Set ssaraopt.startDate and ssaraopt.endDate to the full previous calendar year "
+            "(YYYYMMDD Jan 1 through Dec 31). Mutually exclusive with --quick-run, --period, "
+            "and --start-date / --end-date."
+        ),
+    )
     return parser
 
 
@@ -306,10 +328,32 @@ def main(iargs: list[str] | None = None) -> int:
     aoi = inps.aoi.strip()
     name = inps.name.strip()
 
+    if inps.last_year:
+        conflicts: list[str] = []
+        if inps.quick_run is not None:
+            conflicts.append("--quick-run")
+        if inps.period is not None:
+            conflicts.append("--period")
+        if inps.start_date is not None or inps.end_date is not None:
+            conflicts.append("--start-date/--end-date")
+        if conflicts:
+            print(
+                f"Error: --last-year cannot be combined with: {', '.join(conflicts)}",
+                file=sys.stderr,
+            )
+            return 1
+
     start_date = None
     end_date = None
 
-    if inps.quick_run is not None:
+    if inps.last_year:
+        start_date, end_date = _last_calendar_year_full_range()
+        y = start_date[:4]
+        print(
+            f"Last calendar year: {start_date} to {end_date} (full year {y})",
+            file=sys.stderr,
+        )
+    elif inps.quick_run is not None:
         year = inps.quick_run
         start_date, end_date = _quick_run_dates(year)
         print(f"Quick-run: {start_date} to {end_date} (Jan–Feb {year})", file=sys.stderr)

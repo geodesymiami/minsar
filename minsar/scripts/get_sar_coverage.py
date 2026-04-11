@@ -16,7 +16,8 @@ Strategy:
     - S1: search by intersection, then keep only dates where some granule footprint fully covers
       the AOI (Shapely); summary warns only when whole acquisition *dates* are lost (all intersecting
       granules for that date fail full cover). --show-removed lists *granules* dropped (partial overlap,
-      etc.); orbits with count 0 are omitted from the table.
+      etc.); orbits with count 0 are omitted from the table. --select (S1) picks best orbit using
+      full-AOI date fraction, edge margin, then incidence (not incidence alone).
     - Others: ?output=count HTTP request.
     - Count requests run in parallel (default max_workers=8) to reduce time.
 
@@ -38,7 +39,7 @@ from minsar.utils.bbox_cli_argv import (
     fix_argv_for_negative_bbox_sn_we,
 )
 from collections import defaultdict
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import requests
 import asf_search as asf
@@ -59,7 +60,7 @@ Examples:
   get_sar_coverage.py AOI --platform S1 --show-removed   # list SLC granules dropped (partial footprint vs AOI)
   get_sar_coverage.py -23.393:-23.097,-68.356:-68.175 --platform S1   # negative lat (or use -- before AOI)
 
-Select (--select): requires exactly one platform (--platform S1 or NISAR or ALOS2). Prints asc_relorbit, asc_label, desc_relorbit, desc_label to stdout (progress to stderr). In bash: eval $(get_sar_coverage.py AOI --platform S1 --select); then use $asc_relorbit, $desc_relorbit, $asc_label, $desc_label.
+Select (--select): requires exactly one platform (--platform S1 or NISAR or ALOS2). Prints asc_relorbit, asc_label, desc_relorbit, desc_label to stdout (progress to stderr). In bash: eval $(get_sar_coverage.py AOI --platform S1 --select); then use $asc_relorbit, $desc_relorbit, $asc_label, $desc_label. For Sentinel-1, each direction picks the orbit with the best full-AOI coverage across intersecting dates (then margin, then incidence); NISAR/ALOS-2 still use max incidence.
 
 Notes:
   NISAR RSLC data availability depends on mission phase.
@@ -1047,19 +1048,71 @@ def _platform_key(platform_display_name: str) -> str:
     return platform_display_name.replace('-', '').replace(' ', '_')
 
 
-def _best_orbit_for_direction(orbit_records: List[Dict], direction: str, platform_display_name: str) -> Optional[Dict]:
-    """From orbit_records (same direction), return the orbit with highest incAngle, or first if no inc.
+def _s1_select_sort_tuple(
+    orbit_record: Dict,
+    direction: str,
+    metrics: Dict[Tuple[int, str], Dict[str, Any]],
+) -> Tuple[float, int, float, float]:
+    """Sort key for Sentinel-1 --select: ascending order means *better* orbit first.
 
-    Returns dict with 'orbit', 'label'. Label uses SenA29 / NisarA57 / Alos2D109 style (concatenated).
+    Priority: highest full-AOI date fraction, then fewest dropped intersecting dates,
+    then largest min distance AOI→footprint edge (m), then highest incidence (°).
+    """
+    orbit = int(orbit_record['orbit'])
+    key = (orbit, direction)
+    m = metrics.get(key, {})
+    n_removed = int(m.get('n_acquisitions_removed', 0))
+    n_inter = int(m.get('n_intersecting_dates', 0))
+    min_d = m.get('min_dist_m')
+    inc = orbit_record.get('inc')
+
+    if n_inter > 0:
+        ratio = (n_inter - n_removed) / n_inter
+    else:
+        ratio = 0.0
+
+    if min_d is not None:
+        min_d_key = -float(min_d)
+    else:
+        min_d_key = float('inf')
+
+    if inc is not None:
+        inc_key = -float(inc)
+    else:
+        inc_key = float('inf')
+
+    # Ascending sort: smaller tuple is better
+    return (-ratio, n_removed, min_d_key, inc_key)
+
+
+def _best_orbit_for_direction(
+    orbit_records: List[Dict],
+    direction: str,
+    platform_display_name: str,
+    s1_metrics: Optional[Dict[Tuple[int, str], Dict[str, Any]]] = None,
+) -> Optional[Dict]:
+    """From orbit_records (same direction), pick best orbit for --select.
+
+    Sentinel-1: if ``s1_metrics`` is non-empty, prefer robust full-AOI coverage across
+    intersecting dates (see ``_s1_select_sort_tuple``), then incidence.
+    NISAR / ALOS-2: highest incidence angle (previous behavior).
+
+    Returns dict with 'orbit', 'label'. Label uses SenA29 / NisarA57 / Alos2D109 style.
     """
     if not orbit_records:
         return None
-    # Sort by inc descending (None last so we prefer known incidence)
-    sorted_orbits = sorted(
-        orbit_records,
-        key=lambda x: (x['inc'] is None, -(x['inc'] or 0)),
-    )
-    best = sorted_orbits[0]
+    if platform_display_name == 'Sentinel-1' and s1_metrics:
+        sorted_orbits = sorted(
+            orbit_records,
+            key=lambda r: _s1_select_sort_tuple(r, direction, s1_metrics),
+        )
+        best = sorted_orbits[0]
+    else:
+        sorted_orbits = sorted(
+            orbit_records,
+            key=lambda x: (x['inc'] is None, -(x['inc'] or 0)),
+        )
+        best = sorted_orbits[0]
     orbit = best['orbit']
     if platform_display_name == 'Sentinel-1':
         label = _s1_orbit_label(orbit, direction)
@@ -1070,12 +1123,19 @@ def _best_orbit_for_direction(orbit_records: List[Dict], direction: str, platfor
     return {'orbit': orbit, 'label': label}
 
 
-def print_best_only(all_rows: List[Tuple[str, List[Dict]]], stream) -> None:
-    """Print parseable key=value lines for best Asc/Desc orbit (max incAngle).
+def print_best_only(
+    all_rows: List[Tuple[str, List[Dict]]],
+    stream,
+    s1_metrics: Optional[Dict[Tuple[int, str], Dict[str, Any]]] = None,
+) -> None:
+    """Print parseable key=value lines for best Asc/Desc orbit.
 
     Call only when exactly one platform is in all_rows (enforced by --select validation).
     Format: asc_relorbit=29, asc_label="SenA29", desc_relorbit=36, desc_label="SenD36".
     Suitable for: eval $(get_sar_coverage.py AOI --platform S1 --select) in bash.
+
+    For Sentinel-1, the best orbit is chosen using full-AOI coverage statistics when
+    ``s1_metrics`` is provided (non-empty); otherwise incidence-only ordering is used.
     """
     if not all_rows:
         return
@@ -1085,7 +1145,7 @@ def print_best_only(all_rows: List[Tuple[str, List[Dict]]], stream) -> None:
         if not row['orbits']:
             continue
         direction = row['direction']
-        best = _best_orbit_for_direction(row['orbits'], direction, platform_display_name)
+        best = _best_orbit_for_direction(row['orbits'], direction, platform_display_name, s1_metrics)
         if best is not None:
             best_by_dir[direction] = best
     # Print relorbits first, then labels (expected by shell callers).
@@ -1250,8 +1310,10 @@ def create_parser() -> argparse.ArgumentParser:
                              'does not fully cover the AOI (after intersectsWith search). '
                              'Shows granule id, date, and reason.')
     parser.add_argument('--select', action='store_true', default=False,
-                        help='Print parseable key=value lines for best Asc/Desc orbit (max incAngle). Requires exactly one --platform (e.g. S1). '
-                             'Bash: eval $(get_sar_coverage.py AOI --platform S1 --select); then use $asc_relorbit, $desc_relorbit, $asc_label, $desc_label. Python: parse stdout line by line (split on "=").')
+                        help='Print parseable key=value lines for best Asc/Desc orbit. Requires exactly one --platform (e.g. S1). '
+                             'Sentinel-1: prefer full-AOI coverage over intersecting dates, then edge margin, then incidence. '
+                             'NISAR/ALOS-2: max incidence. '
+                             'Bash: eval $(get_sar_coverage.py AOI --platform S1 --select); then use $asc_relorbit, $desc_relorbit, $asc_label, $desc_label.')
     return parser
 
 
@@ -1339,6 +1401,7 @@ def main(iargs=None):
 
     s1_acquisitions_removed_per_key: Dict[Tuple[int, str], int] = {}
     s1_intersecting_dates_per_key: Dict[Tuple[int, str], int] = {}
+    s1_select_metrics: Dict[Tuple[int, str], Dict[str, Any]] = {}
     all_rows = []
 
     if 'S1' in platforms:
@@ -1370,6 +1433,15 @@ def main(iargs=None):
             s1_max_results=s1_max,
             s1_collect_removed=inps.show_removed,
         )
+
+        for od in orbit_dirs:
+            orbit, direction = od
+            key = (orbit, direction)
+            s1_select_metrics[key] = {
+                'n_acquisitions_removed': s1_acquisitions_removed_per_key.get(key, 0),
+                'n_intersecting_dates': s1_intersecting_dates_per_key.get(key, 0),
+                'min_dist_m': min_dist_per_key.get(key),
+            }
 
         if not inps.verbose:
             print(f"  {len(orbit_dirs)} orbit(s) found")
@@ -1496,7 +1568,7 @@ def main(iargs=None):
         if hasattr(inps, '_select_stdout'):
             sys.stdout = inps._select_stdout
         print(f"processing_subset=\"{_subset_str_from_wkt(wkt)}\"", file=sys.stdout)
-        print_best_only(all_rows, sys.stdout)
+        print_best_only(all_rows, sys.stdout, s1_select_metrics if s1_select_metrics else None)
     else:
         print()
         print_table(all_rows, do_count=True)

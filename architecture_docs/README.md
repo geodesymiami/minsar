@@ -29,6 +29,7 @@ minsarApp.bash $SAMPLESDIR/template.template [--start STEP] [--stop STEP] [--min
 | 3 | `minsar/bin/submit_jobs.bash` | Batch job submission |
 | 4 | `minsar/bin/sbatch_conditional.bash` | Resource-checked sbatch wrapper |
 | 5 | `minsar/lib/utils.sh` | Core bash utilities |
+| 6 | `minsar/scripts/get_sar_coverage.py` | AOI coverage: orbits, counts; `--select` chooses Asc/Desc relative orbit (S1: prefers full-AOI consistency over incidence) |
 
 ### Processing Flow
 

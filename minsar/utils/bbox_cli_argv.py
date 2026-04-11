@@ -163,7 +163,7 @@ CONVERT_BBOX_ARGV_KW = {
 CREATE_TEMPLATE_ARGV_KW = {
     "consume_one": ("--start-date", "--end-date", "--period", "--type", "--quick-run"),
     "consume_two": (),
-    "flags": (),
+    "flags": ("--last-year",),
 }
 
 GET_SAR_COVERAGE_ARGV_KW = {
