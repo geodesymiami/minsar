@@ -369,7 +369,7 @@ def main():
         mask_2d = np.multiply.reduce([pair_dict[d]['mask'] for d in pair_dict.keys()])
     else:
         # TODO switch back maybe
-        mask_2d = pair_dict[0]['mask']
+        mask_2d = pair_dict[list(pair_dict.keys())[0]]['mask']
     temporal_2d = next(iter(pair_dict.values()))['temporal_coherence']
 
     with netCDF4.Dataset(os.path.join(inps.dir, out_file), "w", format="NETCDF4") as f:
