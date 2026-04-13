@@ -4,6 +4,7 @@
 import os
 import glob
 import tqdm
+import shutil
 import netCDF4
 import argparse
 import datetime
@@ -326,6 +327,9 @@ def main():
 
         if hasattr(meta, 'bounding_polygon'):
             if prev_polygon and meta.bounding_polygon != prev_polygon:
+                mismatch_folder = os.path.join(inps.dir, "mismatched_polygons")
+                os.makedirs(mismatch_folder, exist_ok=True)
+                shutil.move(f, mismatch_folder)
                 continue
             prev_polygon = meta.bounding_polygon
 
