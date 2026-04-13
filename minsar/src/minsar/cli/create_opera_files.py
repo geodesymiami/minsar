@@ -292,6 +292,7 @@ def main():
 
     # Initialize dictionary to store by secondary date
     pair_dict = {}
+    prev_polygon = None
 
     for f in tqdm.tqdm(files, desc="Processing files", unit=" file", total=len(files)):
         nc = netCDF4.Dataset(f, 'r')
@@ -322,6 +323,12 @@ def main():
         ref_date = netCDF4.num2date(ref_time[:], units=sec_time.units, calendar=getattr(sec_time, "calendar", "standard"), only_use_cftime_datetimes=False)[0].date()
         sec_date = netCDF4.num2date(sec_time[:], units=sec_time.units, calendar=getattr(sec_time, "calendar", "standard"), only_use_cftime_datetimes=False)[0].date()
         meta = extract_identification_metadata(nc)
+
+        if hasattr(meta, 'bounding_polygon'):
+            if prev_polygon and meta.bounding_polygon != prev_polygon:
+                continue
+            prev_polygon = meta.bounding_polygon
+
         ref = np.nanmean(displacement_data[0:10,0:10])
         pair_dict[sec_date] = {
             'ref_date': ref_date,
