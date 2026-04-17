@@ -31,6 +31,8 @@ Usage Examples:
         asf_search_args.py --processingLevel=SLC --relativeOrbit 75 --intersectsWith='POLYGON((-24.5 14.8,-24.3 14.8,-24.3 15.1,-24.5 15.1,-24.5 14.8))' --start=2018-05-01 --end=2018-10-31 --beamMode=S6 --print
     ALOS-2 (ScanSAR L1.1):
         asf_search_args.py --processingLevel=1.1 --relativeOrbit 89 --intersectsWith='POLYGON((9.16 4.20,9.18 4.20,9.18 4.22,9.16 4.22,9.16 4.20))' --start=2014-10-04 --end=2015-12-31 --print
+    NISAR GUNW (interferograms; use --platform NISAR):
+        asf_search_args.py --processingLevel=GUNW --platform NISAR --intersectsWith='POLYGON((...))' --flightDirection DESCENDING --print
 
     Polarization is "VV" always.
     """
@@ -44,7 +46,7 @@ def create_parser(iargs=None, namespace=None):
     parser.add_argument('--end', metavar='YYYY-MM-DD or YYYYMMDD', help='End date of the search')
     parser.add_argument('--start-date', metavar='YYYY-MM-DD or YYYYMMDD', default=None, help='Start date of the search')
     parser.add_argument('--end-date', metavar='YYYY-MM-DD or YYYYMMDD', default=None, help='End date of the search')
-    parser.add_argument('--processingLevel', dest='processing_level', choices=['SLC', 'CSLC', 'BURST', '1.1', 'DISP'], default='SLC', help='Product type to download')
+    parser.add_argument('--processingLevel', dest='processing_level', choices=['SLC', 'CSLC', 'BURST', '1.1', 'DISP', 'GUNW'], default='SLC', help='Product type to download (GUNW = NISAR interferograms)')
     parser.add_argument('--beamMode', dest='beam_mode',  default=None, help='Beam mode (IW, S1 to S7)')
     parser.add_argument('--flightDirection', choices=['ASC', 'DESC', 'ASCENDING', 'DESCENDING'], default=None, help='Flight direction of the satellite (ASCENDING or DESCENDING)')
     parser.add_argument('--relativeOrbit', dest='relative_orbit', type=int, default=None, metavar='ORBIT', help='Relative Orbit Path')
@@ -74,6 +76,8 @@ def create_parser(iargs=None, namespace=None):
         inps.processing_level = asf.PRODUCT_TYPE.BURST
     elif "CSLC" in inps.processing_level:
         inps.processing_level = asf.PRODUCT_TYPE.CSLC
+    elif "GUNW" in inps.processing_level:
+        inps.processing_level = asf.PRODUCT_TYPE.GUNW
     elif "SLC" in inps.processing_level:
         inps.processing_level = asf.PRODUCT_TYPE.SLC
     elif "1.1" in inps.processing_level:
