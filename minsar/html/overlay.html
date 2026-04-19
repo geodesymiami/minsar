@@ -685,6 +685,60 @@
             });
         }
 
+        // Append "Individual URLs:" footer — one link per insarmaps.log line; label from URL path/name (desc, asc, vert, horz)
+        // Display order: Descending, Ascending, East-West, Vertical (match iframe sort: desc, asc, horz, vert)
+        function appendIndividualUrlsFooter(urls) {
+            const labelForUrl = (url) => {
+                const u = url.toLowerCase();
+                // Order matters: check desc before asc (same convention as iframe sort elsewhere in this file)
+                if (u.includes('desc')) return 'Descending';
+                if (u.includes('asc')) return 'Ascending';
+                if (u.includes('horz')) return 'East-West';
+                if (u.includes('vert')) return 'Vertical';
+                return null;
+            };
+            const sortKeyForFooter = (url) => {
+                const u = url.toLowerCase();
+                if (u.includes('desc')) return 0;
+                if (u.includes('asc')) return 1;
+                if (u.includes('horz')) return 2;
+                if (u.includes('vert')) return 3;
+                return 4;
+            };
+            const ordered = urls.slice().sort((a, b) => sortKeyForFooter(a) - sortKeyForFooter(b));
+
+            const wrap = document.createElement('div');
+            wrap.id = 'individual-urls-footer';
+            wrap.style.cssText = 'margin: 20px; font-family: Arial, sans-serif; text-align: center;';
+
+            const makeLink = (url, label) => {
+                const a = document.createElement('a');
+                a.href = url;
+                a.textContent = label;
+                a.target = '_blank';
+                a.rel = 'noopener noreferrer';
+                return a;
+            };
+
+            const labels = ordered.map((url, i) => labelForUrl(url) || `Dataset ${i + 1}`);
+
+            // Single centered line: "Individual URLs:" then all links separated by |
+            const line = document.createElement('p');
+            line.style.cssText = 'margin: 0; line-height: 1.6;';
+            const title = document.createElement('strong');
+            title.textContent = 'Individual URLs: ';
+            line.appendChild(title);
+            ordered.forEach((url, i) => {
+                if (i > 0) {
+                    line.appendChild(document.createTextNode(' | '));
+                }
+                line.appendChild(makeLink(url, labels[i]));
+            });
+            wrap.appendChild(line);
+
+            document.body.appendChild(wrap);
+        }
+
         // Parse insarmaps.log and create iframes dynamically
         fetch('insarmaps.log')
             .then(response => response.text())
@@ -698,6 +752,9 @@
                     document.getElementById('loading').textContent = 'No URLs found in insarmaps.log';
                     return;
                 }
+
+                // Keep file line order for the "Individual URLs" footer (iframe list still uses sorted order below)
+                const urlsFileOrder = urls.slice();
                 
                 // Sort URLs by dataset type: desc (0), asc (1), horz (2), vert (3), others (4)
                 urls.sort((a, b) => {
@@ -1997,23 +2054,26 @@
                     }, 1200);
                 }
                 // ===== END TIME NAVIGATION CONTROLS =====
+
+                // Download link, then individual insarmaps URLs at bottom of page
+                fetch('download_commands.txt')
+                    .then(response => response.text())
+                    .then(() => {
+                        const p = document.createElement('p');
+                        p.style.cssText = 'margin: 20px; font-family: Arial, sans-serif; text-align: center;';
+                        p.innerHTML = 'Data download: <a href="download_commands.txt" target="_blank">link</a>';
+                        document.body.appendChild(p);
+                    })
+                    .catch(() => {
+                        console.log('download_commands.txt not found');
+                    })
+                    .finally(() => {
+                        appendIndividualUrlsFooter(urlsFileOrder);
+                    });
             })
             .catch(error => {
                 console.error('Error loading insarmaps.log:', error);
                 document.getElementById('loading').textContent = 'Error loading insarmaps.log: ' + error.message;
-            });
-        
-        // Load download link dynamically
-        fetch('download_commands.txt')
-            .then(response => response.text())
-            .then(() => {
-                const p = document.createElement('p');
-                p.style.cssText = 'margin: 20px; font-family: Arial, sans-serif; text-align: center;';
-                p.innerHTML = 'Data download: <a href="download_commands.txt" target="_blank">link</a>';
-                document.body.appendChild(p);
-            })
-            .catch(() => {
-                console.log('download_commands.txt not found');
             });
     </script>
 </body>
