@@ -24,8 +24,8 @@ def create_parser():
     parser = argparse.ArgumentParser(
         description="Wrapper to call asf_search_args.py for NISAR GUNW downloads and postprocess."
     )
-    parser.add_argument('--flightDirection', required=True, help='ASCENDING or DESCENDING')
-    parser.add_argument('--intersectsWith', required=True, help='WKT POLYGON string')
+    parser.add_argument('--flightDirection', default=['DESCENDING', 'ASCENDING'], help='ASCENDING or DESCENDING')
+    parser.add_argument('--intersectsWith', help='WKT POLYGON string')
     parser.add_argument('--processingLevel', dest='processing_level', choices=['GUNW', 'RSLC'], default='GUNW', help='Product type to download')
     parser.add_argument('--start', default='20251029', help='Start date (YYYYMMDD or YYYY-MM-DD)')
     parser.add_argument('--end', default=date.today().isoformat(), help='End date (YYYYMMDD or YYYY-MM-DD)')
@@ -224,24 +224,20 @@ def main():
             files.append(os.path.join(inps.dir, r.properties['fileName']))
             centroid.append((r.centroid().x, r.centroid().y))
 
-        if not os.path.exists(inps.dem_file):
-            region = parse_polygon(inps.intersectsWith)
-            subprocess.run([
-                "sardem",
-                "--bbox", str(region[0]), str(region[2]), str(region[1]), str(region[3]),
-                "--data-source", "NISAR",
-                "--output", inps.dem_file,
-            ])
+    if not os.path.exists(inps.dem_file):
+        region = parse_polygon(inps.intersectsWith)
+        subprocess.run([
+            "sardem",
+            "--bbox", str(region[0]), str(region[2]), str(region[1]), str(region[3]),
+            "--data-source", "NISAR",
+            "--output", inps.dem_file,
+        ])
 
     # Processing section
     if inps.process:
         inps.input_glob = inps.dir + "/*.h5"
         inps.out_dir = inps.dir
         inps.update_mode = False
-
-
-        utm_to_latlon(156014.47203984967, 71949.86577430287, get_utm_crs_from_bbox(-78.09, 0.65))
-        utm_to_latlon(448520.0, 263480.0, get_utm_crs_from_bbox(-78.09, 0.65))
 
         nisar.load_nisar(inps)
 
