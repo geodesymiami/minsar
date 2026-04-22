@@ -53,7 +53,7 @@ def create_parser(iargs=None, namespace=None):
     parser.add_argument('--burst-id', nargs='*', type=str, metavar='BURST', default=None, help='Burst ID')
     parser.add_argument('--frame', type=int, metavar='FRAME', help='Frame number (Default: None)')
     parser.add_argument('--fullcover', action='store_true', help='Download only full coverage of the search area (Default: False)')
-    parser.add_argument('--platform', nargs='?',metavar='SENTINEL1, ALOS2, NISAR', help='Platform to search')
+    parser.add_argument('--platform', nargs='?', default='S1', metavar='SENTINEL1, ALOS2, NISAR', help='Platform to search')
     parser.add_argument('--parallel', type=int, default=6, help='Number of parallel downloads (Default: 1)')
     parser.add_argument('--print', dest='print', action='store_true', help='Print the whole search results')
     parser.add_argument('--download', action='store_true', help='Download the data')
