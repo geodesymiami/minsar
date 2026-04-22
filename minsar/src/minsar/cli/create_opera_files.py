@@ -375,13 +375,13 @@ def main():
 
     # Format date_list as YYYYMMDD strings for MintPy compatibility
     date_list = [d.strftime("%Y%m%d") if hasattr(d, 'strftime') else str(d).replace('-', '') for d in time]
-    if False:
-        # This removes basically everything
+    if True:
+        # Right one
         mask_2d = np.multiply.reduce([pair_dict[d]['mask'] for d in pair_dict.keys()])
     else:
-        # TODO switch back maybe
+        # First mask
         mask_2d = pair_dict[list(pair_dict.keys())[0]]['mask']
-    temporal_2d = next(iter(pair_dict.values()))['temporal_coherence']
+    temporal_2d = np.nanmean(np.stack([pair_dict[d]['temporal_coherence'] for d in pair_dict.keys()], axis=0), axis=0)
 
     with netCDF4.Dataset(os.path.join(inps.dir, out_file), "w", format="NETCDF4") as f:
         f.createDimension("time", len(date_list))
@@ -408,7 +408,7 @@ def main():
         bperp_var = obs_group.createVariable("bperp", "f4", ("time",))
         bperp_var[:] = np.zeros((len(date_list),), dtype=np.float32)
 
-        tcoh_var = qual_group.createVariable("temporalCoherence", "f4", ("y", "x"), zlib=True, complevel=4)
+        tcoh_var = qual_group.createVariable("averageTemporalCoherence", "f4", ("y", "x"), zlib=True, complevel=4)
         tcoh_var[:] = temporal_2d.astype(np.float32)
 
         mask_var = qual_group.createVariable("mask", "i1", ("y", "x"), zlib=True, complevel=4)
