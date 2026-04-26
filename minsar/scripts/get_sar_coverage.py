@@ -46,6 +46,7 @@ import asf_search as asf
 from shapely import wkt as _shapely_wkt
 from shapely.geometry import shape as _shapely_shape
 from asf_search.constants import INTERNAL
+from minsar.utils.convert_bbox import _input_to_bounds
 
 INTERNAL.CMR_TIMEOUT = 90
 
@@ -110,12 +111,8 @@ def parse_aoi(arg: str) -> str:
       bounds      : 'lat_min:lat_max,lon_min:lon_max'
     """
     arg = arg.strip()
-    if arg.upper().startswith('POLYGON'):
-        return arg
     try:
-        lat_part, lon_part = arg.split(',', 1)
-        lat_min, lat_max = map(float, lat_part.split(':'))
-        lon_min, lon_max = map(float, lon_part.split(':'))
+        lat_min, lat_max, lon_min, lon_max = _input_to_bounds(arg)
         return (
             f"POLYGON(({lon_min} {lat_min},{lon_max} {lat_min},"
             f"{lon_max} {lat_max},{lon_min} {lat_max},{lon_min} {lat_min}))"
@@ -134,11 +131,8 @@ def _aoi_input_is_polygon_wkt(arg: str) -> bool:
 
 def parse_bbox(wkt: str) -> Tuple[float, float, float, float]:
     """Extract (lon_min, lat_min, lon_max, lat_max) from a WKT POLYGON string."""
-    nums = re.findall(r'[-+]?\d+\.?\d*', wkt)
-    pairs = [(float(nums[i]), float(nums[i + 1])) for i in range(0, len(nums) - 1, 2)]
-    lons = [p[0] for p in pairs]
-    lats = [p[1] for p in pairs]
-    return min(lons), min(lats), max(lons), max(lats)
+    lat_min, lat_max, lon_min, lon_max = _input_to_bounds(wkt)
+    return lon_min, lat_min, lon_max, lat_max
 
 
 # ---------------------------------------------------------------------------
