@@ -161,7 +161,14 @@ CONVERT_BBOX_ARGV_KW = {
 }
 
 CREATE_TEMPLATE_ARGV_KW = {
-    "consume_one": ("--start-date", "--end-date", "--period", "--type", "--quick-run"),
+    "consume_one": (
+        "--start-date",
+        "--end-date",
+        "--period",
+        "--type",
+        "--quick-run",
+        "--flight-dir",
+    ),
     "consume_two": (),
     "flags": ("--last-year",),
 }

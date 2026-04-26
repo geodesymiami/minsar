@@ -5,8 +5,10 @@ Create a MinSAR template file for an AOI and project name.
 Runs get_sar_coverage.py --select to determine ascending/descending orbit labels,
 reads a dummy template, fills in ssaraopt.relativeOrbit, miaplpy.subset.lalo,
 and date range (optional: --quick-run, --period, --start-date/--end-date, or
---last-year for the full previous calendar year), writes the template to CWD,
-then creates the opposite-orbit template in AUTO_TEMPLATES.
+--last-year for the full previous calendar year), writes the template to CWD.
+With ``--flight-dir both`` (default), also runs create_opposite_orbit_template to
+write the complementary pass in the same directory. With ``--flight-dir asc`` or
+``desc``, only that pass is written.
 
 AOI may be lat_min:lat_max,lon_min:lon_max (S:N,W:E), WKT POLYGON((lon lat,...)),
 or other formats accepted by convert_bbox.py (e.g. GoogleEarth points).
@@ -210,7 +212,8 @@ def _substitute_template(
         out.append(line)
     if exclude_season is not None and not exclude_added and not exclude_matched:
         out.append(f"ssaraopt.excludeSeason             = {exclude_season}")
-    return "\n".join(out)
+    # End with newline (same as awk output in create_opposite_orbit_template.bash).
+    return "\n".join(out) + "\n"
 
 
 def _get_auto_templates_dir() -> Path:
@@ -255,7 +258,10 @@ def _run_create_opposite_orbit(
 
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Create a MinSAR template for an AOI, then the opposite-orbit template.",
+        description=(
+            "Create a MinSAR template for an AOI. By default, also create the "
+            "opposite-orbit template in the same directory."
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -269,6 +275,7 @@ Examples:
   create_template.py 36.331:36.486,25.318:25.492 Santorini --period 2021-01-01:2022-12-31
   create_template.py 36.331:36.486,25.318:25.492 Santorini --last-year
   create_template.py 36.331:36.486,25.318:25.492 Santorini --exclude-season 1101-0430
+  create_template.py 36.331:36.486,25.318:25.492 Santorini --flight-dir asc
   create_template.py "POLYGON((25.3058 36.3221,25.5015 36.3221,25.5015 36.5019,25.3058 36.5019,25.3058 36.3221))" Santorini
 """,
     )
@@ -332,6 +339,17 @@ Examples:
         "--exclude-season",
         metavar="MMDD-MMDD",
         help="Set ssaraopt.excludeSeason, e.g. 1101-0430",
+    )
+    parser.add_argument(
+        "--flight-dir",
+        dest="flight_dir",
+        default="both",
+        choices=["both", "asc", "desc"],
+        metavar="DIR",
+        help=(
+            "Which orbit template(s) to write: asc or desc = single template for that pass; "
+            "both = ascending primary file then opposite-orbit template (default: both)"
+        ),
     )
     return parser
 
@@ -405,12 +423,22 @@ def main(iargs: list[str] | None = None) -> int:
     coverage = _run_get_sar_coverage(aoi)
     asc_relorbit = coverage["asc_relorbit"]
     asc_label = coverage["asc_label"]
+    desc_relorbit = coverage["desc_relorbit"]
+    desc_label = coverage["desc_label"]
     try:
         subset_lalo = coverage.get("processing_subset") or _aoi_to_subset_lalo(aoi)
     except ValueError as exc:
         print(f"Error: cannot derive subset.lalo from AOI: {exc}", file=sys.stderr)
         return 1
     print(f"  asc_label={asc_label} asc_relorbit={asc_relorbit}", file=sys.stderr)
+    print(f"  desc_label={desc_label} desc_relorbit={desc_relorbit}", file=sys.stderr)
+
+    if inps.flight_dir == "desc":
+        primary_relorbit = int(desc_relorbit)
+        primary_label = str(desc_label)
+    else:
+        primary_relorbit = int(asc_relorbit)
+        primary_label = str(asc_label)
 
     dummy_path = _get_dummy_template_path()
     if not dummy_path.exists():
@@ -420,26 +448,22 @@ def main(iargs: list[str] | None = None) -> int:
     content = dummy_path.read_text()
     content = _substitute_template(
         content,
-        relative_orbit=int(asc_relorbit),
+        relative_orbit=primary_relorbit,
         subset_lalo=subset_lalo,
         start_date=start_date,
         end_date=end_date,
         exclude_season=exclude_season,
     )
 
-    out_base = f"{name}{asc_label}"
+    out_base = f"{name}{primary_label}"
     out_path = Path.cwd() / f"{out_base}.template"
     out_path.write_text(content)
     print(f"Wrote {out_path}")
 
-    # AUTO_TEMPLATES behavior intentionally disabled for now:
-    # auto_dir = _get_auto_templates_dir()
-    # auto_dir.mkdir(parents=True, exist_ok=True)
-    # print(f"Creating opposite-orbit template in {auto_dir} ...", file=sys.stderr)
-    # _run_create_opposite_orbit(out_path, auto_dir)
-    same_dir = out_path.parent
-    print(f"Creating opposite-orbit template in {same_dir} ...", file=sys.stderr)
-    _run_create_opposite_orbit(out_path, same_dir)
+    if inps.flight_dir == "both":
+        same_dir = out_path.parent
+        print(f"Creating opposite-orbit template in {same_dir} ...", file=sys.stderr)
+        _run_create_opposite_orbit(out_path, same_dir)
 
     return 0
 

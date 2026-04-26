@@ -1,3 +1,44 @@
+# Plan: Add --flight-dir to create_template.py
+
+## Summary
+Add a new CLI option `--flight-dir` to `minsar/scripts/create_template.py` with allowed values `{both, asc, desc}` and default `both`. Use this option to control which flight direction/orbit is selected when generating the primary template.
+
+## Key Components Affected
+- `minsar/scripts/create_template.py`
+- `minsar/utils/bbox_cli_argv.py` (`--flight-dir` in `CREATE_TEMPLATE_ARGV_KW`)
+- `tests/test_create_template_flight_dir.py`
+- `architecture_docs/README.md` (env/quick reference)
+
+## Action Items
+- [x] Add parser argument `--flight-dir` with choices `both`, `asc`, `desc` and default `both`.
+- [x] Update orbit-selection logic so `both` keeps current selection behavior, while `asc` and `desc` force direction-specific orbit/label values; only `both` runs `create_opposite_orbit_template.bash`.
+- [x] Add/extend tests for argument parsing and selection behavior.
+- [x] Run relevant tests and ensure they pass.
+
+## Execution Plan (Detailed Change Instructions)
+1. Update `create_parser()` in `minsar/scripts/create_template.py`:
+   - Add `--flight-dir` with `choices=["both", "asc", "desc"]`, `default="both"`, and clear help text.
+2. Update `main()` orbit-selection section after `coverage = _run_get_sar_coverage(aoi)`:
+   - For `both` keep existing primary behavior (ascending orbit as currently implemented).
+   - For `asc`, explicitly pick `asc_relorbit` and `asc_label`.
+   - For `desc`, pick `desc_relorbit` and `desc_label`.
+   - Keep output naming consistent (`{name}{label}.template`).
+3. Add tests:
+   - Verify parser accepts all valid `--flight-dir` values and defaults to `both`.
+   - Verify selected orbit/label switches correctly for `asc` and `desc` using a mocked coverage response.
+4. Run targeted tests:
+   - `python -m unittest tests/test_create_template_last_year.py` (and any new create-template tests added).
+
+## Key Commands & Flows
+- `python -m unittest tests/test_create_template_last_year.py`
+- `python -m unittest <new_or_updated_test_module>`
+- (If needed) `bash tests/run_all_tests.bash --python-only`
+
+## TODO List
+- [x] Write tests for existing behavior
+- [x] Implement changes
+- [x] Add tests for new behavior
+- [x] Run full test suite (targeted unittest; full `run_all_tests.bash` may need numpy in env)
 # Plan: Select only robust AOI-covering orbits in get_sar_coverage
 
 ## Summary
