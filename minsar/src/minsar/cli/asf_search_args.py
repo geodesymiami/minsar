@@ -5,6 +5,7 @@ from asf_search.constants import INTERNAL
 import datetime
 import argparse
 import os
+from minsar.utils.exclude_season import parse_exclude_season, date_in_exclude_season
 
 INTERNAL.CMR_TIMEOUT = 90
 workDir = 'SCRATCHDIR'
@@ -25,6 +26,7 @@ Usage Examples:
         asf_search_args.py --processingLevel=CSLC --start=2014-10-04 --end=2015-10-05 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.7881,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --print --dir=$SCRATCHDIR/CSLC
         asf_search_args.py --processingLevel=BURST --relativeOrbit=142 --intersectsWith='Polygon((-78.09 0.6, -77.74 0.6, -77.74 0.83, -78.09 0.83, -78.09 0.6))' --start=2014-10-31 --end=2015-01-01 --print
         asf_search_args.py --processingLevel=SLC --start=2014-10-04 --end=2015-10-05 --relativeOrbit=170 --download --dir=$SCRATCHDIR/SLC --parallel=4
+        asf_search_args.py --processingLevel=SLC --relativeOrbit=35 --intersectsWith='POLYGON((-121.84 36.2,-121.8 36.2,-121.8 36.28,-121.84 36.28,-121.84 36.2))' --start=2016-01-01 --end=2026-04-10 --exclude-season=1005-0320 --print
         asf_search_args.py --processingLevel=SLC --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.78,-77.91 0.85,-77.98 0.85,-77.98 0.78))'
         asf_search_args.py --processingLevel=BURST --start=2014-10-04 --end=2015-12-31 --burst-id=349025 --download
     Stripmap (SM):
@@ -57,6 +59,7 @@ def create_parser(iargs=None, namespace=None):
     parser.add_argument('--print', dest='print', action='store_true', help='Print the whole search results')
     parser.add_argument('--download', action='store_true', help='Download the data')
     parser.add_argument('--dir', metavar='FOLDER', help='Specify path to download the data, if not specified, the data will be downloaded in SCRATCHDIR directory')
+    parser.add_argument('--exclude-season', metavar='MMDD-MMDD', default=None, help='Exclude scenes in a recurring inclusive seasonal window (supports year wrap), e.g. 1005-0320')
 
     if isinstance(iargs, argparse.Namespace):
         inps = iargs
@@ -155,7 +158,40 @@ def create_parser(iargs=None, namespace=None):
     if not inps.download:
         inps.print = True
 
+    inps.exclude_season_bounds = parse_exclude_season(inps.exclude_season)
+
     return inps
+
+
+def _parse_scene_date(product):
+    """Parse acquisition date from ASF product properties."""
+    props = getattr(product, "properties", {})
+    for key in ("startTime", "sceneDate", "processingDate"):
+        val = props.get(key)
+        if not val:
+            continue
+        token = str(val)[:10]
+        try:
+            return datetime.datetime.strptime(token, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+    return None
+
+
+def _filter_results_by_exclude_season(results, season_bounds):
+    """Filter ASF results by optional recurring seasonal window."""
+    if not season_bounds:
+        return list(results), 0
+    start_mmdd, end_mmdd = season_bounds
+    filtered = []
+    excluded_count = 0
+    for product in results:
+        scene_date = _parse_scene_date(product)
+        if scene_date and date_in_exclude_season(scene_date, start_mmdd, end_mmdd):
+            excluded_count += 1
+            continue
+        filtered.append(product)
+    return filtered, excluded_count
 
 def main(iargs=None, namespace=None):
     """Main function to execute the search and download."""
@@ -177,12 +213,15 @@ def main(iargs=None, namespace=None):
         dataset=inps.dataset,
     )
 
+    result_list, excluded_count = _filter_results_by_exclude_season(results, inps.exclude_season_bounds)
     print(f"Found {len(results)} results.")
-    if inps.print and len(results) > 0:
-            print(', '.join(k for k in results[0].properties.keys() if k not in ['centerLat', 'centerLon']))
+    if inps.exclude_season_bounds:
+        print(f"After --exclude-season={inps.exclude_season}: {len(result_list)} results (excluded {excluded_count}).")
+    if inps.print and len(result_list) > 0:
+            print(', '.join(k for k in result_list[0].properties.keys() if k not in ['centerLat', 'centerLon']))
 
     # burst_ids =[]
-    for r in results:
+    for r in result_list:
         # if inps.print_burst:
         #     if asf.PRODUCT_TYPE.BURST in inps.processing_level:
         #         if r.properties['burst']['relativeBurstID'] not in burst_ids:
@@ -195,16 +234,30 @@ def main(iargs=None, namespace=None):
             print(', '.join(str(v) for k, v in r.properties.items() if k not in ['centerLat', 'centerLon']))
 
     if inps.download == True:
-        print(f"Downloading {len(results)} results...")
+        print(f"Downloading {len(result_list)} results...")
         print(f"Parallel: {inps.parallel}")
         print(f"Download directory: {inps.dir}")
-        results.download(
-            path = inps.dir,
-            session = asf.ASFSession(),
-            processes = inps.parallel
-        )
+        if not result_list:
+            print("Done")
+            return result_list
+        download_obj = results
+        if len(result_list) != len(results):
+            try:
+                download_obj = results.__class__(result_list)
+            except Exception:
+                download_obj = None
+        if download_obj is not None:
+            download_obj.download(
+                path = inps.dir,
+                session = asf.ASFSession(),
+                processes = inps.parallel
+            )
+        else:
+            session = asf.ASFSession()
+            for product in result_list:
+                product.download(path=inps.dir, session=session)
         print("Done")
-        return results
+        return result_list
 
     print("Done.")
 

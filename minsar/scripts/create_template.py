@@ -28,6 +28,7 @@ from minsar.utils.bbox_cli_argv import (
     fix_argv_for_negative_bbox_sn_we,
 )
 from minsar.utils.convert_bbox import _input_to_bounds
+from minsar.utils.exclude_season import parse_exclude_season
 
 
 def _get_minsar_home() -> Path:
@@ -181,10 +182,13 @@ def _substitute_template(
     subset_lalo: str,
     start_date: str | None,
     end_date: str | None,
+    exclude_season: str | None,
 ) -> str:
-    """Replace ssaraopt.relativeOrbit, miaplpy.subset.lalo, and dates in template."""
+    """Replace orbit/AOI/date options, optionally adding ssaraopt.excludeSeason."""
     lines = content.splitlines()
     out = []
+    exclude_added = False
+    exclude_matched = False
     for line in lines:
         if re.match(r"^\s*ssaraopt\.relativeOrbit\s*=", line):
             line = re.sub(r"=\s*[0-9]+", f"= {relative_orbit}", line)
@@ -194,7 +198,18 @@ def _substitute_template(
             line = re.sub(r"=\s*[^\s#]+", f"= {start_date}", line)
         elif end_date is not None and re.match(r"^\s*ssaraopt\.endDate\s*=", line):
             line = re.sub(r"=\s*[^\s#]+", f"= {end_date}", line)
+            if exclude_season is not None:
+                out.append(line)
+                out.append(f"ssaraopt.excludeSeason             = {exclude_season}")
+                exclude_added = True
+                continue
+        elif re.match(r"^\s*ssaraopt\.excludeSeason\s*=", line):
+            exclude_matched = True
+            if exclude_season is not None:
+                line = re.sub(r"=\s*[^\s#]+", f"= {exclude_season}", line)
         out.append(line)
+    if exclude_season is not None and not exclude_added and not exclude_matched:
+        out.append(f"ssaraopt.excludeSeason             = {exclude_season}")
     return "\n".join(out)
 
 
@@ -253,6 +268,7 @@ Examples:
   create_template.py 36.331:36.486,25.318:25.492 Santorini --period 20210101:20221231
   create_template.py 36.331:36.486,25.318:25.492 Santorini --period 2021-01-01:2022-12-31
   create_template.py 36.331:36.486,25.318:25.492 Santorini --last-year
+  create_template.py 36.331:36.486,25.318:25.492 Santorini --exclude-season 1101-0430
   create_template.py "POLYGON((25.3058 36.3221,25.5015 36.3221,25.5015 36.5019,25.3058 36.5019,25.3058 36.3221))" Santorini
 """,
     )
@@ -312,6 +328,11 @@ Examples:
             "and --start-date / --end-date."
         ),
     )
+    parser.add_argument(
+        "--exclude-season",
+        metavar="MMDD-MMDD",
+        help="Set ssaraopt.excludeSeason, e.g. 1101-0430",
+    )
     return parser
 
 
@@ -345,6 +366,16 @@ def main(iargs: list[str] | None = None) -> int:
 
     start_date = None
     end_date = None
+    exclude_season = None
+
+    if inps.exclude_season:
+        try:
+            parsed_exclude = parse_exclude_season(inps.exclude_season)
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1
+        if parsed_exclude:
+            exclude_season = f"{parsed_exclude[0]}-{parsed_exclude[1]}"
 
     if inps.last_year:
         start_date, end_date = _last_calendar_year_full_range()
@@ -393,6 +424,7 @@ def main(iargs: list[str] | None = None) -> int:
         subset_lalo=subset_lalo,
         start_date=start_date,
         end_date=end_date,
+        exclude_season=exclude_season,
     )
 
     out_base = f"{name}{asc_label}"
@@ -400,10 +432,14 @@ def main(iargs: list[str] | None = None) -> int:
     out_path.write_text(content)
     print(f"Wrote {out_path}")
 
-    auto_dir = _get_auto_templates_dir()
-    auto_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Creating opposite-orbit template in {auto_dir} ...", file=sys.stderr)
-    _run_create_opposite_orbit(out_path, auto_dir)
+    # AUTO_TEMPLATES behavior intentionally disabled for now:
+    # auto_dir = _get_auto_templates_dir()
+    # auto_dir.mkdir(parents=True, exist_ok=True)
+    # print(f"Creating opposite-orbit template in {auto_dir} ...", file=sys.stderr)
+    # _run_create_opposite_orbit(out_path, auto_dir)
+    same_dir = out_path.parent
+    print(f"Creating opposite-orbit template in {same_dir} ...", file=sys.stderr)
+    _run_create_opposite_orbit(out_path, same_dir)
 
     return 0
 

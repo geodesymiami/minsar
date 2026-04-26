@@ -249,3 +249,12 @@ When debugging "Killed" or resource issues, consider which environment the job r
 - `minsar/defaults/job_defaults.cfg` - Walltime, memory per job
 - `minsar/defaults/queues.cfg` - Queue resource limits
 - `samples/*.template` - Example template files
+
+## Legacy `q*` Scripts
+
+- Scripts whose basename starts with `q` followed by a canonical script name are legacy copies.
+- Do not modify legacy `q*` scripts unless the user explicitly asks for those files by name.
+
+## `unused/` Directory
+
+- Do not modify files under `minsar/unused/` unless the user explicitly asks for changes in that directory.

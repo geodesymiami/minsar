@@ -26,6 +26,7 @@ usage() {
     echo "  --intersectsWith POL  AOI polygon, e.g. 'Polygon((W S, E S, E N, W N, W S))' (standalone mode)"
     echo "  --start-date DATE     Start date YYYY-MM-DD (default: 2000-01-01)"
     echo "  --end-date DATE       End date YYYY-MM-DD (default: 2099-12-31)"
+    echo "  --exclude-season WIN  Exclude recurring MMDD-MMDD window, e.g. 1005-0320"
     echo "  --work-dir DIR        Work directory (default: .)"
     echo "  --slc-dir DIR         SLC directory (default: SLC)"
     echo "  --dir DIR             Same as --slc-dir"
@@ -35,6 +36,7 @@ usage() {
     echo ""
     echo "Example:"
     echo "  $SCRIPT_NAME --relativeOrbit 36 --intersectsWith='Polygon((25.32 36.33, 25.49 36.33, 25.49 36.49, 25.32 36.49, 25.32 36.33))' --start-date 2014-10-01 --end-date 2015-12-31 --parallel 30 --dir SLC"
+    echo "  $SCRIPT_NAME --relativeOrbit 35 --intersectsWith='Polygon((-121.84 36.2, -121.8 36.2, -121.8 36.28, -121.84 36.28, -121.84 36.2))' --start-date 2016-01-01 --end-date 2026-04-10 --exclude-season 1005-0320 --dir SLC"
     echo ""
     echo "Template mode: run generate_download_command.py first. Standalone: pass --relativeOrbit and --intersectsWith."
     exit 0
@@ -48,6 +50,7 @@ relative_orbit=""
 intersects_with=""
 start_date="2000-01-01"
 end_date="2099-12-31"
+exclude_season=""
 
 # Parse options
 while [[ $# -gt 0 ]]; do
@@ -98,6 +101,15 @@ while [[ $# -gt 0 ]]; do
             end_date="$2"
             shift 2
             ;;
+        --exclude-season=*)
+            exclude_season="${1#--exclude-season=}"
+            shift
+            ;;
+        --exclude-season)
+            [[ $# -lt 2 ]] && { echo "Error: --exclude-season requires an argument" >&2; exit 1; }
+            exclude_season="$2"
+            shift 2
+            ;;
         --parallel)
             [[ $# -lt 2 ]] && { echo "Error: --parallel requires an argument" >&2; exit 1; }
             parallel="$2"
@@ -122,6 +134,10 @@ while [[ $# -gt 0 ]]; do
 done
 
 cd "$work_dir" || { echo "Error: cannot cd to $work_dir" >&2; exit 1; }
+exclude_season_opt=()
+if [[ -n "$exclude_season" ]]; then
+    exclude_season_opt=( "--exclude-season=$exclude_season" )
+fi
 
 # AOI extension loop: when burst2stack fails with "Products from swaths * do not overlap"
 AOI_EXTENSION_INIT=0.01      # degrees per step (~1 km at mid-latitudes)
@@ -153,11 +169,15 @@ if [[ $skip_listing -eq 0 ]]; then
         # Standalone: build asf_download command from options
         asf_download.sh --processingLevel=BURST --relativeOrbit="$relative_orbit" \
             --intersectsWith="$intersects_with" --platform=SENTINEL-1A,SENTINEL-1B \
-            --start="$start_date" --end="$end_date" --parallel="$parallel" --dir="$slc_dir" --print \
+            --start="$start_date" --end="$end_date" --parallel="$parallel" --dir="$slc_dir" \
+            "${exclude_season_opt[@]}" --print \
             > "$slc_dir/asf_burst_listing.txt"
     else
         # Template mode: execute first asf_download line from download_burst2safe.sh
         first_line=$(grep 'asf_download' download_burst2safe.sh | head -1)
+        if [[ -n "$exclude_season" ]]; then
+            first_line="$first_line --exclude-season=$exclude_season"
+        fi
         eval "$first_line"
     fi
 fi
@@ -175,6 +195,24 @@ dates=$(grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}' "$slc_dir/asf_burst_listing.txt" 2
 if [[ -z "$dates" ]]; then
     echo "Error: no date lines found in $slc_dir/asf_burst_listing.txt" >&2
     exit 1
+fi
+
+if [[ -n "$exclude_season" ]]; then
+    dates_filtered=$(python3 -c "
+import sys
+from minsar.utils.exclude_season import parse_exclude_season, iso_date_to_date, date_in_exclude_season
+start_mmdd, end_mmdd = parse_exclude_season(sys.argv[1])
+for token in sys.argv[2:]:
+    d = iso_date_to_date(token)
+    if not date_in_exclude_season(d, start_mmdd, end_mmdd):
+        print(token)
+" "$exclude_season" $dates)
+    dates="$dates_filtered"
+fi
+
+if [[ -z "$dates" ]]; then
+    echo "All dates were excluded by --exclude-season=$exclude_season. Nothing to run."
+    exit 0
 fi
 
 # Count bursts per date for parallelism
@@ -351,7 +389,8 @@ _refetch_listing_with_extended_aoi() {
     if [[ $standalone_mode -eq 1 ]]; then
         asf_download.sh --processingLevel=BURST --relativeOrbit="$relative_orbit" \
             --intersectsWith="$polygon" --platform=SENTINEL-1A,SENTINEL-1B \
-            --start="$start_date" --end="$end_date" --parallel="$parallel" --dir="$slc_dir" --print \
+            --start="$start_date" --end="$end_date" --parallel="$parallel" --dir="$slc_dir" \
+            "${exclude_season_opt[@]}" --print \
             > "$slc_dir/asf_burst_listing.txt"
     else
         first_line=$(grep 'asf_download' download_burst2safe.sh | head -1)
@@ -364,6 +403,9 @@ new_line = re.sub(r\"--intersectsWith='[^']*'\", \"--intersectsWith='\" + poly +
 new_line = re.sub(r'>[^\\s]+asf_burst_listing\\.txt', '>' + out_path, new_line)
 print(new_line)
 " "$first_line" "$polygon" "$slc_dir/asf_burst_listing.txt")
+        if [[ -n "$exclude_season" ]]; then
+            mod_cmd="$mod_cmd --exclude-season=$exclude_season"
+        fi
         eval "$mod_cmd"
     fi
 }

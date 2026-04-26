@@ -53,7 +53,8 @@ flowchart TD
 
 ```
 burst_download.bash [--relativeOrbit N] [--intersectsWith POL] [--start-date DATE] [--end-date DATE] \
-  [--work-dir DIR] [--slc-dir DIR | --dir DIR] [--parallel N] [--skip-listing] [--help]
+  [--work-dir DIR] [--slc-dir DIR | --dir DIR] [--parallel N] [--skip-listing] \
+  [--exclude-season MMDD-MMDD] [--help]
 ```
 
 ### Options and defaults
@@ -68,6 +69,7 @@ burst_download.bash [--relativeOrbit N] [--intersectsWith POL] [--start-date DAT
 | --slc-dir / --dir | SLC | SLC output directory |
 | --parallel | 20 | Max parallel burst2stack jobs |
 | --skip-listing | off | Use existing asf_burst_listing.txt |
+| --exclude-season | (none) | Exclude recurring inclusive MMDD-MMDD window (supports New Year wrap), e.g. 1005-0320 |
 
 **Template mode:** Use `download_burst2safe.sh` and `burst2stack_cmd.sh` (from generate_download_command.py). **Standalone mode:** Pass both `--relativeOrbit` and `--intersectsWith`; no generated scripts needed.
 
@@ -96,6 +98,7 @@ Standalone mode (use generated **download_burst2stack.sh** or pass options):
 # After generate_download_command, run:  ./download_burst2stack.sh
 # Or invoke manually:
 $MINSAR_HOME/minsar/scripts/burst_download.bash --relativeOrbit 36 --intersectsWith='Polygon((25.32 36.33, 25.49 36.33, 25.49 36.49, 25.32 36.49, 25.32 36.33))' --start-date 2014-10-01 --end-date 2015-12-31 --parallel 20 --dir SLC
+$MINSAR_HOME/minsar/scripts/burst_download.bash --relativeOrbit 35 --intersectsWith='Polygon((-121.84 36.2, -121.8 36.2, -121.8 36.28, -121.84 36.28, -121.84 36.2))' --start-date 2016-01-01 --end-date 2026-04-10 --exclude-season 1005-0320 --parallel 20 --dir SLC
 ```
 
 Restart (skip re-fetching listing):
