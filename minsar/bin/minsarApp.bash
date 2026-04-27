@@ -63,18 +63,34 @@ Debug options:                                                                  
    --skip-miaplpy    skip miaplpy processing (but runs everything else)          \n\
    --start miaplpy --miaplpy-step 5
                                                                                  \n\
+Using AOI and name as postional arguments (for options run: create_template.py --help):\n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --no-mintpy --miaplpy  \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --quick-run 2026 --no-mintpy --miaplpy  \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --last-year --no-mintpy --miaplpy  \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --start-date 2020-01-01 --end-date 2024-12-31 --no-mintpy --miaplpy  \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --period 20210101:20221231 --miaplpy  \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --exclude-season 1101-0430 --no-mintpy --miaplpy  \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --flight-dir asc --miaplpy  \n\
+                                                                                 \n\
    Coding To Do:                                                                 \n\
        - create .minsarrc for defaults                                           \n
      "
     printf "$helptext"
-    exit 0;
-else
-    PROJECT_NAME=$(basename "$1" | awk -F ".template" '{print $1}')
-    exit_status="$?"
-    if [[ $PROJECT_NAME == "" ]]; then
-       echo "Could not compute basename for that file. Exiting. Make sure you have specified an input file as the first argument."
-       exit 1;
-    fi
+    exit 0
+fi
+
+# AOI + project name: first create templates under TEMPLATES, then continue as template mode.
+# First arg is not a flag and not a *.template path; second arg is the project name (not a flag).
+if [[ -n "${1-}" && -n "${2-}" && "$1" != -* && "$1" != *".template" && "$2" != -* ]]; then
+  export MINSAR_APP_BASH="${BASH_SOURCE[0]}"
+  exec python3 "${SCRIPT_DIR}/../scripts/minsarapp_aoi_entry.py" "$@"
+fi
+
+PROJECT_NAME=$(basename "$1" | awk -F ".template" '{print $1}')
+exit_status="$?"
+if [[ $PROJECT_NAME == "" ]]; then
+   echo "Could not compute basename for that file. Exiting. Make sure you have specified an input file as the first argument."
+   exit 1
 fi
 
 template_file=$1
