@@ -115,6 +115,8 @@ fi
 echo "#############################################################################################" | tee -a "${WORK_DIR}"/log
 echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $template_print_name ${@:2}" | tee -a "${WORK_DIR}"/log
 cli_command=$(echo "$SCRIPT_NAME $template_print_name ${@:2}")
+upload_log_lines_before=0
+insarmaps_log_lines_before=0
 
 #Switches
 chunks_flag=0
@@ -369,6 +371,11 @@ if [[ ! -v upload_flag ]]; then
    else
        upload_flag=1
    fi
+fi
+
+if [[ "$upload_flag" == "1" || "$insarmaps_flag" == "1" ]]; then
+    upload_log_lines_before=$(_safe_line_count "upload.log")
+    insarmaps_log_lines_before=$(_safe_line_count "insarmaps.log")
 fi
 
 if [ ! -z ${sleep_time+x} ]; then
@@ -741,7 +748,7 @@ if [[ $mintpy_flag == "1" ]]; then
 
     ## insarmaps
     if [[ $insarmaps_flag == "1" ]]; then
-        run_command "create_ingest_insarmaps_jobfile.py mintpy --dataset geo"
+        run_command "create_ingest_insarmaps_jobfile.py mintpy --dataset geo --quiet-summary"
 
         ingest_insarmaps_jobfile=$(ls -t ingest_insar*job | head -n 1)
         run_command "run_workflow.bash --jobfile $PWD/$ingest_insarmaps_jobfile"
@@ -749,7 +756,7 @@ if [[ $mintpy_flag == "1" ]]; then
 
     # upload mintpy directory
     if [[ $upload_flag == "1" ]]; then
-        run_command "upload_data_products.py mintpy ${template[minsar.upload_option]}"
+        run_command "upload_data_products.py mintpy ${template[minsar.upload_option]} --quiet-summary"
     fi
 
 fi
@@ -803,7 +810,7 @@ if [[ $miaplpy_flag == "1" ]]; then
 
     ## insarmaps
     if [[ $insarmaps_flag == "1" && "$miaplpy_stopstep" == "9" ]]; then
-        run_command "create_ingest_insarmaps_jobfile.py $network_dir --dataset $insarmaps_dataset"
+        run_command "create_ingest_insarmaps_jobfile.py $network_dir --dataset $insarmaps_dataset --quiet-summary"
 
         # run jobfile
         ingest_insarmaps_jobfile=$(ls -t ingest_insar*job | head -n 1)
@@ -814,9 +821,9 @@ if [[ $miaplpy_flag == "1" ]]; then
     # upload data products
     if [[ $upload_flag == "1" ]]; then
         if [[ "$miaplpy_stopstep" == "1" ]]; then
-            run_command "upload_data_products.py ${miaplpy_dir_name}/inputs ${template[minsar.upload_option]}"
+            run_command "upload_data_products.py ${miaplpy_dir_name}/inputs ${template[minsar.upload_option]} --quiet-summary"
         else
-            run_command "upload_data_products.py $network_dir ${template[minsar.upload_option]}"
+            run_command "upload_data_products.py $network_dir ${template[minsar.upload_option]} --quiet-summary"
         fi
     fi
 
@@ -860,26 +867,5 @@ if ls $network_dir/*he5 1> /dev/null 2>&1; then
 fi
 
 # Summarize results
-echo
-echo "Done:  $cli_command"
-echo "Yup! That's all!"
-echo
-
-echo "Data products uploaded to:"
-if [[ -f "upload.log" ]]; then
-    tail -n -1 upload.log
-fi
-
-lines=1
-if [[ "$insarmaps_dataset" == "PSDS" ]]; then
-    lines=2
-fi
-if [[ "$insarmaps_dataset" == "all" ]]; then
-   lines=4
-fi
-
-lines=$((lines * 2))  # multiply as long as we ingestinto two servers
-if [[ -f "insarmaps.log" ]]; then
-    tail -n $lines insarmaps.log
-fi
+print_data_products_summary "$cli_command" "$upload_flag" "$insarmaps_flag" "$upload_log_lines_before" "$insarmaps_log_lines_before"
 

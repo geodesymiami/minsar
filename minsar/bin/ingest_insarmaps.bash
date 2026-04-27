@@ -46,6 +46,7 @@ Examples:
       --step N                        N is 1 or 2; same effect as the long names above. Also --step=N
       --num-workers N                 Parallel workers for hdfeos5_2json_mbtiles (sets HDFEOS_NUM_WORKERS; default 6 or env)
       --mbtiles-num-workers N         Parallel workers for json_mbtiles2insarmaps (sets MBTILES_NUM_WORKERS; default 6 or env)
+      --quiet-summary                 suppress printing generated insarmaps URLs (still appends to insarmaps.log)
       --debug                         Enable debug mode (set -x)
       Default (no step flags): run both steps in order.
 
@@ -88,6 +89,7 @@ stop_date=""
 period=""
 num_workers_cli=""
 mbtiles_num_workers_cli=""
+quiet_summary=0
 
 # Apply ingest step from numeric argument (1 or 2), long flags, or --step N
 _apply_ingest_step_arg() {
@@ -141,6 +143,10 @@ do
             ;;
         --debug)
             debug_flag=1
+            shift
+            ;;
+        --quiet-summary)
+            quiet_summary=1
             shift
             ;;
         --step=*)
@@ -470,7 +476,9 @@ for ingest_file in "${ingest_files[@]}"; do
         done
 
         # Write URLs to log files
-        echo "Appending to insarmaps.log file"
+        if [[ "$quiet_summary" != "1" ]]; then
+            echo "Appending to insarmaps.log file"
+        fi
         # Determine the log directory: use pic/ if it exists, otherwise use DATA_DIR directly
         if [[ -d "${DATA_DIR}/pic" ]]; then
             LOG_DIR="$DATA_DIR/pic"
@@ -479,7 +487,9 @@ for ingest_file in "${ingest_files[@]}"; do
         fi
 
         for url in "${INSARMAPS_URLS[@]}"; do
-            echo "$url"
+            if [[ "$quiet_summary" != "1" ]]; then
+                echo "$url"
+            fi
             # Only write to WORK_DIR/insarmaps.log if it's different from LOG_DIR/insarmaps.log
             # Normalize paths to compare them (handle relative paths like ".")
             if [[ "$(cd "$WORK_DIR" && pwd)" != "$(cd "$LOG_DIR" && pwd)" ]]; then

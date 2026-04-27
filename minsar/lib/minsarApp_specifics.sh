@@ -56,6 +56,54 @@ function get_modified_command_line_for_opposite_orbit() {
 }
 
 ###########################################
+function _safe_line_count() {
+    local file_path="$1"
+    if [[ -f "$file_path" ]]; then
+        wc -l < "$file_path" | tr -d '[:space:]'
+    else
+        echo 0
+    fi
+}
+
+###########################################
+function print_data_products_summary() {
+    local cli_command="$1"
+    local upload_flag="$2"
+    local insarmaps_flag="$3"
+    local upload_before_count="$4"
+    local insarmaps_before_count="$5"
+
+    local upload_after_count insarmaps_after_count
+    local upload_start_line insarmaps_start_line
+    local has_output=0
+
+    upload_after_count=$(_safe_line_count "upload.log")
+    insarmaps_after_count=$(_safe_line_count "insarmaps.log")
+    upload_start_line=$((upload_before_count + 1))
+    insarmaps_start_line=$((insarmaps_before_count + 1))
+
+    echo
+    echo "Done:  $cli_command"
+    echo "Yup! That's all!"
+
+    if [[ "$upload_flag" == "1" ]] && [[ "$upload_after_count" -ge "$upload_start_line" ]]; then
+        if [[ "$has_output" == "0" ]]; then
+            echo "Data products uploaded to:"
+            has_output=1
+        fi
+        sed -n "${upload_start_line},${upload_after_count}p" upload.log
+    fi
+
+    if [[ "$insarmaps_flag" == "1" ]] && [[ "$insarmaps_after_count" -ge "$insarmaps_start_line" ]]; then
+        if [[ "$has_output" == "0" ]]; then
+            echo "Data products uploaded to:"
+            has_output=1
+        fi
+        sed -n "${insarmaps_start_line},${insarmaps_after_count}p" insarmaps.log
+    fi
+}
+
+###########################################
 function run_command() {
     local cmd="$*"
 

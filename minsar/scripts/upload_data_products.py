@@ -48,6 +48,8 @@ def create_parser():
     parser.add_argument('--pic', dest='piconly_flag', action='store_true', default=False, help='uploads only pic directory')
     #parser.add_argument('--triplets', dest='triplets_flag', action='store_true', default=False, help='uploads numTriNonzeroIntAmbiguity.h5')
     parser.add_argument('--triplets', dest='triplets_flag', action='store_true', default=True, help='uploads numTriNonzeroIntAmbiguity.h5')
+    parser.add_argument('--quiet-summary', dest='quiet_summary', action='store_true', default=False,
+                        help='suppress final Data at: URL summary (logs are still written)')
 
     return parser
 
@@ -401,9 +403,10 @@ def main(iargs=None):
 ##########################################
     add_log_remote_hdfeos5(scp_list, inps.work_dir)
 ##########################################
-    print('\nData at:')
-    for url in remote_urls:
-        print(url)
+    if not inps.quiet_summary:
+        print('\nData at:')
+        for url in remote_urls:
+            print(url)
 
     return None
 

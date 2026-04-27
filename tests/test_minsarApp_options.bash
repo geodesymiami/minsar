@@ -55,13 +55,31 @@ EOF
     for cmd in \
         run_workflow.bash run_clean_dir.bash run_download_orbits_asf.bash \
         create_runfiles.py create_jobfile_to_generate_miaplpy_jobfiles.py \
-        create_save_hdfeos5_jobfile.py create_html.py upload_data_products.py \
+        create_save_hdfeos5_jobfile.py create_html.py \
         summarize_resource_usage.py generate_download_command.py remove_problem_data.py \
+        add_missing_attributes.py flip_sign_bperp.py \
         generate_makedem_command.py makedem_sardem.sh make_zero_elevation_dem.py \
         unpack_SLCs.py pack_bursts.sh cmd2jobfile.py download_burst2safe.sh \
-        download_burst2stack.sh download_slc.sh; do
+        download_burst2stack.sh download_slc.sh create_ingest_insarmaps_jobfile.py; do
         make_mock_command "$TEST_TMP/mockbin" "$cmd"
     done
+
+    cat > "$TEST_TMP/mockbin/upload_data_products.py" << 'EOF'
+#!/usr/bin/env bash
+echo "MOCK_CMD:$(basename "$0") $*" >> "${MINSAR_TEST_CMD_LOG:-/tmp/minsar_test_cmd.log}"
+echo "http://new-upload-url" >> upload.log
+exit 0
+EOF
+    chmod +x "$TEST_TMP/mockbin/upload_data_products.py"
+
+    cat > "$TEST_TMP/mockbin/create_ingest_insarmaps_jobfile.py" << 'EOF'
+#!/usr/bin/env bash
+echo "MOCK_CMD:$(basename "$0") $*" >> "${MINSAR_TEST_CMD_LOG:-/tmp/minsar_test_cmd.log}"
+touch ingest_insar_mock.job
+echo "http://new-insarmaps-url" >> insarmaps.log
+exit 0
+EOF
+    chmod +x "$TEST_TMP/mockbin/create_ingest_insarmaps_jobfile.py"
 
     export PATH="$TEST_TMP/mockbin:$PATH"
 }
@@ -223,6 +241,43 @@ test_inconsistent_start_and_miaplpy_start_exits() {
     print_test_end "Inconsistent options validation"
 }
 
+test_summary_prints_only_current_run_urls() {
+    print_test_start "Summary uses current-run log deltas" \
+        "Verifies footer prints only upload/insarmaps URLs added in the current run."
+    setup_minsar_app_test_env
+
+    local tpl="$TEMPLATES/testproj.template"
+    write_template "$tpl" "auto"
+
+    # Pre-existing log entries from prior runs should not appear in summary.
+    echo "http://old-upload-url" > "$SCRATCHDIR/testproj/upload.log"
+    echo "http://old-insarmaps-url" > "$SCRATCHDIR/testproj/insarmaps.log"
+
+    local output
+    output="$(run_minsar_app "$tpl" --start miaplpy --no-mintpy --miaplpy --skip-miaplpy --upload --insarmaps)"
+
+    assert_contains "$output" "Data products uploaded to:" \
+        "Summary header is printed when current run produced upload/ingest URLs"
+    assert_contains "$output" "http://new-upload-url" \
+        "Summary includes upload URL from current run"
+    assert_contains "$output" "http://new-insarmaps-url" \
+        "Summary includes insarmaps URL from current run"
+    assert_not_contains "$output" "http://old-upload-url" \
+        "Summary excludes upload URL from previous runs"
+    assert_not_contains "$output" "http://old-insarmaps-url" \
+        "Summary excludes insarmaps URL from previous runs"
+
+    local cmd_log
+    cmd_log="$(<"$MINSAR_TEST_CMD_LOG")"
+    assert_contains "$cmd_log" "upload_data_products.py" \
+        "Upload command is executed"
+    assert_contains "$cmd_log" "--quiet-summary" \
+        "minsarApp passes --quiet-summary to child upload/ingest workflows"
+
+    teardown_test_workspace
+    print_test_end "Summary uses current-run log deltas"
+}
+
 print_header "MINSARAPP OPTION RESOLUTION TEST SUITE"
 
 test_isce_start_implies_ifgram_and_geometry_stop_8
@@ -232,6 +287,7 @@ test_geometry_does_not_disable_mintpy
 test_slc_workflow_disables_mintpy
 test_isce_stop_on_cli_disables_mintpy
 test_inconsistent_start_and_miaplpy_start_exits
+test_summary_prints_only_current_run_urls
 
 print_summary
 exit $?
