@@ -3,6 +3,7 @@ ssaraopt.platform                  = SENTINEL-1  # [Sentinel-1 / ALOS2 / RADARSA
 ssaraopt.relativeOrbit             = 109
 ssaraopt.startDate                 = 20141001  # YYYYMMDD
 ssaraopt.endDate                   = auto  # YYYYMMDD
+#ssaraopt.excludeSeason            = 1015-0615    # exclude data between Oct 15 and June 15
 ######################################################
 topsStack.subswath                 = 1 2 3 # '1 2'
 topsStack.numConnections           = 4    # comment

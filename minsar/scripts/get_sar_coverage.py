@@ -47,6 +47,7 @@ from shapely import wkt as _shapely_wkt
 from shapely.geometry import shape as _shapely_shape
 from asf_search.constants import INTERNAL
 from minsar.utils.convert_bbox import _input_to_bounds
+from minsar.utils.sar_platform import normalize_sar_platform_token
 
 INTERNAL.CMR_TIMEOUT = 90
 
@@ -1279,8 +1280,8 @@ def create_parser() -> argparse.ArgumentParser:
                         help=(
                             'Comma-separated platform list, or "all" (default). '
                             'Accepted names: '
-                            'S1 / Sentinel-1 / SENTINEL-1 / SENTINEL1 for Sentinel-1; '
-                            'NISAR for NISAR; '
+                            'S1 / Sentinel-1 / SEN / Sen / SENTINEL1 for Sentinel-1; '
+                            'NISAR / Nisar (any case) for NISAR; '
                             'ALOS2 / ALOS-2 for ALOS-2. '
                             'Example: --platform S1,ALOS2'
                         ))
@@ -1351,17 +1352,7 @@ def main(iargs=None):
             print(f"Error: --endDate must be YYYY-MM-DD", file=sys.stderr)
             sys.exit(1)
 
-    def _normalize_platform(name: str) -> str:
-        n = name.strip().upper().replace('-', '').replace('_', '')
-        if n in ('S1', 'SENTINEL1'):
-            return 'S1'
-        if n == 'NISAR':
-            return 'NISAR'
-        if n in ('ALOS2', 'ALOS'):
-            return 'ALOS2'
-        return n  # pass through so unknown names produce a useful error
-
-    platforms = {_normalize_platform(p) for p in inps.platforms.split(',')}
+    platforms = {normalize_sar_platform_token(p) for p in inps.platforms.split(',')}
     if 'ALL' in platforms:
         platforms = {'S1', 'NISAR', 'ALOS2'}
 

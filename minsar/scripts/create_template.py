@@ -31,6 +31,7 @@ from minsar.utils.bbox_cli_argv import (
 )
 from minsar.utils.convert_bbox import _input_to_bounds
 from minsar.utils.exclude_season import parse_exclude_season
+from minsar.utils.sar_platform import SAR_PLATFORM_KNOWN, normalize_sar_platform_token
 
 
 def _get_minsar_home() -> Path:
@@ -64,8 +65,8 @@ def _aoi_to_subset_lalo(aoi_raw: str) -> str:
     )
 
 
-def _run_get_sar_coverage(aoi: str) -> dict[str, str | int]:
-    """Run get_sar_coverage.py --platform S1 --select and parse stdout.
+def _run_get_sar_coverage(aoi: str, platform: str = "S1") -> dict[str, str | int]:
+    """Run get_sar_coverage.py --platform <platform> --select and parse stdout.
 
     Returns dict with asc_relorbit, asc_label, desc_relorbit, desc_label,
     processing_subset (if present).
@@ -74,7 +75,7 @@ def _run_get_sar_coverage(aoi: str) -> dict[str, str | int]:
     if not get_sar.exists():
         raise FileNotFoundError(f"get_sar_coverage.py not found: {get_sar}")
 
-    argv = [str(get_sar), aoi, "--platform", "S1", "--select"]
+    argv = [str(get_sar), aoi, "--platform", platform, "--select"]
     proc = subprocess.run(
         [sys.executable] + argv,
         capture_output=True,
@@ -299,6 +300,7 @@ Examples:
   create_template.py 36.331:36.486,25.318:25.492 Santorini --period 20210101:20221231
   create_template.py 36.331:36.486,25.318:25.492 Santorini --exclude-season 1101-0430
   create_template.py 36.331:36.486,25.318:25.492 Santorini --flight-dir asc
+  create_template.py 36.331:36.486,25.318:25.492 Santorini --platform S1
 """,
     )
     parser.add_argument(
@@ -368,6 +370,16 @@ Examples:
         metavar="DIR",
         help=(
             "Orbit template(s) to write: asc, desc, both (default: both)"
+        ),
+    )
+    parser.add_argument(
+        "--platform",
+        default="S1",
+        metavar="NAME",
+        help=(
+            "Sensor for get_sar_coverage (default: S1). NISAR/Nisar and ALOS2/Alos2 are not "
+            "yet implemented here; use S1 (Sentinel-1). Other accepted names match "
+            "get_sar_coverage.py but may be rejected until supported."
         ),
     )
     return parser
@@ -448,8 +460,34 @@ def main(
                 print(f"Error: {exc}", file=sys.stderr)
                 return 1, None
 
+    platform_for_coverage = normalize_sar_platform_token(inps.platform)
+    if platform_for_coverage not in SAR_PLATFORM_KNOWN:
+        print(
+            "Error: unknown --platform "
+            f"{inps.platform!r}. Use the same names as get_sar_coverage.py "
+            "(S1, Sentinel-1, Sen, NISAR/Nisar, ALOS2/ALOS).",
+            file=sys.stderr,
+        )
+        return 1, None
+
+    if platform_for_coverage == "NISAR":
+        print(
+            "Error: NISAR (or Nisar) is not yet implemented for create_template.py. "
+            "Use --platform S1 (Sentinel-1) for template generation.",
+            file=sys.stderr,
+        )
+        return 1, None
+
+    if platform_for_coverage == "ALOS2":
+        print(
+            "Error: ALOS2 (or Alos2) is not yet implemented for create_template.py. "
+            "Use --platform S1 (Sentinel-1) for template generation.",
+            file=sys.stderr,
+        )
+        return 1, None
+
     print("Running get_sar_coverage.py --select ...", file=sys.stderr)
-    coverage = _run_get_sar_coverage(aoi)
+    coverage = _run_get_sar_coverage(aoi, platform_for_coverage)
     asc_relorbit = coverage["asc_relorbit"]
     asc_label = coverage["asc_label"]
     desc_relorbit = coverage["desc_relorbit"]

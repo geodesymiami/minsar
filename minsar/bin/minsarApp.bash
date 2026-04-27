@@ -64,13 +64,14 @@ Debug options:                                                                  
    --start miaplpy --miaplpy-step 5
                                                                                  \n\
 Using AOI and name as postional arguments (for options run: create_template.py --help):\n\
-      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --no-mintpy --miaplpy  \n\
-      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --quick-run 2026 --no-mintpy --miaplpy  \n\
-      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --last-year --no-mintpy --miaplpy  \n\
-      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --start-date 2020-01-01 --end-date 2024-12-31 --no-mintpy --miaplpy  \n\
-      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --period 20210101:20221231 --miaplpy  \n\
-      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --exclude-season 1101-0430 --no-mintpy --miaplpy  \n\
-      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --flight-dir asc --miaplpy  \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --no-mintpy --miaplpy  \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --quick-run 2026 --no-mintpy --miaplpy  \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --last-year --no-mintpy --miaplpy  \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --start-date 2020-01-01 --end-date 2024-12-31 --no-mintpy --miaplpy  \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --period 20210101:20221231 --miaplpy  \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --exclude-season 1101-0430 --no-mintpy --miaplpy  \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --flight-dir asc --miaplpy  \n\
+      --platform S1 is optional (default platform is Sentinel-1)                 \n\
                                                                                  \n\
    Coding To Do:                                                                 \n\
        - create .minsarrc for defaults                                           \n

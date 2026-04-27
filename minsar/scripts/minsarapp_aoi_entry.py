@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 
 
@@ -64,6 +65,16 @@ def run() -> None:
             file=sys.stderr,
         )
         sys.exit(1)
+
+    # Log original AOI invocation into $TEMPLATES/log using minsarApp-style format.
+    # Keep the exact user-entered argv tokens (AOI + NAME form), only changing log location.
+    tdir = _templates_dir()
+    log_path = tdir / "log"
+    timestamp = datetime.now().strftime("%Y%m%d:%H-%M")
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write("#############################################################################################\n")
+        f.write(f"{timestamp} * minsarApp.bash {' '.join(argv)}\n")
+
     mapp = os.environ.get("MINSAR_APP_BASH")
     if not mapp or not Path(mapp).is_file():
         print(
@@ -87,7 +98,6 @@ def run() -> None:
         ct_list = fixed[: len(fixed) - n_rest]
     else:
         ct_list = list(fixed)
-    tdir = _templates_dir()
     try:
         os.chdir(tdir)
     except OSError as exc:

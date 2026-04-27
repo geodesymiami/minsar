@@ -168,6 +168,7 @@ CREATE_TEMPLATE_ARGV_KW = {
         "--type",
         "--quick-run",
         "--flight-dir",
+        "--platform",
     ),
     "consume_two": (),
     "flags": ("--last-year",),
