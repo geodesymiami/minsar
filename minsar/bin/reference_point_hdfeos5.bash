@@ -119,9 +119,11 @@ fi
 INPUT_DIR=$(dirname "$INPUT_FILE")
 INPUT_BASENAME=$(basename "$INPUT_FILE")
 
-# update_attr=$(python3 -c "import h5py; f=h5py.File('$INPUT_FILE', 'r'); print(f'{f.attrs.get(\"mintpy.save.hdfEos5.update\", \"no\")}')" 2>/dev/null || echo "no")
-# if [[ "$update_attr" == "yes" ]]; then
-if  [[ "$INPUT_FILE" == *"XXXXXXXX"* ]] ; then
+# Keep update-mode on re-save when input filename uses XXXXXXXX endDate.
+# save_hdfeos5.py recomputes output filename; without --update it may switch to YYYYMMDD.
+# Alternative (future Python refactor): pass -t smallbaselineApp.cfg and let template
+# set mintpy.save.hdfEos5.update instead of inferring from filename.
+if [[ "$INPUT_FILE" == *"XXXXXXXX"* ]]; then
     UPDATE_MODE="--update"
 else
     UPDATE_MODE=""
@@ -174,13 +176,15 @@ else
 fi
 echo "Detected coordinate system: $COORDS"
 
+# save_hdfeos5: --update and/or -t come from legacy vs recommended (see top of script).
+# Old line wrongly used --subset where --update or -t was intended; --subset is only from -t.
 if [[ "$COORDS" == "RADAR" ]]; then
     REF_CMD="reference_point.py timeseries.h5 --lookup geometryRadar.h5 --lat $REF_LAT --lon $REF_LON ; add_ref_lalo_to_file timeseries.h5 --ref-lalo $REF_LAT $REF_LON"
-    SAVE_CMD="save_hdfeos5.py timeseries.h5 --tc temporalCoherence.h5 --asc avgSpatialCoherence.h5 -m mask.h5 -g geometryRadar.h5 --subset $UPDATE_MODE $SUFFIX_FLAG"
+    SAVE_CMD="save_hdfeos5.py timeseries.h5 --tc temporalCoherence.h5 --asc avgSpatialCoherence.h5 -m mask.h5 -g geometryRadar.h5 $UPDATE_MODE $SUFFIX_FLAG"
     EXTRACTED_FILES=("timeseries.h5" "mask.h5" "temporalCoherence.h5" "avgSpatialCoherence.h5" "geometryRadar.h5" "shadowMask.h5")
 else
     REF_CMD="reference_point.py geo_timeseries.h5 --lat $REF_LAT --lon $REF_LON"
-    SAVE_CMD="save_hdfeos5.py geo_timeseries.h5 --tc geo_temporalCoherence.h5 --asc geo_avgSpatialCoherence.h5 -m geo_mask.h5 -g geo_geometryRadar.h5 --subset $UPDATE_MODE $SUFFIX_FLAG"
+    SAVE_CMD="save_hdfeos5.py geo_timeseries.h5 --tc geo_temporalCoherence.h5 --asc geo_avgSpatialCoherence.h5 -m geo_mask.h5 -g geo_geometryRadar.h5 $UPDATE_MODE $SUFFIX_FLAG"
     EXTRACTED_FILES=("geo_timeseries.h5" "geo_mask.h5" "geo_temporalCoherence.h5" "geo_avgSpatialCoherence.h5" "geo_geometryRadar.h5" "geo_shadowMask.h5")
 fi
 

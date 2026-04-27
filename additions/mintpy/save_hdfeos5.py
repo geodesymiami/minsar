@@ -7,6 +7,7 @@
 
 import datetime as dt
 import os
+from typing import Optional
 
 import h5py
 import numpy as np
@@ -21,6 +22,7 @@ INT_ZERO = np.int16(0)
 FLOAT_ZERO = np.float32(0.0)
 CPX_ZERO = np.complex64(0.0)
 COMPRESSION = 'lzf'
+UPDATE_X_MAX_AGE_DAYS = 31
 
 
 ################################################################
@@ -318,7 +320,24 @@ def get_orbit_direction_str(metadata):
     
     return str
 
-def get_output_filename(metadata, template, suffix=None, update_mode=False, subset_mode=False):
+
+def use_x_placeholder_for_update(last_date_ymd: str, today: 'dt.date', max_age_days: int) -> bool:
+    """If True, use XXXXXXXX in output filename; if False, use real YYYYMMDD end date.
+
+    last_date_ymd: last SAR date as YYYY-MM-DD (metadata last_date / first 10 chars of ISO).
+    """
+    last = dt.datetime.strptime(last_date_ymd[0:10], '%Y-%m-%d').date()
+    return (today - last).days <= max(0, int(max_age_days))
+
+
+def get_output_filename(
+    metadata,
+    template,
+    suffix=None,
+    update_mode=False,
+    subset_mode=False,
+    today: Optional[dt.date] = None,
+):
     """Get output file name of HDF-EOS5 time-series file."""
     SAT = metadata['mission']
     SW = metadata['beam_mode']
@@ -331,8 +350,20 @@ def get_output_filename(metadata, template, suffix=None, update_mode=False, subs
     DATE1 = dt.datetime.strptime(metadata['first_date'], '%Y-%m-%d').strftime('%Y%m%d')
     DATE2 = dt.datetime.strptime(metadata['last_date'], '%Y-%m-%d').strftime('%Y%m%d')
     if update_mode:
-        print('Update mode is ON, put endDate as XXXXXXXX.')
-        DATE2 = 'XXXXXXXX'
+        _today = today if today is not None else dt.date.today()
+        # NOTE: 31-day threshold is intentionally hardwired for now.
+        # If needed in the future, this can be made configurable via template.
+        if use_x_placeholder_for_update(metadata['last_date'], _today, UPDATE_X_MAX_AGE_DAYS):
+            print(
+                f'Update mode is ON, last_date={metadata["last_date"]} is within '
+                f'{UPDATE_X_MAX_AGE_DAYS} days of today; using XXXXXXXX as endDate in filename.'
+            )
+            DATE2 = 'XXXXXXXX'
+        else:
+            print(
+                f'Update mode is ON, but last_date={metadata["last_date"]} is older than '
+                f'{UPDATE_X_MAX_AGE_DAYS} days vs today; using real end date in filename (not XXXXXXXX).'
+            )
 
     if suffix:
         outName = f'{SAT}_{orbit_direction_str}_{RELORB}_{method_str}_{DATE1}_{DATE2}_{suffix}.he5'
@@ -581,7 +612,8 @@ def save_hdfeos5(inps):
         template=template,
         suffix=inps.suffix,
         update_mode=inps.update,
-        subset_mode=inps.subset)
+        subset_mode=inps.subset,
+    )
 
     # write HDF5 File
     write_hdf5_file(

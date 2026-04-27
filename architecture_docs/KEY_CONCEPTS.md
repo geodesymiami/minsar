@@ -240,6 +240,8 @@ mintpy/
 └── S1_*.he5  # HDF-EOS5 for InsarMaps
 ```
 
+With `mintpy.save.hdfEos5.update = yes`, the forked `save_hdfeos5.py` uses `XXXXXXXX` as the end date in the `S1_*.he5` name only when the last SAR date in the time series is within 31 days of today (otherwise the real `YYYYMMDD` is used). The 31-day threshold is currently hardwired in code; if needed later, it can be made dynamic with a template option. `reference_point_hdfeos5.bash` can switch to `recommended_code` + `-t smallbaselineApp.cfg` so the re-run does not infer `--update` from the filename; see the script’s header comment.
+
 ## Important Terminology
 
 | Term | Definition |
