@@ -80,13 +80,14 @@ Using AOI and name as postional arguments (for options run: create_template.py -
 fi
 
 # AOI + project name: first create templates under TEMPLATES, then continue as template mode.
-# First arg is not a flag and not a *.template path; second arg is the project name (not a flag).
-if [[ -n "${1-}" && -n "${2-}" && "$1" != -* && "$1" != *".template" && "$2" != -* ]]; then
+# Accept AOI as first positional even when it starts with '-' (negative latitude).
+# Exclude long-option invocations and template-file mode.
+if [[ -n "${1-}" && -n "${2-}" && "$1" != --* && "$1" != *".template" && "$2" != -* ]]; then
   export MINSAR_APP_BASH="${BASH_SOURCE[0]}"
   exec python3 "${SCRIPT_DIR}/../scripts/minsarapp_aoi_entry.py" "$@"
 fi
 
-PROJECT_NAME=$(basename "$1" | awk -F ".template" '{print $1}')
+PROJECT_NAME=$(basename -- "$1" | awk -F ".template" '{print $1}')
 exit_status="$?"
 if [[ $PROJECT_NAME == "" ]]; then
    echo "Could not compute basename for that file. Exiting. Make sure you have specified an input file as the first argument."

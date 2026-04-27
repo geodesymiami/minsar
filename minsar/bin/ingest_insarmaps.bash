@@ -49,6 +49,9 @@ Examples:
       --debug                         Enable debug mode (set -x)
       Default (no step flags): run both steps in order.
 
+      Uses environment variables 
+      - INSARMAPSHOST_RECENTDATA : when filename contains XXXXXXXX, else INSARMAPSHOST_OLDDATA
+
   Output: With --ref-lalo the selected .he5 in the input dir is modified in place. insarmaps.log appended. No backup files.
 
   Memory: If the HDF5 conversion is killed (OOM), use --num-workers 2 or 1, or set HDFEOS_NUM_WORKERS in the environment.
@@ -328,9 +331,6 @@ else
     exit 1
 fi
 
-INSARMAPS_HOSTS=${INSARMAPSHOST:-insarmaps.miami.edu}
-IFS=',' read -ra HOSTS <<< "$INSARMAPS_HOSTS"
-
 SSARAHOME=${SSARAHOME:-""}
 if [[ -n "$SSARAHOME" ]]; then
     INSARMAPS_USER=$(python3 -c "import sys; sys.path.insert(0, '$SSARAHOME'); import password_config; print(password_config.docker_insaruser)" 2>/dev/null || echo "")
@@ -355,6 +355,12 @@ fi
 for ingest_file in "${ingest_files[@]}"; do
     echo "####################################"
     echo "Processing: $ingest_file"
+    if [[ "$ingest_file" == *"XXXXXXXX"* ]]; then
+        INSARMAPS_HOSTS="${INSARMAPSHOST_RECENTDATA:-}"
+    else
+        INSARMAPS_HOSTS="${INSARMAPSHOST_OLDDATA:-}"
+    fi
+    IFS=',' read -ra HOSTS <<< "$INSARMAPS_HOSTS"
     if [[ "$ingest_step" != "all" ]]; then
         echo "Ingest mode: $ingest_step"
     fi
