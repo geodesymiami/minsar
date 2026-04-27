@@ -66,3 +66,44 @@ Update `get_sar_coverage.py --select` so it does not pick an orbit solely by max
 4. Maximize incidence angle (tie-break).
 
 NISAR / ALOS-2: unchanged (max incidence).
+
+# Plan: Fix step-range print for MiaplPy start
+
+## Summary
+Adjust `minsar/bin/minsarApp.bash` so ISCE step ranges are printed only when ISCE/ifgram processing is enabled. Also update the user-facing print format to:
+- `ISCE steps to process: <start>-<stop>`
+- `MiaplPy steps to process: <start>-<stop>`
+
+This avoids misleading output when running `--start miaplpy` (where `ifgram_flag=0`).
+
+## Key Components Affected
+- `minsar/bin/minsarApp.bash`
+- `tests/` (only if a suitable existing test covers this print path; otherwise no new test expected for this small log-only fix)
+
+## Action Items
+- [ ] Locate current step-range print block in `minsar/bin/minsarApp.bash`.
+- [ ] Gate ISCE printout on `ifgram_flag == 1`.
+- [ ] Gate MiaplPy printout on `miaplpy_flag == 1`.
+- [ ] Replace old `Step ranges: isce: ... miaplpy: ...` style with requested two-line format.
+- [ ] Run targeted verification command and confirm output for `--start miaplpy`.
+
+## Execution Plan (Detailed Change Instructions)
+1. In `minsar/bin/minsarApp.bash`, replace the `step_ranges` string assembly block with conditional per-pipeline lines:
+   - If `ifgram_flag==1`, print `ISCE steps to process: ${isce_start}-${isce_stop}`.
+   - If `miaplpy_flag==1`, print `MiaplPy steps to process: ${miaplpy_startstep}-${miaplpy_stopstep}`.
+2. Keep surrounding spacing/output structure consistent with existing logs.
+3. Verify by running:
+   - `minsarApp.bash <template> --start miaplpy`
+   and checking that only MiaplPy line appears (no ISCE line).
+
+## Key Commands & Flows
+- `minsarApp.bash $TE/qunittestGalapagosSenD128.template --start miaplpy`
+- Optional additional sanity:
+  - `minsarApp.bash $TE/qunittestGalapagosSenD128.template --start ifgram`
+  - `minsarApp.bash $TE/qunittestGalapagosSenD128.template --start miaplpy --miaplpy-step 3`
+
+## TODO List
+- [ ] Write tests for existing behavior (if practical for this log output path)
+- [ ] Implement changes
+- [ ] Add tests for new behavior (if practical)
+- [ ] Run full test suite (or justify targeted verification for log-only change)

@@ -542,17 +542,14 @@ if [[ -v template[ssaraopt.endDate] && "${template[ssaraopt.endDate]}" != "auto"
     orbit_download_flag=0
 fi
 
-
 echo "Switches: download_method: <$download_method> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
 echo "Flags for processing steps:"
 echo "download preprocess dem jobfiles ifgram mintpy miaplpy upload insarmaps opposite_orbit horzvert"
 echo "    $download_flag        $preprocess_flag       $dem_flag      $jobfiles_flag       $ifgram_flag       $mintpy_flag      $miaplpy_flag      $upload_flag       $insarmaps_flag        $opposite_orbit_flag        $horzvert_flag"
 
-step_ranges="Step ranges: isce: $isce_start $isce_stop"
-[[ "$miaplpy_flag" == "1" ]] && step_ranges="$step_ranges  miaplpy: $miaplpy_startstep $miaplpy_stopstep"
 echo ""
-echo ""
-echo "$step_ranges"
+[[ "$ifgram_flag" == "1" ]] && echo "ISCE steps to process: $isce_start-$isce_stop"
+[[ "$miaplpy_flag" == "1" ]] && echo "MiaplPy steps to process: $miaplpy_startstep-$miaplpy_stopstep"
 
 sleep 5
 
