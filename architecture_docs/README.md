@@ -20,7 +20,7 @@ MinSAR (Miami INterferometric SAR) is a pipeline for InSAR processing on HPC clu
 minsarApp.bash $SAMPLESDIR/template.template [--start STEP] [--stop STEP] [--mintpy] [--miaplpy]
 ```
 
-**AOI mode** (no `*.template` as first arg): if the first two arguments look like an AOI and a project name, `minsarApp.bash` `exec`s [`minsar/scripts/minsarapp_aoi_entry.py`](../minsar/scripts/minsarapp_aoi_entry.py), which runs `create_template.py` under `$TEMPLATES`/`$TE` and then re-executes `minsarApp.bash` with the generated primary `.template` file and any remaining flags. All options accepted by `create_template.py` are supported; list them before the first `minsarApp`-only option (e.g. `--start`), because argv is split with `argparse` against the `create_template` parser first.
+**AOI mode** (no `*.template` as first arg): if the first two arguments look like an AOI and a project name, `minsarApp.bash` `exec`s [`minsar/scripts/minsarapp_aoi_entry.py`](../minsar/scripts/minsarapp_aoi_entry.py), which runs `create_template.py` under `$TEMPLATES`/`$TE` and then re-executes `minsarApp.bash` with the generated primary `.template` file and any remaining flags. If `--flight-dir` requests dual-pass output (`asc,desc` default; also `desc,asc` or legacy `both`), the re-exec also passes `--opposite-orbit` so the opposite-orbit run runs after the primary stack (unless the remainder of the line already has `--opposite-orbit` or `--no-opposite-orbit`). All options accepted by `create_template.py` are supported; list them before the first `minsarApp`-only option (e.g. `--start`), because argv is split with `argparse` against the `create_template` parser first.
 
 ### Key Scripts to Understand
 
@@ -96,7 +96,7 @@ minsarApp.bash
 | `$MINSAR_HOME` | Repository root |
 | `$SCRATCHDIR` | Processing directory |
 | `$TEMPLATES` / `$TE` | User templates |
-| `$AUTO_TEMPLATES` | Auto-generated opposite-orbit templates (default: sibling of `$TEMPLATES`; see `create_opposite_orbit_template.bash`). `create_template.py` uses `--flight-dir` (`both` by default) to write one or both pass templates. |
+| `$AUTO_TEMPLATES` | Auto-generated opposite-orbit templates (default: sibling of `$TEMPLATES`; see `create_opposite_orbit_template.bash`). `create_template.py` uses `--flight-dir` (`asc,desc` default; also `desc,asc`/`both`) to write one or both pass templates. |
 | `$SAMPLESDIR` | Sample templates |
 | `$QUEUENAME` | Default SLURM queue |
 

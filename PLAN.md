@@ -1,3 +1,50 @@
+# Plan: Extend `--flight-dir` list forms
+
+## Summary
+Extend `create_template.py` (and AOI-through-`minsarApp.bash` usage) to accept comma-list forms `--flight-dir asc,desc` and `--flight-dir desc,asc`, and change the default from `both` to `asc,desc`.
+
+## Key Components Affected
+- `minsar/scripts/create_template.py`
+- `tests/test_create_template_flight_dir.py`
+- `architecture_docs/README.md`
+
+## Action Items
+- [ ] Update CLI parsing/normalization for `--flight-dir` to accept: `asc`, `desc`, `both`, `asc,desc`, `desc,asc`.
+- [ ] Change default `--flight-dir` behavior to `asc,desc`.
+- [ ] Keep behavior equivalent: list forms should behave as current `both` (write primary + opposite template).
+- [ ] Add tests for the new accepted values and new default.
+- [ ] Update architecture docs help/quick-reference text for new default and accepted values.
+- [ ] Run targeted tests for create-template flight-dir behavior.
+
+## Execution Plan (Detailed Change Instructions)
+1. In `create_parser()` within `minsar/scripts/create_template.py`:
+   - Expand accepted `--flight-dir` choices to include `asc,desc` and `desc,asc`.
+   - Change default from `both` to `asc,desc`.
+   - Update help text to document all accepted forms and new default.
+2. In `main()` in `create_template.py`:
+   - Normalize `inps.flight_dir` into canonical modes:
+     - single-pass: `asc` / `desc`
+     - dual-pass: `both`, `asc,desc`, `desc,asc`
+   - Preserve existing write behavior:
+     - dual-pass => primary asc template + opposite template generation.
+     - single-pass => only selected pass template.
+3. In `tests/test_create_template_flight_dir.py`:
+   - Add parser/default assertions for `asc,desc` default.
+   - Add tests verifying `asc,desc` and `desc,asc` trigger dual-pass behavior (`_run_create_opposite_orbit` called once).
+4. Update `architecture_docs/README.md` to reflect accepted `--flight-dir` values and the new default.
+5. Run:
+   - `python3 -m unittest tests.test_create_template_flight_dir -v`
+   - Optionally any nearby create-template tests if needed.
+
+## Key Commands & Flows
+- `python3 -m unittest tests.test_create_template_flight_dir -v`
+
+## TODO List
+- [ ] Write tests for existing behavior
+- [ ] Implement changes
+- [ ] Add tests for new behavior
+- [ ] Run full/targeted test suite
+
 # Plan: Add --flight-dir to create_template.py
 
 ## Summary

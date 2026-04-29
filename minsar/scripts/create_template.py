@@ -6,8 +6,9 @@ Runs get_sar_coverage.py --select to determine ascending/descending orbit labels
 reads a dummy template, fills in ssaraopt.relativeOrbit, miaplpy.subset.lalo,
 and date range (optional: --quick-run, --period, --start-date/--end-date, or
 --last-year for the full previous calendar year), writes the template to CWD.
-With ``--flight-dir both`` (default), also runs create_opposite_orbit_template to
-write the complementary pass in the same directory. With ``--flight-dir asc`` or
+With dual-pass ``--flight-dir`` values (``asc,desc`` default; also ``desc,asc`` or
+legacy ``both``), it also runs create_opposite_orbit_template to write the
+complementary pass in the same directory. With single-pass ``--flight-dir asc`` or
 ``desc``, only that pass is written.
 
 AOI may be lat_min:lat_max,lon_min:lon_max (S:N,W:E), WKT POLYGON((lon lat,...)),
@@ -365,11 +366,12 @@ Examples:
     parser.add_argument(
         "--flight-dir",
         dest="flight_dir",
-        default="both",
-        choices=["both", "asc", "desc"],
+        default="asc,desc",
+        choices=["both", "asc", "desc", "asc,desc", "desc,asc"],
         metavar="DIR",
         help=(
-            "Orbit template(s) to write: asc, desc, both (default: both)"
+            "Orbit template(s) to write: asc, desc, asc,desc, desc,asc, or both "
+            "(default: asc,desc)"
         ),
     )
     parser.add_argument(
@@ -500,7 +502,7 @@ def main(
     print(f"  asc_label={asc_label} asc_relorbit={asc_relorbit}", file=sys.stderr)
     print(f"  desc_label={desc_label} desc_relorbit={desc_relorbit}", file=sys.stderr)
 
-    if inps.flight_dir == "desc":
+    if inps.flight_dir in ("desc", "desc,asc"):
         primary_relorbit = int(desc_relorbit)
         primary_label = str(desc_label)
     else:
@@ -527,7 +529,7 @@ def main(
     out_path.write_text(content)
     print(f"Wrote {out_path}")
 
-    if inps.flight_dir == "both":
+    if inps.flight_dir in ("both", "asc,desc", "desc,asc"):
         same_dir = out_path.parent
         print(f"Creating opposite-orbit template in {same_dir} ...", file=sys.stderr)
         _run_create_opposite_orbit(out_path, same_dir)

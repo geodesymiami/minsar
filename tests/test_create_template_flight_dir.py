@@ -114,7 +114,25 @@ class TestFlightDirBehavior(unittest.TestCase):
             self.assertEqual(cargs[0], out)
             self.assertEqual(cargs[1], tmp)
 
-    def test_default_flight_dir_is_both(self):
+    def test_asc_desc_calls_opposite_orbit(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            dummy = _make_dummy(tmp)
+            m_opp = self._run_in_tmp(["--flight-dir", "asc,desc"], tmp, dummy=dummy)
+            m_opp.assert_called_once()
+            out = tmp / "ProjA11.template"
+            self.assertTrue(out.is_file(), f"missing {out}")
+
+    def test_desc_asc_calls_opposite_orbit_with_desc_primary(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            dummy = _make_dummy(tmp)
+            m_opp = self._run_in_tmp(["--flight-dir", "desc,asc"], tmp, dummy=dummy)
+            m_opp.assert_called_once()
+            out = tmp / "ProjD22.template"
+            self.assertTrue(out.is_file(), f"missing {out}")
+
+    def test_default_flight_dir_is_asc_desc(self):
         parser = ct.create_parser()
         ns = parser.parse_args(["x", "y"])
-        self.assertEqual(ns.flight_dir, "both")
+        self.assertEqual(ns.flight_dir, "asc,desc")

@@ -3,6 +3,11 @@
 
 User-facing: ``minsarApp.bash <AOI> <NAME> [ create_template options ... ] [ minsar options ... ]``
 
+If ``--flight-dir`` requests dual-pass output (``asc,desc`` default; also ``desc,asc``
+or legacy ``both``), the re-exec appends ``--opposite-orbit`` to ``minsarApp`` so the
+complementary pass runs after the primary pass (unless the remainder already has
+``--opposite-orbit`` or ``--no-opposite-orbit``).
+
 Because argv is split with ``create_parser().parse_known_args()``, any *minsarApp-only*
 option (e.g. ``--start``) and everything *after* the first such token is forwarded to
 ``minsarApp.bash`` unchanged. For predictable splitting, list all ``create_template`` options
@@ -42,6 +47,26 @@ def _templates_dir() -> Path:
         )
         sys.exit(1)
     return Path(t).resolve()
+
+
+def minsarapp_args_after_primary(
+    primary_s: str, flight_dir: str, rest: list[str]
+) -> list[str]:
+    """Build ``[ template_path, ...flags ]`` for re-exec of ``minsarApp.bash``.
+
+    When *flight_dir* requests dual-pass output, insert ``--opposite-orbit`` (same effect as
+    ``opposite_orbit_flag=1`` in ``minsarApp.bash``) if the user has not set
+    ``--opposite-orbit`` or ``--no-opposite-orbit`` in *rest*.
+    """
+    out: list[str] = [primary_s]
+    if (
+        flight_dir in ("both", "asc,desc", "desc,asc")
+        and "--no-opposite-orbit" not in rest
+        and "--opposite-orbit" not in rest
+    ):
+        out.append("--opposite-orbit")
+    out.extend(rest)
+    return out
 
 
 def run() -> None:
@@ -109,10 +134,10 @@ def run() -> None:
     if code != 0 or primary is None:
         sys.exit(int(code) if code else 1)
     primary_s = str(Path(primary).resolve())
-    if not rest:
-        os.execv("/bin/bash", ["/bin/bash", mapp, primary_s])
-    args = ["/bin/bash", mapp, primary_s, *rest]
-    os.execv("/bin/bash", args)
+    margs = minsarapp_args_after_primary(
+        primary_s, _ns.flight_dir, list(rest)
+    )
+    os.execv("/bin/bash", ["/bin/bash", mapp, *margs])
 
 
 if __name__ == "__main__":
