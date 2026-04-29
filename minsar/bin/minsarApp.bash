@@ -70,8 +70,10 @@ Using AOI and name as postional arguments (for options run: create_template.py -
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --start-date 2020-01-01 --end-date 2024-12-31 --no-mintpy --miaplpy  \n\
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --period 20210101:20221231 --miaplpy  \n\
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --exclude-season 1101-0430 --no-mintpy --miaplpy  \n\
-      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --flight-dir asc --miaplpy  \n\
-      --platform S1 is optional (default platform is Sentinel-1)                 \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --flight-dir asc --miaplpy --platform S1 is optional (default platform is Sentinel-1)    \n\
+
+To test:  \n\
+      minsarApp.bash -0.86:-0.81,-91.19:-91.13 qtestGalapagos --flight-dir asc,desc --start-date 20181001 --end-date 20181231 --no-mintpy --miaplpy  \n\
                                                                                  \n\
    Coding To Do:                                                                 \n\
        - create .minsarrc for defaults                                           \n
