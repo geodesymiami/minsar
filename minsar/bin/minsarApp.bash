@@ -798,7 +798,11 @@ if [[ $miaplpy_flag == "1" ]]; then
 
     # create and run save_hdf5 jobfile (only when running full miaplpy through step 9)
     if [[ "$miaplpy_stopstep" == "9" ]]; then
-        run_command "create_save_hdfeos5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME --walltime 0:30"
+        # Debugging / resume after outage: stale SLURM logs confuse check_job_outputs on step 10 re-run.
+        if [[ "$skip_miaplpy_flag" == "1" ]]; then
+            rm -f "${network_dir}/run_files/"*run_10_save_hdfeos5_radar*.{e,o}
+        fi
+        run_command "create_save_hdfeos5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME"
         run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 10"
 
         # create index.html with all images

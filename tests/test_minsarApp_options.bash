@@ -153,7 +153,8 @@ test_miaplpy_start_without_start_disables_orbit_download() {
     local tpl="$TEMPLATES/testproj.template"
     write_template "$tpl" "auto"
     local output
-    output="$(run_minsar_app "$tpl" --miaplpy-start 6 --miaplpy-stop 7 --skip-miaplpy)"
+    # stop must be 9 for create_save_hdfeos5 (step 10); stops 7 and below skip that block.
+    output="$(run_minsar_app "$tpl" --miaplpy-start 6 --miaplpy-stop 9 --skip-miaplpy)"
 
     assert_contains "$output" "Running.... create_save_hdfeos5_jobfile.py" \
         "MiaplPy pipeline is selected even without explicit --start miaplpy"

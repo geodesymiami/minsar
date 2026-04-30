@@ -250,11 +250,14 @@ When debugging "Killed" or resource issues, consider which environment the job r
 - `minsar/defaults/queues.cfg` - Queue resource limits
 - `samples/*.template` - Example template files
 
-## Legacy `q*` Scripts
+## Legacy, `old*` scripts, `q*` scripts, and `unused/` — do not edit
 
-- Scripts whose basename starts with `q` followed by a canonical script name are legacy copies.
-- Do not modify legacy `q*` scripts unless the user explicitly asks for those files by name.
+These paths are archival or temporary copies. **Never modify them** unless the user **explicitly names the exact file path** they want changed.
 
-## `unused/` Directory
+| Category | Scope | Reason |
+|---|---|---|
+| **`minsar/unused/`** | Entire tree | Kept temporarily; not part of the active workflow |
+| **`old*` basename** | Any script whose basename starts with `old` (e.g. `oldminsarApp.bash`) | Superseded copies |
+| **`q*` legacy** | Basename starts with `q` immediately followed by a canonical script basename (same pattern as the real entry point, e.g. `qrun_workflow`) | Legacy copies of real scripts |
 
-- Do not modify files under `minsar/unused/` unless the user explicitly asks for changes in that directory.
+Do not refactor, sync, or "fix" these for consistency with primary scripts unless the user requests that specific file by path.
