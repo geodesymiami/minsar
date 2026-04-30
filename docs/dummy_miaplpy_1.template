@@ -23,7 +23,7 @@ mintpy.save.hdfEos5.update         = yes   #[yes / no], auto for no, XXXXXXXX en
 mintpy.save.hdfEos5.subset         = yes   #[yes / no], auto for no, put subset range info in output filename
 mintpy.save.kmz                    = yes   #[yes / no], auto for yes, save geocoded velocity to Google Earth KMZ file
 mintpy.reference.minCoherence      = 0.7      #[0.0-1.0], auto for 0.85, minimum coherence for auto method
-mintpy.troposphericDelay.method    = no   # pyaps  #[pyaps / height_correlation / base_trop_cor / no], auto for pyaps
+mintpy.troposphericDelay.method    = auto   # pyaps  #[pyaps / height_correlation / base_trop_cor / no], auto for pyaps
 mintpy.networkInversion.minTempCoh = 0.6 #[0.0-1.0], auto for 0.7, min temporal coherence for mask
 ######################################################
 miaplpy.load.processor               = isce
