@@ -242,31 +242,33 @@ test_inconsistent_start_and_miaplpy_start_exits() {
     print_test_end "Inconsistent options validation"
 }
 
-test_summary_prints_only_current_run_urls() {
-    print_test_start "Summary uses current-run log deltas" \
-        "Verifies footer prints only upload/insarmaps URLs added in the current run."
+test_summary_prints_full_upload_insarmaps_logs() {
+    print_test_start "Summary prints full upload/insarmaps logs" \
+        "Verifies footer shows full upload.log and insarmaps.log when present (append-only history)."
     setup_minsar_app_test_env
 
     local tpl="$TEMPLATES/testproj.template"
     write_template "$tpl" "auto"
 
-    # Pre-existing log entries from prior runs should not appear in summary.
+    # Prior-run lines remain in the logs; print_summary cats the full files.
     echo "http://old-upload-url" > "$SCRATCHDIR/testproj/upload.log"
     echo "http://old-insarmaps-url" > "$SCRATCHDIR/testproj/insarmaps.log"
 
     local output
     output="$(run_minsar_app "$tpl" --start miaplpy --no-mintpy --miaplpy --skip-miaplpy --upload --insarmaps)"
 
-    assert_contains "$output" "Data products uploaded to:" \
-        "Summary header is printed when current run produced upload/ingest URLs"
+    assert_contains "$output" "upload.log:" \
+        "Summary labels upload.log before full contents"
+    assert_contains "$output" "insarmaps.log:" \
+        "Summary labels insarmaps.log before full contents"
     assert_contains "$output" "http://new-upload-url" \
         "Summary includes upload URL from current run"
     assert_contains "$output" "http://new-insarmaps-url" \
         "Summary includes insarmaps URL from current run"
-    assert_not_contains "$output" "http://old-upload-url" \
-        "Summary excludes upload URL from previous runs"
-    assert_not_contains "$output" "http://old-insarmaps-url" \
-        "Summary excludes insarmaps URL from previous runs"
+    assert_contains "$output" "http://old-upload-url" \
+        "Summary includes historical upload.log lines"
+    assert_contains "$output" "http://old-insarmaps-url" \
+        "Summary includes historical insarmaps.log lines"
 
     local cmd_log
     cmd_log="$(<"$MINSAR_TEST_CMD_LOG")"
@@ -276,7 +278,7 @@ test_summary_prints_only_current_run_urls() {
         "minsarApp passes --quiet-summary to child upload/ingest workflows"
 
     teardown_test_workspace
-    print_test_end "Summary uses current-run log deltas"
+    print_test_end "Summary prints full upload/insarmaps logs"
 }
 
 print_header "MINSARAPP OPTION RESOLUTION TEST SUITE"
@@ -288,7 +290,7 @@ test_geometry_does_not_disable_mintpy
 test_slc_workflow_disables_mintpy
 test_isce_stop_on_cli_disables_mintpy
 test_inconsistent_start_and_miaplpy_start_exits
-test_summary_prints_only_current_run_urls
+test_summary_prints_full_upload_insarmaps_logs
 
 print_summary
 exit $?

@@ -20,6 +20,7 @@ before the first ``minsarApp`` option.
 from __future__ import annotations
 
 import os
+import shlex
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -137,6 +138,8 @@ def run() -> None:
     margs = minsarapp_args_after_primary(
         primary_s, _ns.flight_dir, list(rest)
     )
+    # Template-only re-exec; minsarApp reads this for footer (empty when user started with a *.template).
+    os.environ["MINSAR_CLI_COMMAND_AOI"] = shlex.join([Path(mapp).name] + fixed)
     os.execv("/bin/bash", ["/bin/bash", mapp, *margs])
 
 

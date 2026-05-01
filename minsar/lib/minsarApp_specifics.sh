@@ -47,6 +47,8 @@ function get_modified_command_line_for_opposite_orbit() {
     for a in "${args[@]:1}"; do
         [[ "$a" == "--opposite-orbit" ]] && continue
         [[ "$a" == "--no-opposite-orbit" ]] && continue
+        [[ "$a" == "--file-size" ]] && continue
+        [[ "$a" == "--footer-logs-only" ]] && continue
         out+=("$a")
     done
     local saved_ifs="$IFS"
@@ -56,51 +58,189 @@ function get_modified_command_line_for_opposite_orbit() {
 }
 
 ###########################################
-function _safe_line_count() {
-    local file_path="$1"
-    if [[ -f "$file_path" ]]; then
-        wc -l < "$file_path" | tr -d '[:space:]'
-    else
-        echo 0
+# Human-readable file size as "448 MB" / "16 GB" (logical size: GNU --apparent-size, else du -h fallback).
+function _minsar_he5_filesize_readable() {
+    local f="$1"
+    local line sz num suf
+    [[ -f "$f" ]] || { printf '%s\n' "?"; return 0; }
+    if ! line=$(du -h --apparent-size "$f" 2>/dev/null); then
+        line=$(LC_ALL=C du -h "$f" 2>/dev/null) || { printf '%s\n' "?"; return 0; }
     fi
+    sz=$(printf '%s' "$line" | awk '{ print $1 }')
+    num="${sz%%[KkMmGgTtPp]*}"
+    suf="${sz#"$num"}"
+    suf=$(printf '%s' "$suf" | LC_ALL=C tr '[:lower:]' '[:upper:]')
+    suf="${suf%I*}"
+    case "${suf}" in
+        K|KB) printf '%s KB' "${num}" ;;
+        M|MB) printf '%s MB' "${num}" ;;
+        G|GB) printf '%s GB' "${num}" ;;
+        T|TB) printf '%s TB' "${num}" ;;
+        P|PB) printf '%s PB' "${num}" ;;
+        *)    printf '%s' "${sz}" ;;
+    esac
 }
 
 ###########################################
-function print_data_products_summary() {
-    local cli_command="$1"
-    local upload_flag="$2"
-    local insarmaps_flag="$3"
-    local upload_before_count="$4"
-    local insarmaps_before_count="$5"
+function _minsar_print_he5_path_colon_size() {
+    local f
+    for f in "$@"; do
+        [[ -f "$f" ]] || continue
+        printf '%s : %s\n' "$f" "$(_minsar_he5_filesize_readable "$f")"
+    done
+}
 
-    local upload_after_count insarmaps_after_count
-    local upload_start_line insarmaps_start_line
-    local has_output=0
+###########################################
+# Under WORK_DIR with cwd set there: MiaplPy network_* directory (basename), or empty.
+function _minsar_footer_guess_network_dir() {
+    local nd_saved
+    nd_saved=$(shopt -p nullglob)
+    shopt -s nullglob
+    local -a m=( miaplpy_*/network_* )
+    eval "${nd_saved}"
+    if [[ ${#m[@]} -eq 0 ]]; then
+        printf ''
+        return 0
+    fi
+    LC_ALL=C printf '%s\n' "${m[@]}" | LC_ALL=C sort | head -n1
+}
 
-    upload_after_count=$(_safe_line_count "upload.log")
-    insarmaps_after_count=$(_safe_line_count "insarmaps.log")
-    upload_start_line=$((upload_before_count + 1))
-    insarmaps_start_line=$((insarmaps_before_count + 1))
-
-    echo
-    echo "Done:  $cli_command"
-    echo "Yup! That's all!"
-
-    if [[ "$upload_flag" == "1" ]] && [[ "$upload_after_count" -ge "$upload_start_line" ]]; then
-        if [[ "$has_output" == "0" ]]; then
-            echo "Data products uploaded to:"
-            has_output=1
+###########################################
+# Resolve PROJECT WORK_DIR from print_summary argv: directory path, or *.template → $SCRATCHDIR/<basename-project>.
+function _print_summary_work_dir_from_arg() {
+    local arg="$1"
+    if [[ -z "$arg" ]]; then
+        printf 'print_summary: missing WORK_DIR or *.template path.\n' >&2
+        return 2
+    fi
+    if [[ -d "$arg" ]]; then
+        cd "$arg" && pwd || return 2
+        return 0
+    fi
+    if [[ "$arg" == *.template ]]; then
+        if [[ -z "${SCRATCHDIR:-}" ]]; then
+            printf 'print_summary: SCRATCHDIR must be set to resolve a *.template path.\n' >&2
+            return 2
         fi
-        sed -n "${upload_start_line},${upload_after_count}p" upload.log
+        local pn
+        pn=$(basename -- "$arg" | awk -F ".template" '{print $1}')
+        if [[ -z "$pn" ]]; then
+            printf 'print_summary: could not derive project name from template path.\n' >&2
+            return 2
+        fi
+        printf '%s/%s\n' "$(cd "${SCRATCHDIR}" && pwd)" "$pn"
+        return 0
+    fi
+    printf 'print_summary: not a directory and not *.template path: %q\n' "$arg" >&2
+    return 2
+}
+
+###########################################
+# Summary for one stack: pass a MinSAR *.template file or explicit PROJECT WORK_DIR.
+# Nested minsarApp (opposite orbit) must set MINSAR_SKIP_PRINT_SUMMARY=1 so the parent prints both stacks.
+#
+# Usage:
+#   print_summary [--help|-h]
+#   print_summary [--filesize] TEMPLATE_OR_WORK_DIR
+function print_summary() {
+    case "${1:-}" in
+        --help|-h)
+            printf '%s\n' \
+                "Usage: print_summary [--filesize] TEMPLATE_OR_WORK_DIR" \
+                "       print_summary [--help|-h]" \
+                "" \
+                "Summarize ONE MinSAR project tree, identified by either:" \
+                "  • WORK_DIR directory path, or" \
+                "  • path ending in .template → WORK_DIR is \"\$SCRATCHDIR/<name before .template>\" (same as minsarApp.bash)." \
+                "" \
+                "  --filesize   HDF-EOS *.he5 paths and sizes (mintpy/ and inferred miaplpy_*/network_*/)." \
+                "  (no flag)    Full upload.log and insarmaps.log when each exists in that WORK_DIR." \
+                "" \
+                "Example:" \
+                '  print_summary --filesize "$TE/myproject087.template"' \
+                '  print_summary          "$TE/myproject087.template"' \
+                ""
+            return 0
+            ;;
+    esac
+
+    local want_filesize=0
+    if [[ "${1:-}" == "--filesize" ]]; then
+        want_filesize=1
+        shift
     fi
 
-    if [[ "$insarmaps_flag" == "1" ]] && [[ "$insarmaps_after_count" -ge "$insarmaps_start_line" ]]; then
-        if [[ "$has_output" == "0" ]]; then
-            echo "Data products uploaded to:"
-            has_output=1
-        fi
-        sed -n "${insarmaps_start_line},${insarmaps_after_count}p" insarmaps.log
+    if [[ $# -lt 1 ]]; then
+        printf 'print_summary: expected WORK_DIR or *.template argument (see --help).\n' >&2
+        return 2
     fi
+    local target="$1"
+    if [[ "$target" == --* ]]; then
+        printf 'print_summary: unknown option %q (see --help).\n' "$target" >&2
+        return 2
+    fi
+    shift
+    if [[ $# -gt 0 ]]; then
+        printf 'print_summary: unexpected extra arguments: %q\n' "$*" >&2
+        return 2
+    fi
+
+    local wd
+    wd=$(_print_summary_work_dir_from_arg "$target") || return 2
+
+    local network_dir nd_saved_nullglob
+    local -a mintpy_he5 net_he5 all_he5
+
+    (
+        cd "$wd" || {
+            printf 'print_summary: cannot cd to %q\n' "$wd" >&2
+            exit 2
+        }
+
+        network_dir="$(_minsar_footer_guess_network_dir)"
+
+        if [[ -d mintpy ]]; then
+            mapfile -t mintpy_he5 < <(find mintpy -maxdepth 1 -type f \( -iname '*.he5' \) -print 2>/dev/null | LC_ALL=C sort)
+        else
+            mintpy_he5=()
+        fi
+        if [[ -n "${network_dir}" && -d "${network_dir}" ]]; then
+            mapfile -t net_he5 < <(find "${network_dir}" -maxdepth 1 -type f \( -iname '*.he5' \) -print 2>/dev/null | LC_ALL=C sort)
+        else
+            net_he5=()
+        fi
+        if [[ -n "${network_dir}" && -d "${network_dir}" && ${#net_he5[@]} -eq 0 ]]; then
+            nd_saved_nullglob=$(shopt -p nullglob)
+            shopt -s nullglob
+            net_he5=( "${network_dir}"/*.he5 "${network_dir}"/*.HE5 )
+            eval "${nd_saved_nullglob}"
+        fi
+
+        if [[ ${#mintpy_he5[@]} -gt 0 || ${#net_he5[@]} -gt 0 ]]; then
+            mapfile -t all_he5 < <(printf '%s\n' "${mintpy_he5[@]}" "${net_he5[@]}" | LC_ALL=C sort -u)
+        else
+            all_he5=()
+        fi
+
+        if [[ "$want_filesize" -eq 1 ]]; then
+            if [[ ${#all_he5[@]} -gt 0 ]]; then
+                echo "Products:"
+                _minsar_print_he5_path_colon_size "${all_he5[@]}"
+                echo
+            fi
+        else
+            if [[ -f upload.log ]]; then
+                echo "upload.log:"
+                cat upload.log
+                echo
+            fi
+            if [[ -f insarmaps.log ]]; then
+                echo "insarmaps.log:"
+                cat insarmaps.log
+                echo
+            fi
+        fi
+    )
 }
 
 ###########################################

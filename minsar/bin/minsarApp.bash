@@ -102,14 +102,10 @@ if [[ $1 == $PWD ]]; then
    template_file=$TEMPLATES/$PROJECT_NAME.template
 fi
 export template_file
+opposite_orbit_template_file=""
 WORK_DIR=${SCRATCHDIR}/${PROJECT_NAME}
 mkdir -p $WORK_DIR
 cd $WORK_DIR
-
-# Opposite-pass template path for --opposite-orbit rerun / horzvert.
-# Cannot be set inside the AOI branch above: that path uses exec Python and never returns here.
-[[ -n "${WORK_DIR:-}" && -f "${WORK_DIR}/opposite_orbit.txt" ]] && opposite_orbit_template_file=$(tr -d '\r\n' < "${WORK_DIR}/opposite_orbit.txt")
-[[ -z "${opposite_orbit_template_file:-}" && -f "${TE}/opposite_orbit.txt" ]] && opposite_orbit_template_file=$(tr -d '\r\n' < "${TE}/opposite_orbit.txt")
 
 # create name including $TE for concise log file
 template_file_dir=$(dirname "$template_file")          # create name including $TE for concise log file
@@ -123,8 +119,6 @@ fi
 echo "#############################################################################################" | tee -a "${WORK_DIR}"/log
 echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $template_print_name ${@:2}" | tee -a "${WORK_DIR}"/log
 cli_command=$(echo "$SCRIPT_NAME $template_print_name ${@:2}")
-upload_log_lines_before=0
-insarmaps_log_lines_before=0
 
 #Switches
 chunks_flag=0
@@ -379,11 +373,6 @@ if [[ ! -v upload_flag ]]; then
    else
        upload_flag=1
    fi
-fi
-
-if [[ "$upload_flag" == "1" || "$insarmaps_flag" == "1" ]]; then
-    upload_log_lines_before=$(_safe_line_count "upload.log")
-    insarmaps_log_lines_before=$(_safe_line_count "insarmaps.log")
 fi
 
 if [ ! -z ${sleep_time+x} ]; then
@@ -807,8 +796,8 @@ if [[ $miaplpy_flag == "1" ]]; then
         if [[ "$skip_miaplpy_flag" == "1" ]]; then
             rm -f "${network_dir}/run_files/"*run_10_save_hdfeos5_radar*.{e,o}
         fi
-        run_command "create_save_hdfeos5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME"
-        run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 10"
+        #FA run_command "create_save_hdfeos5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME"
+        #FA run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 10"
 
         # create index.html with all images
         run_command "create_html.py ${network_dir}/pic"
@@ -846,14 +835,12 @@ fi
 ########################
 if [[ $opposite_orbit_flag == "1" ]]; then
     echo "Running minsarApp.bash for opposite orbit ..."
-    if [[ -z "${opposite_orbit_template_file:-}" ]] || [[ ! -f "${opposite_orbit_template_file}" ]]; then
-        run_command "create_opposite_orbit_template.bash $template_file"
-        [[ -f "${WORK_DIR}/opposite_orbit.txt" ]] || { echo "missing ${WORK_DIR}/opposite_orbit.txt after create_opposite_orbit_template.bash"; exit 1; }
-        opposite_orbit_template_file=$(tr -d '\r\n' < "${WORK_DIR}/opposite_orbit.txt")
-    fi
+    run_command "create_opposite_orbit_template.bash $template_file"
+    [[ -f "${WORK_DIR}/opposite_orbit.txt" ]] || { echo "missing ${WORK_DIR}/opposite_orbit.txt"; exit 1; }
+    opposite_orbit_template_file=$(tr -d '\r\n' < "${WORK_DIR}/opposite_orbit.txt")
     [[ -f "$opposite_orbit_template_file" ]] || { echo "opposite-orbit template not found: $opposite_orbit_template_file"; exit 1; }
     reduced_args="$(get_modified_command_line_for_opposite_orbit)"
-    run_command "${SCRIPT_DIR}/${SCRIPT_NAME} $opposite_orbit_template_file $reduced_args"
+    run_command "env MINSAR_SKIP_PRINT_SUMMARY=1 ${SCRIPT_DIR}/${SCRIPT_NAME} $opposite_orbit_template_file $reduced_args"
 fi
 
 
@@ -868,20 +855,16 @@ if [[ $horzvert_flag == "1" ]]; then
     fi
 fi
 
-
-
-echo
-if ls mintpy/*he5 1> /dev/null 2>&1; then
-   echo "hdfeos5 files produced:"
-   ls -sh mintpy/*he5
-fi
-if ls $network_dir/*he5 1> /dev/null 2>&1; then
-   echo " hdf5files in network_dir: <$network_dir>"
-   ls -sh $network_dir/*he5
+########################
+#   Summarize results 
+########################
+print_summary --filesize "$template_file"
+if [[ $opposite_orbit_flag == "1" ]]; then
+   print_summary --filesize  "$opposite_orbit_template_file"
 fi
 
-# Summarize results (printf %q: copy-pasteable line with values expanded)
-printf 'print_data_products_summary %q %q %q %q %q\n' \
-    "$cli_command" "$upload_flag" "$insarmaps_flag" "$upload_log_lines_before" "$insarmaps_log_lines_before"
-print_data_products_summary "$cli_command" "$upload_flag" "$insarmaps_flag" "$upload_log_lines_before" "$insarmaps_log_lines_before"
+print_summary "$template_file"
+if [[ $opposite_orbit_flag == "1" ]]; then
+   print_summary "$opposite_orbit_template_file"
+fi
 
