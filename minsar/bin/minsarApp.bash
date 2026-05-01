@@ -880,7 +880,8 @@ if ls $network_dir/*he5 1> /dev/null 2>&1; then
    ls -sh $network_dir/*he5
 fi
 
-# Summarize results
-printf '%s\n' 'print_data_products_summary "$cli_command" "$upload_flag" "$insarmaps_flag" "$upload_log_lines_before" "$insarmaps_log_lines_before"'
+# Summarize results (printf %q: copy-pasteable line with values expanded)
+printf 'print_data_products_summary %q %q %q %q %q\n' \
+    "$cli_command" "$upload_flag" "$insarmaps_flag" "$upload_log_lines_before" "$insarmaps_log_lines_before"
 print_data_products_summary "$cli_command" "$upload_flag" "$insarmaps_flag" "$upload_log_lines_before" "$insarmaps_log_lines_before"
 
