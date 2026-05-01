@@ -130,7 +130,7 @@ def run() -> None:
             f"minsarapp_aoi_entry: cannot chdir to {tdir}: {exc}", file=sys.stderr
         )
         sys.exit(1)
-    code, primary = main(iargs=ct_list)
+    code, primary, _opposite = main(iargs=ct_list)
     if code != 0 or primary is None:
         sys.exit(int(code) if code else 1)
     primary_s = str(Path(primary).resolve())

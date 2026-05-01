@@ -99,6 +99,8 @@ minsarApp.bash
 | `$SAMPLESDIR` | Sample templates |
 | `$QUEUENAME` | Default SLURM queue |
 
+For the `--opposite-orbit` rerun, `minsarApp.bash` preloads **`opposite_orbit_template_file`** soon after **`cd`** into **`$WORK_DIR`**, then **`${TE}/opposite_orbit.txt`** if present. If no valid pointer/template path is known at the rerun step it runs `create_opposite_orbit_template.bash` once to populate **`${WORK_DIR}/opposite_orbit.txt`** (the AOI entry path **`exec`**s Python and never assigns in that branch).
+
 ### Configuration Files
 
 | File | Purpose |

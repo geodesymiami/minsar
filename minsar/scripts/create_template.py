@@ -377,7 +377,7 @@ Examples:
 
 def main(
     iargs: list[str] | None = None,
-) -> tuple[int, Path | None]:
+) -> tuple[int, Path | None, Path | None]:
     argv = sys.argv[1:] if iargs is None else list(iargs)
     argv = fix_argv_for_negative_bbox_sn_we(
         argv,
@@ -403,7 +403,7 @@ def main(
                 f"Error: --last-year cannot be combined with: {', '.join(conflicts)}",
                 file=sys.stderr,
             )
-            return 1, None
+            return 1, None, None
 
     start_date = None
     end_date = None
@@ -414,7 +414,7 @@ def main(
             parsed_exclude = parse_exclude_season(inps.exclude_season)
         except ValueError as exc:
             print(f"Error: {exc}", file=sys.stderr)
-            return 1, None
+            return 1, None, None
         if parsed_exclude:
             exclude_season = f"{parsed_exclude[0]}-{parsed_exclude[1]}"
 
@@ -434,7 +434,7 @@ def main(
             start_date, end_date = _parse_period(inps.period)
         except ValueError as exc:
             print(f"Error: {exc}", file=sys.stderr)
-            return 1, None
+            return 1, None, None
         print(f"Period: {start_date} to {end_date}", file=sys.stderr)
     else:
         if inps.start_date:
@@ -442,13 +442,13 @@ def main(
                 start_date = _parse_cli_date_to_yyyymmdd(inps.start_date)
             except ValueError as exc:
                 print(f"Error: {exc}", file=sys.stderr)
-                return 1, None
+                return 1, None, None
         if inps.end_date:
             try:
                 end_date = _parse_cli_date_to_yyyymmdd(inps.end_date)
             except ValueError as exc:
                 print(f"Error: {exc}", file=sys.stderr)
-                return 1, None
+                return 1, None, None
 
     platform_for_coverage = normalize_sar_platform_token(inps.platform)
     if platform_for_coverage not in SAR_PLATFORM_KNOWN:
@@ -458,7 +458,7 @@ def main(
             "(S1, Sentinel-1, Sen, NISAR/Nisar, ALOS2/ALOS).",
             file=sys.stderr,
         )
-        return 1, None
+        return 1, None, None
 
     if platform_for_coverage == "NISAR":
         print(
@@ -466,7 +466,7 @@ def main(
             "Use --platform S1 (Sentinel-1) for template generation.",
             file=sys.stderr,
         )
-        return 1, None
+        return 1, None, None
 
     if platform_for_coverage == "ALOS2":
         print(
@@ -474,7 +474,7 @@ def main(
             "Use --platform S1 (Sentinel-1) for template generation.",
             file=sys.stderr,
         )
-        return 1, None
+        return 1, None, None
 
     print("Running get_sar_coverage.py --select ...", file=sys.stderr)
     coverage = _run_get_sar_coverage(aoi, platform_for_coverage)
@@ -486,7 +486,7 @@ def main(
         subset_lalo = coverage.get("processing_subset") or _aoi_to_subset_lalo(aoi)
     except ValueError as exc:
         print(f"Error: cannot derive subset.lalo from AOI: {exc}", file=sys.stderr)
-        return 1, None
+        return 1, None, None
     print(f"  asc_label={asc_label} asc_relorbit={asc_relorbit}", file=sys.stderr)
     print(f"  desc_label={desc_label} desc_relorbit={desc_relorbit}", file=sys.stderr)
 
@@ -500,7 +500,7 @@ def main(
     dummy_path = _get_dummy_template_path()
     if not dummy_path.exists():
         print(f"Error: dummy template not found: {dummy_path}", file=sys.stderr)
-        return 1, None
+        return 1, None, None
 
     content = dummy_path.read_text()
     content = _substitute_template(
@@ -521,14 +521,21 @@ def main(
         same_dir = out_path.parent
         print(f"Creating opposite-orbit template in {same_dir} ...", file=sys.stderr)
         _run_create_opposite_orbit(out_path, same_dir)
+        # Complementary-pass basename: same convention as create_opposite_orbit_template.bash (name + other label).
+        if inps.flight_dir in ("desc", "desc,asc"):
+            opposite_label = str(asc_label)
+        else:
+            opposite_label = str(desc_label)
+        opposite_path = (out_path.parent / f"{name}{opposite_label}.template").resolve()
+        return 0, out_path.resolve(), opposite_path
 
-    return 0, out_path.resolve()
+    return 0, out_path.resolve(), None
 
 
 if __name__ == "__main__":
     r = main()
     if isinstance(r, tuple):
-        code, _ = r
+        code = r[0]
     else:
         code = r
     sys.exit(int(code))

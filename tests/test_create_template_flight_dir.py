@@ -65,7 +65,7 @@ class TestFlightDirBehavior(unittest.TestCase):
                 ct, "_run_get_sar_coverage", return_value=dict(_COVERAGE)
             ):
                 with mock.patch.object(ct, "_run_create_opposite_orbit") as m_opp:
-                    rc, _path = ct.main(argv)
+                    rc, _path, _opp = ct.main(argv)
         self.assertEqual(rc, 0)
         return m_opp
 

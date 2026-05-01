@@ -106,6 +106,11 @@ WORK_DIR=${SCRATCHDIR}/${PROJECT_NAME}
 mkdir -p $WORK_DIR
 cd $WORK_DIR
 
+# Opposite-pass template path for --opposite-orbit rerun / horzvert.
+# Cannot be set inside the AOI branch above: that path uses exec Python and never returns here.
+[[ -n "${WORK_DIR:-}" && -f "${WORK_DIR}/opposite_orbit.txt" ]] && opposite_orbit_template_file=$(tr -d '\r\n' < "${WORK_DIR}/opposite_orbit.txt")
+[[ -z "${opposite_orbit_template_file:-}" && -f "${TE}/opposite_orbit.txt" ]] && opposite_orbit_template_file=$(tr -d '\r\n' < "${TE}/opposite_orbit.txt")
+
 # create name including $TE for concise log file
 template_file_dir=$(dirname "$template_file")          # create name including $TE for concise log file
 if   [[ $template_file_dir == $TEMPLATES ]]; then
@@ -841,9 +846,11 @@ fi
 ########################
 if [[ $opposite_orbit_flag == "1" ]]; then
     echo "Running minsarApp.bash for opposite orbit ..."
-    run_command "create_opposite_orbit_template.bash $template_file"
-    [[ -f "${WORK_DIR}/opposite_orbit.txt" ]] || { echo "missing ${WORK_DIR}/opposite_orbit.txt"; exit 1; }
-    opposite_orbit_template_file=$(tr -d '\r\n' < "${WORK_DIR}/opposite_orbit.txt")
+    if [[ -z "${opposite_orbit_template_file:-}" ]] || [[ ! -f "${opposite_orbit_template_file}" ]]; then
+        run_command "create_opposite_orbit_template.bash $template_file"
+        [[ -f "${WORK_DIR}/opposite_orbit.txt" ]] || { echo "missing ${WORK_DIR}/opposite_orbit.txt after create_opposite_orbit_template.bash"; exit 1; }
+        opposite_orbit_template_file=$(tr -d '\r\n' < "${WORK_DIR}/opposite_orbit.txt")
+    fi
     [[ -f "$opposite_orbit_template_file" ]] || { echo "opposite-orbit template not found: $opposite_orbit_template_file"; exit 1; }
     reduced_args="$(get_modified_command_line_for_opposite_orbit)"
     run_command "${SCRIPT_DIR}/${SCRIPT_NAME} $opposite_orbit_template_file $reduced_args"
@@ -856,7 +863,7 @@ fi
 if [[ $horzvert_flag == "1" ]]; then
     ref_lalo="$(get_ref_lalo_from_template_file)"
     if [[ mintpy_flag == "1" ]]; then
-       cmd="horzvert_timeseries.bash $template_file%.template}/mintpy $opposite_orbit_template_file%.template}/mintpy"
+       cmd="horzvert_timeseries.bash ${template_file%.template}/mintpy ${opposite_orbit_template_file%.template}/mintpy"
        run_command "$cmd"
     fi
 fi
@@ -874,5 +881,6 @@ if ls $network_dir/*he5 1> /dev/null 2>&1; then
 fi
 
 # Summarize results
+printf '%s\n' 'print_data_products_summary "$cli_command" "$upload_flag" "$insarmaps_flag" "$upload_log_lines_before" "$insarmaps_log_lines_before"'
 print_data_products_summary "$cli_command" "$upload_flag" "$insarmaps_flag" "$upload_log_lines_before" "$insarmaps_log_lines_before"
 
