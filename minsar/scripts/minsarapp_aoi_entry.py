@@ -138,6 +138,11 @@ def run() -> None:
     margs = minsarapp_args_after_primary(
         primary_s, _ns.flight_dir, list(rest)
     )
+    # Dual-pass create_template: complementary template path for early use in minsarApp.bash.
+    if _opposite is not None:
+        os.environ["MINSAR_OPPOSITE_ORBIT_TEMPLATE"] = str(Path(_opposite).resolve())
+    else:
+        os.environ.pop("MINSAR_OPPOSITE_ORBIT_TEMPLATE", None)
     # Template-only re-exec; minsarApp reads this for footer (empty when user started with a *.template).
     os.environ["MINSAR_CLI_COMMAND_AOI"] = shlex.join([Path(mapp).name] + fixed)
     os.execv("/bin/bash", ["/bin/bash", mapp, *margs])

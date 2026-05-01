@@ -90,6 +90,13 @@ if [[ -n "${1-}" && -n "${2-}" && "$1" != --* && "$1" != *".template" && "$2" !=
   exec python3 "${SCRIPT_DIR}/../scripts/minsarapp_aoi_entry.py" "$@"
 fi
 
+# QQ_TRY debug (dual-pass AOI re-exec: opposite path arrives via env from minsarapp_aoi_entry).
+template_file="$1"
+opposite_orbit_template_file="${MINSAR_OPPOSITE_ORBIT_TEMPLATE:-}"
+unset MINSAR_OPPOSITE_ORBIT_TEMPLATE
+echo "QQ_TRY template_file: $template_file"
+echo "QQ_TRY opposite_orbit_template_file: $opposite_orbit_template_file"
+
 PROJECT_NAME=$(basename -- "$1" | awk -F ".template" '{print $1}')
 exit_status="$?"
 if [[ $PROJECT_NAME == "" ]]; then
@@ -97,12 +104,10 @@ if [[ $PROJECT_NAME == "" ]]; then
    exit 1
 fi
 
-template_file=$1
 if [[ $1 == $PWD ]]; then
    template_file=$TEMPLATES/$PROJECT_NAME.template
 fi
 export template_file
-opposite_orbit_template_file=""
 WORK_DIR=${SCRATCHDIR}/${PROJECT_NAME}
 mkdir -p $WORK_DIR
 cd $WORK_DIR
@@ -834,13 +839,17 @@ fi
 #   Opposite orbit (post MiaplPy)
 ########################
 if [[ $opposite_orbit_flag == "1" ]]; then
+    #echo "Running minsarApp.bash for opposite orbit ..."
+    #run_command "create_opposite_orbit_template.bash $template_file"
+    #[[ -f "${WORK_DIR}/opposite_orbit.txt" ]] || { echo "missing ${WORK_DIR}/opposite_orbit.txt"; exit 1; }
+    #opposite_orbit_template_file=$(tr -d '\r\n' < "${WORK_DIR}/opposite_orbit.txt")
+    #[[ -f "$opposite_orbit_template_file" ]] || { echo "opposite-orbit template not found: $opposite_orbit_template_file"; exit 1; }
+    #reduced_args="$(get_modified_command_line_for_opposite_orbit)"
+    #run_command "env MINSAR_SKIP_PRINT_SUMMARY=1 ${SCRIPT_DIR}/${SCRIPT_NAME} $opposite_orbit_template_file $reduced_args"
+
     echo "Running minsarApp.bash for opposite orbit ..."
-    run_command "create_opposite_orbit_template.bash $template_file"
-    [[ -f "${WORK_DIR}/opposite_orbit.txt" ]] || { echo "missing ${WORK_DIR}/opposite_orbit.txt"; exit 1; }
-    opposite_orbit_template_file=$(tr -d '\r\n' < "${WORK_DIR}/opposite_orbit.txt")
-    [[ -f "$opposite_orbit_template_file" ]] || { echo "opposite-orbit template not found: $opposite_orbit_template_file"; exit 1; }
     reduced_args="$(get_modified_command_line_for_opposite_orbit)"
-    run_command "env MINSAR_SKIP_PRINT_SUMMARY=1 ${SCRIPT_DIR}/${SCRIPT_NAME} $opposite_orbit_template_file $reduced_args"
+    run_command "${SCRIPT_DIR}/${SCRIPT_NAME} $opposite_orbit_template_file $reduced_args"
 fi
 
 
@@ -858,8 +867,6 @@ fi
 ########################
 #   Summarize results 
 ########################
-echo "QQQ cli_comamnd: $cli_command"
-echo "QQQ reduced_args $reduced_args"
 print_summary --filesize "$template_file"
 if [[ $opposite_orbit_flag == "1" ]]; then
    print_summary --filesize  "$opposite_orbit_template_file"
