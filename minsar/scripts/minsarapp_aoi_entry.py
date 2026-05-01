@@ -138,7 +138,8 @@ def run() -> None:
     margs = minsarapp_args_after_primary(
         primary_s, _ns.flight_dir, list(rest)
     )
-    # Dual-pass create_template: complementary template path for early use in minsarApp.bash.
+    # After create_template: immutable pair for minsarApp.bash (read once, then unset).
+    os.environ["MINSAR_FIRST_ORBIT_TEMPLATE_FILE"] = primary_s
     if _opposite is not None:
         os.environ["MINSAR_OPPOSITE_ORBIT_TEMPLATE"] = str(Path(_opposite).resolve())
     else:

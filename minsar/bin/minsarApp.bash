@@ -90,12 +90,13 @@ if [[ -n "${1-}" && -n "${2-}" && "$1" != --* && "$1" != *".template" && "$2" !=
   exec python3 "${SCRIPT_DIR}/../scripts/minsarapp_aoi_entry.py" "$@"
 fi
 
-# QQ_TRY debug (dual-pass AOI re-exec: opposite path arrives via env from minsarapp_aoi_entry).
-template_file="$1"
+# AOI create_template pair (immutable readonly in this shell; nested opposite pass re-sent via env on run_command).
+first_orbit_template_file="${MINSAR_FIRST_ORBIT_TEMPLATE_FILE:-}"
 opposite_orbit_template_file="${MINSAR_OPPOSITE_ORBIT_TEMPLATE:-}"
-unset MINSAR_OPPOSITE_ORBIT_TEMPLATE
-echo "QQ_TRY template_file: $template_file"
-echo "QQ_TRY opposite_orbit_template_file: $opposite_orbit_template_file"
+cli_command_aoi="${MINSAR_CLI_COMMAND_AOI:-}"
+
+readonly first_orbit_template_file opposite_orbit_template_file
+unset MINSAR_FIRST_ORBIT_TEMPLATE_FILE MINSAR_OPPOSITE_ORBIT_TEMPLATE MINSAR_CLI_COMMAND_AOI
 
 PROJECT_NAME=$(basename -- "$1" | awk -F ".template" '{print $1}')
 exit_status="$?"
@@ -104,6 +105,7 @@ if [[ $PROJECT_NAME == "" ]]; then
    exit 1
 fi
 
+template_file="$1"
 if [[ $1 == $PWD ]]; then
    template_file=$TEMPLATES/$PROJECT_NAME.template
 fi
@@ -124,6 +126,13 @@ fi
 echo "#############################################################################################" | tee -a "${WORK_DIR}"/log
 echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $template_print_name ${@:2}" | tee -a "${WORK_DIR}"/log
 cli_command=$(echo "$SCRIPT_NAME $template_print_name ${@:2}")
+if ! [[ -v cli_command_first ]]; then
+  cli_command_first=$cli_command
+  export cli_command_first
+else
+  cli_command_opposite_orbit=$cli_command
+  export cli_command_opposite_orbit
+fi
 
 #Switches
 chunks_flag=0
@@ -801,8 +810,8 @@ if [[ $miaplpy_flag == "1" ]]; then
         if [[ "$skip_miaplpy_flag" == "1" ]]; then
             rm -f "${network_dir}/run_files/"*run_10_save_hdfeos5_radar*.{e,o}
         fi
-        #FA run_command "create_save_hdfeos5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME"
-        #FA run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 10"
+        run_command "create_save_hdfeos5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME"
+        run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 10"
 
         # create index.html with all images
         run_command "create_html.py ${network_dir}/pic"
@@ -839,19 +848,10 @@ fi
 #   Opposite orbit (post MiaplPy)
 ########################
 if [[ $opposite_orbit_flag == "1" ]]; then
-    #echo "Running minsarApp.bash for opposite orbit ..."
-    #run_command "create_opposite_orbit_template.bash $template_file"
-    #[[ -f "${WORK_DIR}/opposite_orbit.txt" ]] || { echo "missing ${WORK_DIR}/opposite_orbit.txt"; exit 1; }
-    #opposite_orbit_template_file=$(tr -d '\r\n' < "${WORK_DIR}/opposite_orbit.txt")
-    #[[ -f "$opposite_orbit_template_file" ]] || { echo "opposite-orbit template not found: $opposite_orbit_template_file"; exit 1; }
-    #reduced_args="$(get_modified_command_line_for_opposite_orbit)"
-    #run_command "env MINSAR_SKIP_PRINT_SUMMARY=1 ${SCRIPT_DIR}/${SCRIPT_NAME} $opposite_orbit_template_file $reduced_args"
-
     echo "Running minsarApp.bash for opposite orbit ..."
     reduced_args="$(get_modified_command_line_for_opposite_orbit)"
     run_command "${SCRIPT_DIR}/${SCRIPT_NAME} $opposite_orbit_template_file $reduced_args"
 fi
-
 
 ########################
 #   Horzvert 
@@ -859,7 +859,8 @@ fi
 if [[ $horzvert_flag == "1" ]]; then
     ref_lalo="$(get_ref_lalo_from_template_file)"
     if [[ mintpy_flag == "1" ]]; then
-       cmd="horzvert_timeseries.bash ${template_file%.template}/mintpy ${opposite_orbit_template_file%.template}/mintpy"
+       opp_mintpy_template="${opposite_launch_template_file:-$opposite_orbit_template_file}"
+       cmd="horzvert_timeseries.bash ${template_file%.template}/mintpy ${opp_mintpy_template%.template}/mintpy"
        run_command "$cmd"
     fi
 fi
@@ -867,13 +868,23 @@ fi
 ########################
 #   Summarize results 
 ########################
+cli_command_first_orbit="${SCRIPT_NAME} $(abbrev_path "$first_orbit_template_file") $reduced_args"
+cli_command_opposite_orbit="${SCRIPT_NAME} $(abbrev_path "$opposite_orbit_template_file") $reduced_args"
+
+echo "Yup! That's all from minsarApp.bash."
+echo
+echo "### Command, files produced: ###"
+echo "$cli_command_aoi"
+
 print_summary --filesize "$template_file"
 if [[ $opposite_orbit_flag == "1" ]]; then
    print_summary --filesize  "$opposite_orbit_template_file"
 fi
 
+echo "### Command: $cli_command_first_orbit ###"
 print_summary "$template_file"
 if [[ $opposite_orbit_flag == "1" ]]; then
+   echo "### Command: $cli_command_opposite_orbit ###"
    print_summary "$opposite_orbit_template_file"
 fi
 

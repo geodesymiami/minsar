@@ -58,6 +58,120 @@ function get_modified_command_line_for_opposite_orbit() {
 }
 
 ###########################################
+# Canonical directory path when *dir exists*, else basename passed through.
+function _minsar_abbrev_resolve_dir() {
+    local d="$1"
+    if [[ -d "$d" ]]; then
+        (cd "$d" && pwd) || printf '%s\n' "$d"
+    else
+        printf '%s\n' "$d"
+    fi
+}
+
+###########################################
+# Append "length|prefix|replacement_marker" rows for abbreviation (internal).
+function _minsar_abbrev_collect_row() {
+    local -n _rows_ref=$1
+    local raw="$2"
+    local marker="$3"
+    local p c
+    [[ -z "$raw" ]] && return 0
+    for p in "$raw" "$(_minsar_abbrev_resolve_dir "$raw")"; do
+        [[ -n "$p" ]] || continue
+        _rows_ref+=( "$((${#p}))|${p}|${marker}" )
+    done
+}
+
+###########################################
+# Shorten absolute paths using MinSAR env dirs (matches run_command logging style).
+#
+# abbrev_path [--help|-h]
+# abbrev_path [--] STRING [...]
+#
+# STRING may be multiple words (e.g. a full command): they are joined with spaces.
+# Replaces prefixes (when set): SCRATCHDIR → \$SCRATCHDIR, SAMPLESDIR → \$SAMPLESDIR,
+# TE → \$TE, TEMPLATES → \$TE (same display convention as minsarApp log lines).
+function abbrev_path() {
+    case "${1:-}" in
+        --help|-h)
+            printf '%s\n' \
+                'abbrev_path -- shorten absolute paths in a STRING for logs and replay text.' \
+                'Display-only; same prefix rules as run_command() for minsarApp bash log lines.' \
+                '' \
+                'Usage:' \
+                '  abbrev_path [--help|-h]' \
+                '  abbrev_path [--] STRING [...]' \
+                '' \
+                '  All words after optional -- are joined with one space (whole command lines are ok).' \
+                '  Output is for display only -- do not feed it to open files or nested minsarApp;' \
+                '  keep real paths in template_file / readonly AOI variables.' \
+                '' \
+                'Environment directory prefixes (when non-empty, longest match wins first):' \
+                '  SCRATCHDIR → $SCRATCHDIR' \
+                '  TE         → $TE' \
+                '  TEMPLATES  → $TE   (minsarApp logs use $TE even when TEMPLATES≠TE string)' \
+                '  SAMPLESDIR → $SAMPLESDIR' \
+                '' \
+                'If a prefix path exists on disk, (cd dir && pwd) is also tried so symlink vs' \
+                'absolute forms still abbreviate.' \
+                '' \
+                'Example:' \
+                '  TE=/tmp/t SCRATCHDIR=/tmp/s abbrev_path "minsarApp.bash /tmp/t/GalapagosSenDT128.template --start miaplpy"' \
+                '' \
+                '  minsar/scripts/abbrev_path.bash [--help] STRING ...'
+            return 0
+            ;;
+    esac
+
+    if [[ "${1:-}" == -- ]]; then
+        shift
+    fi
+    if [[ $# -eq 0 ]]; then
+        printf 'abbrev_path: expected STRING (try abbrev_path --help).\n' >&2
+        return 2
+    fi
+
+    local s="$*" out
+    local -a rows=()
+
+    _minsar_abbrev_collect_row rows "${SCRATCHDIR:-}" '$SCRATCHDIR'
+    _minsar_abbrev_collect_row rows "${SAMPLESDIR:-}" '$SAMPLESDIR'
+    _minsar_abbrev_collect_row rows "${TE:-}" '$TE'
+    # TEMPLATES uses $TE label in logs; avoid duplicate TE row when paths are identical strings.
+    if [[ -n "${TEMPLATES:-}" && "${TEMPLATES:-}" != "${TE:-}" ]]; then
+        _minsar_abbrev_collect_row rows "${TEMPLATES}" '$TE'
+    fi
+
+    if [[ ${#rows[@]} -eq 0 ]]; then
+        printf '%s\n' "$s"
+        return 0
+    fi
+
+    out="$s"
+    local sorted
+    sorted=$(LC_ALL=C sort -t '|' -k1,1nr <<< "$(printf '%s\n' "${rows[@]}")") || sorted=""
+
+    declare -A _abbr_seen_pref=()
+    local line rest pref marker
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        rest="${line#*|}"
+        pref="${rest%%|*}"
+        marker="${rest#*|}"
+        [[ -z "$pref" ]] && continue
+        if [[ -n "${_abbr_seen_pref[$pref]:-}" ]]; then
+            continue
+        fi
+        _abbr_seen_pref[$pref]=1
+        [[ "$out" != *"${pref}"* ]] && continue
+        out="${out//$pref/$marker}"
+    done <<< "$sorted"
+
+    printf '%s\n' "$out"
+    return 0
+}
+
+###########################################
 # Human-readable file size as "448 MB" / "16 GB" (logical size: GNU --apparent-size, else du -h fallback).
 function _minsar_he5_filesize_readable() {
     local f="$1"
@@ -224,7 +338,6 @@ function print_summary() {
 
         if [[ "$want_filesize" -eq 1 ]]; then
             if [[ ${#all_he5[@]} -gt 0 ]]; then
-                echo "Products:"
                 _minsar_print_he5_path_colon_size "${all_he5[@]}"
                 echo
             fi
@@ -232,7 +345,7 @@ function print_summary() {
             if [[ -f upload.log ]]; then
                 echo "upload.log:"
                 cat upload.log
-                echo
+                [[ ! -f insarmaps.log ]] && echo
             fi
             if [[ -f insarmaps.log ]]; then
                 echo "insarmaps.log:"

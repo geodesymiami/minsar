@@ -168,6 +168,7 @@ For `run_workflow.bash` internals: `minsar/bin/ARCHITECTURE.md`
 - Include `--help` handling for user-facing scripts
 - Source shared libs: `source "${SCRIPT_DIR}/../lib/workflow_utils.sh"`
 - **CLI validation**: Reject unknown options immediately (use `-?*|--*` case before `*)`). Validate types for named args (e.g. `--ref-lalo` must be numeric); exit with error on invalid syntax.
+- **`--help` Examples sections**: Keep example command lines short. Do not put blank lines or commentary **between** consecutive example lines—stack example commands back-to-back. Section prose (purpose, usage) goes above or below the example block, not between individual examples.
 
 ### Python Scripts
 - Use `argparse` for CLI arguments
