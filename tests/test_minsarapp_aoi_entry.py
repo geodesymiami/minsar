@@ -10,7 +10,11 @@ if str(_REPO) not in sys.path:
     sys.path.insert(0, str(_REPO))
 
 from minsar.scripts.create_template import create_parser
-from minsar.scripts.minsarapp_aoi_entry import minsarapp_args_after_primary
+from minsar.scripts.minsarapp_aoi_entry import (
+    apply_flight_dir_to_ct_list,
+    expand_flight_dir_for_dual_templates,
+    minsarapp_args_after_primary,
+)
 
 
 def _split_for_bridge(fixed: list[str]) -> tuple[list[str], list[str]]:
@@ -116,6 +120,60 @@ class TestMinsarappOppositeOrbitForBoth(unittest.TestCase):
         self.assertEqual(
             minsarapp_args_after_primary(p, "desc", []),
             [p],
+        )
+
+    def test_asc_with_opposite_in_rest_no_duplicate_insert(self) -> None:
+        p = "/te/x.template"
+        self.assertEqual(
+            minsarapp_args_after_primary(
+                p, "asc", ["--opposite-orbit", "--miaplpy"]
+            ),
+            [p, "--opposite-orbit", "--miaplpy"],
+        )
+
+
+class TestExpandFlightDirForTemplates(unittest.TestCase):
+    def test_asc_plus_opposite_becomes_asc_desc(self) -> None:
+        self.assertEqual(
+            expand_flight_dir_for_dual_templates("asc", ["--opposite-orbit"]),
+            "asc,desc",
+        )
+
+    def test_desc_plus_opposite_becomes_desc_asc(self) -> None:
+        self.assertEqual(
+            expand_flight_dir_for_dual_templates("desc", ["--opposite-orbit"]),
+            "desc,asc",
+        )
+
+    def test_respects_no_opposite(self) -> None:
+        self.assertEqual(
+            expand_flight_dir_for_dual_templates(
+                "asc", ["--no-opposite-orbit", "--opposite-orbit"]
+            ),
+            "asc",
+        )
+
+    def test_dual_unchanged(self) -> None:
+        self.assertEqual(
+            expand_flight_dir_for_dual_templates("asc,desc", ["--opposite-orbit"]),
+            "asc,desc",
+        )
+
+
+class TestApplyFlightDirToCtList(unittest.TestCase):
+    def test_two_token_form(self) -> None:
+        self.assertEqual(
+            apply_flight_dir_to_ct_list(
+                ["1:2,3:4", "N", "--flight-dir", "asc", "--period", "2024"],
+                "asc,desc",
+            ),
+            ["1:2,3:4", "N", "--flight-dir", "asc,desc", "--period", "2024"],
+        )
+
+    def test_equals_form(self) -> None:
+        self.assertEqual(
+            apply_flight_dir_to_ct_list(["a", "b", "--flight-dir=desc"], "desc,asc"),
+            ["a", "b", "--flight-dir=desc,asc"],
         )
 
 

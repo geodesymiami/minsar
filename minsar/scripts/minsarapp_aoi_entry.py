@@ -3,10 +3,16 @@
 
 User-facing: ``minsarApp.bash <AOI> <NAME> [ create_template options ... ] [ minsar options ... ]``
 
-If ``--flight-dir`` requests dual-pass output (``asc,desc`` default; also ``desc,asc``
-or legacy ``both``), the re-exec appends ``--opposite-orbit`` to ``minsarApp`` so the
-complementary pass runs after the primary pass (unless the remainder already has
-``--opposite-orbit`` or ``--no-opposite-orbit``).
+If ``--flight-dir`` requests dual-pass output (``asc,desc`` default; also ``desc,asc``,
+legacy ``both``, or same as ``desc, asc`` with spaces after the comma), the re-exec
+appends ``--opposite-orbit`` to ``minsarApp`` so the complementary pass runs after the
+primary pass (unless the remainder already has ``--opposite-orbit`` or
+``--no-opposite-orbit``).
+
+For a **single** direction (``asc`` or ``desc``) together with ``--opposite-orbit`` in
+the minsarApp tail, template creation is expanded to ``asc,desc`` or ``desc,asc`` so
+both templates exist before the nested run (equivalent to listing both directions in
+``--flight-dir``).
 
 Because argv is split with ``create_parser().parse_known_args()``, any *minsarApp-only*
 option (e.g. ``--start``) and everything *after* the first such token is forwarded to
@@ -48,6 +54,33 @@ def _templates_dir() -> Path:
         )
         sys.exit(1)
     return Path(t).resolve()
+
+
+def expand_flight_dir_for_dual_templates(flight_dir: str, rest: list[str]) -> str:
+    """If user asked for one orbit plus ``--opposite-orbit``, return dual-pass flight_dir for create_template."""
+    if "--no-opposite-orbit" in rest or "--opposite-orbit" not in rest:
+        return flight_dir
+    if flight_dir == "asc":
+        return "asc,desc"
+    if flight_dir == "desc":
+        return "desc,asc"
+    return flight_dir
+
+
+def apply_flight_dir_to_ct_list(ct_list: list[str], new_flight_dir: str) -> list[str]:
+    """Replace ``--flight-dir`` value in *ct_list* with *new_flight_dir* (two-token or ``=`` form)."""
+    out = list(ct_list)
+    i = 0
+    while i < len(out):
+        tok = out[i]
+        if tok == "--flight-dir" and i + 1 < len(out):
+            out[i + 1] = new_flight_dir
+            return out
+        if tok.startswith("--flight-dir="):
+            out[i] = f"--flight-dir={new_flight_dir}"
+            return out
+        i += 1
+    return out
 
 
 def minsarapp_args_after_primary(
@@ -131,6 +164,9 @@ def run() -> None:
             f"minsarapp_aoi_entry: cannot chdir to {tdir}: {exc}", file=sys.stderr
         )
         sys.exit(1)
+    efd = expand_flight_dir_for_dual_templates(_ns.flight_dir, list(rest))
+    if efd != _ns.flight_dir:
+        ct_list = apply_flight_dir_to_ct_list(ct_list, efd)
     code, primary, _opposite = main(iargs=ct_list)
     if code != 0 or primary is None:
         sys.exit(int(code) if code else 1)

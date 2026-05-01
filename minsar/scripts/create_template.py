@@ -174,6 +174,31 @@ def _period_date_to_yyyymmdd(s: str) -> str:
     return _parse_cli_date_to_yyyymmdd(s)
 
 
+def normalize_flight_dir(value: str) -> str:
+    """Normalize ``--flight-dir`` for argparse: strip, lower-case, allow commas with spaces."""
+    raw = value.strip().lower()
+    if raw == "both":
+        return "both"
+    if raw in ("asc", "desc"):
+        return raw
+    if "," not in raw:
+        raise argparse.ArgumentTypeError(
+            f"Invalid --flight-dir {value!r}; use asc, desc, both, asc,desc, or desc,asc"
+        )
+    parts = [p.strip().lower() for p in raw.split(",") if p.strip()]
+    if len(parts) != 2:
+        raise argparse.ArgumentTypeError(
+            f"Invalid --flight-dir {value!r}; expected two comma-separated directions"
+        )
+    a, b = parts
+    for p in (a, b):
+        if p not in ("asc", "desc"):
+            raise argparse.ArgumentTypeError(
+                f"Invalid --flight-dir {value!r}; each part must be asc or desc"
+            )
+    return f"{a},{b}"
+
+
 def _parse_period(period: str) -> tuple[str, str]:
     """Parse --period into (startDate, endDate) as YYYYMMDD.
 
@@ -355,11 +380,11 @@ Examples:
         "--flight-dir",
         dest="flight_dir",
         default="asc,desc",
-        choices=["both", "asc", "desc", "asc,desc", "desc,asc"],
+        type=normalize_flight_dir,
         metavar="DIR",
         help=(
             "Orbit template(s) to write: asc, desc, asc,desc, desc,asc, or both "
-            "(default: asc,desc)"
+            "(default: asc,desc); spaces after commas are OK (e.g. desc, asc)"
         ),
     )
     parser.add_argument(

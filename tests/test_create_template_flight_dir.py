@@ -136,3 +136,14 @@ class TestFlightDirBehavior(unittest.TestCase):
         parser = ct.create_parser()
         ns = parser.parse_args(["x", "y"])
         self.assertEqual(ns.flight_dir, "asc,desc")
+
+    def test_desc_space_asc_normalized_like_desc_asc(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            dummy = _make_dummy(tmp)
+            m_opp = self._run_in_tmp(
+                ["--flight-dir", "desc, asc"], tmp, dummy=dummy
+            )
+            m_opp.assert_called_once()
+            out = tmp / "ProjD22.template"
+            self.assertTrue(out.is_file(), f"missing {out}")

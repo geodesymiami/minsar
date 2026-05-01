@@ -810,8 +810,8 @@ if [[ $miaplpy_flag == "1" ]]; then
         if [[ "$skip_miaplpy_flag" == "1" ]]; then
             rm -f "${network_dir}/run_files/"*run_10_save_hdfeos5_radar*.{e,o}
         fi
-        run_command "create_save_hdfeos5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME"
-        run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 10"
+        #run_command "create_save_hdfeos5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME"
+        #run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 10"
 
         # create index.html with all images
         run_command "create_html.py ${network_dir}/pic"
@@ -859,7 +859,7 @@ fi
 if [[ $horzvert_flag == "1" ]]; then
     ref_lalo="$(get_ref_lalo_from_template_file)"
     if [[ mintpy_flag == "1" ]]; then
-       opp_mintpy_template="${opposite_launch_template_file:-$opposite_orbit_template_file}"
+       opp_mintpy_template="$opposite_orbit_template_file"
        cmd="horzvert_timeseries.bash ${template_file%.template}/mintpy ${opp_mintpy_template%.template}/mintpy"
        run_command "$cmd"
     fi
@@ -868,23 +868,34 @@ fi
 ########################
 #   Summarize results 
 ########################
-cli_command_first_orbit="${SCRIPT_NAME} $(abbrev_path "$first_orbit_template_file") $reduced_args"
-cli_command_opposite_orbit="${SCRIPT_NAME} $(abbrev_path "$opposite_orbit_template_file") $reduced_args"
+reduced_args="${reduced_args:-}"
+footer_cmd_primary="${SCRIPT_NAME} $(abbrev_path "$first_orbit_template_file") $reduced_args"
+footer_cmd_opposite="${SCRIPT_NAME} $(abbrev_path "$opposite_orbit_template_file") $reduced_args"
 
 echo "Yup! That's all from minsarApp.bash."
 echo
-echo "### Command, files produced: ###"
-echo "$cli_command_aoi"
+
+# AOI entry only: replay full AOI invocation. Template-first: skip (stack command is below).
+if [[ -n "${cli_command_aoi:-}" ]]; then
+    echo "### Command: $cli_command_aoi"
+fi
+
+echo "### Files produced: ###"
 
 print_summary --filesize "$template_file"
 if [[ $opposite_orbit_flag == "1" ]]; then
    print_summary --filesize  "$opposite_orbit_template_file"
 fi
 
-echo "### Command: $cli_command_first_orbit ###"
+if [[ -n "${cli_command_aoi:-}" ]]; then
+    echo "### Command: $footer_cmd_primary"
+else
+    echo "### Command: $cli_command"
+fi
 print_summary "$template_file"
+
 if [[ $opposite_orbit_flag == "1" ]]; then
-   echo "### Command: $cli_command_opposite_orbit ###"
+   echo "### Command: $footer_cmd_opposite"
    print_summary "$opposite_orbit_template_file"
 fi
 
