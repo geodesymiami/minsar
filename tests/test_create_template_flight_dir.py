@@ -39,6 +39,16 @@ _COVERAGE = {
     "processing_subset": "1.0:2.0,3.0:4.0",
 }
 
+_COVERAGE_DESC_ONLY = {
+    "desc_relorbit": 163,
+    "desc_label": "SenD163",
+}
+
+_COVERAGE_ASC_ONLY = {
+    "asc_relorbit": 29,
+    "asc_label": "SenA29",
+}
+
 
 def _make_dummy(tmp: Path) -> Path:
     p = tmp / "dummy.template"
@@ -65,7 +75,7 @@ class TestFlightDirBehavior(unittest.TestCase):
                 ct, "_run_get_sar_coverage", return_value=dict(_COVERAGE)
             ):
                 with mock.patch.object(ct, "_run_create_opposite_orbit") as m_opp:
-                    rc, _path, _opp = ct.main(argv)
+                    rc, _path, _opp, _ = ct.main(argv)
         self.assertEqual(rc, 0)
         return m_opp
 
@@ -147,3 +157,119 @@ class TestFlightDirBehavior(unittest.TestCase):
             m_opp.assert_called_once()
             out = tmp / "ProjD22.template"
             self.assertTrue(out.is_file(), f"missing {out}")
+
+    def test_desc_only_coverage_with_desc_writes_one_template(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            dummy = _make_dummy(tmp)
+            os.chdir(tmp)
+            argv = [
+                "36.331:36.486,25.318:25.492",
+                "Proj",
+                "--flight-dir",
+                "desc",
+            ]
+            with mock.patch.object(ct, "_get_dummy_template_path", return_value=dummy):
+                with mock.patch.object(
+                    ct, "_run_get_sar_coverage", return_value=dict(_COVERAGE_DESC_ONLY)
+                ):
+                    with mock.patch.object(ct, "_run_create_opposite_orbit") as m_opp:
+                        rc, _, opp, _ = ct.main(argv)
+            self.assertEqual(rc, 0)
+            m_opp.assert_not_called()
+            self.assertIsNone(opp)
+            out = tmp / "ProjSenD163.template"
+            self.assertTrue(out.is_file(), f"missing {out}")
+            self.assertIn("= 163", out.read_text())
+
+    def test_desc_only_coverage_default_dual_fallback_single_template(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            dummy = _make_dummy(tmp)
+            os.chdir(tmp)
+            argv = ["36.331:36.486,25.318:25.492", "Proj"]
+            with mock.patch.object(ct, "_get_dummy_template_path", return_value=dummy):
+                with mock.patch.object(
+                    ct, "_run_get_sar_coverage", return_value=dict(_COVERAGE_DESC_ONLY)
+                ):
+                    with mock.patch.object(ct, "_run_create_opposite_orbit") as m_opp:
+                        rc, p1, p2, fd = ct.main(argv)
+            self.assertEqual(rc, 0)
+            self.assertIsNotNone(p1)
+            self.assertIsNone(p2)
+            self.assertEqual(fd, "desc")
+            m_opp.assert_not_called()
+            self.assertTrue((tmp / "ProjSenD163.template").is_file())
+
+    def test_desc_only_coverage_with_asc_returns_error(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            dummy = _make_dummy(tmp)
+            os.chdir(tmp)
+            argv = ["36.331:36.486,25.318:25.492", "Proj", "--flight-dir", "asc"]
+            with mock.patch.object(ct, "_get_dummy_template_path", return_value=dummy):
+                with mock.patch.object(
+                    ct, "_run_get_sar_coverage", return_value=dict(_COVERAGE_DESC_ONLY)
+                ):
+                    rc, _, _, _ = ct.main(argv)
+            self.assertEqual(rc, 1)
+
+    def test_asc_only_coverage_with_asc_writes_one_template(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            dummy = _make_dummy(tmp)
+            os.chdir(tmp)
+            argv = [
+                "36.331:36.486,25.318:25.492",
+                "Proj",
+                "--flight-dir",
+                "asc",
+            ]
+            with mock.patch.object(ct, "_get_dummy_template_path", return_value=dummy):
+                with mock.patch.object(
+                    ct, "_run_get_sar_coverage", return_value=dict(_COVERAGE_ASC_ONLY)
+                ):
+                    with mock.patch.object(ct, "_run_create_opposite_orbit") as m_opp:
+                        rc, _, _, _ = ct.main(argv)
+            self.assertEqual(rc, 0)
+            m_opp.assert_not_called()
+            out = tmp / "ProjSenA29.template"
+            self.assertTrue(out.is_file(), f"missing {out}")
+            self.assertIn("= 29", out.read_text())
+
+
+class TestValidateCoverageForFlightDir(unittest.TestCase):
+    def test_dual_mode_validation_requires_both_if_still_dual(self):
+        cov = dict(_COVERAGE_DESC_ONLY)
+        self.assertIsNotNone(ct._validate_coverage_for_flight_dir(cov, "asc,desc"))
+        self.assertIsNone(
+            ct._validate_coverage_for_flight_dir(dict(_COVERAGE), "asc,desc")
+        )
+
+    def test_single_desc_ok(self):
+        self.assertIsNone(
+            ct._validate_coverage_for_flight_dir(dict(_COVERAGE_DESC_ONLY), "desc")
+        )
+
+
+class TestEffectiveFlightDir(unittest.TestCase):
+    def test_dual_desc_only_becomes_desc(self):
+        self.assertEqual(
+            ct._effective_flight_dir_for_coverage("asc,desc", dict(_COVERAGE_DESC_ONLY)),
+            "desc",
+        )
+
+    def test_dual_asc_only_becomes_asc(self):
+        self.assertEqual(
+            ct._effective_flight_dir_for_coverage("both", dict(_COVERAGE_ASC_ONLY)),
+            "asc",
+        )
+
+    def test_dual_unchanged_when_both_passes(self):
+        self.assertEqual(
+            ct._effective_flight_dir_for_coverage(
+                "asc,desc",
+                dict(_COVERAGE),
+            ),
+            "asc,desc",
+        )

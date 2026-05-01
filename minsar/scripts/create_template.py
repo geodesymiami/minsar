@@ -8,8 +8,10 @@ and date range (optional: --quick-run, --period, --start-date/--end-date, or
 --last-year for the full previous calendar year), writes the template to CWD.
 With dual-pass ``--flight-dir`` values (``asc,desc`` default; also ``desc,asc`` or
 legacy ``both``), it also runs create_opposite_orbit_template to write the
-complementary pass in the same directory. With single-pass ``--flight-dir asc`` or
-``desc``, only that pass is written.
+complementary pass when both directions have coverage. If only one direction
+exists for the AOI, a note is printed and a single template is written for that
+pass (equivalent to ``--flight-dir asc`` or ``desc``). With explicit single-pass
+``--flight-dir asc`` or ``desc``, only that pass is written.
 
 AOI may be lat_min:lat_max,lon_min:lon_max (S:N,W:E), WKT POLYGON((lon lat,...)),
 or other formats accepted by convert_bbox.py (e.g. GoogleEarth points).
@@ -66,11 +68,126 @@ def _aoi_to_subset_lalo(aoi_raw: str) -> str:
     )
 
 
+def _coverage_has_asc(coverage: dict[str, str | int]) -> bool:
+    return "asc_relorbit" in coverage and "asc_label" in coverage
+
+
+def _coverage_has_desc(coverage: dict[str, str | int]) -> bool:
+    return "desc_relorbit" in coverage and "desc_label" in coverage
+
+
+def _validate_coverage_pairs(coverage: dict[str, str | int], stdout: str) -> None:
+    """Ensure no half-printed direction from get_sar_coverage --select."""
+    for prefix in ("asc", "desc"):
+        rel, lab = f"{prefix}_relorbit", f"{prefix}_label"
+        has_r, has_l = rel in coverage, lab in coverage
+        if has_r != has_l:
+            raise RuntimeError(
+                f"get_sar_coverage.py set {rel} but not {lab} (or vice versa).\nstdout:\n{stdout}"
+            )
+
+
+def _log_coverage_for_effective_mode(
+    coverage: dict[str, str | int],
+    flight_dir_eff: str,
+) -> None:
+    """Print orbit lines only for passes relevant to ``flight_dir_eff`` (no alarming extras)."""
+    dual = flight_dir_eff in ("both", "asc,desc", "desc,asc")
+    if dual:
+        if _coverage_has_asc(coverage):
+            print(
+                f"  asc_label={coverage['asc_label']} asc_relorbit={coverage['asc_relorbit']}",
+                file=sys.stderr,
+            )
+        if _coverage_has_desc(coverage):
+            print(
+                f"  desc_label={coverage['desc_label']} desc_relorbit={coverage['desc_relorbit']}",
+                file=sys.stderr,
+            )
+        return
+    if flight_dir_eff == "asc" and _coverage_has_asc(coverage):
+        print(
+            f"  asc_label={coverage['asc_label']} asc_relorbit={coverage['asc_relorbit']}",
+            file=sys.stderr,
+        )
+        return
+    if flight_dir_eff == "desc" and _coverage_has_desc(coverage):
+        print(
+            f"  desc_label={coverage['desc_label']} desc_relorbit={coverage['desc_relorbit']}",
+            file=sys.stderr,
+        )
+
+
+def _effective_flight_dir_for_coverage(
+    requested: str,
+    coverage: dict[str, str | int],
+) -> str:
+    """If dual-pass was requested but only one direction exists, fall back to that pass.
+
+    Prints a short note to stderr (not an error). Otherwise returns ``requested`` unchanged.
+    """
+    has_asc = _coverage_has_asc(coverage)
+    has_desc = _coverage_has_desc(coverage)
+    dual = requested in ("both", "asc,desc", "desc,asc")
+    if not dual or (has_asc and has_desc):
+        return requested
+    if has_desc and not has_asc:
+        print(
+            "Note: this AOI has descending Sentinel-1 coverage only; "
+            "writing one descending template (same as --flight-dir desc).",
+            file=sys.stderr,
+        )
+        return "desc"
+    if has_asc and not has_desc:
+        print(
+            "Note: this AOI has ascending Sentinel-1 coverage only; "
+            "writing one ascending template (same as --flight-dir asc).",
+            file=sys.stderr,
+        )
+        return "asc"
+    return requested
+
+
+def _validate_coverage_for_flight_dir(
+    coverage: dict[str, str | int],
+    flight_dir: str,
+) -> str | None:
+    """Return an error message if coverage does not satisfy --flight-dir; else None."""
+    has_asc = _coverage_has_asc(coverage)
+    has_desc = _coverage_has_desc(coverage)
+    if not has_asc and not has_desc:
+        return (
+            "get_sar_coverage.py reported no ascending or descending orbit for this AOI "
+            "(check platform and bounds)."
+        )
+
+    dual = flight_dir in ("both", "asc,desc", "desc,asc")
+    if dual:
+        if not has_asc or not has_desc:
+            return (
+                "Dual-pass templates require ascending and descending coverage for this AOI."
+            )
+        return None
+
+    if flight_dir == "asc" and not has_asc:
+        return (
+            "Ascending coverage is missing for this AOI. "
+            "Use --flight-dir desc if only descending exists."
+        )
+    if flight_dir == "desc" and not has_desc:
+        return (
+            "Descending coverage is missing for this AOI. "
+            "Use --flight-dir asc if only ascending exists."
+        )
+    return None
+
+
 def _run_get_sar_coverage(aoi: str, platform: str = "S1") -> dict[str, str | int]:
     """Run get_sar_coverage.py --platform <platform> --select and parse stdout.
 
-    Returns dict with asc_relorbit, asc_label, desc_relorbit, desc_label,
-    processing_subset (if present).
+    Returns a dict that may include only ascending, only descending, or both, plus
+    optional processing_subset. At least one full direction (relorbit + label) is
+    required; see _validate_coverage_for_flight_dir for --flight-dir checks.
     """
     get_sar = Path(__file__).resolve().parent / "get_sar_coverage.py"
     if not get_sar.exists():
@@ -107,11 +224,11 @@ def _run_get_sar_coverage(aoi: str, platform: str = "S1") -> dict[str, str | int
         elif key == "processing_subset":
             result["processing_subset"] = val
 
-    required = ("asc_relorbit", "asc_label", "desc_relorbit", "desc_label")
-    missing = [k for k in required if k not in result]
-    if missing:
+    _validate_coverage_pairs(result, proc.stdout)
+    if not _coverage_has_asc(result) and not _coverage_has_desc(result):
         raise RuntimeError(
-            f"get_sar_coverage.py did not set: {missing}\nstdout:\n{proc.stdout}"
+            "get_sar_coverage.py did not set any complete ascending or descending orbit "
+            f"(need relorbit + label per direction).\nstdout:\n{proc.stdout}"
         )
     return result
 
@@ -402,7 +519,7 @@ Examples:
 
 def main(
     iargs: list[str] | None = None,
-) -> tuple[int, Path | None, Path | None]:
+) -> tuple[int, Path | None, Path | None, str]:
     argv = sys.argv[1:] if iargs is None else list(iargs)
     argv = fix_argv_for_negative_bbox_sn_we(
         argv,
@@ -428,7 +545,7 @@ def main(
                 f"Error: --last-year cannot be combined with: {', '.join(conflicts)}",
                 file=sys.stderr,
             )
-            return 1, None, None
+            return 1, None, None, ""
 
     start_date = None
     end_date = None
@@ -439,7 +556,7 @@ def main(
             parsed_exclude = parse_exclude_season(inps.exclude_season)
         except ValueError as exc:
             print(f"Error: {exc}", file=sys.stderr)
-            return 1, None, None
+            return 1, None, None, ""
         if parsed_exclude:
             exclude_season = f"{parsed_exclude[0]}-{parsed_exclude[1]}"
 
@@ -459,7 +576,7 @@ def main(
             start_date, end_date = _parse_period(inps.period)
         except ValueError as exc:
             print(f"Error: {exc}", file=sys.stderr)
-            return 1, None, None
+            return 1, None, None, ""
         print(f"Period: {start_date} to {end_date}", file=sys.stderr)
     else:
         if inps.start_date:
@@ -467,13 +584,13 @@ def main(
                 start_date = _parse_cli_date_to_yyyymmdd(inps.start_date)
             except ValueError as exc:
                 print(f"Error: {exc}", file=sys.stderr)
-                return 1, None, None
+                return 1, None, None, ""
         if inps.end_date:
             try:
                 end_date = _parse_cli_date_to_yyyymmdd(inps.end_date)
             except ValueError as exc:
                 print(f"Error: {exc}", file=sys.stderr)
-                return 1, None, None
+                return 1, None, None, ""
 
     platform_for_coverage = normalize_sar_platform_token(inps.platform)
     if platform_for_coverage not in SAR_PLATFORM_KNOWN:
@@ -483,7 +600,7 @@ def main(
             "(S1, Sentinel-1, Sen, NISAR/Nisar, ALOS2/ALOS).",
             file=sys.stderr,
         )
-        return 1, None, None
+        return 1, None, None, ""
 
     if platform_for_coverage == "NISAR":
         print(
@@ -491,7 +608,7 @@ def main(
             "Use --platform S1 (Sentinel-1) for template generation.",
             file=sys.stderr,
         )
-        return 1, None, None
+        return 1, None, None, ""
 
     if platform_for_coverage == "ALOS2":
         print(
@@ -499,33 +616,40 @@ def main(
             "Use --platform S1 (Sentinel-1) for template generation.",
             file=sys.stderr,
         )
-        return 1, None, None
+        return 1, None, None, ""
 
     print("Running get_sar_coverage.py --select ...", file=sys.stderr)
-    coverage = _run_get_sar_coverage(aoi, platform_for_coverage)
-    asc_relorbit = coverage["asc_relorbit"]
-    asc_label = coverage["asc_label"]
-    desc_relorbit = coverage["desc_relorbit"]
-    desc_label = coverage["desc_label"]
+    try:
+        coverage = _run_get_sar_coverage(aoi, platform_for_coverage)
+    except RuntimeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1, None, None, ""
+
+    flight_dir_eff = _effective_flight_dir_for_coverage(inps.flight_dir, coverage)
+    msg = _validate_coverage_for_flight_dir(coverage, flight_dir_eff)
+    if msg:
+        print(f"Error: {msg}", file=sys.stderr)
+        return 1, None, None, ""
+
     try:
         subset_lalo = coverage.get("processing_subset") or _aoi_to_subset_lalo(aoi)
     except ValueError as exc:
         print(f"Error: cannot derive subset.lalo from AOI: {exc}", file=sys.stderr)
-        return 1, None, None
-    print(f"  asc_label={asc_label} asc_relorbit={asc_relorbit}", file=sys.stderr)
-    print(f"  desc_label={desc_label} desc_relorbit={desc_relorbit}", file=sys.stderr)
+        return 1, None, None, ""
 
-    if inps.flight_dir in ("desc", "desc,asc"):
-        primary_relorbit = int(desc_relorbit)
-        primary_label = str(desc_label)
+    _log_coverage_for_effective_mode(coverage, flight_dir_eff)
+
+    if flight_dir_eff in ("desc", "desc,asc"):
+        primary_relorbit = int(coverage["desc_relorbit"])
+        primary_label = str(coverage["desc_label"])
     else:
-        primary_relorbit = int(asc_relorbit)
-        primary_label = str(asc_label)
+        primary_relorbit = int(coverage["asc_relorbit"])
+        primary_label = str(coverage["asc_label"])
 
     dummy_path = _get_dummy_template_path()
     if not dummy_path.exists():
         print(f"Error: dummy template not found: {dummy_path}", file=sys.stderr)
-        return 1, None, None
+        return 1, None, None, ""
 
     content = dummy_path.read_text()
     content = _substitute_template(
@@ -542,19 +666,19 @@ def main(
     out_path.write_text(content)
     print(f"Wrote {out_path}")
 
-    if inps.flight_dir in ("both", "asc,desc", "desc,asc"):
+    if flight_dir_eff in ("both", "asc,desc", "desc,asc"):
         same_dir = out_path.parent
         print(f"Creating opposite-orbit template in {same_dir} ...", file=sys.stderr)
         _run_create_opposite_orbit(out_path, same_dir)
         # Complementary-pass basename: same convention as create_opposite_orbit_template.bash (name + other label).
-        if inps.flight_dir in ("desc", "desc,asc"):
-            opposite_label = str(asc_label)
+        if flight_dir_eff in ("desc", "desc,asc"):
+            opposite_label = str(coverage["asc_label"])
         else:
-            opposite_label = str(desc_label)
+            opposite_label = str(coverage["desc_label"])
         opposite_path = (out_path.parent / f"{name}{opposite_label}.template").resolve()
-        return 0, out_path.resolve(), opposite_path
+        return 0, out_path.resolve(), opposite_path, flight_dir_eff
 
-    return 0, out_path.resolve(), None
+    return 0, out_path.resolve(), None, flight_dir_eff
 
 
 if __name__ == "__main__":

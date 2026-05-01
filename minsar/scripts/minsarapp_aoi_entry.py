@@ -3,11 +3,12 @@
 
 User-facing: ``minsarApp.bash <AOI> <NAME> [ create_template options ... ] [ minsar options ... ]``
 
-If ``--flight-dir`` requests dual-pass output (``asc,desc`` default; also ``desc,asc``,
-legacy ``both``, or same as ``desc, asc`` with spaces after the comma), the re-exec
-appends ``--opposite-orbit`` to ``minsarApp`` so the complementary pass runs after the
-primary pass (unless the remainder already has ``--opposite-orbit`` or
-``--no-opposite-orbit``).
+When ``create_template`` ends in dual-pass mode (``asc,desc`` default; also ``desc,asc``,
+legacy ``both``, or comma-separated values with spaces), the re-exec appends ``--opposite-orbit``
+to ``minsarApp`` so the complementary pass runs after the primary pass (unless the remainder
+already has ``--opposite-orbit`` or ``--no-opposite-orbit``). If the AOI has coverage for only
+ascending or only descending, ``create_template`` falls back to a single template (see its Note on
+stderr) and the bridge uses effective ``asc`` / ``desc`` so ``--opposite-orbit`` is not appended.
 
 For a **single** direction (``asc`` or ``desc``) together with ``--opposite-orbit`` in
 the minsarApp tail, template creation is expanded to ``asc,desc`` or ``desc,asc`` so
@@ -167,12 +168,13 @@ def run() -> None:
     efd = expand_flight_dir_for_dual_templates(_ns.flight_dir, list(rest))
     if efd != _ns.flight_dir:
         ct_list = apply_flight_dir_to_ct_list(ct_list, efd)
-    code, primary, _opposite = main(iargs=ct_list)
+    code, primary, _opposite, flight_dir_eff = main(iargs=ct_list)
     if code != 0 or primary is None:
         sys.exit(int(code) if code else 1)
     primary_s = str(Path(primary).resolve())
+    # Use effective flight direction (single-pass fallback when dual was requested).
     margs = minsarapp_args_after_primary(
-        primary_s, _ns.flight_dir, list(rest)
+        primary_s, flight_dir_eff, list(rest)
     )
     # After create_template: immutable pair for minsarApp.bash (read once, then unset).
     os.environ["MINSAR_FIRST_ORBIT_TEMPLATE_FILE"] = primary_s
