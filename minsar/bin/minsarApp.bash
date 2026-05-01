@@ -858,6 +858,8 @@ fi
 ########################
 #   Summarize results 
 ########################
+echo "QQQ cli_comamnd: $cli_command"
+echo "QQQ reduced_args $reduced_args"
 print_summary --filesize "$template_file"
 if [[ $opposite_orbit_flag == "1" ]]; then
    print_summary --filesize  "$opposite_orbit_template_file"
