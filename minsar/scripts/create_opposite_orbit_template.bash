@@ -17,12 +17,11 @@ matches the complementary pass (asc vs desc) for the same AOI. Updates ssaraopt.
 to the opposite pass relative orbit number.
 
 Options:
-  --outdir DIR   Output directory (default: $AUTO_TEMPLATES, or sibling AUTO_TEMPLATES next
-                 to $TEMPLATES if AUTO_TEMPLATES is unset)
+  --outdir DIR   Output directory (default: $TEMPLATES, or $TE if TEMPLATES is unset)
   --platform P   Single platform for get_sar_coverage.py --select (default: S1)
 
 Environment:
-  TEMPLATES, AUTO_TEMPLATES — used for default --outdir (see above)
+  TEMPLATES / TE — used for default --outdir when --outdir is omitted
 
 After a successful write, opposite_orbit.txt is written in the current working directory
 (typically the MinSAR project / WORK_DIR) with one line: absolute path to the new template.
@@ -70,20 +69,16 @@ _dirs_same() {
     return 1
 }
 
-# Print WROTE line: use $AUTO_TEMPLATES in the message when outdir is that location.
+# Print WROTE line: prefer $TEMPLATES or $TE in the message when outdir matches.
 print_wrote_line() {
     local outdir="$1" out_base="$2"
-    if [[ -n "${AUTO_TEMPLATES:-}" ]] && _dirs_same "$outdir" "$AUTO_TEMPLATES"; then
-        printf 'WROTE $AUTO_TEMPLATES/%s.template\n' "$out_base"
+    if [[ -n "${TEMPLATES:-}" ]] && _dirs_same "$outdir" "$TEMPLATES"; then
+        printf 'WROTE $TEMPLATES/%s.template\n' "$out_base"
         return
     fi
-    if [[ -n "${TEMPLATES:-}" ]]; then
-        local sib_auto
-        sib_auto="$(dirname "$TEMPLATES")/AUTO_TEMPLATES"
-        if _dirs_same "$outdir" "$sib_auto"; then
-            printf 'WROTE $AUTO_TEMPLATES/%s.template\n' "$out_base"
-            return
-        fi
+    if [[ -n "${TE:-}" ]] && _dirs_same "$outdir" "$TE"; then
+        printf 'WROTE $TE/%s.template\n' "$out_base"
+        return
     fi
     printf 'WROTE %s/%s.template\n' "${outdir%/}" "$out_base"
 }
@@ -124,12 +119,12 @@ done
 [[ -f "$GET_SAR_COVERAGE" ]] || die "missing: $GET_SAR_COVERAGE"
 
 if [[ -z "$outdir" ]]; then
-    if [[ -n "${AUTO_TEMPLATES:-}" ]]; then
-        outdir="$AUTO_TEMPLATES"
-    elif [[ -n "${TEMPLATES:-}" ]]; then
-        outdir="$(dirname "$TEMPLATES")/AUTO_TEMPLATES"
+    if [[ -n "${TEMPLATES:-}" ]]; then
+        outdir="$TEMPLATES"
+    elif [[ -n "${TE:-}" ]]; then
+        outdir="$TE"
     else
-        die "set AUTO_TEMPLATES or TEMPLATES, or pass --outdir"
+        die "set TEMPLATES or TE (or pass --outdir)"
     fi
 fi
 

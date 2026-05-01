@@ -67,7 +67,6 @@ export SAMPLESDIR=${MINSAR_HOME}/samples
 export DEMDIR=${WORKDIR}/DEMDIR
 export TEMPLATES=${WORKDIR}/infiles/${USER_PREFERRED}/TEMPLATES
 export TE=${TEMPLATES}
-export AUTO_TEMPLATES="${AUTO_TEMPLATES:-$(dirname "${TEMPLATES}")/AUTO_TEMPLATES}"
 
 ############## DASK ##############
 export DASK_CONFIG=${MINTPY_HOME}/src/mintpy/defaults/

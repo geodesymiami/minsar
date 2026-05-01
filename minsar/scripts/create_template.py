@@ -240,17 +240,6 @@ def _substitute_template(
     return "\n".join(out) + "\n"
 
 
-def _get_auto_templates_dir() -> Path:
-    """Return AUTO_TEMPLATES directory for opposite-orbit template."""
-    auto = os.environ.get("AUTO_TEMPLATES")
-    if auto:
-        return Path(auto).resolve()
-    templates = os.environ.get("TEMPLATES")
-    if templates:
-        return Path(templates).resolve().parent / "AUTO_TEMPLATES"
-    return Path.cwd() / "AUTO_TEMPLATES"
-
-
 def _run_create_opposite_orbit(
     template_path: Path,
     outdir: Path,
@@ -261,7 +250,6 @@ def _run_create_opposite_orbit(
         raise FileNotFoundError(f"create_opposite_orbit_template.bash not found: {script}")
 
     env = os.environ.copy()
-    env["AUTO_TEMPLATES"] = str(outdir)
     python_bin = Path(sys.executable).resolve().parent
     env["PATH"] = f"{python_bin}{os.pathsep}{env.get('PATH', '')}"
     proc = subprocess.run(

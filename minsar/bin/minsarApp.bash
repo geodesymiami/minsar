@@ -559,7 +559,7 @@ echo "    $download_flag        $preprocess_flag       $dem_flag      $jobfiles_
 
 echo ""
 [[ "$ifgram_flag" == "1" ]] && echo "ISCE steps to process: $isce_start-$isce_stop"
-[[ "$miaplpy_flag" == "1" ]] && echo "MiaplPy steps to process: $miaplpy_startstep-$miaplpy_stopstep"
+[[ "$miaplpy_flag" == "1" && "$skip_miaplpy_flag" != "1" ]] && echo "MiaplPy steps to process: $miaplpy_startstep-$miaplpy_stopstep"
 
 sleep 5
 

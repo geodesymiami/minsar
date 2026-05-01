@@ -95,8 +95,7 @@ minsarApp.bash
 |----------|---------|
 | `$MINSAR_HOME` | Repository root |
 | `$SCRATCHDIR` | Processing directory |
-| `$TEMPLATES` / `$TE` | User templates |
-| `$AUTO_TEMPLATES` | Auto-generated opposite-orbit templates (default: sibling of `$TEMPLATES`; see `create_opposite_orbit_template.bash`). `create_template.py` uses `--flight-dir` (`asc,desc` default; also `desc,asc`/`both`) to write one or both pass templates. |
+| `$TEMPLATES` / `$TE` | User templates (includes opposite-orbit templates from `create_opposite_orbit_template.bash`; AOI mode runs `create_template.py` under this directory via `minsarapp_aoi_entry.py`). |
 | `$SAMPLESDIR` | Sample templates |
 | `$QUEUENAME` | Default SLURM queue |
 
