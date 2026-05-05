@@ -31,6 +31,7 @@ minsarApp.bash $SAMPLESDIR/template.template [--start STEP] [--stop STEP] [--min
 | 2 | `minsar/bin/run_workflow.bash` | Job submission and monitoring loop |
 | 3 | `minsar/bin/submit_jobs.bash` | Batch job submission |
 | 4 | `minsar/bin/sbatch_conditional.bash` | Resource-checked sbatch wrapper |
+| — | `minsar/bin/horzvert_timeseries.bash` | Asc/desc LOS: re-reference to `--ref-lalo` (`reference_point_hdfeos5.bash`), optional mv short-name MiaplPy HE5 onto corner-suffix duplicate, geocode, horz/vert (PlotData `horzvert_timeseries.py`), InsarMaps (LOS ingest without re-applying `--ref-lalo`) |
 | 5 | `minsar/lib/utils.sh` | Core bash utilities |
 | 6 | `minsar/scripts/get_sar_coverage.py` | AOI coverage: orbits, counts; `--select` chooses Asc/Desc relative orbit (S1: prefers full-AOI consistency over incidence) |
 

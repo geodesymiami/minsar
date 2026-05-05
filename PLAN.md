@@ -1,3 +1,61 @@
+# Plan: Align horzvert LOS ingestion with ref-lalo workflow
+
+## Summary
+Update `horzvert_timeseries.bash` so LOS ingest uses asc/desc files that have already been re-referenced to the requested `--ref-lalo`, geocoded from those re-referenced files, and then ingested directly (without re-referencing during ingest). This prevents unintended ingestion of geocoded source products and enforces the intended sequence.
+
+## Key Components Affected
+- `minsar/bin/horzvert_timeseries.bash`
+- Potentially a colocated/new test file under `tests/` for this script flow
+- `architecture_docs/DEVELOPMENT_GUIDE.md` (testing/dev notes if needed)
+- `architecture_docs/README.md` (quick reference update if behavior description changes materially)
+
+## Action Items
+- [x] Audit current Step 1/Step 4 behavior for LOS files and identify exact command path causing wrong ingest target.
+- [x] Implement explicit re-reference step for original asc/desc inputs using `--ref-lalo`.
+- [x] Ensure re-referenced asc/desc keep the same filename as original (per request), replacing in-place or controlled move.
+- [x] Geocode the re-referenced asc/desc products and use those for horz/vert computation.
+- [x] Ingest horz/vert outputs.
+- [x] Ingest the re-referenced asc/desc products directly (no additional `--ref-lalo` during ingest).
+- [x] Add or update tests that validate command flow and ingestion targets.
+- [x] Run required tests and fix any regressions (bash suites pass; full `./run_all_tests.bash` may fail if Python env lacks `numpy` for unrelated `test_make_zero_elevation_dem`).
+- [x] Update architecture docs to match new behavior.
+
+## Execution Plan (Detailed Change Instructions)
+1. Read `minsar/bin/horzvert_timeseries.bash` around:
+   - file resolution (`resolve_he5_or_dataset`)
+   - geocode step (`geocode_if_needed`)
+   - ingestion step (`ingest_los_flag` block)
+2. Introduce a LOS re-reference helper step before geocoding:
+   - call the same reference-point mechanism currently triggered indirectly by `ingest_insarmaps.bash --ref-lalo`
+   - apply it to both resolved original asc/desc inputs
+   - ensure output filename remains the original filename (no suffix naming change)
+3. Adjust Step 1 geocoding inputs so geocode runs from the re-referenced asc/desc files.
+4. Keep Step 2 horz/vert computation using geocoded asc/desc products.
+5. Update Step 4 LOS ingest:
+   - ingest the re-referenced asc/desc files directly
+   - remove `--ref-lalo` from LOS ingest invocation so reference is not re-applied and no extra unintended ingest path is triggered
+6. Update inline help/comments in `horzvert_timeseries.bash` to reflect the new sequencing and filenames.
+7. Add/adjust test coverage:
+   - verify ingest commands target re-referenced asc/desc and do not pass `--ref-lalo`
+   - verify horz/vert ingest remains unchanged
+8. Run:
+   - `bash tests/test_run_workflow.bash`
+   - `bash tests/run_all_tests.bash`
+9. Update architecture docs with the adjusted horzvert LOS workflow behavior.
+
+## Key Commands & Flows
+- Reproduce current behavior:
+  - `horzvert_timeseries.bash <desc_dir_or_file> <asc_dir_or_file> --ref-lalo <LAT> <LON>`
+- Validate flow in logs:
+  - confirm explicit re-reference step occurs before geocode
+  - confirm geocode uses re-referenced asc/desc
+  - confirm ingest for LOS is direct (no `--ref-lalo`)
+
+## TODO List
+- [x] Write tests for existing behavior (capture current command path)
+- [x] Implement changes
+- [x] Add tests for new behavior
+- [x] Run full test suite (bash OK; Python needs env with numpy for all modules)
 # Plan: Extend `--flight-dir` list forms
 
 ## Summary

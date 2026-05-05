@@ -4,14 +4,19 @@
 # Resolves file paths, geocodes radar-coded inputs, runs horzvert_timeseries.py,
 # and ingests results into insarmaps.
 #
-# Flow (2026-03):
+# Flow (2026-05):
 #   Step 0: Parse options and resolve file paths (dirs -> specific .he5 via get_eos5_file)
+#   Step 0b: If resolved path is geo_*.he5, switch to sibling radar S1*.he5 (same dir).
+#   Step 0c: Re-reference both radar LOS .he5 files to --ref-lalo in place (same basename;
+#            reference_point_hdfeos5.bash; then ingest does not pass --ref-lalo).
+#   Step 0d: If a short-name miaplpy HE5 (…_dates_filt*DS.he5) was updated but a long-name
+#            duplicate (…_dates_N*E*_…_filt*DS.he5) exists, mv the short file onto the long path.
 #   Step 1: Geocode inputs if radar-coded (geocode.py; skip if already geocoded)
-#   Step 2: Run horzvert_timeseries.py (applies ref point internally, computes vert/horz)
+#   Step 2: Run horzvert_timeseries.py (computes vert/horz from geocoded inputs)
 #   Step 3: Locate vert/horz outputs
 #   Step 4: Ingest into insarmaps (if not --no-insarmaps)
 #           4a: ingest vert/horz (no --ref-lalo, ref already in file)
-#           4b: ingest original asc/desc S1*.he5 with --ref-lalo (not geo_*.he5; reference_point_hdfeos5.bash called internally)
+#           4b: ingest asc/desc radar S1*.he5 (already re-referenced; no --ref-lalo)
 #           4c: HTML/URLs
 
 set -eo pipefail
@@ -20,9 +25,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
 
 source ${SCRIPT_DIR}/../lib/utils.sh
+source ${SCRIPT_DIR}/../lib/horzvert_timeseries_utils.sh
 
-# Dependencies: utils.sh [get_base_projectname], horzvert_timeseries.py (external),
-#   geocode.py, write_insarmaps_framepage_urls.py, create_data_download_commands.py, ingest_insarmaps.bash.
+# Dependencies: utils.sh [get_base_projectname], horzvert_timeseries_utils.sh, horzvert_timeseries.py (external),
+#   reference_point_hdfeos5.bash, geocode.py, write_insarmaps_framepage_urls.py,
+#   create_data_download_commands.py, ingest_insarmaps.bash.
 #   PlotData: plotdata.helper_functions (get_eos5_file, find_longitude_degree) -- TODO: copy into minsar.
 
 get_path_without_scratchdir() {
@@ -286,10 +293,16 @@ Examples:
       --start-date YYYYMMDD           Start date of limited period
       --end-date YYYYMMDD             End date of limited period
       --period YYYYMMDD:YYYYMMDD      Period of the search
-      --no-ingest-los                 Skip ingesting both input files with --ref-lalo (default: ingest-los is enabled)
+      --no-ingest-los                 Skip ingesting both re-referenced radar LOS .he5 files (default: ingest-los is enabled)
       --no-insarmaps                  Skip running ingest_insarmaps.bash (default: insarmaps ingestion is enabled)
       --debug                         Enable debug mode (set -x)
 
+  Re-reference: Both resolved radar LOS .he5 files are updated in place to --ref-lalo via
+  reference_point_hdfeos5.bash before geocoding. If resolution picked geo_*.he5, the sibling radar
+  S1*.he5 in the same directory is used instead.
+  MiaplPy duplicates: if both a short-name HE5 (…_YYYYMMDD_YYYYMMDD_filt*DS.he5) and a long-name
+  copy with bbox corners (…_YYYYMMDD_YYYYMMDD_N*E*_…_filt*DS.he5) exist, the updated short file is
+  moved onto the long path so one canonical file keeps the correct REF_* metadata.
   Geocoding: If inputs are radar S1*.he5, an existing geo_S1*.he5 in the same directory is reused
   only when it is newer than the radar file; otherwise geocode.py is run (refreshes stale geo).
   If a geo_S1*.he5 is selected and the sibling radar file is newer, geocode is re-run from radar.
@@ -519,11 +532,53 @@ echo "Step 0: Resolve file paths"
 FILE1=$(resolve_he5_or_dataset "$DIR_OR_FILE1" "$dataset")
 FILE2=$(resolve_he5_or_dataset "$DIR_OR_FILE2" "$dataset")
 
-echo "FILE1: $FILE1"
-echo "FILE2: $FILE2"
+echo "FILE1 (resolved): $FILE1"
+echo "FILE2 (resolved): $FILE2"
 
-# Save original resolved paths for LOS ingestion (Step 4b). After Step 1, FILE1/FILE2
-# may point to geo_*.he5; insarmaps LOS ingest must use the original S1*.he5.
+# Use sibling radar S1*.he5 when resolution returned geo_*.he5 (re-ref + geocode are radar-first).
+if ! FILE1=$(hv_he5_radar_los_path "$FILE1"); then exit 1; fi
+if ! FILE2=$(hv_he5_radar_los_path "$FILE2"); then exit 1; fi
+echo "FILE1 (radar LOS for pipeline): $FILE1"
+echo "FILE2 (radar LOS for pipeline): $FILE2"
+
+###############################################################################
+# Step 0c: Re-reference radar LOS to --ref-lalo (in place, same filename)
+###############################################################################
+echo ""
+echo "##############################################"
+echo "Step 0c: Re-reference radar LOS to --ref-lalo (reference_point_hdfeos5.bash)"
+
+REF_PT_SCRIPT="${SCRIPT_DIR}/reference_point_hdfeos5.bash"
+if [[ ! -f "$REF_PT_SCRIPT" ]]; then
+    echo "Error: Missing $REF_PT_SCRIPT" >&2
+    exit 1
+fi
+
+_hv_rf1="$(realpath "$FILE1")"
+_hv_rf2="$(realpath "$FILE2")"
+_hv_ref_paths=("$_hv_rf1")
+[[ "$_hv_rf1" != "$_hv_rf2" ]] && _hv_ref_paths+=("$_hv_rf2")
+for _hv_los in "${_hv_ref_paths[@]}"; do
+    echo ""
+    echo "Re-referencing: $_hv_los"
+    _hv_ts="$(date +"%Y%m%d:%H-%M")"
+    append_hv_to_project_logs "${_hv_ts} + bash $(printf '%q' "$REF_PT_SCRIPT") $(printf '%q' "$_hv_los") --ref-lalo $(printf '%q' "$REF_LAT") $(printf '%q' "$REF_LON")"
+    bash "$REF_PT_SCRIPT" "$_hv_los" --ref-lalo "$REF_LAT" "$REF_LON"
+done
+
+###############################################################################
+# Step 0d: Prefer corner-suffix HE5 name when short duplicate exists (MiaplPy)
+###############################################################################
+echo ""
+echo "##############################################"
+echo "Step 0d: Unify short-name vs corner-suffix MiaplPy HE5 filenames (if applicable)"
+
+if ! FILE1=$(hv_promote_miaplpy_short_he5_to_corner_filename "$FILE1"); then exit 1; fi
+if ! FILE2=$(hv_promote_miaplpy_short_he5_to_corner_filename "$FILE2"); then exit 1; fi
+echo "FILE1 (after optional rename): $FILE1"
+echo "FILE2 (after optional rename): $FILE2"
+
+# Paths for LOS ingestion (Step 4b): final radar paths after re-reference and optional rename.
 ORIGINAL_RESOLVED_FILE1="$(realpath "$FILE1")"
 ORIGINAL_RESOLVED_FILE2="$(realpath "$FILE2")"
 
@@ -746,14 +801,14 @@ if [[ $ingest_los_flag == "1" ]]; then
     cd "$ORIGINAL_DIR/$HORZVERT_DIR"
     echo ""
     echo "##############################################"
-    # Use original resolved S1*.he5 for LOS ingestion, not geo_*.he5 (see ORIGINAL_RESOLVED_FILE1/2).
+    # LOS files were re-referenced in Step 0c; ingest without --ref-lalo (hdfeos5_2json uses this .he5).
     ingest_dataset_opt1=$(get_ingest_dataset_opt "$ORIGINAL_RESOLVED_FILE1")
     if [[ -n "$ingest_dataset_opt1" ]]; then
-        echo "ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE1 --ref-lalo ${ref_lalo[*]} --dataset $ingest_dataset_opt1"
-        ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE1" --ref-lalo "${ref_lalo[@]}" --dataset "$ingest_dataset_opt1"
+        echo "ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE1 --dataset $ingest_dataset_opt1"
+        ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE1" --dataset "$ingest_dataset_opt1"
     else
-        echo "ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE1 --ref-lalo ${ref_lalo[*]}"
-        ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE1" --ref-lalo "${ref_lalo[@]}"
+        echo "ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE1"
+        ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE1"
     fi
     echo "$ORIGINAL_RESOLVED_FILE1" >> $DATA_FILES_TXT
 
@@ -761,11 +816,11 @@ if [[ $ingest_los_flag == "1" ]]; then
     echo "##############################################"
     ingest_dataset_opt2=$(get_ingest_dataset_opt "$ORIGINAL_RESOLVED_FILE2")
     if [[ -n "$ingest_dataset_opt2" ]]; then
-        echo "ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE2 --ref-lalo ${ref_lalo[*]} --dataset $ingest_dataset_opt2"
-        ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE2" --ref-lalo "${ref_lalo[@]}" --dataset "$ingest_dataset_opt2"
+        echo "ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE2 --dataset $ingest_dataset_opt2"
+        ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE2" --dataset "$ingest_dataset_opt2"
     else
-        echo "ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE2 --ref-lalo ${ref_lalo[*]}"
-        ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE2" --ref-lalo "${ref_lalo[@]}"
+        echo "ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE2"
+        ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE2"
     fi
     echo "$ORIGINAL_RESOLVED_FILE2" >> $DATA_FILES_TXT
 
