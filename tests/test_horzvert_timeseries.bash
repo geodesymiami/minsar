@@ -69,6 +69,22 @@ test_hv_promote_short_he5_to_corner_name() {
     print_test_end "hv_promote short→corner"
 }
 
+test_hv_promote_short_he5_update_placeholder_to_corner_name() {
+    print_test_start "hv_promote short→corner (XXXXXXXX)" \
+        "Update-mode miaplpy filename (YYYYMMDD_XXXXXXXX) promotes over corner sibling."
+    local tmp short long out
+    tmp=$(mktemp -d)
+    short="$tmp/S1_asc_142_miaplpy_20250414_XXXXXXXX_filtDel4DS.he5"
+    long="$tmp/S1_asc_142_miaplpy_20250414_XXXXXXXX_N1397E12097_N1398E12103_N1405E12102_N1404E12096_filtDel4DS.he5"
+    printf newref >"$short"
+    printf oldref >"$long"
+    out=$(hv_promote_miaplpy_short_he5_to_corner_filename "$short" 2>/dev/null)
+    assert_equals "$long" "$out" "Returns long path"
+    assert_equals "newref" "$(cat "$long")" "Long receives content from updated short"
+    rm -rf "$tmp"
+    print_test_end "hv_promote short→corner (XXXXXXXX)"
+}
+
 test_hv_promote_corner_file_unchanged() {
     print_test_start "hv_promote long unchanged" "Corner-suffix basename is not replaced."
     local tmp long out
@@ -79,6 +95,19 @@ test_hv_promote_corner_file_unchanged() {
     assert_equals "$long" "$out" "Same path when already long form"
     rm -rf "$tmp"
     print_test_end "hv_promote long unchanged"
+}
+
+test_hv_promote_corner_update_placeholder_unchanged() {
+    print_test_start "hv_promote long XXXXXXXX unchanged" \
+        "Corner form with miaplpy_…_YYYYMMDD_XXXXXXXX stays as-is when passed directly."
+    local tmp long out
+    tmp=$(mktemp -d)
+    long="$tmp/S1_asc_142_miaplpy_20250414_XXXXXXXX_N1397E12097_N1398E12103_N1405E12102_N1404E12096_filtDel4DS.he5"
+    printf z >"$long"
+    out=$(hv_promote_miaplpy_short_he5_to_corner_filename "$long")
+    assert_equals "$long" "$out" "Same path when already corner form (update naming)"
+    rm -rf "$tmp"
+    print_test_end "hv_promote long XXXXXXXX unchanged"
 }
 
 test_horzvert_script_syntax_and_los_ingest_no_ref_lalo() {
@@ -102,7 +131,9 @@ test_hv_he5_radar_los_path_non_geo_unchanged
 test_hv_he5_radar_los_path_geo_maps_to_sibling
 test_hv_he5_radar_los_path_geo_missing_sibling_fails
 test_hv_promote_short_he5_to_corner_name
+test_hv_promote_short_he5_update_placeholder_to_corner_name
 test_hv_promote_corner_file_unchanged
+test_hv_promote_corner_update_placeholder_unchanged
 test_horzvert_script_syntax_and_los_ingest_no_ref_lalo
 
 print_summary

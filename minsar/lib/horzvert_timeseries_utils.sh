@@ -30,8 +30,9 @@ hv_he5_radar_los_path() {
     return 0
 }
 
-# If directory contains both a short-name MiaplPy HE5 (…_YYYYMMDD_YYYYMMDD_<dataset>.he5) and a
-# long-name variant (…_YYYYMMDD_YYYYMMDD_N…E…_…_<dataset>.he5), reference_point_hdfeos5.bash only
+# If directory contains both a short-name MiaplPy HE5 (…_miaplpy_YYYYMMDD_YYYYMMDD_<dataset>.he5 or
+# …_miaplpy_YYYYMMDD_XXXXXXXX_<dataset>.he5 when update filenames are used) and a long-name variant
+# (…_YYYYMMDD_YYYYMMDD_N…E…_…_<dataset>.he5), reference_point_hdfeos5.bash only
 # updates the resolved path; the corner-suffix copy stays stale. When the short form matches the
 # dataset suffix of the long form, replace the long file by moving the updated short file into
 # place (same basename as the long-form file).
@@ -51,20 +52,27 @@ hv_promote_miaplpy_short_he5_to_corner_filename() {
     dir=$(dirname "$f")
     base=$(basename "$f" .he5)
 
-    # Already using corner-in-name form (e.g. …_20180104_N1314E12362_…)
-    if [[ "$base" =~ miaplpy_[0-9]{8}_[0-9]{8}_N[0-9]+[NSEW] ]]; then
+    # Already using corner-in-name form (classic two end dates or update-mode XXXXXXXX end token).
+    # Match …_miaplpy_<8digits>_…_N<corner>… (second token is either YYYYMMDD or XXXXXXXX).
+    if [[ "$base" =~ _miaplpy_[0-9]{8}_[0-9]{8}_N ]] || [[ "$base" =~ _miaplpy_[0-9]{8}_XXXXXXXX_N ]]; then
         echo "$f"
         return 0
     fi
 
-    # Short form only: two miaplpy dates then one dataset token (no bbox segment)
-    if [[ ! "$base" =~ ^(S1_[^_]+_[^_]+_miaplpy_[0-9]{8}_[0-9]{8})_(filt.*DS|filtSingDS)$ ]]; then
+    # Short form only: miaplpy segment then one dataset token (no bbox segment).
+    prefix=""
+    suffix=""
+    if [[ "$base" =~ ^(S1_[^_]+_[^_]+_miaplpy_[0-9]{8}_[0-9]{8})_(filt.*DS|filtSingDS)$ ]]; then
+        prefix="${BASH_REMATCH[1]}"
+        suffix="${BASH_REMATCH[2]}"
+    elif [[ "$base" =~ ^(S1_[^_]+_[^_]+_miaplpy_[0-9]{8}_XXXXXXXX)_(filt.*DS|filtSingDS)$ ]]; then
+        prefix="${BASH_REMATCH[1]}"
+        suffix="${BASH_REMATCH[2]}"
+    fi
+    if [[ -z "$prefix" ]] || [[ -z "$suffix" ]]; then
         echo "$f"
         return 0
     fi
-
-    prefix="${BASH_REMATCH[1]}"
-    suffix="${BASH_REMATCH[2]}"
 
     if [[ "$base" != "${prefix}_${suffix}" ]]; then
         echo "$f"

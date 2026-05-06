@@ -300,9 +300,9 @@ Examples:
   Re-reference: Both resolved radar LOS .he5 files are updated in place to --ref-lalo via
   reference_point_hdfeos5.bash before geocoding. If resolution picked geo_*.he5, the sibling radar
   S1*.he5 in the same directory is used instead.
-  MiaplPy duplicates: if both a short-name HE5 (…_YYYYMMDD_YYYYMMDD_filt*DS.he5) and a long-name
-  copy with bbox corners (…_YYYYMMDD_YYYYMMDD_N*E*_…_filt*DS.he5) exist, the updated short file is
-  moved onto the long path so one canonical file keeps the correct REF_* metadata.
+  MiaplPy duplicates: if both a short-name HE5 (…_YYYYMMDD_YYYYMMDD_filt*DS.he5 or
+  …_YYYYMMDD_XXXXXXXX_filt*DS.he5 for update filenames) and a long-name copy with bbox corners exist,
+  the updated short file is moved onto the long path so one canonical file keeps the correct REF_* metadata.
   Geocoding: If inputs are radar S1*.he5, an existing geo_S1*.he5 in the same directory is reused
   only when it is newer than the radar file; otherwise geocode.py is run (refreshes stale geo).
   If a geo_S1*.he5 is selected and the sibling radar file is newer, geocode is re-run from radar.

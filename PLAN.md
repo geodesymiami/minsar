@@ -1,3 +1,43 @@
+# Plan: Align horz/vert HDFEOS update naming with MintPy threshold logic
+
+## Summary
+Make `tools/PlotData/src/plotdata/helper_functions.py` use the same conditional `XXXXXXXX` end-date naming behavior as `additions/mintpy/save_hdfeos5.py`, so `XXXXXXXX` is only used when update mode is on and the dataset last date is recent enough.
+
+## Key Components Affected
+- `tools/PlotData/src/plotdata/helper_functions.py`
+- Potentially tests in `tests/` if there is existing coverage for output naming paths
+- Runtime behavior in `tools/PlotData/src/plotdata/cli/horzvert_timeseries.py` via `get_output_filename()`
+
+## Action Items
+- [ ] Add helper logic in PlotData for "recent-date" threshold decision.
+- [ ] Update PlotData `get_output_filename()` to use thresholded `XXXXXXXX` behavior.
+- [ ] Keep behavior and messages consistent with MintPy naming policy.
+- [ ] Add/adjust focused tests (if present) for old-date vs recent-date update naming.
+- [ ] Run relevant tests/lint checks.
+
+## Execution Plan (Detailed Change Instructions)
+1. In `tools/PlotData/src/plotdata/helper_functions.py`, add date-age decision helper(s) equivalent to:
+   - parse `metadata['last_date']` (`YYYY-MM-DD`)
+   - compare to current date
+   - use `XXXXXXXX` only if age is within a fixed max-age threshold.
+2. Define and use the same threshold value as MintPy policy (31 days) to avoid divergence.
+3. Modify PlotData `get_output_filename()` so `update_flag` no longer forces unconditional `DATE2='XXXXXXXX'`.
+4. Preserve existing output filename format and corner-subset suffix behavior.
+5. Add/update tests covering:
+   - update=yes with recent last date -> `XXXXXXXX`
+   - update=yes with old last date -> real end date
+   - update!=yes -> real end date
+6. Run targeted tests first, then broader test command(s) if needed.
+
+## Key Commands & Flows
+- `python -m unittest ...` (targeted tests for naming logic, if test module exists)
+- `bash tests/run_all_tests.bash --python-only` (if quick enough and relevant)
+
+## TODO List
+- [ ] Write tests for existing behavior
+- [ ] Implement changes
+- [ ] Add tests for new behavior
+- [ ] Run full test suite
 # Plan: Align horzvert LOS ingestion with ref-lalo workflow
 
 ## Summary
