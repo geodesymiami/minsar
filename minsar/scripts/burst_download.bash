@@ -9,7 +9,7 @@
 # and burst2stack_cmd.sh exist in the work directory.
 #
 # Usage:
-#   burst_download.bash [--work-dir DIR] [--slc-dir DIR] [--parallel N] [--skip-listing] [--help]
+#   burst_download.bash [--work-dir DIR] [--slc-dir DIR] [--parallel N] [--skip-listing] [--no-check-bursts-includeAOI] [--help]
 #
 
 set -e
@@ -32,6 +32,7 @@ usage() {
     echo "  --dir DIR             Same as --slc-dir"
     echo "  --parallel N          Max parallel burst2stack jobs (default: 20)"
     echo "  --skip-listing        Skip asf_download --print; use existing asf_burst_listing.txt"
+    echo "  --no-check-bursts-includeAOI  Skip check_if_bursts_includeAOI.py and AOI pruning"
     echo "  --help, -h            Show this help"
     echo ""
     echo "Example:"
@@ -46,6 +47,7 @@ work_dir="."
 slc_dir="SLC"
 parallel=30
 skip_listing=0
+skip_check_include_aoi=0
 relative_orbit=""
 intersects_with=""
 start_date="2000-01-01"
@@ -117,6 +119,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --skip-listing)
             skip_listing=1
+            shift
+            ;;
+        --no-check-bursts-includeAOI)
+            skip_check_include_aoi=1
             shift
             ;;
         --help|-h)
@@ -505,4 +511,39 @@ if [[ -s "$failures_file" ]]; then
     fi
 else
     echo "Done."
+fi
+
+# 8. AOI coverage pruning: after all burst2stack runs completed, drop dates whose
+# burst GeoTIFF footprints do not fully cover the AOI bbox.
+#
+if [[ "$skip_check_include_aoi" -eq 0 ]]; then
+    # We reuse the AOI extent already computed for burst2stack (W S E N) and convert
+    # to the bbox format expected by check_if_bursts_includeAOI.py: LAT_S:LAT_N,LON_W:LON_E.
+    #
+    # This writes $slc_dir/dates_not_including_AOI.txt (one YYYYMMDD per line) and then
+    # removes matching paths under $slc_dir (GeoTIFFs + SAFEs) by deleting *${ymd}T*.
+    bbox_sn_we=$(python3 -c "
+import sys
+w, s, e, n = [float(x) for x in sys.argv[1].split()]
+print(f'{s}:{n},{w}:{e}')
+" "$extent") || {
+        echo "ERROR: could not derive bbox from extent '$extent' for AOI pruning." >&2
+        exit 1
+    }
+
+    check_if_bursts_includeAOI.py "$bbox_sn_we" "$slc_dir"/*.tif* || true
+    ndates_file="$slc_dir/dates_not_including_AOI.txt"
+    if [[ -f "$ndates_file" ]]; then
+        shopt -s nullglob
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            ymd="$(echo "$line" | tr -d '[:space:]')"
+            [[ -z "$ymd" ]] && continue
+            [[ "$ymd" =~ ^[0-9]{8}$ ]] || continue
+            echo "Removing products for date $ymd (AOI not fully covered)"
+            for f in "$slc_dir"/*"${ymd}"T*; do
+                rm -rf "$f"
+            done
+        done < "$ndates_file"
+        shopt -u nullglob
+    fi
 fi

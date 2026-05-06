@@ -662,6 +662,7 @@ def main(
     )
 
     out_base = f"{name}{primary_label}"
+    out_dir = Path.cwd()
     try:
         if dummy_path.parent.exists() and dummy_path.parent.samefile(Path.cwd()):
             out_dir = dummy_path.parent

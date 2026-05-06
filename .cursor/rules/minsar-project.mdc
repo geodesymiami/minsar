@@ -168,10 +168,12 @@ For `run_workflow.bash` internals: `minsar/bin/ARCHITECTURE.md`
 - Include `--help` handling for user-facing scripts
 - Source shared libs: `source "${SCRIPT_DIR}/../lib/workflow_utils.sh"`
 - **CLI validation**: Reject unknown options immediately (use `-?*|--*` case before `*)`). Validate types for named args (e.g. `--ref-lalo` must be numeric); exit with error on invalid syntax.
-- **`--help` Examples sections**: Keep example command lines short. Do not put blank lines or commentary **between** consecutive example lines—stack example commands back-to-back. Section prose (purpose, usage) goes above or below the example block, not between individual examples.
+- **`--help` Examples sections**: The Examples block must contain **only** example command lines (optionally preceded by a single `Examples:` heading). **No** labels, notes, blank lines, or other prose **between** example lines—stack commands back-to-back. All explanatory text belongs in the description, usage synopsis, or argument help **above or below** the Examples block, not mixed into it.
 
 ### Python Scripts
 - Use `argparse` for CLI arguments
+- Keep `parser.add_argument(...)` declarations on one line when possible. First shorten `help` text to keep it concise; only split across lines when a single line would exceed 155 characters.
+- **`--help` / epilog Examples**: Same rule as Bash—**only** consecutive example command lines inside the Examples section (no commentary or blank lines between them); put prose in `description`, `usage`, or per-argument `help`.
 - Use `pathlib.Path` for file paths
 - Include docstrings for modules/functions
 

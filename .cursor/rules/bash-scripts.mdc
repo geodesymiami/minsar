@@ -31,6 +31,8 @@ if [[ "$1" == "--help" || "$1" == "-h" ]]; then
 fi
 ```
 
+**`--help` Examples blocks:** The Examples section lists **only** example command lines (optionally after a single `Examples:` line). Do not put labels, notes, or blank lines **between** example lines. Put purpose and usage prose above or below that block.
+
 ## Argument Parsing Pattern
 
 **Always reject unknown options immediately.** Use a case branch for options starting with `-` before the default positional handler:
