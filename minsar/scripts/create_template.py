@@ -662,7 +662,13 @@ def main(
     )
 
     out_base = f"{name}{primary_label}"
-    out_path = Path.cwd() / f"{out_base}.template"
+    try:
+        if dummy_path.parent.exists() and dummy_path.parent.samefile(Path.cwd()):
+            out_dir = dummy_path.parent
+    except Exception:
+        out_dir = Path.cwd()
+
+    out_path = out_dir / f"{out_base}.template"
     out_path.write_text(content)
     print(f"Wrote {out_path}")
 
