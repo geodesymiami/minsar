@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+from minsar.src.minsar.helper_functions import parse_polygon
+from shapely.geometry import Polygon, box
 import asf_search as asf
 from asf_search.constants import INTERNAL
 import datetime
@@ -48,13 +50,14 @@ def create_parser(iargs=None, namespace=None):
     parser.add_argument('--end', metavar='YYYY-MM-DD or YYYYMMDD', help='End date of the search')
     parser.add_argument('--start-date', metavar='YYYY-MM-DD or YYYYMMDD', default=None, help='Start date of the search')
     parser.add_argument('--end-date', metavar='YYYY-MM-DD or YYYYMMDD', default=None, help='End date of the search')
-    parser.add_argument('--processingLevel', dest='processing_level', choices=['SLC', 'CSLC', 'BURST', '1.1', 'DISP', 'GUNW'], default='SLC', help='Product type to download (GUNW = NISAR interferograms)')
+    parser.add_argument('--processingLevel', dest='processing_level', choices=['SLC', 'CSLC', 'BURST', '1.1', 'DISP', 'GUNW', 'RSLC'], default='SLC', help='Product type to download')
     parser.add_argument('--beamMode', dest='beam_mode',  default=None, help='Beam mode (IW, S1 to S7)')
     parser.add_argument('--flightDirection', choices=['ASC', 'DESC', 'ASCENDING', 'DESCENDING'], default=None, help='Flight direction of the satellite (ASCENDING or DESCENDING)')
     parser.add_argument('--relativeOrbit', dest='relative_orbit', type=int, default=None, metavar='ORBIT', help='Relative Orbit Path')
     parser.add_argument('--burst-id', nargs='*', type=str, metavar='BURST', default=None, help='Burst ID')
     parser.add_argument('--frame', type=int, metavar='FRAME', help='Frame number (Default: None)')
-    parser.add_argument('--platform', nargs='?',metavar='SENTINEL1, ALOS2, NISAR', help='Platform to search')
+    parser.add_argument('--fullcover', action='store_true', help='Download only full coverage of the search area (Default: False)')
+    parser.add_argument('--platform', nargs='?', default='S1', metavar='SENTINEL1, ALOS2, NISAR', help='Platform to search')
     parser.add_argument('--parallel', type=int, default=6, help='Number of parallel downloads (Default: 1)')
     parser.add_argument('--print', dest='print', action='store_true', help='Print the whole search results')
     parser.add_argument('--download', action='store_true', help='Download the data')
@@ -127,14 +130,15 @@ def create_parser(iargs=None, namespace=None):
         inps.dataset = asf.DATASET.NISAR
 
         if inps.processing_level == asf.PRODUCT_TYPE.SLC:
-            inps.processing_level = asf.PRODUCT_TYPE.GUNW
+            # inps.processing_level = asf.PRODUCT_TYPE.GUNW
+            inps.processing_level = asf.PRODUCT_TYPE.RSLC
 
     if inps.processing_level==asf.PRODUCT_TYPE.SLC:
         inps.polarization = ['VV','VV+VH']
     elif inps.processing_level==asf.PRODUCT_TYPE.BURST:
         inps.polarization = ['VV']
         inps.dataset = [asf.DATASET.SLC_BURST]
-    elif inps.processing_level==asf.PRODUCT_TYPE.GUNW:
+    elif inps.platform==asf.PLATFORM.NISAR:
         inps.polarization = None
     else:
         inps.polarization = ['VV', 'VV+VH']
@@ -220,16 +224,20 @@ def main(iargs=None, namespace=None):
     if inps.print and len(result_list) > 0:
             print(', '.join(k for k in result_list[0].properties.keys() if k not in ['centerLat', 'centerLon']))
 
-    # burst_ids =[]
-    for r in result_list:
-        # if inps.print_burst:
-        #     if asf.PRODUCT_TYPE.BURST in inps.processing_level:
-        #         if r.properties['burst']['relativeBurstID'] not in burst_ids:
-        #             burst_ids.append(r.properties['burst']['relativeBurstID'])
-        #             print(f"Relative Burst ID: {r.properties['burst']['relativeBurstID']}")
-        #     else:
-        #         print('-' * 100)
-        #         print(f"Start date: {r.properties['startTime']}, End date: {(r.properties['stopTime'])}, {r.geometry['type']}: {r.geometry['coordinates']}, Path of satellite: {r.properties['pathNumber']}, Granule:  {r.properties['granuleType']}")
+    ######### Check full coverage if requested #########
+    if inps.fullcover:
+        print(f"Checking full coverage of the search area for {len(results)} results...")
+        region = parse_polygon(inps.intersectsWith)
+        bbox = box(region[0], region[2], region[1], region[3])
+        for r in results:
+            shape_coords = r.geometry['coordinates'][0]
+            polygon = Polygon(shape_coords)
+
+            # Check if the polygon contains the bounding box
+            if not polygon.contains(bbox):
+                results.remove(r)
+
+    for r in results:
         if inps.print:
             print(', '.join(str(v) for k, v in r.properties.items() if k not in ['centerLat', 'centerLon']))
 
@@ -260,6 +268,7 @@ def main(iargs=None, namespace=None):
         return result_list
 
     print("Done.")
+    return results
 
 
 if __name__ == "__main__":

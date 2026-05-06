@@ -1,44 +1,36 @@
+#!/usr/bin/env python3
+
+
 import os
+import glob
 import tqdm
+import shutil
 import netCDF4
 import argparse
 import datetime
+import subprocess
 import numpy as np
 from datetime import date
-from shapely import wkt as _wkt
+from shapely import wkt
 from mintpy.objects import HDFEOS
 from minsar.src.minsar.cli import asf_search_args as asf
-from minsar.src.minsar.helper_functions import parse_polygon
-
-try:
-    from pyproj import CRS, Transformer
-    import xarray as xr
-except ImportError:
-    pass  # Will error if processing section is used without these
+from minsar.src.minsar.helper_functions import parse_polygon, convert_to_coord, extract_identification_metadata, normalize_meta_value
 
 
 def create_parser():
     parser = argparse.ArgumentParser(
-        description="Wrapper to call asf_search_args.py for OPERA DISP downloads and postprocess."
+        description="Create OPERA timeseries file."
     )
-    parser.add_argument('--flightDirection', required=True, help='ASCENDING or DESCENDING')
-    parser.add_argument('--intersectsWith', required=True, help='WKT POLYGON string')
-    parser.add_argument('--start', default='20160101', help='Start date (YYYYMMDD or YYYY-MM-DD)')
-    parser.add_argument('--end', default=date.today().isoformat(), help='End date (YYYYMMDD or YYYY-MM-DD)')
+
     parser.add_argument('--dir', help='Output directory for downloads')
-    parser.add_argument('--download', action='store_true', help='Download the data (default if specified)')
-    parser.add_argument('--process', action='store_true', help='Process/crop files after download')
-    parser.add_argument('extra', nargs=argparse.REMAINDER, help='Other options for asf_search_args.py')
+    parser.add_argument('--dem-file', default=None, help='DEM file to download (optional)')
 
     inps = parser.parse_args()
 
+    if inps.dem_file and not os.path.abspath(inps.dem_file):
+        inps.dem_file = os.path.join(os.getcwd(), inps.dem_file)
+
     return inps
-
-
-def get_utm_crs_from_bbox(lon, lat):
-    zone = int((lon + 180) // 6) + 1
-    epsg = 32600 + zone if lat >= 0 else 32700 + zone
-    return CRS.from_epsg(epsg)
 
 
 def temporal_inversion(aggregated_time_1, aggregated_time_2, aggregated_displacement):
@@ -149,61 +141,6 @@ def temporal_inversion(aggregated_time_1, aggregated_time_2, aggregated_displace
     print("Output shape:", X.shape)
 
     return times, X
-
-
-def utm_to_latlon(x, y, utm_crs):
-    wgs84 = CRS.from_epsg(4326)
-    transformer = Transformer.from_crs(utm_crs, wgs84, always_xy=True)
-    lon, lat = transformer.transform(x, y)
-    return lon, lat
-
-def _normalize_meta_value(value):
-    def _collapse_singleton(v):
-        # Only collapse if not a scalar
-        while isinstance(v, (list, tuple)) and len(v) == 1 and not isinstance(v[0], (float, int, str)):
-            v = v[0]
-        return v
-
-    if isinstance(value, bytes):
-        return value.decode("utf-8", errors="replace")
-    if isinstance(value, np.generic):
-        return value.item()
-    if isinstance(value, np.ndarray):
-        if value.ndim == 0:
-            return _normalize_meta_value(value.item())
-        norm_list = [_normalize_meta_value(item) for item in value.tolist()]
-        return _collapse_singleton(norm_list)
-    if isinstance(value, (list, tuple)):
-        # If the list/tuple contains only one scalar, return the scalar
-        if len(value) == 1 and isinstance(value[0], (float, int, str)):
-            return value[0]
-        norm_list = [_normalize_meta_value(item) for item in value]
-        return _collapse_singleton(norm_list)
-    return value
-
-
-def extract_identification_metadata(opera):
-    identification_group = opera.groups.get("identification") if hasattr(opera, "groups") else None
-    if identification_group is None:
-        return argparse.Namespace(attrs={}, variables={})
-
-    identification_variables = {}
-    for var_name, var_obj in identification_group.variables.items():
-        var_value = _normalize_meta_value(var_obj[...])
-        identification_variables[var_name] = var_value
-
-    return argparse.Namespace(**identification_variables)
-
-
-def convert_to_coord(x, y, centroid):
-    print("Converting utm to lat/lon ...\n")
-
-    xx, yy = np.meshgrid(x, y)
-    lon, lat = centroid
-    zone = int((lon + 180) // 6) + 1
-    epsg = 32600 + zone if lat >= 0 else 32700 + zone
-    utm_crs = CRS.from_epsg(epsg)
-    return utm_to_latlon(xx, yy, utm_crs)
 
 
 def get_output_filename(metadata,):
@@ -338,165 +275,165 @@ def polygon_corners_string(polygon_str: str) -> str:
 
 def main():
     inps = create_parser()
+    centroid = None
 
-    # Download section
-    if inps.download:
-        asf_inps = [
-            '--intersectsWith', inps.intersectsWith,
-            '--start', inps.start,
-            '--end', inps.end,
-            '--processingLevel', 'DISP',
-            '--platform', 'S1',
-            '--dir', inps.dir,
-            '--flightDirection', inps.flightDirection,
-        ]
-        if inps.download:
-            asf_inps.append('--download')
-        if inps.extra:
-            asf_inps.extend(inps.extra)
-        results = asf.main(asf_inps)
-
-        files = []
-        centroid = []
-        for r in results:
-            files.append(os.path.join(inps.dir, r.properties['fileName']))
-            centroid.append((r.centroid().x, r.centroid().y))
+    # DEM section
+    if inps.dem_file and not os.path.exists(inps.dem_file):
+        region = parse_polygon(inps.intersectsWith)
+        subprocess.run([
+            "sardem",
+            "--bbox", str(region[0]), str(region[2]), str(region[1]), str(region[3]),
+            "--output", inps.dem_file,
+        ])
 
     # Processing section
-    if inps.process:
-        min_lon, max_lon, min_lat, max_lat = parse_polygon(inps.intersectsWith)
-        lon, lat = (min_lon + max_lon) / 2, (min_lat + max_lat) / 2
-        # utm_to_latlon(x, y, get_utm_crs_from_bbox(lon, lat))
-        indir = inps.dir
-        outdir = os.path.join(indir, 'cropped')
-        os.makedirs(outdir, exist_ok=True)
-        ref_x, ref_y, ref_temporal_coh = None, None, None
+    files = glob.glob(os.path.join(inps.dir, "*.nc"))
 
-        # Initialize dictionary to store by secondary date
-        pair_dict = {}
+    ref_x, ref_y, ref_temporal_coh = None, None, None
 
-        for f, c in tqdm.tqdm(zip(files, centroid), desc="Processing files", unit=" file", total=len(files)):
-            nc = netCDF4.Dataset(f, 'r')
-            x = np.asarray(nc.variables["x"][:], dtype=float)
-            y = np.asarray(nc.variables["y"][:], dtype=float)
-            temporal_coh = np.asarray(nc.variables["temporal_coherence"][:], dtype=np.float32)
-            mask = nc.variables['recommended_mask'][:]
+    # Initialize dictionary to store by secondary date
+    pair_dict = {}
+    prev_polygon = None
 
-            # Set reference shapes on first valid file
-            if ref_x is None:
-                ref_x, ref_y, ref_temporal_coh = x.shape, y.shape, temporal_coh.shape
+    for f in tqdm.tqdm(files, desc="Processing files", unit=" file", total=len(files)):
+        nc = netCDF4.Dataset(f, 'r')
+        x = np.asarray(nc.variables["x"][:], dtype=float)
+        y = np.asarray(nc.variables["y"][:], dtype=float)
+        temporal_coh = np.asarray(nc.variables["temporal_coherence"][:], dtype=np.float32)
+        mask = nc.variables['recommended_mask'][:]
 
-            # Check shapes
-            if x.shape != ref_x or y.shape != ref_y or temporal_coh.shape != ref_temporal_coh:
-                print(f"Skipping {f}: shape mismatch.")
-                nc.close()
-                try:
-                    os.remove(f)
-                    print(f"Removed {f} due to shape mismatch.")
-                except Exception as e:
-                    print(f"Could not remove {f}: {e}")
-                continue
+        # Set reference shapes on first valid file
+        if ref_x is None:
+            ref_x, ref_y, ref_temporal_coh = x.shape, y.shape, temporal_coh.shape
 
-            displacement = nc.variables["displacement"][:]
-            displacement_data = displacement.filled(np.nan) if hasattr(displacement, "filled") else np.asarray(displacement)
-            ref_time = nc.variables["reference_time"][:]
-            sec_time = nc.variables["time"]
-            ref_date = netCDF4.num2date(ref_time[:], units=sec_time.units, calendar=getattr(sec_time, "calendar", "standard"), only_use_cftime_datetimes=False)[0].date()
-            sec_date = netCDF4.num2date(sec_time[:], units=sec_time.units, calendar=getattr(sec_time, "calendar", "standard"), only_use_cftime_datetimes=False)[0].date()
-            meta = extract_identification_metadata(nc)
-            pair_dict[sec_date] = {
-                'ref_date': ref_date,
-                'displacement': displacement_data,
-                'mask': mask,
-                'temporal_coherence': temporal_coh,
-                'meta': meta
-            }
+        # Check shapes
+        if x.shape != ref_x or y.shape != ref_y or temporal_coh.shape != ref_temporal_coh:
+            print(f"Skipping {f}: shape mismatch.")
             nc.close()
+            try:
+                os.remove(f)
+                print(f"Removed {f} due to shape mismatch.")
+            except Exception as e:
+                print(f"Could not remove {f}: {e}")
+            continue
 
-        # Sort by secondary date
-        pair_dict = {k: pair_dict[k] for k in sorted(pair_dict)}
-        date_list = [d.strftime("%Y%m%d") for d in pair_dict]
+        displacement = nc.variables["displacement"][:] * 100
+        displacement_data = displacement.filled(np.nan) if hasattr(displacement, "filled") else np.asarray(displacement)
+        ref_time = nc.variables["reference_time"][:]
+        sec_time = nc.variables["time"]
+        ref_date = netCDF4.num2date(ref_time[:], units=sec_time.units, calendar=getattr(sec_time, "calendar", "standard"), only_use_cftime_datetimes=False)[0].date()
+        sec_date = netCDF4.num2date(sec_time[:], units=sec_time.units, calendar=getattr(sec_time, "calendar", "standard"), only_use_cftime_datetimes=False)[0].date()
+        meta = extract_identification_metadata(nc)
 
-        if not np.all(ref_time == ref_time[0]):
-            time, X = temporal_inversion([pair_dict[d]['ref_date'] for d in pair_dict.keys()],  list(pair_dict.keys()), [pair_dict[d]['displacement'] for d in pair_dict.keys()])
-        else:
-            time = list(pair_dict.keys())
-            X = np.stack([pair_dict[d]['displacement'] for d in pair_dict], axis=0)
+        if hasattr(meta, 'bounding_polygon'):
+            if prev_polygon and meta.bounding_polygon != prev_polygon:
+                mismatch_folder = os.path.join(inps.dir, "mismatched_polygons")
+                os.makedirs(mismatch_folder, exist_ok=True)
+                shutil.move(f, mismatch_folder)
+                continue
+            prev_polygon = meta.bounding_polygon
 
-        meta = merge_metadata([pair_dict[d]['meta'] for d in pair_dict.keys()])
+        ref = np.nanmean(displacement_data[0:10,0:10])
+        pair_dict[sec_date] = {
+            'ref_date': ref_date,
+            'displacement': displacement_data - ref,
+            'mask': mask,
+            'temporal_coherence': temporal_coh,
+            'meta': meta
+        }
 
-        if not hasattr(meta, 'reference_datetime'):
-            setattr(meta, 'reference_datetime', pair_dict[date_list[0]]['ref_date'].strftime("%Y-%m-%d"))
-        if not hasattr(meta, 'last_date'):
-            setattr(meta, 'last_date', date_list[-1])
-        if hasattr(meta, 'source_data_file_list'):
-            delattr(meta, 'source_data_file_list')
-        if not hasattr(meta, 'PROJECT_NAME'):
-            setattr(meta, 'PROJECT_NAME', 'OPERA')
+        if not centroid:
+            wkt_str = meta.bounding_polygon if hasattr(meta, 'bounding_polygon') else meta.data_footprint
+            geom = wkt.loads(wkt_str)
+            centroid = geom.centroid
+        nc.close()
 
-        longitude, latitude = convert_to_coord(x, y, c)
+    # Sort by secondary date
+    pair_dict = {k: pair_dict[k] for k in sorted(pair_dict)}
+    date_list = [d.strftime("%Y%m%d") for d in pair_dict]
 
-        out_file = get_output_filename(meta)
+    if not np.all(ref_time == ref_time[0]):
+        time, X = temporal_inversion([pair_dict[d]['ref_date'] for d in pair_dict.keys()],  list(pair_dict.keys()), [pair_dict[d]['displacement'] for d in pair_dict.keys()])
+    else:
+        time = list(pair_dict.keys())
+        X = np.stack([pair_dict[d]['displacement'] for d in pair_dict], axis=0)
 
-        # Format date_list as YYYYMMDD strings for MintPy compatibility
-        date_list = [d.strftime("%Y%m%d") if hasattr(d, 'strftime') else str(d).replace('-', '') for d in time]
+    meta = merge_metadata([pair_dict[d]['meta'] for d in pair_dict.keys()])
+
+    if not hasattr(meta, 'reference_datetime'):
+        setattr(meta, 'reference_datetime', pair_dict[datetime.datetime.strptime(date_list[0], '%Y%m%d').date()]['ref_date'].strftime("%Y-%m-%d"))
+    if not hasattr(meta, 'last_date'):
+        setattr(meta, 'last_date', date_list[-1])
+    if hasattr(meta, 'source_data_file_list'):
+        delattr(meta, 'source_data_file_list')
+    if not hasattr(meta, 'PROJECT_NAME'):
+        setattr(meta, 'PROJECT_NAME', 'OPERA')
+
+    longitude, latitude = convert_to_coord(x, y, (centroid.x, centroid.y))
+
+    out_file = get_output_filename(meta)
+
+    # Format date_list as YYYYMMDD strings for MintPy compatibility
+    date_list = [d.strftime("%Y%m%d") if hasattr(d, 'strftime') else str(d).replace('-', '') for d in time]
+    if True:
+        # Right one
         mask_2d = np.multiply.reduce([pair_dict[d]['mask'] for d in pair_dict.keys()])
-        temporal_2d = next(iter(pair_dict.values()))['temporal_coherence']
+    else:
+        # First mask
+        mask_2d = pair_dict[list(pair_dict.keys())[0]]['mask']
+    temporal_2d = np.nanmean(np.stack([pair_dict[d]['temporal_coherence'] for d in pair_dict.keys()], axis=0), axis=0)
 
-        with netCDF4.Dataset(os.path.join(inps.dir, out_file), "w", format="NETCDF4") as f:
-            f.createDimension("time", len(date_list))
-            f.createDimension("y", X.shape[1])
-            f.createDimension("x", X.shape[2])
+    with netCDF4.Dataset(os.path.join(inps.dir, out_file), "w", format="NETCDF4") as f:
+        f.createDimension("time", len(date_list))
+        f.createDimension("y", X.shape[1])
+        f.createDimension("x", X.shape[2])
 
-            hdfeos_group = f.createGroup("HDFEOS")
-            grids_group = hdfeos_group.createGroup("GRIDS")
-            ts_group = grids_group.createGroup("timeseries")
-            obs_group = ts_group.createGroup("observation")
-            qual_group = ts_group.createGroup("quality")
-            geom_group = ts_group.createGroup("geometry")
+        hdfeos_group = f.createGroup("HDFEOS")
+        grids_group = hdfeos_group.createGroup("GRIDS")
+        ts_group = grids_group.createGroup("timeseries")
+        obs_group = ts_group.createGroup("observation")
+        qual_group = ts_group.createGroup("quality")
+        geom_group = ts_group.createGroup("geometry")
 
-            disp_var = obs_group.createVariable("displacement", "f4", ("time", "y", "x"), zlib=True, complevel=4)
-            disp_var[:] = X.astype(np.float32)
+        disp_var = obs_group.createVariable("displacement", "f4", ("time", "y", "x"), zlib=True, complevel=4)
+        disp_var[:] = X.astype(np.float32)
 
-            date_var = obs_group.createVariable("date", str, ("time",))
-            date_var[:] = np.asarray(date_list, dtype=object)
+        date_var = obs_group.createVariable("date", str, ("time",))
+        date_var[:] = np.asarray(date_list, dtype=object)
 
-            # Also write a top-level dataset 'date_list' for compatibility
-            date_list_var = f.createVariable("date_list", str, ("time",))
-            date_list_var[:] = np.asarray(date_list, dtype=object)
+        # Also write a top-level dataset 'date_list' for compatibility
+        date_list_var = f.createVariable("date_list", str, ("time",))
+        date_list_var[:] = np.asarray(date_list, dtype=object)
 
-            bperp_var = obs_group.createVariable("bperp", "f4", ("time",))
-            bperp_var[:] = np.zeros((len(date_list),), dtype=np.float32)
+        bperp_var = obs_group.createVariable("bperp", "f4", ("time",))
+        bperp_var[:] = np.zeros((len(date_list),), dtype=np.float32)
 
-            tcoh_var = qual_group.createVariable("temporalCoherence", "f4", ("y", "x"), zlib=True, complevel=4)
-            tcoh_var[:] = temporal_2d.astype(np.float32)
+        tcoh_var = qual_group.createVariable("averageTemporalCoherence", "f4", ("y", "x"), zlib=True, complevel=4)
+        tcoh_var[:] = temporal_2d.astype(np.float32)
 
-            mask_var = qual_group.createVariable("mask", "i1", ("y", "x"), zlib=True, complevel=4)
-            mask_var[:] = mask_2d.astype(np.int8)
-
-
-            # Write latitude and longitude grids instead of x and y
-            lat_var = geom_group.createVariable("latitude", "f4", ("y", "x"))
-            lat_var[:, :] = latitude.astype(np.float32)
-
-            lon_var = geom_group.createVariable("longitude", "f4", ("y", "x"))
-            lon_var[:, :] = longitude.astype(np.float32)
-
-            f.FILE_TYPE = "HDFEOS"
-            f.LENGTH = str(X.shape[1])
-            f.WIDTH = str(X.shape[2])
-
-            # Add meta attributes if available
-            if meta is not None:
-                meta_attrs = vars(meta)
-                for key, value in meta_attrs.items():
-                    if value is None:
-                        continue
-                    norm_val = _normalize_meta_value(value)
-                    setattr(f, key, str(norm_val) if isinstance(norm_val, (list, tuple, dict, np.ndarray)) else norm_val)
+        mask_var = qual_group.createVariable("mask", "i1", ("y", "x"), zlib=True, complevel=4)
+        mask_var[:] = mask_2d.astype(np.int8)
 
 
-        pass
+        # Write latitude and longitude grids instead of x and y
+        lat_var = geom_group.createVariable("latitude", "f4", ("y", "x"))
+        lat_var[:, :] = latitude.astype(np.float32)
+
+        lon_var = geom_group.createVariable("longitude", "f4", ("y", "x"))
+        lon_var[:, :] = longitude.astype(np.float32)
+
+        f.FILE_TYPE = "HDFEOS"
+        f.LENGTH = str(X.shape[1])
+        f.WIDTH = str(X.shape[2])
+
+        # Add meta attributes if available
+        if meta is not None:
+            meta_attrs = vars(meta)
+            for key, value in meta_attrs.items():
+                if value is None:
+                    continue
+                norm_val = normalize_meta_value(value)
+                setattr(f, key, str(norm_val) if isinstance(norm_val, (list, tuple, dict, np.ndarray)) else norm_val)
 
 if __name__ == '__main__':
     main()
