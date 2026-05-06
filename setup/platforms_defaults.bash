@@ -41,13 +41,22 @@ then
   export JOB_SUBMISSION_SCHEME=singleTask
 fi
 ###############################################
-if [[ ${HOSTNAME} == perfectly-elegant-tapir ]] || [[ ${HOSTNAME} == dolphin ]]
+if [[ ${HOSTNAME} == perfectly-elegant-tapir ]] 
 then
   export PLATFORM_NAME=dolphin
   export JOBSCHEDULER=NONE
   export QUEUENAME=NONE
   export WORKDIR=~/insarlab
   export SCRATCHDIR=/data/HDF5EOS
+fi
+###############################################
+if [[ ${HOSTNAME} == dolphin ]]
+then
+  export PLATFORM_NAME=dolphin
+  export JOBSCHEDULER=NONE
+  export QUEUENAME=NONE
+  export WORKDIR=/data/$HOSTNAME/insarlab
+  export SCRATCHDIR=/data/scratch
 fi
 ###############################################
 if  [[ ${HOSTNAME}} =~ ^insarmaps[123]$ ]]
