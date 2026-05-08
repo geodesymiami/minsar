@@ -64,6 +64,8 @@ The main processing pipeline executed by `minsarApp.bash`:
 | 7 | `miaplpy` | Alternative PS/DS time series analysis |
 | 8 | `upload` | Upload products to Jetstream server |
 
+The standalone utility `minsar/utils/modify_insarmapslog.py` can be used after InsarMaps products exist to copy `insarmaps.log` to `orig_insarmaps.log` once, update each logged `/start/<lat>/<lon>/<zoom>` value from a reference URL, and print the corresponding VolcDef `/data/HDF5EOS/` overlay URL.
+
 ## Key Environment Variables
 
 | Variable | Purpose |

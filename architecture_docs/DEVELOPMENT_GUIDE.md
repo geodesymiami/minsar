@@ -458,7 +458,8 @@ unwrap       00:10:00    00:02:00    0               ...
 
 1. Add to `setup/platforms_defaults.bash`
 2. Add queue info to `minsar/defaults/queues.cfg`
-3. Update `install_minsar.bash` if needed
+3. Add the same `PLATFORM_NAME` token to `supported_platforms` in `minsar/objects/auto_defaults.py`. If it is missing, `set_job_queue_values()` will not match that row and will use keyed defaults for `CPUS_PER_NODE` and related fields (never `None`).
+4. Update `install_minsar.bash` if needed
 
 ### Modifying Job Resource Limits
 

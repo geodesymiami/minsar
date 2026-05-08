@@ -34,6 +34,7 @@ minsarApp.bash $SAMPLESDIR/template.template [--start STEP] [--stop STEP] [--min
 | — | `minsar/bin/horzvert_timeseries.bash` | Asc/desc LOS: re-reference to `--ref-lalo` (`reference_point_hdfeos5.bash`), optional mv short-name MiaplPy HE5 onto corner-suffix duplicate (classic `YYYYMMDD_YYYYMMDD` names and update-style `YYYYMMDD_XXXXXXXX`), geocode, horz/vert (PlotData `horzvert_timeseries.py`), InsarMaps (LOS ingest without re-applying `--ref-lalo`) |
 | 5 | `minsar/lib/utils.sh` | Core bash utilities |
 | 6 | `minsar/scripts/get_sar_coverage.py` | AOI coverage: orbits, counts; `--select` chooses Asc/Desc relative orbit (S1: prefers full-AOI consistency over incidence) |
+| — | `minsar/utils/modify_insarmapslog.py` | Back up and rewrite `insarmaps.log` start coordinates from a reference InsarMaps URL, then print a VolcDef `/data/HDF5EOS/` overlay URL |
 
 ### Processing Flow
 
