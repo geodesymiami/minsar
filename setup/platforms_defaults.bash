@@ -41,11 +41,11 @@ then
   export JOB_SUBMISSION_SCHEME=singleTask
 fi
 ###############################################
-if [[ ${HOSTNAME} == perfectly-elegant-tapir ]] 
+if [[ ${HOSTNAME} == perfectly-elegant-tapir ]]
 then
-  export PLATFORM_NAME=dolphin
-  export JOBSCHEDULER=NONE
-  export QUEUENAME=NONE
+  export PLATFORM_NAME=jetstream
+  export JOBSCHEDULER=SLURM
+  export QUEUENAME=skx-dev
   export WORKDIR=~/insarlab
   export SCRATCHDIR=/data/HDF5EOS
 fi
