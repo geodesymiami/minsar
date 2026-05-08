@@ -38,6 +38,7 @@ hv_he5_radar_los_path() {
 # place (same basename as the long-form file).
 hv_promote_miaplpy_short_he5_to_corner_filename() {
     local f dir base prefix suffix c n_matches picked longpath
+    local long_prefix long_suffix short_sibling
 
     f="$1"
     [[ -n "$f" ]] || {
@@ -53,7 +54,35 @@ hv_promote_miaplpy_short_he5_to_corner_filename() {
     base=$(basename "$f" .he5)
 
     # Already using corner-in-name form (classic two end dates or update-mode XXXXXXXX end token).
-    # Match …_miaplpy_<8digits>_…_N<corner>… (second token is either YYYYMMDD or XXXXXXXX).
+    # In this case reference_point_hdfeos5.bash + save_hdfeos5.py may have just written the
+    # re-referenced timeseries to the short-name sibling instead of overwriting this long file
+    # (save_hdfeos5.py picks its output name from metadata + --update --suffix; --subset is not
+    # passed, so corner segments are dropped). When that short sibling exists and is strictly
+    # newer than the long file, replace the long file with it so the canonical corner-suffix
+    # filename keeps the freshly-updated REF.
+    long_prefix=""
+    long_suffix=""
+    if [[ "$base" =~ ^(S1_[^_]+_[^_]+_miaplpy_[0-9]{8}_[0-9]{8})_N[^_]+_N[^_]+_N[^_]+_N[^_]+_(filt.*DS|filtSingDS)$ ]]; then
+        long_prefix="${BASH_REMATCH[1]}"
+        long_suffix="${BASH_REMATCH[2]}"
+    elif [[ "$base" =~ ^(S1_[^_]+_[^_]+_miaplpy_[0-9]{8}_XXXXXXXX)_N[^_]+_N[^_]+_N[^_]+_N[^_]+_(filt.*DS|filtSingDS)$ ]]; then
+        long_prefix="${BASH_REMATCH[1]}"
+        long_suffix="${BASH_REMATCH[2]}"
+    fi
+    if [[ -n "$long_prefix" && -n "$long_suffix" ]]; then
+        short_sibling="${dir}/${long_prefix}_${long_suffix}.he5"
+        if [[ -f "$short_sibling" && "$short_sibling" -nt "$f" ]]; then
+            echo "hv_promote_miaplpy_short_he5_to_corner_filename: moving updated $(basename "$short_sibling") -> $(basename "$f")" >&2
+            rm -f "$f"
+            if ! mv "$short_sibling" "$f"; then
+                echo "hv_promote_miaplpy_short_he5_to_corner_filename: mv failed: $short_sibling -> $f" >&2
+                return 1
+            fi
+        fi
+        echo "$f"
+        return 0
+    fi
+    # Corner-suffix basename without the expected dataset shape: leave it alone.
     if [[ "$base" =~ _miaplpy_[0-9]{8}_[0-9]{8}_N ]] || [[ "$base" =~ _miaplpy_[0-9]{8}_XXXXXXXX_N ]]; then
         echo "$f"
         return 0

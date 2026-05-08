@@ -196,9 +196,20 @@ eval $REF_CMD
 
 echo "Step 3: Reconstructing HDFEOS5 file"
 echo "Running: $SAVE_CMD"
-eval $SAVE_CMD
+# Capture save_hdfeos5.py stdout so we can report the actual filename it wrote.
+# save_hdfeos5.py constructs the output name from metadata + --update + --suffix (no --subset),
+# which often differs from the input basename (e.g. corner-suffix segments are dropped).
+SAVE_LOG=$(mktemp)
+eval $SAVE_CMD | tee "$SAVE_LOG"
+ACTUAL_OUT=$(grep -E '^finished writing to ' "$SAVE_LOG" | tail -n 1 | sed -E 's/^finished writing to //')
+rm -f "$SAVE_LOG"
+if [[ -z "$ACTUAL_OUT" ]]; then
+    ACTUAL_OUT="$OUTPUT_FILE"
+elif [[ "$ACTUAL_OUT" != /* ]]; then
+    ACTUAL_OUT="$INPUT_DIR/$ACTUAL_OUT"
+fi
 
-echo "HDFEOS5 file reconstructed: $OUTPUT_FILE"
+echo "HDFEOS5 file reconstructed: $ACTUAL_OUT"
 
 # Step 4: Cleanup (if not --keep-extracted)
 if [[ $keep_extracted -eq 0 ]]; then
@@ -210,6 +221,6 @@ if [[ $keep_extracted -eq 0 ]]; then
 fi
 
 echo "####################################"
-echo "Done! Output file: $OUTPUT_FILE"
+echo "Done! Output file: $ACTUAL_OUT"
 echo "####################################"
 
