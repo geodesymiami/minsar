@@ -44,9 +44,10 @@ class TestModifyInsarmapsLog(unittest.TestCase):
 
         self.assertEqual(
             url,
-            "http://149.165.154.65/data/HDF5EOS/Kerinci/miaplpy/overlay.html#/start/-1.696/101.271/14.0"
+            "http://149.165.154.65/data/HDF5EOS/Kerinci/miaplpy/overlay.html#/"
             "?minScale=-0.75&maxScale=0.75&background=satellite",
         )
+        self.assertNotIn("/start/", url)
         self.assertNotIn("startDataset", url)
 
     def test_build_overlay_url_from_start_reference_uses_logfile_project_path(self):
@@ -56,9 +57,10 @@ class TestModifyInsarmapsLog(unittest.TestCase):
 
         self.assertEqual(
             url,
-            "http://149.165.154.65/data/HDF5EOS/Kerinci/miaplpy/overlay.html#/start/-8.273/123.511/14.8"
+            "http://149.165.154.65/data/HDF5EOS/Kerinci/miaplpy/overlay.html#/"
             "?minScale=-1.5&maxScale=1.5&background=satellite&pixelSize=5.6",
         )
+        self.assertNotIn("/start/", url)
 
     def test_build_overlay_url_from_absolute_remote_dir_logfile(self):
         logfile = Path("/data/HDF5EOS/Kerinci/miaplpy/insarmaps.log")
@@ -88,7 +90,7 @@ class TestModifyInsarmapsLog(unittest.TestCase):
             self.assertIn("/start/-1.696/101.271/14.0?", log.read_text(encoding="utf-8"))
             self.assertEqual(
                 printed_url,
-                "http://149.165.154.65/data/HDF5EOS/Kerinci/miaplpy/overlay.html#/start/-1.696/101.271/14.0"
+                "http://149.165.154.65/data/HDF5EOS/Kerinci/miaplpy/overlay.html#/"
                 "?minScale=-0.75&maxScale=0.75&background=satellite",
             )
 
@@ -113,7 +115,7 @@ class TestModifyInsarmapsLog(unittest.TestCase):
             self.assertEqual(
                 buffer.getvalue().strip(),
                 "http://149.165.154.65/data/HDF5EOS/Kerinci/miaplpy/overlay.html"
-                "#/start/-1.696/101.271/14.0?minScale=-0.75&maxScale=0.75&background=satellite",
+                "#/?minScale=-0.75&maxScale=0.75&background=satellite",
             )
             self.assertIn("/start/-1.696/101.271/14.0?", log.read_text(encoding="utf-8"))
 

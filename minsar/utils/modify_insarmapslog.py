@@ -101,8 +101,11 @@ def replace_start_values(line, reference_url):
 
 
 def build_overlay_url(reference_url, logfile):
-    """Build the remote overlay URL printed after modifying insarmaps.log."""
-    lat, lon, zoom = _extract_start_values(reference_url)
+    """Build the remote overlay URL printed after modifying insarmaps.log.
+
+    The printed URL deliberately omits ``/start/<lat>/<lon>/<zoom>``; those values
+    are only used to rewrite ``insarmaps.log`` lines.
+    """
     params = _reference_query_params(reference_url)
     printed_params = [(key, params[key]) for key in ("minScale", "maxScale", "background", "pixelSize") if key in params]
     query = urlencode(printed_params)
@@ -110,7 +113,7 @@ def build_overlay_url(reference_url, logfile):
 
     project = _project_path(reference_url, logfile).strip("/")
     page = _page_name_from_reference(reference_url)
-    return f"{REMOTEHOST_VOLCDEF}{REMOTE_DIR}{project}/{page}#/start/{lat}/{lon}/{zoom}{query_suffix}"
+    return f"{REMOTEHOST_VOLCDEF}{REMOTE_DIR}{project}/{page}#/{query_suffix}"
 
 
 def modify_insarmaps_log(reference_url, logfile):
