@@ -107,7 +107,7 @@ def build_overlay_url(reference_url, logfile):
     are only used to rewrite ``insarmaps.log`` lines.
     """
     params = _reference_query_params(reference_url)
-    printed_params = [(key, params[key]) for key in ("minScale", "maxScale", "background", "pixelSize") if key in params]
+    printed_params = [(key, params[key]) for key in ("minScale", "maxScale", "background", "contour", "pixelSize") if key in params]
     query = urlencode(printed_params)
     query_suffix = f"?{query}" if query else ""
 

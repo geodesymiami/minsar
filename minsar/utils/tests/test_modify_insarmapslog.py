@@ -45,7 +45,7 @@ class TestModifyInsarmapsLog(unittest.TestCase):
         self.assertEqual(
             url,
             "http://149.165.154.65/data/HDF5EOS/Kerinci/miaplpy/overlay.html#/"
-            "?minScale=-0.75&maxScale=0.75&background=satellite",
+            "?minScale=-0.75&maxScale=0.75&background=satellite&contour=false",
         )
         self.assertNotIn("/start/", url)
         self.assertNotIn("startDataset", url)
@@ -91,7 +91,7 @@ class TestModifyInsarmapsLog(unittest.TestCase):
             self.assertEqual(
                 printed_url,
                 "http://149.165.154.65/data/HDF5EOS/Kerinci/miaplpy/overlay.html#/"
-                "?minScale=-0.75&maxScale=0.75&background=satellite",
+                "?minScale=-0.75&maxScale=0.75&background=satellite&contour=false",
             )
 
             backup.write_text("keep this backup\n", encoding="utf-8")
@@ -115,9 +115,26 @@ class TestModifyInsarmapsLog(unittest.TestCase):
             self.assertEqual(
                 buffer.getvalue().strip(),
                 "http://149.165.154.65/data/HDF5EOS/Kerinci/miaplpy/overlay.html"
-                "#/?minScale=-0.75&maxScale=0.75&background=satellite",
+                "#/?minScale=-0.75&maxScale=0.75&background=satellite&contour=false",
             )
             self.assertIn("/start/-1.696/101.271/14.0?", log.read_text(encoding="utf-8"))
+
+    def test_build_overlay_url_passes_through_contour_param(self):
+        pacaya_url = (
+            "http://149.165.154.65/data/HDF5EOS/Pacaya/miaplpy/overlay.html"
+            "#/start/14.3758/-90.5948/12.8907"
+            "?startDataset=S1_desc_026_miaplpy_20150429_XXXXXXXX_filtDel4DS"
+            "&minScale=-5&maxScale=5&startDate=20150429&endDate=20260425"
+            "&background=hillshade&contour=true&pointLat=14.38492&pointLon=-90.60977"
+        )
+
+        url = build_overlay_url(pacaya_url, Path("Pacaya/miaplpy/insarmaps.log"))
+
+        self.assertEqual(
+            url,
+            "http://149.165.154.65/data/HDF5EOS/Pacaya/miaplpy/overlay.html#/"
+            "?minScale=-5&maxScale=5&background=hillshade&contour=true",
+        )
 
 
 if __name__ == "__main__":
