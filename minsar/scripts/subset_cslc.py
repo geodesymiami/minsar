@@ -37,7 +37,7 @@ Examples:
     parser.add_argument('slc_dirs', nargs='+', help='Path(s) to SLC directories (e.g., merged/SLC/*/*.vrt)')
     parser.add_argument('--lon-file', default='None', help='Path to longitude file (e.g., merged/geom_reference/lon.hdr)')
     parser.add_argument('--lat-file', default='None', help='Path to latitude file (e.g., merged/geom_reference/lat.hdr)')
-    parser.add_argument('--bbox', type=float, nargs=4, metavar=('LAT1', 'LAT2', 'LON1', 'LON2'), help='Geographic bounding box: lat_min lat_max lon_min lon_max')
+    parser.add_argument('--bbox', type=float, nargs=4, metavar=('LON1', 'LAT1', 'LON2', 'LAT2'), help='Geographic bounding box: lat_min lat_max lon_min lon_max')
     parser.add_argument('--pixels', type=int, nargs=4, metavar=('ROW1', 'ROW2', 'COL1', 'COL2'), help='Pixel bounding box: row_start row_end col_start col_end')
     parser.add_argument('--output-suffix', type=str, default='_subset', help='Suffix for output files when processing multiple SLCs')
     parser.add_argument('--info-only', action='store_true', help='Only print metadata and pixel bounds, do not subset')
@@ -59,6 +59,11 @@ class SLCGeoSubsetter:
     def __init__(self, slc: str, lat_file = None, lon_file = None):
         self.slc = slc
         self.slc_dir = str(Path(slc).parent)
+
+        ds = gdal.Open(self.slc)
+        self.gt = ds.GetGeoTransform()
+        self.proj = ds.GetProjection()
+        ds = None
 
         if lat_file and lon_file:
             self.lat = self._fetch_coords(lat_file)
@@ -164,7 +169,7 @@ class SLCGeoSubsetter:
 
 
 def main():
-    os.chdir('/scratch/09580/gdisilvestro/ChilesSenD142')
+    os.chdir('/scratch/09580/gdisilvestro/PopocatepetlSenD143')
     inps = create_parser()
 
     # Expand glob patterns if needed
