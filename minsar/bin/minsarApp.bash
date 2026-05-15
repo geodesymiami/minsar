@@ -24,6 +24,8 @@ helptext="                                                                      
       minsarApp.bash  $TE/GalapagosSenDT128.template --start miaplpy --miaplpy-start 6 --miaplpy-stop 6 \n\
       minsarApp.bash  $TE/GalapagosSenDT128.template --start miaplpy --miaplpy-step 6     \n\
       minsarApp.bash  $TE/GalapagosSenDT128.template --miaplpy-stop 1     \n\
+      minsarApp.bash  $TE/GalapagosSenDT128.template --delta-lat 0.1       \n\
+      minsarApp.bash  $TE/GalapagosSenDT128.template --clean-start       \n\
                                                                                  \n\
   Processing steps (start/end/dostep): \n\
    Command line options for steps processing with names are chosen from the following list: \n\
@@ -41,6 +43,7 @@ helptext="                                                                      
    --end STEP, --stop STEP                                                       \n\
    --dostep STEP         run processing at the named step only                   \n\
    --download-method {slc, burst2safe, burst2stack, ssara-slc, ssara-bash, ssara-python} (default: burst2stack) \n\
+   --delta-lat [DEG]     download larger error (default 0; bare --delta-lat: 0.2) \n\
                                                                                  \n\
    --mintpy              use smallbaselineApp.py for time series [default]       \n\
    --miaplpy             use miaplpyApp.py                                       \n\
@@ -53,6 +56,7 @@ helptext="                                                                      
                                                                                  \n\
    --sleep SECS           sleep seconds before running                           \n\
    --chunks               process in form of multiple chunks.                    \n\
+   --clean-start          rm -rf \$SCRATCHDIR/<project> then recreate work dir   \n\
                                                                                  \n\
 For sarvey:                                                                      \n\
    --miaplpy-stop 1      to only run step 1 (load_slc_geometry.py) of miaplpy    \n\
@@ -71,9 +75,8 @@ Using AOI and name as postional arguments (for options run: create_template.py -
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --period 20210101:20221231 --miaplpy  \n\
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --exclude-season 1101-0430 --no-mintpy --miaplpy  \n\
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --flight-dir asc --miaplpy --platform S1 is optional (default platform is Sentinel-1)    \n\
-      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --geometry [--platform S1] --miaplpy   # topsStack.coregistration=geometry \n\
-      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --coregistration NESD [--platform S1] --miaplpy   \n\
-
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --coregistration geometry [--platform S1] --miaplpy   \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --geometry [--platform S1] --miaplpy   \n\
 To test:  \n\
       minsarApp.bash -0.86:-0.81,-91.19:-91.13 qtestGalapagos --flight-dir asc,desc --start-date 20181001 --end-date 20181231 --no-mintpy --miaplpy  \n\
                                                                                  \n\
@@ -112,7 +115,18 @@ if [[ $1 == $PWD ]]; then
    template_file=$TEMPLATES/$PROJECT_NAME.template
 fi
 export template_file
+
+## FA 5/2026: We should move all the arg parsing up before creating WORK_DIR (and writing the log). That would make make the code clearer
+clean_start_flag=0
+for __minsar_argv in "$@"; do
+    [[ "$__minsar_argv" == "--clean-start" ]] && clean_start_flag=1 && break
+done
+
 WORK_DIR=${SCRATCHDIR}/${PROJECT_NAME}
+if [[ "$clean_start_flag" == "1" ]]; then
+    echo "$(date +"%Y%m%d:%H-%M") * Removing existing project directory (--clean-start): $WORK_DIR"
+    rm -rf "$WORK_DIR"
+fi
 mkdir -p $WORK_DIR
 cd $WORK_DIR
 
@@ -162,6 +176,7 @@ opposite_orbit_flag=0
 horzvert_flag=0
 
 download_method="burst2stack"
+delta_lat=0
 miaplpy_startstep=1
 miaplpy_stopstep=9
 
@@ -302,6 +317,9 @@ do
             chunks_flag=1
             shift
             ;;
+        --clean-start)
+            shift
+            ;;
         --debug)
             debug_flag=1
             shift
@@ -317,6 +335,16 @@ do
         --download-method)
             download_method=$2
             shift 2
+            ;;
+        --delta-lat)
+            # Consume numeric next arg if present; without arg (only --delta-lat) uses 0.2.
+            if [[ $# -ge 2 ]] && [[ "$2" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]; then
+                delta_lat="$2"
+                shift 2
+            else
+                delta_lat=0.2
+                shift
+            fi
             ;;
 
         *)
@@ -579,8 +607,8 @@ sleep 5
 
 if [[ $download_flag == "1" ]]; then
 
-    echo "Running.... generate_download_command.py $template_file --delta-lat 0.0 --delta-lon 0.0"
-    run_command "generate_download_command.py $template_file --delta-lat 0.0 --delta-lon 0.0"
+    echo "Running.... generate_download_command.py $template_file --delta-lat $delta_lat --delta-lon 0.0"
+    run_command "generate_download_command.py $template_file --delta-lat $delta_lat --delta-lon 0.0"
 
     mkdir -p $download_dir
 
