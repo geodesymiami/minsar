@@ -15,6 +15,9 @@ pass (equivalent to ``--flight-dir asc`` or ``desc``). With explicit single-pass
 
 AOI may be lat_min:lat_max,lon_min:lon_max (S:N,W:E), WKT POLYGON((lon lat,...)),
 or other formats accepted by convert_bbox.py (e.g. GoogleEarth points).
+
+ISCE topsStack coregistration defaults to NESD in the written template; pass
+``--coregistration geometry`` or ``--geometry`` for geometry-only coregistration.
 """
 
 from __future__ import annotations
@@ -343,6 +346,25 @@ def _parse_period(period: str) -> tuple[str, str]:
     )
 
 
+def _resolve_coregistration(
+    *,
+    coregistration: str | None,
+    geometry_mode: bool,
+) -> tuple[str | None, str | None]:
+    """Return ``(topsStack_coregistration_value, error_message_or_None)``."""
+    if geometry_mode:
+        if coregistration is not None and coregistration != "geometry":
+            return (
+                None,
+                "--geometry conflicts with "
+                f"--coregistration {coregistration!r} (omit one or use --coregistration geometry).",
+            )
+        return "geometry", None
+    if coregistration is None:
+        return "NESD", None
+    return coregistration, None
+
+
 def _substitute_template(
     content: str,
     *,
@@ -351,6 +373,7 @@ def _substitute_template(
     start_date: str | None,
     end_date: str | None,
     exclude_season: str | None,
+    tops_stack_coregistration: str = "NESD",
 ) -> str:
     """Replace orbit/AOI/date options, optionally adding ssaraopt.excludeSeason."""
     lines = content.splitlines()
@@ -360,6 +383,12 @@ def _substitute_template(
     for line in lines:
         if re.match(r"^\s*ssaraopt\.relativeOrbit\s*=", line):
             line = re.sub(r"=\s*[0-9]+", f"= {relative_orbit}", line)
+        elif re.match(r"^\s*topsStack\.coregistration\s*=", line):
+            line = re.sub(
+                r"=\s*[^\s#]+",
+                f"= {tops_stack_coregistration}",
+                line,
+            )
         elif re.match(r"^\s*miaplpy\.subset\.lalo\s*=", line):
             line = re.sub(r"=\s*[^\s#]+", f"= {subset_lalo}", line)
         elif start_date is not None and re.match(r"^\s*ssaraopt\.startDate\s*=", line):
@@ -432,88 +461,23 @@ Examples:
   create_template.py 36.331:36.486,25.318:25.492 Santorini --exclude-season 1101-0430
   create_template.py 36.331:36.486,25.318:25.492 Santorini --flight-dir asc
   create_template.py 36.331:36.486,25.318:25.492 Santorini --platform S1
+  create_template.py 36.331:36.486,25.318:25.492 Santorini --geometry
+  create_template.py 36.331:36.486,25.318:25.492 Santorini --coregistration NESD
 """,
     )
-    parser.add_argument(
-        "aoi",
-        metavar="AOI",
-        help=(
-            "Area of interest: lat_min:lat_max,lon_min:lon_max (S:N,W:E); "
-            "or WKT POLYGON((lon lat,...)) (quote in shell); "
-            "or GoogleEarth-style points (see convert_bbox.py). "
-            "For latitude ranges starting with a minus sign, use a leading -- or quote the AOI."
-        ),
-    )
-    parser.add_argument(
-        "name",
-        help="Project name (e.g. Santorini); output will be NAME<asc_label>.template",
-    )
-    parser.add_argument(
-        "--type",
-        default="miaplpy",
-        choices=["miaplpy"],
-        help="Template type (default: miaplpy)",
-    )
-    parser.add_argument(
-        "--start-date",
-        metavar="DATE",
-        help="Start date for ssaraopt.startDate: YYYY-MM-DD or YYYYMMDD (e.g. 20230101)",
-    )
-    parser.add_argument(
-        "--end-date",
-        metavar="DATE",
-        help="End date for ssaraopt.endDate: YYYY-MM-DD or YYYYMMDD (e.g. 20241231)",
-    )
-    parser.add_argument(
-        "--period",
-        metavar="SPEC",
-        help=(
-            "Date range for ssaraopt: YYYY (full year); or START:END with "
-            "YYYYMMDD:YYYYMMDD or YYYY-MM-DD:YYYY-MM-DD"
-        ),
-    )
-    parser.add_argument(
-        "--quick-run",
-        type=int,
-        metavar="YEAR",
-        nargs="?",
-        const=2026,
-        default=None,
-        help="Jan 1 to Feb 28 for the given year (default year: 2026)",
-    )
-    parser.add_argument(
-        "--last-year",
-        action="store_true",
-        help=(
-            "Set ssaraopt.startDate and ssaraopt.endDate to the full previous calendar year "
-        ),
-    )
-    parser.add_argument(
-        "--exclude-season",
-        metavar="MMDD-MMDD",
-        help="Set ssaraopt.excludeSeason, e.g. 1101-0430 to exclude November to April period",
-    )
-    parser.add_argument(
-        "--flight-dir",
-        dest="flight_dir",
-        default="asc,desc",
-        type=normalize_flight_dir,
-        metavar="DIR",
-        help=(
-            "Orbit template(s) to write: asc, desc, asc,desc, desc,asc, or both "
-            "(default: asc,desc); spaces after commas are OK (e.g. desc, asc)"
-        ),
-    )
-    parser.add_argument(
-        "--platform",
-        default="S1",
-        metavar="NAME",
-        help=(
-            "Sensor for get_sar_coverage (default: S1). NISAR/Nisar and ALOS2/Alos2 are not "
-            "yet implemented here; use S1 (Sentinel-1). Other accepted names match "
-            "get_sar_coverage.py but may be rejected until supported."
-        ),
-    )
+    parser.add_argument("aoi", metavar="AOI", help="AOI: S:N,W:E; WKT POLYGON; Minus-first lat: quote AOI or argv normalization.")
+    parser.add_argument("name", help="Project name; output is NAME<orbit_label>.template (e.g. Santorini)")
+    parser.add_argument("--type", default="miaplpy", choices=["miaplpy"], help="Template type (default: miaplpy)")
+    parser.add_argument("--start-date", metavar="DATE", help="ssaraopt.startDate: YYYY-MM-DD or YYYYMMDD (e.g. 20230101)")
+    parser.add_argument("--end-date", metavar="DATE", help="ssaraopt.endDate: YYYY-MM-DD or YYYYMMDD (e.g. 20241231)")
+    parser.add_argument("--period", metavar="SPEC", help="ssaraopt: YYYY full year; or START:END as YYYYMMDD:YYYYMMDD or YYYY-MM-DD:YYYY-MM-DD")
+    parser.add_argument("--quick-run", type=int, metavar="YEAR", nargs="?", const=2026, default=None, help="Jan 1 to Feb 28 for YEAR (default: 2026)")
+    parser.add_argument("--last-year", action="store_true", help="full previous year")
+    parser.add_argument("--exclude-season", metavar="MMDD-MMDD", help="ssaraopt.excludeSeason (e.g. 1101-0430 excludes Nov 1-Apr 30)")
+    parser.add_argument("--flight-dir", dest="flight_dir", default="asc,desc", type=normalize_flight_dir, metavar="DIR", help="asc, desc, asc,desc, desc,asc, both (Default: asc,desc)")
+    parser.add_argument("--platform", default="S1", metavar="NAME", help="get_sar_coverage sensor (default S1); use S1 (NISAR/ALOS2 unsupported here)")
+    parser.add_argument("--coregistration", dest="tops_coregistration", default=None, choices=["geometry", "NESD"], metavar="MODE", help="topsStack.coregistration; Default: NESD")
+    parser.add_argument("--geometry", dest="geometry_mode", action="store_true", help="Same as --coregistration geometry")
     return parser
 
 
@@ -531,6 +495,14 @@ def main(
 
     aoi = inps.aoi.strip()
     name = inps.name.strip()
+
+    tops_co, tops_err = _resolve_coregistration(
+        coregistration=inps.tops_coregistration,
+        geometry_mode=inps.geometry_mode,
+    )
+    if tops_err:
+        print(f"Error: {tops_err}", file=sys.stderr)
+        return 1, None, None, ""
 
     if inps.last_year:
         conflicts: list[str] = []
@@ -659,6 +631,7 @@ def main(
         start_date=start_date,
         end_date=end_date,
         exclude_season=exclude_season,
+        tops_stack_coregistration=tops_co,
     )
 
     out_base = f"{name}{primary_label}"
