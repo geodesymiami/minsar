@@ -47,6 +47,7 @@ if ! bash "$REPO_ROOT/run_all_tests.bash"; then
     echo ""
     echo "╔══════════════════════════════════════════════════════════════════════════╗"
     echo "║  PUSH BLOCKED: Tests failed. Fix the issues and try again.              ║"
+    echo "║  Rerun: bash \"$REPO_ROOT/run_all_tests.bash\" -v                         ║"
     echo "║  To bypass (use sparingly!): git push --no-verify                       ║"
     echo "╚══════════════════════════════════════════════════════════════════════════╝"
     echo ""
