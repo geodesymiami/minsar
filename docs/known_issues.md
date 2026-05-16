@@ -19,6 +19,11 @@ run_06_extract_stack_valid_region may generate a warning `WARNING: 20190501 has 
 Currently you need to add the scenes into `topsStack.excludeDates`.  We plan to implement to remove the offending data from the run_files .
 
 
+* pairs_misreg — ESD / burst coverage (`check_job_outputs.py`)
+
+For **`run_*_pairs_misreg*`** jobs, if `*.e` contains **`No points left for reliable ESD estimate`**, `check_job_outputs.py` prints a USER ERROR: if processing an island use **`--geometry`**; else process additional bursts (e.g. **`minsarApp.bash`** **`--delta-lat 0.2`**).
+
+
 * Other potential errors for which excpetions are raised
 ```
                    'Segmentation fault',
