@@ -4,7 +4,7 @@ This document complements [architecture_docs/BURST_DOWNLOAD.md](../architecture_
 
 ## burst_download.bash: AOI vs burst footprints
 
-After all per-date `burst2stack` commands finish, `minsar/scripts/burst_download.bash` converts its AOI extent to S:N,W:E bounds and runs:
+After all per-date `burst2stack` commands finish, `minsar/scripts/burst_download.bash` converts the **original** AOI extent (`extent_orig` from your polygon, not the overlap-extension padding) to S:N,W:E bounds and runs:
 
 `check_if_bursts_includeAOI.py <bbox> 'SLC/*.tif*'`
 

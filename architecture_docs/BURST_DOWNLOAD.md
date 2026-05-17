@@ -150,7 +150,7 @@ xargs -P N -I {} bash -c 'cd SLC && {}' < SLC/run_burst2stack_rerun
 
 After all per-date `burst2stack` commands complete (and after retries / AOI-extension loop), `minsar/scripts/burst_download.bash` (unless **`--no-check-bursts-includeAOI`** is set):
 
-1. Converts the already-computed burst2stack extent (W S E N) into `LAT_S:LAT_N,LON_W:LON_E`.
+1. Converts the **original** AOI extent (`extent_orig` from `--intersectsWith`, W S E N) into `LAT_S:LAT_N,LON_W:LON_E`. This is **not** the overlap-extension `extent` used for retried `burst2stack` calls after the AOI-extension loop.
 2. Runs `check_if_bursts_includeAOI.py <bbox> "$slc_dir/*.tif*"`, which groups TIFFs by acquisition date (`YYYYMMDD` before `T######` in the filename) and writes `SLC/dates_not_including_AOI.txt` (**one `YYYYMMDD` line per date** whose burst footprint union does not fully cover the bbox).
 3. Reads that file and removes matching paths under `SLC/` (`*${ymd}T*`), which deletes both burst GeoTIFFs and `.SAFE` directories for those dates.
 
