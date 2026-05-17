@@ -6,6 +6,13 @@ from pathlib import Path
 
 _SCRIPT = Path(__file__).resolve().parent.parent / 'minsar' / 'scripts' / 'check_if_bursts_includeAOI.py'
 
+try:
+    import shapely  # noqa: F401
+
+    _SHAPELY_AVAILABLE = True
+except ImportError:
+    _SHAPELY_AVAILABLE = False
+
 
 def _load():
     spec = importlib.util.spec_from_file_location('_cbc', _SCRIPT)
@@ -15,6 +22,7 @@ def _load():
     return mod
 
 
+@unittest.skipUnless(_SHAPELY_AVAILABLE, 'shapely is required (see pip_requirements.txt)')
 class TestBboxAndCLI(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
