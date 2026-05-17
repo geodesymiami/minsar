@@ -454,7 +454,7 @@ for ingest_file in "${ingest_files[@]}"; do
 
         # Get center coordinates and zoom factorfrom data_footprint
         read CENTER_LAT CENTER_LON < <(get_data_footprint_centroid.py "$ingest_file" 2>/dev/null || echo "0.0000 0.0000")
-        ZOOM_FACTOR=$(get_zoomfactor_from_data_footprint.py "$ingest_file" 2>/dev/null || echo "11.0")
+        ZOOM_FACTOR=$(get_zoomfactor_from_data_footprint.py "$ingest_file" --viewport-fill 0.5 2>/dev/null || echo "11.0")
 
         if [[ "$input_format" == "csv" ]]; then
             DATASET_NAME=$(basename "${ingest_file%.csv}")

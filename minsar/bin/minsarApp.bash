@@ -918,6 +918,8 @@ if [[ $opposite_orbit_flag == "1" ]]; then
 fi
 
 if [[ -n "${cli_command_aoi:-}" ]]; then
+    echo
+    echo "#################################"
     echo "### Command: $footer_cmd_primary"
 else
     echo "### Command: $cli_command"
@@ -925,6 +927,10 @@ fi
 print_summary "$template_file"
 
 if [[ $opposite_orbit_flag == "1" ]]; then
+   if [[ -n "${cli_command_aoi:-}" ]]; then
+      echo
+      echo "#################################"
+   fi
    echo "### Command: $footer_cmd_opposite"
    print_summary "$opposite_orbit_template_file"
 fi
