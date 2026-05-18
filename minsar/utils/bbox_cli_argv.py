@@ -169,9 +169,10 @@ CREATE_TEMPLATE_ARGV_KW = {
         "--quick-run",
         "--flight-dir",
         "--platform",
+        "--coregistration",
     ),
     "consume_two": (),
-    "flags": ("--last-year",),
+    "flags": ("--last-year", "--geometry"),
 }
 
 GET_SAR_COVERAGE_ARGV_KW = {

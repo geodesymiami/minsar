@@ -31,6 +31,12 @@ def _ensure_shapely_stub() -> None:
     """Minimal shapely stub so get_sar_coverage.py imports when shapely is not installed."""
     if 'shapely' in sys.modules:
         return
+    try:
+        import shapely.geometry  # noqa: F401
+        import shapely.wkt  # noqa: F401
+        return
+    except ImportError:
+        pass
     wkt_mod = types.ModuleType('shapely.wkt')
     wkt_mod.loads = lambda wkt: None  # noqa: ARG005
     geom_mod = types.ModuleType('shapely.geometry')

@@ -12,6 +12,36 @@ import glob
 from pathlib import Path
 from natsort import natsorted
 
+PAIRS_MISREG_JOB_MARKER = "_pairs_misreg_"
+ESD_PAIRS_MISREG_PHRASE = "No points left for reliable ESD estimate"
+USER_ERROR_ESD_PAIRS_MISREG = (
+    "USER ERROR. No points left for reliable ESD estimate.Process additional bursts using --delta-lat 0.2. For islands use --coreegistration geometry "
+)
+
+
+def job_output_canonical_path(path):
+    """Stable path identity for pairing diagnosed *.e paths with generic-loop file names."""
+    return os.path.normpath(os.path.abspath(path))
+
+
+def record_pairs_misreg_esd_errors(job_name, error_files, matched_error_strings, esd_diagnosed_e_files):
+    """
+    Sentinel-1 pairs misreg (*.e): ESD exhaustion — print USER ERROR once per job scan;
+    add matching *.e paths to esd_diagnosed_e_files so generic 'Traceback' is not duplicated.
+    """
+    if PAIRS_MISREG_JOB_MARKER not in job_name:
+        return
+    printed = False
+    for ef in error_files:
+        if check_words_in_file(ef, ESD_PAIRS_MISREG_PHRASE):
+            esd_diagnosed_e_files.add(job_output_canonical_path(ef))
+            if not printed:
+                print(USER_ERROR_ESD_PAIRS_MISREG)
+                printed = True
+            matched_error_strings.append(
+                USER_ERROR_ESD_PAIRS_MISREG + " (" + os.path.basename(ef) + ")\n"
+            )
+
 
 def cmd_line_parser(iargs=None):
 
@@ -96,6 +126,8 @@ def main(iargs=None):
     matched_error_strings = []
     matched_data_problem_strings = []
     for job_name in job_names:
+       esd_diagnosed_e_files = set()
+
        print('checking *.e, *.o from ' + job_name + '.job')
 
        # preprocess *.e files
@@ -196,8 +228,17 @@ def main(iargs=None):
                     shutil.copy(run_files_dir + '/removed_dates.txt', project_dir + '/out_' + os.path.basename(job_name) + '.e')
                     raise RuntimeError('Too many dates with missing bursts (limit is 30): ', num_lines)
 
+       record_pairs_misreg_esd_errors(
+           job_name, error_files, matched_error_strings, esd_diagnosed_e_files
+       )
+
        for file in error_files + out_files:
            for error_string in error_strings:
+               if (
+                   error_string == "Traceback"
+                   and job_output_canonical_path(file) in esd_diagnosed_e_files
+               ):
+                   continue
                if check_words_in_file(file, error_string):
                    if skip_error(file, error_string):
                        break

@@ -40,6 +40,8 @@ VERBOSE=false
 # Results tracking
 PYTHON_RESULT=0
 BASH_RESULT=0
+# Directories whose unittest discovery failed (set in run_python_tests)
+FAILED_PYTHON_LOCATIONS=()
 
 #######################################
 # Functions
@@ -83,6 +85,7 @@ print_banner() {
 }
 
 run_python_tests() {
+    FAILED_PYTHON_LOCATIONS=()
     echo ""
     echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${YELLOW}  PYTHON TESTS (unittest)${NC}"
@@ -129,6 +132,7 @@ run_python_tests() {
                 local result=$?
                 if [[ $result -ne 0 ]]; then
                     exit_code=1
+                    FAILED_PYTHON_LOCATIONS+=("$location")
                 fi
             fi
         fi
@@ -149,6 +153,50 @@ run_python_tests() {
     fi
     
     return $exit_code
+}
+
+print_failure_rerun_hints() {
+    local py_fail=0
+    local bash_fail=0
+    if $RUN_PYTHON && [[ $PYTHON_RESULT -ne 0 ]]; then
+        py_fail=1
+    fi
+    if $RUN_BASH && [[ $BASH_RESULT -ne 0 ]]; then
+        bash_fail=1
+    fi
+    if [[ $py_fail -eq 0 && $bash_fail -eq 0 ]]; then
+        return 0
+    fi
+
+    echo ""
+    echo -e "${BOLD}${RED}--- Rerun failed tests ---${NC}"
+    if [[ $py_fail -eq 1 ]]; then
+        echo -e "${RED}Python unittest: FAILED.${NC}"
+        echo "Scroll up for FAIL/ERROR lines (test module and method)."
+        if [[ ${#FAILED_PYTHON_LOCATIONS[@]} -gt 0 ]]; then
+            for loc in "${FAILED_PYTHON_LOCATIONS[@]}"; do
+                echo "  python -m unittest discover -s \"$SCRIPT_DIR/$loc\" -p \"test_*.py\" -v"
+            done
+        else
+            echo "  \"$SCRIPT_DIR/run_all_tests.bash\" --python-only -v"
+        fi
+        echo "  (all Python) \"$SCRIPT_DIR/run_all_tests.bash\" --python-only -v"
+    fi
+
+    if [[ $bash_fail -eq 1 ]]; then
+        echo -e "${RED}Bash tests: FAILED.${NC}"
+        echo "  \"$TESTS_DIR/run_bash_tests.bash\""
+        if [[ -n "${MINSAR_FAILED_BASH_SUITES_LOG:-}" && -s "$MINSAR_FAILED_BASH_SUITES_LOG" ]]; then
+            while IFS= read -r suite_line || [[ -n "$suite_line" ]]; do
+                [[ -z "$suite_line" ]] && continue
+                echo "  bash \"$TESTS_DIR/run_bash_tests.bash\" \"$suite_line\""
+            done < "$MINSAR_FAILED_BASH_SUITES_LOG"
+        fi
+        echo "  List suites: \"$TESTS_DIR/run_bash_tests.bash\" --list"
+    fi
+
+    echo "  (full suite) \"$SCRIPT_DIR/run_all_tests.bash\" -v"
+    echo ""
 }
 
 run_bash_tests() {
@@ -219,6 +267,8 @@ print_final_summary() {
 #######################################
 
 main() {
+    local BASH_FAIL_LOG=""
+
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -247,22 +297,32 @@ main() {
                 ;;
         esac
     done
-    
+
     print_banner
-    
+
+    if $RUN_BASH; then
+        BASH_FAIL_LOG=$(mktemp)
+        export MINSAR_FAILED_BASH_SUITES_LOG="$BASH_FAIL_LOG"
+        : > "$MINSAR_FAILED_BASH_SUITES_LOG"
+    fi
+
     # Run test suites
     if $RUN_PYTHON; then
         run_python_tests
         PYTHON_RESULT=$?
     fi
-    
+
     if $RUN_BASH; then
         run_bash_tests
         BASH_RESULT=$?
     fi
-    
-    # Print summary and exit
+
     print_final_summary
+    local summary_status=$?
+    print_failure_rerun_hints
+    [[ -n "$BASH_FAIL_LOG" ]] && rm -f "$BASH_FAIL_LOG"
+    unset MINSAR_FAILED_BASH_SUITES_LOG
+    return "$summary_status"
 }
 
 main "$@"

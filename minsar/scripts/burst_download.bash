@@ -149,6 +149,9 @@ fi
 AOI_EXTENSION_INIT=0.01      # degrees per step (~1 km at mid-latitudes)
 AOI_EXTENSION_MAX=0.05       # max total extension
 AOI_EXTENSION_ITER_MAX=5     # max iterations
+AOI_EXTENSION_INIT=0.1      # degrees per step (~1 km at mid-latitudes)
+AOI_EXTENSION_MAX=0.5       # max total extension
+AOI_EXTENSION_ITER_MAX=20     # max iterations
 
 standalone_mode=0
 if [[ -n "$relative_orbit" && -n "$intersects_with" ]]; then
@@ -517,8 +520,9 @@ fi
 # burst GeoTIFF footprints do not fully cover the AOI bbox.
 #
 if [[ "$skip_check_include_aoi" -eq 0 ]]; then
-    # We reuse the AOI extent already computed for burst2stack (W S E N) and convert
-    # to the bbox format expected by check_if_bursts_includeAOI.py: LAT_S:LAT_N,LON_W:LON_E.
+    # Prune against the user's original AOI (extent_orig), not burst2stack --extent after
+    # overlap-extension. Extension widens --extent for stacking only; burst footprints
+    # need not cover the padded margin.
     #
     # This writes $slc_dir/dates_not_including_AOI.txt (one YYYYMMDD per line) and then
     # removes matching paths under $slc_dir (GeoTIFFs + SAFEs) by deleting *${ymd}T*.
@@ -526,8 +530,8 @@ if [[ "$skip_check_include_aoi" -eq 0 ]]; then
 import sys
 w, s, e, n = [float(x) for x in sys.argv[1].split()]
 print(f'{s}:{n},{w}:{e}')
-" "$extent") || {
-        echo "ERROR: could not derive bbox from extent '$extent' for AOI pruning." >&2
+" "$extent_orig") || {
+        echo "ERROR: could not derive bbox from extent '$extent_orig' for AOI pruning." >&2
         exit 1
     }
 

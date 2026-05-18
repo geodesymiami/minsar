@@ -172,7 +172,7 @@ For `run_workflow.bash` internals: `minsar/bin/ARCHITECTURE.md`
 
 ### Python Scripts
 - Use `argparse` for CLI arguments
-- Keep `parser.add_argument(...)` declarations on one line when possible. First shorten `help` text to keep it concise; only split across lines when a single line would exceed 155 characters.
+- Prefer each `parser.add_argument(...)` on a **single line** (whole call). Include indentation in the length; if that line would exceed **170** characters, shorten `help` first, then split the call across **two or more** lines as needed (common breaks: before `help=`, or a wrapped `help` string). **`minsar/scripts/create_template.py`** (`create_parser()`) follows this pattern.
 - **`--help` / epilog Examples**: Same rule as Bash—**only** consecutive example command lines inside the Examples section (no commentary or blank lines between them); put prose in `description`, `usage`, or per-argument `help`.
 - Use `pathlib.Path` for file paths
 - Include docstrings for modules/functions

@@ -427,7 +427,6 @@ def main(argv: Optional[List[str]] = None) -> int:
                 f'n_tifs={len(chunk)}',
                 file=sys.stderr,
             )
-
     out_dir = _common_parent_dir(tifs)
     log_path = out_dir / DATES_NOT_INCLUDING_AOI_LOG
 

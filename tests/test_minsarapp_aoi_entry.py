@@ -63,6 +63,18 @@ class TestMinsarappAoiSplit(unittest.TestCase):
         self.assertEqual(ct, ["1:2,3:4", "N", "--period", "2024"])
         self.assertEqual(rest, ["--start", "download"])
 
+    def test_geometry_consumed_before_minsar_tail(self) -> None:
+        fixed = [
+            "1:2,3:4",
+            "N",
+            "--geometry",
+            "--start",
+            "download",
+        ]
+        ct, rest = _split_for_bridge(fixed)
+        self.assertEqual(ct, ["1:2,3:4", "N", "--geometry"])
+        self.assertEqual(rest, ["--start", "download"])
+
 
 class TestMinsarappOppositeOrbitForBoth(unittest.TestCase):
     def test_asc_desc_inserts_opposite_orbit(self) -> None:
