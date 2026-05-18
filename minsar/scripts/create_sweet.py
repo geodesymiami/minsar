@@ -4,6 +4,7 @@ import os
 import argparse
 from datetime import datetime
 import shlex as _shlex
+import textwrap
 from minsar.objects.auto_defaults import PathFind
 from minsar.objects.dataset_template import Template
 
@@ -17,7 +18,7 @@ DESCRIPTION = 'Create SWEET config files'
 
 EXAMPLE = """
 Example:
-  create_sweet.py template.txt
+  %(prog)s template.txt
 """
 
 def create_parser():
@@ -100,32 +101,33 @@ config = ' '.join(_shlex.quote(str(a)) for a in template_args if a is not None a
 
 ###### CREATE RUN FILE ######
 def create_run_file(cores, time, queue, cmd):
-    return f"""
-    #!/bin/bash
-    #SBATCH -J sweets_job
-    #SBATCH -o sweets_%j.out
-    #SBATCH -e sweets_%j.err
-    #SBATCH -N 1
-    #SBATCH -n 1
-    #SBATCH -c {cores}
-    #SBATCH -t {time}
-    #SBATCH -p {queue}
+    return textwrap.dedent(f"""\
+#!/bin/bash
 
-    source ~/.bashrc
-    export PATH=$HOME/.pixi/bin:$PATH
-    export CUDA_VISIBLE_DEVICES=""
-    export ISCE3_FORCE_CPU=1
-    export OMP_NUM_THREADS=1
-    export CUDA_VISIBLE_DEVICES=""
-    export NVIDIA_VISIBLE_DEVICES="none"
-    export ISCE3_USE_GPU=0
+#SBATCH -J sweets_job
+#SBATCH -o sweets_%j.out
+#SBATCH -e sweets_%j.err
+#SBATCH -N 1
+#SBATCH -n 1
+#SBATCH -c {cores}
+#SBATCH -t {time}
+#SBATCH -p {queue}
 
-    # Go to Pixi project (IMPORTANT)
-    cd {W2}/code/sweets
+source ~/.bashrc
 
-    # Run sweets
-    {cmd}
-    """
+export PATH=$HOME/.pixi/bin:$PATH
+export CUDA_VISIBLE_DEVICES=""
+export ISCE3_FORCE_CPU=1
+export OMP_NUM_THREADS=1
+export NVIDIA_VISIBLE_DEVICES="none"
+export ISCE3_USE_GPU=0
+
+# Go to Pixi project (IMPORTANT)
+cd {W2}/code/sweets
+
+# Run sweets
+{cmd}
+""")
 
 # CONFIG FILE
 with open(f"{dir}/config_sweets.job", 'w') as f:
