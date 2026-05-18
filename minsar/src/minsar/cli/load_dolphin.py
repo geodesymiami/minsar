@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import glob
 from glob import glob
 from pathlib import Path
 import os
@@ -11,6 +10,20 @@ from mintpy.objects import timeseries
 import rasterio
 import numpy as np
 import subprocess
+
+# TODO FOR DEBUG
+if False:
+    project_dir = Path(os.path.join(os.getenv("SCRATCH"), "PopocatepetlSenD143"))
+    os.chdir(project_dir)
+
+    if True:
+        lists = ['unwrapped/*.unw', 'unwrapped/*.unw.rsc', 'unwrapped/*.unw.xml', 'unwrapped/*.unw.aux.xml', 'reference/data.rsc', 'timeseries.h5', 'mintpy/inputs/smallbaselineApp.cfg', 'mintpy/inputs/*.h5']
+        print("!!! WARNING: Deleting existing files matching patterns: " + ", ".join(lists) + " !!!")
+        for l in lists:
+            for f in glob(l):
+                os.remove(f)
+else:
+    project_dir = Path.cwd()
 
 
 def merge_rsc_metadata(rsc_pattern="unwrapped/*.unw.rsc"):
@@ -33,7 +46,6 @@ def merge_rsc_metadata(rsc_pattern="unwrapped/*.unw.rsc"):
                         merged[key] = value
 
     return merged
-
 
 
 def isce_data_type(dtype):
@@ -74,12 +86,6 @@ def collect_data(timeseries_path):
 
     return deformation_data, metadata
 
-# Define your project directory and config
-if True:
-    project_dir = Path('/scratch/09580/gdisilvestro/ChilesSenA120/')
-    os.chdir(project_dir)
-else:
-    project_dir = Path.cwd()
 
 timeseries_path = project_dir / 'timeseries'
 mintpy_dir = project_dir / 'mintpy'

@@ -48,12 +48,25 @@ Examples:
     parser.add_argument('--output-suffix', type=str, default='_subset', help='Suffix for output files when processing multiple SLCs')
     parser.add_argument('--info-only', action='store_true', help='Only print metadata and pixel bounds, do not subset')
 
-    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    parser.add_argument('--debug', nargs='?', const=True, default=None, help='Enable debug mode')
 
     inps = parser.parse_args()
 
     if inps.debug:
-        os.chdir(os.path.join(os.getenv('SCRATCHDIR'), 'PopocatepetlSenD143' ))
+        debug_dir = inps.debug
+
+        if debug_dir is True:
+            debug_dir = os.path.join(os.getenv('SCRATCHDIR'), 'PopocatepetlSenD143') # Hardcoded
+
+        elif not os.path.isabs(debug_dir):
+            scratchdir = os.getenv('SCRATCHDIR')
+            debug_dir = os.path.join(scratchdir, debug_dir)
+
+        if not os.path.exists(debug_dir):
+            raise ValueError(f"Debug directory does not exist: {debug_dir}")
+
+        print(f"\nDebug mode enabled. Changing working directory to: {debug_dir}")
+        os.chdir(debug_dir)
 
     if inps.lon_file:
         inps.lon_file = str(Path(inps.lon_file).resolve())
@@ -77,16 +90,19 @@ class GeometrySubsetter():
             'incLocal.rdr',
         ]
 
-        path = Path(os.path.join(os.getcwd(), 'merged', 'geom_reference'))
-        if not lat_file:
-            if path.exists():
-                lat_file = path / 'lat.rdr'
-        if not lon_file:
-            if path.exists():
-                lon_file = path / 'lon.rdr'
+        self.lat_file = lat_file
+        self.lon_file = lon_file
 
-        self.lat = self._fetch_coords(lat_file)
-        self.lon = self._fetch_coords(lon_file)
+        path = Path(os.path.join(os.getcwd(), 'merged', 'geom_reference'))
+        if not self.lat_file:
+            if path.exists():
+                self.lat_file = path / 'lat.rdr'
+        if not self.lon_file:
+            if path.exists():
+                self.lon_file = path / 'lon.rdr'
+
+        self.lat = self._fetch_coords(self.lat_file)
+        self.lon = self._fetch_coords(self.lon_file)
 
     def _open_gdal_dataset(self, file_path: str):
         candidates = []
@@ -346,7 +362,6 @@ def main():
             if inps.bbox:
                 lon1, lat1, lon2, lat2 = inps.bbox
                 subsetter.print_pixel_bounds(lat1, lat2, lon1, lon2)
-                bounds = subsetter.bounds
 
             elif inps.pixels:
                 row1, row2, col1, col2 = inps.pixels
@@ -368,6 +383,7 @@ def main():
                     subsetter.print_pixel_bounds(lat1, lat2, lon1, lon2)
 
             if not inps.info_only:
+                bounds = subsetter.bounds
                 subsetter.subset()
 
         except Exception as e:
