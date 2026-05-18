@@ -40,8 +40,8 @@ Examples:
     )
 
     parser.add_argument('slc_dirs', nargs='+', help='Path(s) to SLC directories (e.g., merged/SLC/*/*.vrt)')
-    parser.add_argument('--lon-file', default='None', help='Path to longitude file (e.g., merged/geom_reference/lon.hdr)')
-    parser.add_argument('--lat-file', default='None', help='Path to latitude file (e.g., merged/geom_reference/lat.hdr)')
+    parser.add_argument('--lon-file', default=None, help='Path to longitude file (e.g., merged/geom_reference/lon.hdr)')
+    parser.add_argument('--lat-file', default=None, help='Path to latitude file (e.g., merged/geom_reference/lat.hdr)')
     parser.add_argument('--bbox', type=float, nargs=4, metavar=('LON1', 'LAT1', 'LON2', 'LAT2'), help='Geographic bounding box: lat_min lat_max lon_min lon_max')
     parser.add_argument('--pixels', type=int, nargs=4, metavar=('COL1', 'ROW1', 'COL2', 'ROW2'), help='Pixel bounding box: row_start row_end col_start col_end')
     parser.add_argument('--template', help='Path to template file')
@@ -87,6 +87,37 @@ class GeometrySubsetter():
 
         self.lat = self._fetch_coords(lat_file)
         self.lon = self._fetch_coords(lon_file)
+
+    def _open_gdal_dataset(self, file_path: str):
+        candidates = []
+        path = Path(file_path)
+
+        if file_path:
+            candidates.append(path)
+
+        # Common sidecar formats for ISCE geometry files.
+        if path.suffix != ".vrt":
+            candidates.append(Path(str(path) + ".vrt"))
+            candidates.append(path.with_suffix(".vrt"))
+
+        if path.suffix != ".xml":
+            candidates.append(Path(str(path) + ".xml"))
+            candidates.append(path.with_suffix(".xml"))
+
+        if path.suffix != ".hdr":
+            candidates.append(Path(str(path) + ".hdr"))
+            candidates.append(path.with_suffix(".hdr"))
+
+        for candidate in candidates:
+            if not candidate.exists():
+                continue
+            ds = gdal.Open(str(candidate))
+            if ds is not None:
+                return ds
+
+        raise FileNotFoundError(
+            f"Unable to open dataset. Checked: {', '.join(str(c) for c in candidates if c.exists())}"
+        )
 
     def _fetch_coords(self, file_path: str):
         ds = self._open_gdal_dataset(file_path)
@@ -172,37 +203,6 @@ class SLCGeoSubsetter:
         self.gt = ds.GetGeoTransform()
         self.proj = ds.GetProjection()
         ds = None
-
-    def _open_gdal_dataset(self, file_path: str):
-        candidates = []
-        path = Path(file_path)
-
-        if file_path:
-            candidates.append(path)
-
-        # Common sidecar formats for ISCE geometry files.
-        if path.suffix != ".vrt":
-            candidates.append(Path(str(path) + ".vrt"))
-            candidates.append(path.with_suffix(".vrt"))
-
-        if path.suffix != ".xml":
-            candidates.append(Path(str(path) + ".xml"))
-            candidates.append(path.with_suffix(".xml"))
-
-        if path.suffix != ".hdr":
-            candidates.append(Path(str(path) + ".hdr"))
-            candidates.append(path.with_suffix(".hdr"))
-
-        for candidate in candidates:
-            if not candidate.exists():
-                continue
-            ds = gdal.Open(str(candidate))
-            if ds is not None:
-                return ds
-
-        raise FileNotFoundError(
-            f"Unable to open dataset. Checked: {', '.join(str(c) for c in candidates if c.exists())}"
-        )
 
 
     def lat_lon_to_pixels(self, lat: float, lon: float) -> Tuple[int, int]:
