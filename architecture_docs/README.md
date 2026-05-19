@@ -64,6 +64,8 @@ minsarApp.bash
 | [burst_testing.md](./burst_testing.md) | Annual template generation, run_templates.sh, testing bursts | Testing burst processing across years |
 | [nasa_earthdata_status_check.md](./nasa_earthdata_status_check.md) | NASA Earthdata status check before ASF downloads (check_nasa_earthdata_status.py/.bash, env vars, minsarApp.bash integration) | Understanding or modifying download pre-checks |
 | [BURST_DOWNLOAD.md](./BURST_DOWNLOAD.md) | burst_download.bash: per-date burst2stack, SLURM restart (check_SAFE_completeness, filter by complete SAFEs) | ASF burst download and burst2stack flow |
+| [ISCE2_UPGRADE.md](../docs/ISCE2_UPGRADE.md) | Interim CDSE fetchOrbit symlink; conda isce2 2.6.4 upgrade and **remove symlink** checklist | fetchOrbit / orbit download failures |
+| [1-BURST_ISCE_TROUBLESHOOTING.md](./1-BURST_ISCE_TROUBLESHOOTING.md) | Single-burst ISCE/TOPS patches; fetchOrbit SciHub vs CDSE | 1-burst stacks, misreg/merge errors |
 | [GEocode_HE5.md](./GEocode_HE5.md) | Geocode S1*.he5 (HDFEOS5) via thin wrapper over MintPy | Geocoding radar .he5 to geographic |
 | [tools/sarvey/docs/ARCHITECTURE.md](../tools/sarvey/docs/ARCHITECTURE.md) | SARvey: MTI time series tool (tools/sarvey), CLI, workflow, inputs | Using or integrating SARvey; displacement from SLC stack |
 
