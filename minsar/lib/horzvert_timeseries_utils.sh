@@ -30,36 +30,44 @@ hv_he5_radar_los_path() {
     return 0
 }
 
-# If directory contains both a short-name MiaplPy HE5 (…_miaplpy_YYYYMMDD_YYYYMMDD_<dataset>.he5 or
-# …_miaplpy_YYYYMMDD_XXXXXXXX_<dataset>.he5 when update filenames are used) and a long-name variant
-# (…_YYYYMMDD_YYYYMMDD_N…E…_…_<dataset>.he5), reference_point_hdfeos5.bash only
-# updates the resolved path; the corner-suffix copy stays stale. When the short form matches the
-# dataset suffix of the long form, replace the long file by moving the updated short file into
-# place (same basename as the long-form file).
-hv_promote_miaplpy_short_he5_to_corner_filename() {
+# Move newer short HE5 onto long corner-suffix path when save_hdfeos5.py wrote a short name.
+_hv_promote_merge_newer_short_onto_long() {
+    local f="$1" short_sibling="$2"
+    if [[ -f "$short_sibling" && "$short_sibling" -nt "$f" ]]; then
+        echo "hv_promote_short_he5_to_corner_filename: moving updated $(basename "$short_sibling") -> $(basename "$f")" >&2
+        rm -f "$f"
+        if ! mv "$short_sibling" "$f"; then
+            echo "hv_promote_short_he5_to_corner_filename: mv failed: $short_sibling -> $f" >&2
+            return 1
+        fi
+    fi
+    echo "$f"
+    return 0
+}
+
+# If directory contains both a short-name HE5 and a long-name variant with corner suffix,
+# reference_point_hdfeos5.bash + save_hdfeos5.py often update only the short basename
+# (metadata + --update --suffix; corner segments are not in the output name). Unify by
+# moving the updated short file onto the long corner-suffix path when they are siblings.
+# Handles MiaplPy (…_miaplpy_…_filt*DS) and MintPy (…_mintpy_… with no dataset suffix).
+hv_promote_short_he5_to_corner_filename() {
     local f dir base prefix suffix c n_matches picked longpath
-    local long_prefix long_suffix short_sibling
+    local long_prefix long_suffix short_sibling mintpy_prefix
 
     f="$1"
     [[ -n "$f" ]] || {
-        echo "hv_promote_miaplpy_short_he5_to_corner_filename: empty path" >&2
+        echo "hv_promote_short_he5_to_corner_filename: empty path" >&2
         return 1
     }
     [[ -f "$f" ]] || {
-        echo "hv_promote_miaplpy_short_he5_to_corner_filename: not a file: $f" >&2
+        echo "hv_promote_short_he5_to_corner_filename: not a file: $f" >&2
         return 1
     }
 
     dir=$(dirname "$f")
     base=$(basename "$f" .he5)
 
-    # Already using corner-in-name form (classic two end dates or update-mode XXXXXXXX end token).
-    # In this case reference_point_hdfeos5.bash + save_hdfeos5.py may have just written the
-    # re-referenced timeseries to the short-name sibling instead of overwriting this long file
-    # (save_hdfeos5.py picks its output name from metadata + --update --suffix; --subset is not
-    # passed, so corner segments are dropped). When that short sibling exists and is strictly
-    # newer than the long file, replace the long file with it so the canonical corner-suffix
-    # filename keeps the freshly-updated REF.
+    # --- MiaplPy: long form with corner suffix + optional filt*DS suffix ---
     long_prefix=""
     long_suffix=""
     if [[ "$base" =~ ^(S1_[^_]+_[^_]+_miaplpy_[0-9]{8}_[0-9]{8})_N[^_]+_N[^_]+_N[^_]+_N[^_]+_(filt.*DS|filtSingDS)$ ]]; then
@@ -71,24 +79,41 @@ hv_promote_miaplpy_short_he5_to_corner_filename() {
     fi
     if [[ -n "$long_prefix" && -n "$long_suffix" ]]; then
         short_sibling="${dir}/${long_prefix}_${long_suffix}.he5"
-        if [[ -f "$short_sibling" && "$short_sibling" -nt "$f" ]]; then
-            echo "hv_promote_miaplpy_short_he5_to_corner_filename: moving updated $(basename "$short_sibling") -> $(basename "$f")" >&2
-            rm -f "$f"
-            if ! mv "$short_sibling" "$f"; then
-                echo "hv_promote_miaplpy_short_he5_to_corner_filename: mv failed: $short_sibling -> $f" >&2
-                return 1
-            fi
-        fi
-        echo "$f"
-        return 0
+        _hv_promote_merge_newer_short_onto_long "$f" "$short_sibling"
+        return $?
     fi
-    # Corner-suffix basename without the expected dataset shape: leave it alone.
-    if [[ "$base" =~ _miaplpy_[0-9]{8}_[0-9]{8}_N ]] || [[ "$base" =~ _miaplpy_[0-9]{8}_XXXXXXXX_N ]]; then
+
+    # --- MintPy: long form with corner suffix (no filt*DS token) ---
+    mintpy_prefix=""
+    if [[ "$base" =~ ^(S1_[^_]+_[^_]+_mintpy_[0-9]{8})_(XXXXXXXX)_N[^_]+_N[^_]+_N[^_]+_N[^_]+$ ]]; then
+        mintpy_prefix="${BASH_REMATCH[1]}_${BASH_REMATCH[2]}"
+    elif [[ "$base" =~ ^(S1_[^_]+_[^_]+_mintpy_[0-9]{8}_[0-9]{8})_N[^_]+_N[^_]+_N[^_]+_N[^_]+$ ]]; then
+        mintpy_prefix="${BASH_REMATCH[1]}"
+    fi
+    if [[ -n "$mintpy_prefix" ]]; then
+        for short_sibling in \
+            "${dir}/${mintpy_prefix}.he5" \
+            "${dir}/${mintpy_prefix}_XXXXXXXX.he5"; do
+            if [[ -f "$short_sibling" && "$short_sibling" -nt "$f" ]]; then
+                _hv_promote_merge_newer_short_onto_long "$f" "$short_sibling"
+                return $?
+            fi
+        done
         echo "$f"
         return 0
     fi
 
-    # Short form only: miaplpy segment then one dataset token (no bbox segment).
+    # Corner-suffix basename without a matching promote rule: leave as-is.
+    if [[ "$base" =~ _miaplpy_[0-9]{8}_[0-9]{8}_N ]] || [[ "$base" =~ _miaplpy_[0-9]{8}_XXXXXXXX_N ]]; then
+        echo "$f"
+        return 0
+    fi
+    if [[ "$base" =~ _mintpy_[0-9]{8}_(XXXXXXXX|[0-9]{8})_N ]]; then
+        echo "$f"
+        return 0
+    fi
+
+    # --- MiaplPy: short form only ---
     prefix=""
     suffix=""
     if [[ "$base" =~ ^(S1_[^_]+_[^_]+_miaplpy_[0-9]{8}_[0-9]{8})_(filt.*DS|filtSingDS)$ ]]; then
@@ -98,45 +123,72 @@ hv_promote_miaplpy_short_he5_to_corner_filename() {
         prefix="${BASH_REMATCH[1]}"
         suffix="${BASH_REMATCH[2]}"
     fi
-    if [[ -z "$prefix" ]] || [[ -z "$suffix" ]]; then
-        echo "$f"
-        return 0
+    if [[ -n "$prefix" && -n "$suffix" && "$base" == "${prefix}_${suffix}" ]]; then
+        n_matches=0
+        picked=""
+        for c in "$dir/${prefix}_N"*"_${suffix}.he5"; do
+            [[ -f "$c" ]] || continue
+            n_matches=$((n_matches + 1))
+            picked="$c"
+        done
+        if [[ $n_matches -gt 0 ]]; then
+            if [[ $n_matches -gt 1 ]]; then
+                echo "hv_promote_short_he5_to_corner_filename: warning: ${n_matches} matches for ${prefix}_N*_${suffix}.he5; using $(basename "$picked")" >&2
+            fi
+            longpath="$picked"
+            if [[ "$(realpath "$f" 2>/dev/null || echo "$f")" != "$(realpath "$longpath" 2>/dev/null || echo "$longpath")" ]]; then
+                echo "hv_promote_short_he5_to_corner_filename: moving updated $(basename "$f") -> $(basename "$longpath")" >&2
+                rm -f "$longpath"
+                if ! mv "$f" "$longpath"; then
+                    echo "hv_promote_short_he5_to_corner_filename: mv failed: $f -> $longpath" >&2
+                    return 1
+                fi
+                echo "$longpath"
+                return 0
+            fi
+        fi
     fi
 
-    if [[ "$base" != "${prefix}_${suffix}" ]]; then
-        echo "$f"
-        return 0
+    # --- MintPy: short form only (no corner segments) ---
+    mintpy_prefix=""
+    if [[ "$base" =~ ^(S1_[^_]+_[^_]+_mintpy_[0-9]{8})_(XXXXXXXX)$ ]]; then
+        mintpy_prefix="${BASH_REMATCH[1]}_${BASH_REMATCH[2]}"
+    elif [[ "$base" =~ ^(S1_[^_]+_[^_]+_mintpy_[0-9]{8})_([0-9]{8})$ ]]; then
+        mintpy_prefix="${BASH_REMATCH[1]}_${BASH_REMATCH[2]}"
+    elif [[ "$base" =~ ^(S1_[^_]+_[^_]+_mintpy_[0-9]{8}_XXXXXXXX)_XXXXXXXX$ ]]; then
+        mintpy_prefix="${BASH_REMATCH[1]}"
+    fi
+    if [[ -n "$mintpy_prefix" && ( "$base" == "$mintpy_prefix" || "$base" == "${mintpy_prefix}_XXXXXXXX" ) ]]; then
+        n_matches=0
+        picked=""
+        for c in "$dir/${mintpy_prefix}_N"*.he5; do
+            [[ -f "$c" ]] || continue
+            n_matches=$((n_matches + 1))
+            picked="$c"
+        done
+        if [[ $n_matches -gt 0 ]]; then
+            if [[ $n_matches -gt 1 ]]; then
+                echo "hv_promote_short_he5_to_corner_filename: warning: ${n_matches} matches for ${mintpy_prefix}_N*.he5; using $(basename "$picked")" >&2
+            fi
+            longpath="$picked"
+            if [[ "$(realpath "$f" 2>/dev/null || echo "$f")" != "$(realpath "$longpath" 2>/dev/null || echo "$longpath")" ]]; then
+                echo "hv_promote_short_he5_to_corner_filename: moving updated $(basename "$f") -> $(basename "$longpath")" >&2
+                rm -f "$longpath"
+                if ! mv "$f" "$longpath"; then
+                    echo "hv_promote_short_he5_to_corner_filename: mv failed: $f -> $longpath" >&2
+                    return 1
+                fi
+                echo "$longpath"
+                return 0
+            fi
+        fi
     fi
 
-    n_matches=0
-    picked=""
-    for c in "$dir/${prefix}_N"*"_${suffix}.he5"; do
-        [[ -f "$c" ]] || continue
-        n_matches=$((n_matches + 1))
-        picked="$c"
-    done
-
-    if [[ $n_matches -eq 0 ]]; then
-        echo "$f"
-        return 0
-    fi
-
-    if [[ $n_matches -gt 1 ]]; then
-        echo "hv_promote_miaplpy_short_he5_to_corner_filename: warning: ${n_matches} matches for ${prefix}_N*_${suffix}.he5; using $(basename "$picked")" >&2
-    fi
-
-    longpath="$picked"
-    if [[ "$(realpath "$f" 2>/dev/null || echo "$f")" == "$(realpath "$longpath" 2>/dev/null || echo "$longpath")" ]]; then
-        echo "$f"
-        return 0
-    fi
-
-    echo "hv_promote_miaplpy_short_he5_to_corner_filename: moving updated $(basename "$f") -> $(basename "$longpath")" >&2
-    rm -f "$longpath"
-    if ! mv "$f" "$longpath"; then
-        echo "hv_promote_miaplpy_short_he5_to_corner_filename: mv failed: $f -> $longpath" >&2
-        return 1
-    fi
-    echo "$longpath"
+    echo "$f"
     return 0
+}
+
+# Backward-compatible alias (MiaplPy-only name retained for callers and tests).
+hv_promote_miaplpy_short_he5_to_corner_filename() {
+    hv_promote_short_he5_to_corner_filename "$@"
 }

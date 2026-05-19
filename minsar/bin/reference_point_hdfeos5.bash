@@ -220,6 +220,14 @@ if [[ $keep_extracted -eq 0 ]]; then
     done
 fi
 
+_finished_display="$ACTUAL_OUT"
+if [[ "$ACTUAL_OUT" == "$PWD/"* ]]; then
+    _finished_display="${ACTUAL_OUT#$PWD/}"
+fi
+
+echo "####"
+echo "Finished changing reference point:  $_finished_display"
+echo "####"
 echo "####################################"
 echo "Done! Output file: $ACTUAL_OUT"
 echo "####################################"

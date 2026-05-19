@@ -9,8 +9,8 @@
 #   Step 0b: If resolved path is geo_*.he5, switch to sibling radar S1*.he5 (same dir).
 #   Step 0c: Re-reference both radar LOS .he5 files to --ref-lalo in place (same basename;
 #            reference_point_hdfeos5.bash; then ingest does not pass --ref-lalo).
-#   Step 0d: If a short-name miaplpy HE5 (…_dates_filt*DS.he5) was updated but a long-name
-#            duplicate (…_dates_N*E*_…_filt*DS.he5) exists, mv the short file onto the long path.
+#   Step 0d: If save_hdfeos5 wrote a short basename but a corner-suffix sibling exists (MintPy or
+#            MiaplPy), mv the updated short file onto the long path so REF and ingest use one file.
 #   Step 1: Geocode inputs if radar-coded (geocode.py; skip if already geocoded)
 #   Step 2: Run horzvert_timeseries.py (computes vert/horz from geocoded inputs)
 #   Step 3: Locate vert/horz outputs
@@ -571,10 +571,10 @@ done
 ###############################################################################
 echo ""
 echo "##############################################"
-echo "Step 0d: Unify short-name vs corner-suffix MiaplPy HE5 filenames (if applicable)"
+echo "Step 0d: Unify short-name vs corner-suffix HE5 filenames (MintPy / MiaplPy, if applicable)"
 
-if ! FILE1=$(hv_promote_miaplpy_short_he5_to_corner_filename "$FILE1"); then exit 1; fi
-if ! FILE2=$(hv_promote_miaplpy_short_he5_to_corner_filename "$FILE2"); then exit 1; fi
+if ! FILE1=$(hv_promote_short_he5_to_corner_filename "$FILE1"); then exit 1; fi
+if ! FILE2=$(hv_promote_short_he5_to_corner_filename "$FILE2"); then exit 1; fi
 echo "FILE1 (after optional rename): $FILE1"
 echo "FILE2 (after optional rename): $FILE2"
 

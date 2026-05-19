@@ -131,6 +131,55 @@ test_hv_promote_long_with_newer_short_sibling_promotes() {
     print_test_end "hv_promote long←newer short"
 }
 
+test_hv_promote_mintpy_short_to_corner_name() {
+    print_test_start "hv_promote mintpy short→corner" \
+        "MintPy short basename promotes over corner-suffix sibling."
+    local tmp short long out
+    tmp=$(mktemp -d)
+    short="$tmp/S1_desc_142_mintpy_20240904_XXXXXXXX.he5"
+    long="$tmp/S1_desc_142_mintpy_20240904_XXXXXXXX_N0151W07849_N0151W07756_N0034W07756_N0034W07849.he5"
+    printf newref >"$short"
+    printf oldref >"$long"
+    out=$(hv_promote_short_he5_to_corner_filename "$short" 2>/dev/null)
+    assert_equals "$long" "$out" "Returns long path"
+    assert_equals "newref" "$(cat "$long")" "Long receives content from updated short"
+    rm -rf "$tmp"
+    print_test_end "hv_promote mintpy short→corner"
+}
+
+test_hv_promote_mintpy_long_with_newer_short_sibling() {
+    print_test_start "hv_promote mintpy long←newer short" \
+        "MintPy corner file with newer short sibling gets updated REF from short."
+    local tmp short long out
+    tmp=$(mktemp -d)
+    long="$tmp/S1_desc_142_mintpy_20240904_XXXXXXXX_N0151W07849_N0151W07756_N0034W07756_N0034W07849.he5"
+    short="$tmp/S1_desc_142_mintpy_20240904_XXXXXXXX.he5"
+    printf staleref >"$long"
+    sleep 1
+    printf newref >"$short"
+    out=$(hv_promote_short_he5_to_corner_filename "$long" 2>/dev/null)
+    assert_equals "$long" "$out" "Returns long path"
+    assert_equals "newref" "$(cat "$long")" "Long path updated from short"
+    rm -rf "$tmp"
+    print_test_end "hv_promote mintpy long←newer short"
+}
+
+test_hv_promote_mintpy_double_placeholder_short_to_corner() {
+    print_test_start "hv_promote mintpy XXXXXXXX_XXXXXXXX" \
+        "save_hdfeos5 update-mode double placeholder short promotes to corner sibling."
+    local tmp short long out
+    tmp=$(mktemp -d)
+    short="$tmp/S1_asc_120_mintpy_20240902_XXXXXXXX_XXXXXXXX.he5"
+    long="$tmp/S1_asc_120_mintpy_20240902_XXXXXXXX_N0161W07905_N0161W07720_N0020W07720_N0020W07905.he5"
+    printf newref >"$short"
+    printf oldref >"$long"
+    out=$(hv_promote_short_he5_to_corner_filename "$short" 2>/dev/null)
+    assert_equals "$long" "$out" "Returns long path"
+    assert_equals "newref" "$(cat "$long")" "Long receives content from double-placeholder short"
+    rm -rf "$tmp"
+    print_test_end "hv_promote mintpy XXXXXXXX_XXXXXXXX"
+}
+
 test_hv_promote_long_with_older_short_sibling_keeps_long() {
     print_test_start "hv_promote long keeps when short older" \
         "Long-form input with an older short sibling: leave both files untouched."
@@ -157,7 +206,8 @@ test_horzvert_script_syntax_and_los_ingest_no_ref_lalo() {
     assert_equals "0" "$_n" "bash -n horzvert_timeseries.bash"
     content=$(cat "$HV_SCRIPT")
     assert_contains "$content" "Step 0c: Re-reference radar LOS" "Documents re-reference step"
-    assert_contains "$content" "Step 0d: Unify short-name vs corner-suffix" "Documents HE5 rename step"
+    assert_contains "$content" "Step 0d: Unify short-name vs corner-suffix HE5" "Documents HE5 rename step"
+    assert_contains "$content" "hv_promote_short_he5_to_corner_filename" "Uses MintPy/MiaplPy HE5 rename helper"
     assert_contains "$content" "reference_point_hdfeos5.bash" "Calls reference_point_hdfeos5.bash"
     assert_not_contains "$content" 'ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE1" --ref-lalo' "LOS ingest file1 without --ref-lalo"
     assert_not_contains "$content" 'ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE2" --ref-lalo' "LOS ingest file2 without --ref-lalo"
@@ -175,6 +225,9 @@ test_hv_promote_corner_file_unchanged
 test_hv_promote_corner_update_placeholder_unchanged
 test_hv_promote_long_with_newer_short_sibling_promotes
 test_hv_promote_long_with_older_short_sibling_keeps_long
+test_hv_promote_mintpy_short_to_corner_name
+test_hv_promote_mintpy_long_with_newer_short_sibling
+test_hv_promote_mintpy_double_placeholder_short_to_corner
 test_horzvert_script_syntax_and_los_ingest_no_ref_lalo
 
 print_summary
