@@ -535,7 +535,7 @@ def get_output_filename(metadata,):
     if update_flag:
         date2 = "XXXXXXXX"
 
-    direction_val = direction or mget("orbit_pass_direction", None)
+    direction_val = direction or mget("orbit_pass_direction", mget('orbit_direction', None))
     if direction_val:
         direction_upper = str(direction_val).strip().upper()
         if "ASC" in direction_upper:
