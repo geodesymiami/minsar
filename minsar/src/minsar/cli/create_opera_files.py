@@ -14,18 +14,27 @@ from datetime import date
 from shapely import wkt
 from mintpy.objects import HDFEOS
 from minsar.src.minsar.cli import asf_search_args as asf
-from minsar.src.minsar.helper_functions import parse_polygon, convert_to_coord, extract_identification_metadata, normalize_meta_value
+from minsar.src.minsar.helper_functions import parse_polygon, convert_to_coord, extract_identification_metadata, normalize_meta_value, merge_metadata, get_output_filename
 
+DESCRIPTION = "Create OPERA timeseries file from pairwise aggregated data."
+EXAMPLE = """
+Example:
+  %(prog)s --dir /path/to/aggregated/files --dem-file /path/to/dem.tif
+"""
 
 def create_parser():
     parser = argparse.ArgumentParser(
-        description="Create OPERA timeseries file."
+        description="Create OPERA timeseries file.",
+        epilog=EXAMPLE,
+        formatter_class=argparse.RawTextHelpFormatter
     )
 
-    parser.add_argument('--dir', help='Output directory for downloads')
+    parser.add_argument('--dir', default=os.path.join(os.getcwd(), 'CSLC'), help='Output directory for downloads')
     parser.add_argument('--dem-file', default=None, help='DEM file to download (optional)')
 
     inps = parser.parse_args()
+
+    os.makedirs(inps.dir, exist_ok=True)
 
     if inps.dem_file and not os.path.abspath(inps.dem_file):
         inps.dem_file = os.path.join(os.getcwd(), inps.dem_file)
@@ -141,136 +150,6 @@ def temporal_inversion(aggregated_time_1, aggregated_time_2, aggregated_displace
     print("Output shape:", X.shape)
 
     return times, X
-
-
-def get_output_filename(metadata,):
-    """Build output filename from OPERA identification metadata."""
-    def mget(key, default=None):
-        # supports dict metadata and argparse.Namespace(attrs=..., variables=...)
-        if isinstance(metadata, dict):
-            return metadata.get(key, default)
-        if hasattr(metadata, "attrs") and key in metadata.attrs:
-            return metadata.attrs.get(key, default)
-        if hasattr(metadata, "variables") and key in metadata.variables:
-            return metadata.variables.get(key, default)
-        if hasattr(metadata, key):
-            return getattr(metadata, key)
-        return default
-
-    def parse_ymd(value):
-        if not value:
-            return "00000000"
-        s = str(value).strip()
-        for fmt in (
-            "%Y-%m-%d",
-            "%Y-%m-%d %H:%M:%S",
-            "%Y-%m-%d %H:%M:%S.%f",
-            "%Y-%m-%dT%H:%M:%S",
-            "%Y-%m-%dT%H:%M:%S.%f",
-        ):
-            try:
-                return datetime.datetime.strptime(s, fmt).strftime("%Y%m%d")
-            except ValueError:
-                pass
-        # fallback for strings like "2017-01-07T04:30:28.815125Z"
-        return s[:10].replace("-", "")
-
-    direction = metadata.orbit_pass_direction if hasattr(metadata, "orbit_pass_direction") else None
-    if direction is not None:
-        direction = str(direction).strip().upper()
-
-    sat_raw = mget("source_data_satellite_names", mget("mission", "OPERA"))
-    sat_str = str(sat_raw).upper().replace(" ", "") if sat_raw is not None else ""
-
-    if "S1A" in sat_str or "S1B" in sat_str:
-        sat = "S1"
-    else:
-        sat = str(sat_raw).split(",")[0].strip() if sat_raw else "OPERA"
-
-    relorb = f"{int(mget('relative_orbit', mget('track_number', 0))):03d}"
-    relorb2 = f"{int(mget('relative_orbit_second', mget('frame_id', 0))):05d}"
-
-    method_str = str(mget("post_processing_method", "opera")).lower()
-
-    date1 = parse_ymd(
-        mget("first_date", mget("reference_datetime", mget("reference_zero_doppler_start_time")))
-    )
-    date2 = parse_ymd(
-        mget("last_date", mget("secondary_datetime", mget("secondary_zero_doppler_start_time")))
-    )
-
-    update_flag = str(mget("cfg.mintpy.save.hdfEos5.update", "")).lower() == "yes"
-    if update_flag:
-        date2 = "XXXXXXXX"
-
-    direction_val = direction or mget("orbit_pass_direction", None)
-    if direction_val:
-        direction_upper = str(direction_val).strip().upper()
-        if "ASC" in direction_upper:
-            direction_val = "asc"
-        elif "DES" in direction_upper:
-            direction_val = "desc"
-        else:
-            direction_val = str(direction_val).strip().lower()
-
-    if direction_val:
-        out_name = f"{sat}_{direction_val}_{relorb}_{relorb2}_{method_str}_{date1}_{date2}.he5"
-    else:
-        out_name = f"{sat}_{relorb}_{relorb2}_{method_str}_{date1}_{date2}.he5"
-
-    fbase, fext = os.path.splitext(out_name)
-    polygon_str = mget("data_footprint", mget("bounding_polygon", None))
-
-    if polygon_str:
-        try:
-            sub = polygon_corners_string(polygon_str)
-            out_name = f"{fbase}_{sub}{fext}"
-        except Exception:
-            pass
-
-    return out_name
-
-
-def merge_metadata(metadata: list[argparse.Namespace]) -> argparse.Namespace:
-    def _as_set(val):
-        if isinstance(val, str) and ',' in val:
-            return set(s.strip() for s in val.split(','))
-        return val
-
-    dicts = [vars(m) for m in metadata]
-    shared_keys = set(dicts[0]).intersection(*dicts[1:])
-    shared = {}
-    for k in shared_keys:
-        v0 = dicts[0][k]
-        if all(_as_set(d[k]) == _as_set(v0) for d in dicts[1:]):
-            shared[k] = v0
-
-    return argparse.Namespace(**shared)
-
-
-def polygon_corners_string(polygon_str: str) -> str:
-    """
-    Return corners from the polygon as S0081W09112_S0081W09130_S0100W09130_S0100W09112
-    """
-
-    def fmt_lat(lat: float) -> str:
-        val = int(round(abs(lat) * 100))              # keep 2 decimals
-        return f"{'N' if lat >= 0 else 'S'}{val:04d}" # 2 deg digits + 2 decimals
-
-    def fmt_lon(lon: float) -> str:
-        val = int(round(abs(lon) * 100))
-        return f"{'E' if lon >= 0 else 'W'}{val:05d}" # 3 deg digits + 2 decimals
-
-    poly = _wkt.loads(polygon_str)
-
-    # polygon vertices in counter-clockwise order starting SW, drop duplicate last point
-    coords = list(poly.exterior.coords)[:-1]
-    corners = [(lat, lon) for lon, lat in coords]
-    parts = [f"{fmt_lat(lat)}{fmt_lon(lon)}" for (lat, lon) in corners]
-
-    corners_str = "_".join(parts)
-
-    return  corners_str
 
 
 def main():
