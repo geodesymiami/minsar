@@ -43,6 +43,8 @@ bbox = (
     or options.get('topsStack.boundingBox')
 )
 
+track = options.get('ssaraopt.relativeOrbit')
+
 if options.get('dataset', None):
     if options.get('dataset') in os.getcwd():
       dir = os.getcwd()
@@ -67,6 +69,14 @@ template_args = [
     f"{dir}",
     "--output",
     f"{dir}/sweets_config.yaml",
+    "--n-workers",
+    "40",
+    "--threads-per-worker",
+    "1",
+    "--track",
+    track or 'None',
+    "--dolphin.n-parallel-unwrap",
+    "4",
 ]
 
 # Parse bbox components only if bbox is provided
