@@ -43,6 +43,8 @@ bbox = (
     or options.get('topsStack.boundingBox')
 )
 
+track = options.get('ssaraopt.relativeOrbit')
+
 if options.get('dataset', None):
     if options.get('dataset') in os.getcwd():
       dir = os.getcwd()
@@ -52,6 +54,9 @@ if options.get('dataset', None):
       dir = os.getcwd()
 else:
     dir = os.getcwd()
+
+if not os.path.exists(dir):
+    os.makedirs(dir)
 
 template_args = [
     "pixi",
@@ -67,6 +72,14 @@ template_args = [
     f"{dir}",
     "--output",
     f"{dir}/sweets_config.yaml",
+    "--n-workers",
+    "40",
+    "--threads-per-worker",
+    "1",
+    "--track",
+    track or 'None',
+    "--dolphin.n-parallel-unwrap",
+    "4",
 ]
 
 # Parse bbox components only if bbox is provided
@@ -136,6 +149,8 @@ with open(f"{dir}/config_sweets.job", 'w') as f:
     queue = "skx-dev"
     cmd = config
     f.write(create_run_file(cores, time, queue, cmd))
+print(f"SWEET config file created at: {dir}/config_sweets.job")
+
 # RUN FILE
 with open(f"{dir}/run_sweets.job", 'w') as f:
     cores = 48
@@ -143,3 +158,4 @@ with open(f"{dir}/run_sweets.job", 'w') as f:
     queue = os.getenv("QUEUENAME") if os.getenv("QUEUENAME") else "skx"
     cmd = f"pixi run sweets run {dir}/sweets_config.yaml"
     f.write(create_run_file(cores, time, queue, cmd))
+print(f"SWEET run file created at: {dir}/run_sweets.job")
