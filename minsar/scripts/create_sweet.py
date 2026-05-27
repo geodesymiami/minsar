@@ -55,6 +55,9 @@ if options.get('dataset', None):
 else:
     dir = os.getcwd()
 
+if not os.path.exists(dir):
+    os.makedirs(dir)
+
 template_args = [
     "pixi",
     "run",
@@ -146,6 +149,8 @@ with open(f"{dir}/config_sweets.job", 'w') as f:
     queue = "skx-dev"
     cmd = config
     f.write(create_run_file(cores, time, queue, cmd))
+print(f"SWEET config file created at: {dir}/config_sweets.job")
+
 # RUN FILE
 with open(f"{dir}/run_sweets.job", 'w') as f:
     cores = 48
@@ -153,3 +158,4 @@ with open(f"{dir}/run_sweets.job", 'w') as f:
     queue = os.getenv("QUEUENAME") if os.getenv("QUEUENAME") else "skx"
     cmd = f"pixi run sweets run {dir}/sweets_config.yaml"
     f.write(create_run_file(cores, time, queue, cmd))
+print(f"SWEET run file created at: {dir}/run_sweets.job")
