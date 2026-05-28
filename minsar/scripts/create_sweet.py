@@ -76,8 +76,6 @@ template_args = [
     "40",
     "--threads-per-worker",
     "1",
-    "--track",
-    track or 'None',
     "--dolphin.n-parallel-unwrap",
     "4",
 ]
@@ -142,11 +140,12 @@ cd {W2}/code/sweets
 {cmd}
 """)
 
+queue = os.getenv("QUEUENAME") if os.getenv("QUEUENAME") else "skx"
 # CONFIG FILE
 with open(f"{dir}/config_sweets.job", 'w') as f:
     cores = 1
     time = "00:02:00"
-    queue = "skx-dev"
+    queue = queue
     cmd = config
     f.write(create_run_file(cores, time, queue, cmd))
 print(f"SWEET config file created at: {dir}/config_sweets.job")
@@ -155,7 +154,7 @@ print(f"SWEET config file created at: {dir}/config_sweets.job")
 with open(f"{dir}/run_sweets.job", 'w') as f:
     cores = 48
     time = "06:00:00"
-    queue = os.getenv("QUEUENAME") if os.getenv("QUEUENAME") else "skx"
+    queue = "pvc" if queue == "skx-dev" else queue
     cmd = f"pixi run sweets run {dir}/sweets_config.yaml"
     f.write(create_run_file(cores, time, queue, cmd))
 print(f"SWEET run file created at: {dir}/run_sweets.job")
