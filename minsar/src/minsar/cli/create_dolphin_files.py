@@ -103,14 +103,15 @@ def create_hdfeos_output(ts_data: np.ndarray, mask: np.ndarray, latitude: np.nda
 
 def define_path():
     path = Path.cwd()
-    if not glob.glob(str(Path.cwd() / '*.tif')):
-        if not 'timeseries' in str(path):
-            if (path / 'timeseries').exists():
-                timeseries_path = path / 'timeseries'
-            else:
-                raise FileNotFoundError(f"No .tif files or timeseries directory found in {path}.")
+    if not 'timeseries' in str(path):
+        if (path / 'timeseries').exists():
+            timeseries_path = path / 'timeseries'
+        elif (path / 'dolphin' / 'timeseries').exists():
+            timeseries_path = path / 'dolphin' / 'timeseries'
         else:
-            raise FileNotFoundError(f"No .tif files found in {path}.")
+            raise FileNotFoundError(f"No .tif files or timeseries directory found in {path}.")
+    else:
+        raise FileNotFoundError(f"No .tif files found in {path}.")
 
     if False:
         timeseries_path = SCRATCHDIR / "opera_download/Popcatepetl/timeseries" if SCRATCHDIR else Path.getcwd() / "opera_download/Popcatepetl/timeseries"
@@ -148,6 +149,18 @@ def find_geometry_file(path=None):
     searched = '\n  '.join(str(d / f) for d in search_dirs for f in filenames)
     raise FileNotFoundError(f"No geometry file found. Searched:\n  {searched}")
 
+def find_geometry_path(path=None):
+    if not path:
+        path = Path.cwd()
+
+    if glob.glob(str(path / 'geometry')):
+        return glob.glob(str(path / 'geometry'))[0]
+    elif glob.glob(str(path.parent / 'geometry')):
+        return glob.glob(str(path.parent / 'geometry'))[0]
+    elif glob.glob(str(path.parent.parent / 'geometry')):
+        return glob.glob(str(path.parent.parent / 'geometry'))[0]
+    else:
+        raise FileNotFoundError("No geometry file found in current or parent directories.")
 
 def find_dem_path(path=None):
     if not path:
@@ -162,10 +175,15 @@ def find_dem_path(path=None):
         files = glob.glob(str(path.parent / e))
         if files:
             return (files[0])
+    for e in ext:
+        files = glob.glob(str(path.parent.parent / e))
+        if files:
+            return (files[0])
 
 
 def collect_data(timeseries_path):
     deformation_data = []
+    temp_coh = None
     for f in os.listdir(str(timeseries_path)):
         path = timeseries_path / f
 
@@ -189,6 +207,16 @@ def collect_data(timeseries_path):
             bbox = src.bounds
             transform = src.transform
             deformation_data.append({"reference": reference, "secondary": secondary, "data": data})
+
+    if not temp_coh and (timeseries_path.parent / 'interferograms').exists():
+        temp_coh_path = glob.glob(str(timeseries_path.parent / 'interferograms' / '*temporal*coherence*average*'))
+        if temp_coh_path:
+            try:
+                with rasterio.open(temp_coh_path[0]) as src:
+                    temp_coh = src.read(1)
+            except:
+                raise FileNotFoundError("No temporal coherence file found in interferograms directory.")
+
 
     metadata=dict(crs=crs.to_string(),transform=transform, bbox=bbox, LENGTH=shape[0], WIDTH=shape[1])
 
@@ -224,6 +252,14 @@ def normalize(v):
     return v
 
 
+def get_coords_from_metadata(metadata):
+    lon, lat = utm_to_lonlat((metadata['bbox'].left, metadata['bbox'].right), (metadata['bbox'].bottom, metadata['bbox'].top), metadata['crs'])
+
+    longitude_1d = np.linspace(min(lon), max(lon), metadata['WIDTH'])
+    latitude_1d = np.linspace(min(lat), max(lat), metadata['LENGTH'])
+    longitude, latitude = np.meshgrid(longitude_1d, latitude_1d)
+    return longitude, latitude, lon, lat
+
 def plot_to_test(deformation_data, temp_coh):
     datelist = [d['secondary'] for d in deformation_data]
     deformation = np.array([d['data'] for d in deformation_data])
@@ -253,15 +289,18 @@ def plot_to_test(deformation_data, temp_coh):
 
 
 def main():
-    os.chdir('/Users/giacomo/Library/CloudStorage/OneDrive-UniversityofMiami/scratch/opera_download/Popocatepetl') #REMOVE!!!
-    CSLC = glob.glob(str(Path.cwd() / 'OPERA*.h5'))[0]
+    # TODO for debug ########################################################################################################
+    os.chdir('/scratch/09580/gdisilvestro/qChilesSenA120') #REMOVE!!!
+    #########################################################################################################################
+
+    CSLC = glob.glob(str(Path.cwd() / 'OPERA*.h5')) if glob.glob(str(Path.cwd() / 'OPERA*.h5')) else glob.glob(str(Path.cwd() / 'CSLC' / 'OPERA*.h5'))
 
     timeseries_path = define_path()
 
     deformation_data, temp_coh, metadata1 = collect_data(timeseries_path)
     ny, nx = deformation_data[0]["data"].shape
     if CSLC:
-        with h5py.File(CSLC, "r") as hf:
+        with h5py.File(CSLC[0], "r") as hf:
             metadata2 = {}
             grp = hf['/metadata']
             def visit(name, obj):
@@ -270,30 +309,71 @@ def main():
                     metadata2[key] = normalize(obj[()])
             grp.visititems(visit)
 
-            x = hf["/data/x_coordinates"][:]
-            y = hf["/data/y_coordinates"][:]
-
-            lon, lat = utm_to_lonlat((metadata1['bbox'].left, metadata1['bbox'].right), (metadata1['bbox'].bottom, metadata1['bbox'].top), metadata1['crs'])
-
-            longitude_1d = np.linspace(min(lon), max(lon), nx)
-            latitude_1d = np.linspace(min(lat), max(lat), ny)
-            longitude, latitude = np.meshgrid(longitude_1d, latitude_1d)
+            longitude, latitude, lon_bounds, lat_bounds = get_coords_from_metadata(metadata1)
 
         dem = find_dem_path(timeseries_path)
         with rasterio.open(dem) as src:
-            window = rasterio.windows.from_bounds(min(lon), min(lat), max(lon), max(lat), transform=src.transform)
+            window = rasterio.windows.from_bounds(min(lon_bounds), min(lat_bounds), max(lon_bounds), max(lat_bounds), transform=src.transform)
             height = src.read(1, window=window)
             az = None
             incidence = None
+
+    elif (Path.cwd() / 'gslcs').exists():
+        geometry_folder = find_geometry_path(timeseries_path)
+        longitude, latitude, lon_bounds, lat_bounds = get_coords_from_metadata(metadata1)
+        for file in ['height.tif', 'local_incidence_angle.tif', 'los_east.tif', 'los_north.tif']:
+            with rasterio.open(Path(geometry_folder) / file) as src:
+                variable = file.split('.')[0]
+                if variable == 'height':
+                    height = src.read(1)
+                elif variable == 'local_incidence_angle':
+                    incidence = src.read(1)
+                elif variable == 'los_east':
+                    los_east = src.read(1)
+                elif variable == 'los_north':
+                    los_north = src.read(1)
+        az = np.rad2deg(np.arctan2(los_east, los_north))
+
+        t = metadata1['transform']
+        lon0, lat0 = utm_to_lonlat(t.c, t.f, metadata1["crs"])
+        lon_x, lat_x = utm_to_lonlat(t.c + t.a,t.f,metadata1["crs"])
+        lon_y, lat_y = utm_to_lonlat(t.c,t.f + t.e,metadata1["crs"])
+        x_step = lon_x - lon0
+        y_step = lat_y - lat0
+
+        metadata2 = {
+        "X_FIRST": str(lon0),
+        "Y_FIRST": str(lat0),
+        "X_STEP": str(x_step),
+        "Y_STEP": str(y_step),
+        "EPSG": 4326,
+        "DATA_TYPE": src.dtypes[0],
+        }
+
+        burst_dir = Path("gslcs/t*")
+        static_file = glob.glob(str(burst_dir / "**" / "static_layers_*.h5"), recursive=True)
+
+        if static_file:
+            def clean(v):
+                if isinstance(v, bytes):
+                    return v.decode("utf-8")
+                return v
+            with h5py.File(static_file[0], "r") as hf:
+                def visitor(name, obj):
+                    if isinstance(obj, h5py.Dataset) and obj.shape == ():
+                        try:
+                            key = name.split("/")[-1]   # <-- ROOT ONLY NAME
+                            metadata2[key] = clean(obj[()])
+                        except Exception:
+                            pass
+                hf.visititems(visitor)
+
 
     else: #latitude and longitude merda
         geometry_file = find_geometry_file(timeseries_path)
         latitude, longitude, height, az, incidence, metadata2 = collect_geometry_data(geometry_file)
         if metadata1.get('bbox', None):
-            lon, lat = utm_to_lonlat((metadata1['bbox'].left, metadata1['bbox'].right), (metadata1['bbox'].bottom, metadata1['bbox'].top), metadata1['crs'])
-            latitude_1d = np.linspace(min(lat), max(lat), metadata1['LENGTH'])
-            longitude_1d = np.linspace(min(lon), max(lon), metadata1['WIDTH'])
-            longitude, latitude = np.meshgrid(longitude_1d, latitude_1d)
+            longitude, latitude, lon_bounds, lat_bounds = get_coords_from_metadata(metadata1)
         elif metadata1.get('bounding_polygon', None):
             latitude = np.linspace(metadata1['bounding_polygon'][0][1], metadata1['bounding_polygon'][0][3], metadata1['LENGTH'])
             longitude = np.linspace(metadata1['bounding_polygon'][0][0], metadata1['bounding_polygon'][0][2], metadata1['WIDTH'])
@@ -302,8 +382,8 @@ def main():
 
     stack = np.stack([d['data'] for d in deformation_data])
     date_list = np.array([d['secondary'] for d in deformation_data])
-    lon_min, lon_max = min(lon), max(lon)
-    lat_min, lat_max = min(lat), max(lat)
+    lon_min, lon_max = min(lon_bounds), max(lon_bounds)
+    lat_min, lat_max = min(lat_bounds), max(lat_bounds)
     wkt = (
         f"POLYGON(("
         f"{lon_min} {lat_min},"
@@ -316,7 +396,7 @@ def main():
     metadata['processing_software'] = 'isce'
     metadata['post_processing_method'] = 'dolphin'
     metadata['PROCESSOR'] = 'DOLPHIN'
-    metadata['PLATFORM'] = 'S1' if 'S1' in metadata.get('l1_slc_files', metadata.get('platform_id', None)) else None
+    metadata['PLATFORM'] = 'S1' if 'S1' in metadata.get('l1_slc_files', metadata.get('platform_id', '')) else ''
     metadata['X_FIRST'] = lon_min #metadata['transform'][2]
     metadata['Y_FIRST'] = lat_max #metadata['transform'][5]
     metadata['X_STEP'] = (lon_max - lon_min) / (nx - 1) #metadata['transform'][0]
@@ -336,7 +416,7 @@ def main():
     metadata['data_footprint'] = metadata['scene_footprint'] = metadata['bounding_polygon'] = wkt
     output_path = str(timeseries_path / get_output_filename(metadata))
 
-    create_hdfeos_output(ts_data=stack, mask=temp_coh < 0.8, temporal_coherence=temp_coh, date_list=date_list, output_path=output_path, metadata=metadata,
+    create_hdfeos_output(ts_data=stack, mask=temp_coh > 0.65, temporal_coherence=temp_coh, date_list=date_list, output_path=output_path, metadata=metadata,
                          latitude=latitude, longitude=longitude, height=height, azimuth=az, incidence=incidence)
 
 
