@@ -336,8 +336,8 @@ def main():
 
         t = metadata1['transform']
         lon0, lat0 = utm_to_lonlat(t.c, t.f, metadata1["crs"])
-        lon_x, lat_x = utm_to_lonlat(t.c + t.a,t.f,metadata1["crs"])
-        lon_y, lat_y = utm_to_lonlat(t.c,t.f + t.e,metadata1["crs"])
+        lon_x, _ = utm_to_lonlat(t.c + t.a,t.f,metadata1["crs"])
+        _, lat_y = utm_to_lonlat(t.c,t.f + t.e,metadata1["crs"])
         x_step = lon_x - lon0
         y_step = lat_y - lat0
 
