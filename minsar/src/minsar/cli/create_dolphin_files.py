@@ -208,7 +208,7 @@ def collect_data(timeseries_path):
             transform = src.transform
             deformation_data.append({"reference": reference, "secondary": secondary, "data": data})
 
-    if not temp_coh and (timeseries_path.parent / 'interferograms').exists():
+    if temp_coh is None and (timeseries_path.parent / 'interferograms').exists():
         temp_coh_path = glob.glob(str(timeseries_path.parent / 'interferograms' / '*temporal*coherence*average*'))
         if temp_coh_path:
             try:
