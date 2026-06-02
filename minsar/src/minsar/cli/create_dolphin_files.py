@@ -6,11 +6,164 @@ import re
 import h5py
 import rasterio
 import numpy as np
+from datetime import date, datetime
 from pathlib import Path
 
 from matplotlib import pyplot as plt
 from mintpy.utils import writefile, readfile
-from minsar.src.minsar.helper_functions import get_output_filename, utm_to_lonlat
+from minsar.src.minsar.helper_functions import (
+    extract_identification_metadata,
+    get_output_filename,
+    utm_to_lonlat,
+)
+
+
+def _iso_date(ymd):
+    """Convert YYYYMMDD to YYYY-MM-DD."""
+    s = str(ymd).strip()
+    if len(s) == 8 and s.isdigit():
+        return f"{s[0:4]}-{s[4:6]}-{s[6:8]}"
+    return s[:10]
+
+
+def _center_line_utc(time_str):
+    """Seconds from midnight UTC for insarmaps CENTER_LINE_UTC."""
+    if not time_str:
+        return None
+    s = str(time_str).strip().replace("T", " ").rstrip("Z")
+    for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
+        try:
+            dt = datetime.strptime(s, fmt)
+            return dt.hour * 3600 + dt.minute * 60 + dt.second + dt.microsecond / 1e6
+        except ValueError:
+            continue
+    return None
+
+
+def _mission_name(metadata):
+    platform = str(
+        metadata.get("mission_id")
+        or metadata.get("platform_id")
+        or metadata.get("PLATFORM")
+        or metadata.get("l1_slc_files")
+        or ""
+    ).upper()
+    if "S1" in platform or "SEN" in platform:
+        return "S1"
+    return platform.split(",")[0].strip() or "S1"
+
+
+def _beam_mode_swath(metadata):
+    burst_id = str(metadata.get("burst_id", "")).lower()
+    m = re.search(r"iw(\d+)", burst_id)
+    if m:
+        return "IW", int(m.group(1))
+    product = str(metadata.get("product_type", metadata.get("l1_slc_files", ""))).upper()
+    if "IW" in product:
+        return "IW", int(metadata.get("beam_swath", 0) or 0)
+    return str(metadata.get("beam_mode", "IW")), int(metadata.get("beam_swath", 0) or 0)
+
+
+def _look_direction(metadata):
+    look = str(metadata.get("look_direction", "Right")).strip().lower()
+    if look.startswith("r"):
+        return "R"
+    if look.startswith("l"):
+        return "L"
+    return "R"
+
+
+def _flight_direction(metadata):
+    direction = (
+        metadata.get("orbit_pass_direction")
+        or metadata.get("orbit_direction")
+        or metadata.get("ORBIT_DIRECTION")
+        or ""
+    )
+    d = str(direction).strip().upper()
+    if d.startswith("A"):
+        return "A"
+    if d.startswith("D"):
+        return "D"
+    return d[0] if d else "D"
+
+
+def _ref_lat_lon(latitude, longitude, ref_row, ref_col):
+    lat_arr = np.asarray(latitude)
+    lon_arr = np.asarray(longitude)
+    if lat_arr.ndim == 2 and lon_arr.ndim == 2:
+        return float(lat_arr[ref_row, ref_col]), float(lon_arr[ref_row, ref_col])
+    if lat_arr.ndim == 1 and lon_arr.ndim == 1:
+        return float(lat_arr[ref_row]), float(lon_arr[ref_col])
+    return float(np.nanmean(lat_arr)), float(np.nanmean(lon_arr))
+
+
+def populate_insarmaps_metadata(metadata, date_list, latitude, longitude, ref_row, ref_col,
+                                lat_min, lat_max, lon_min, lon_max):
+    """Add UNAVCO/insarmaps metadata expected by hdfeos5_2json_mbtiles.py."""
+    beam_mode, beam_swath = _beam_mode_swath(metadata)
+    rel_orbit = metadata.get("track_number", metadata.get("relative_orbit"))
+    if rel_orbit is None:
+        proj = str(metadata.get("PROJECT_NAME", os.path.basename(os.getcwd())))
+        m = re.search(r"[Dd](\d+)", proj)
+        if m:
+            rel_orbit = int(m.group(1))
+    if rel_orbit is not None:
+        rel_orbit = int(rel_orbit)
+
+    wavelength = metadata.get("wavelength")
+    if wavelength is None and metadata.get("radar_center_frequency"):
+        wavelength = 299792458.0 / float(metadata["radar_center_frequency"])
+    if wavelength is not None:
+        wavelength = float(wavelength)
+
+    prf = metadata.get("prf_raw_data", metadata.get("prf", metadata.get("PRF")))
+    if prf is not None:
+        prf = float(prf)
+
+    ref_lat, ref_lon = _ref_lat_lon(latitude, longitude, ref_row, ref_col)
+    frame = metadata.get("burst_index", 0)
+    try:
+        frame = int(frame)
+    except (TypeError, ValueError):
+        frame = 0
+
+    center_time = (
+        metadata.get("zero_doppler_start_time")
+        or metadata.get("sensing_start")
+        or metadata.get("reference_datetime")
+    )
+    center_line_utc = _center_line_utc(center_time)
+
+    first_date = _iso_date(date_list[0])
+    last_date = _iso_date(date_list[-1])
+
+    metadata.update({
+        "mission": _mission_name(metadata),
+        "beam_mode": beam_mode,
+        "beam_swath": beam_swath,
+        "relative_orbit": rel_orbit,
+        "processing_type": "LOS_TIMESERIES",
+        "first_date": first_date,
+        "last_date": last_date,
+        "flight_direction": _flight_direction(metadata),
+        "look_direction": _look_direction(metadata),
+        "history": date.today().isoformat(),
+        "atmos_correct_method": "None",
+        "first_frame": frame,
+        "last_frame": frame,
+        "REF_LAT": str(ref_lat),
+        "REF_LON": str(ref_lon),
+        "mintpy.subset.lalo": f"{lat_min}:{lat_max},{lon_min}:{lon_max}",
+    })
+    if wavelength is not None:
+        metadata["wavelength"] = wavelength
+    if prf is not None:
+        metadata["prf"] = prf
+    if center_line_utc is not None:
+        metadata["CENTER_LINE_UTC"] = str(center_line_utc)
+
+    return metadata
 
 SCRATCHDIR = Path(os.getenv("SCRATCHDIR")) if os.getenv("SCRATCHDIR") else None
 
@@ -89,9 +242,9 @@ def create_hdfeos_output(ts_data: np.ndarray, mask: np.ndarray, latitude: np.nda
     metadata['WIDTH'] = str(width)
     metadata['LENGTH'] = str(length)
     metadata['PROCESSOR'] = 'mintpy' if 'dolphin' not in output_path else 'dolphin'
-    metadata['PROJECT_NAME'] = os.path.basename(os.path.dirname(output_path))
+    if not metadata.get('PROJECT_NAME'):
+        metadata['PROJECT_NAME'] = os.path.basename(os.path.dirname(os.path.dirname(output_path)))
     metadata['REF_DATE'] = str(date_list[0])
-    metadata['first_frame'] = ' '
 
     if hasattr(metadata, 'OG_FILE_PATH'):
         metadata['OG_FILE_PATH'] = output_path
@@ -301,7 +454,12 @@ def main():
     ny, nx = deformation_data[0]["data"].shape
     if CSLC:
         with h5py.File(CSLC[0], "r") as hf:
-            metadata2 = {}
+            metadata2 = dict(extract_identification_metadata(hf))
+            if "identification" in hf:
+                def id_visit(name, obj):
+                    if isinstance(obj, h5py.Dataset) and obj.shape == ():
+                        metadata2[name.split("/")[-1]] = normalize(obj[()])
+                hf["identification"].visititems(id_visit)
             grp = hf['/metadata']
             def visit(name, obj):
                 if isinstance(obj, h5py.Dataset) and obj.shape == ():
@@ -436,10 +594,20 @@ def main():
     metadata['reference_datetime'] = deformation_data[0]['reference']
     metadata['secondary_datetime'] = deformation_data[-1]['secondary']
     metadata['data_footprint'] = metadata['scene_footprint'] = metadata['bounding_polygon'] = wkt
+    ref_row, ref_col = int(metadata['REF_Y']), int(metadata['REF_X'])
+    populate_insarmaps_metadata(
+        metadata, date_list, latitude, longitude, ref_row, ref_col,
+        lat_min, lat_max, lon_min, lon_max,
+    )
     output_path = str(timeseries_path / get_output_filename(metadata))
 
     create_hdfeos_output(ts_data=stack, mask=temp_coh > 0.65, temporal_coherence=temp_coh, date_list=date_list, output_path=output_path, metadata=metadata,
                          latitude=latitude, longitude=longitude, height=height, azimuth=az, incidence=incidence)
+
+    he5_name = os.path.basename(output_path)
+    mbtiles_name = he5_name.replace('.he5', '.mbtiles')
+    print(f'\nIngest with:\n  ingest_insarmaps.bash "{output_path}"')
+    print(f'  (not the older S1_desc_000_* file if one exists in {timeseries_path})')
 
 
     if False:
