@@ -290,7 +290,7 @@ def plot_to_test(deformation_data, temp_coh):
 
 def main():
     # TODO for debug ########################################################################################################
-    os.chdir('/scratch/09580/gdisilvestro/qChilesSenD142') #REMOVE!!!
+    #os.chdir('/scratch/09580/gdisilvestro/qChilesSenD142') #REMOVE!!!
     #########################################################################################################################
 
     CSLC = glob.glob(str(Path.cwd() / 'OPERA*.h5')) if glob.glob(str(Path.cwd() / 'OPERA*.h5')) else glob.glob(str(Path.cwd() / 'CSLC' / 'OPERA*.h5'))
