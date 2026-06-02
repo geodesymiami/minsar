@@ -290,7 +290,7 @@ def plot_to_test(deformation_data, temp_coh):
 
 def main():
     # TODO for debug ########################################################################################################
-    os.chdir('/scratch/09580/gdisilvestro/qChilesSenA120') #REMOVE!!!
+    os.chdir('/scratch/09580/gdisilvestro/qChilesSenD142') #REMOVE!!!
     #########################################################################################################################
 
     CSLC = glob.glob(str(Path.cwd() / 'OPERA*.h5')) if glob.glob(str(Path.cwd() / 'OPERA*.h5')) else glob.glob(str(Path.cwd() / 'CSLC' / 'OPERA*.h5'))
@@ -393,6 +393,28 @@ def main():
         f"{lon_min} {lat_min}"
         f"))"
     )
+
+    # Set Center incident angle
+    if incidence is not None and not hasattr(metadata, 'CENTER_INCIDENCE_ANGLE'):
+        center_incidence = incidence[metadata['LENGTH'] // 2, metadata['WIDTH'] // 2]
+        metadata['CENTER_INCIDENCE_ANGLE'] = str(center_incidence)
+
+    # Set Heading
+    if az is not None and not hasattr(metadata, 'HEADING'):
+        metadata['HEADING'] = str(np.nanmean(az) + 90)
+
+    # Set reference point
+    if 'REF_X' not in metadata or 'REF_Y' not in metadata:
+        r, c = np.where(temp_coh == np.nanmax(temp_coh))
+    variance = []
+    for r, c in zip(r, c):
+        points = [d['data'][r, c] for d in deformation_data]
+        variance.append((np.abs(np.nanmean(points - np.nanmedian(points))), int(r), int(c)))
+    reference = min(variance, key=lambda x: x[0])
+    metadata['REF_X'] = str(reference[2])
+    metadata['REF_Y'] = str(reference[1])
+    #####################
+
     metadata['processing_software'] = 'isce'
     metadata['post_processing_method'] = 'dolphin'
     metadata['PROCESSOR'] = 'DOLPHIN'
@@ -404,7 +426,7 @@ def main():
     metadata['X_UNIT'] = 'degrees'
     metadata['Y_UNIT'] = 'degrees'
     metadata['REF_DATE'] = str(date_list[0])
-    metadata['ORBITAL_DIRECTION'] = metadata.get('orbit_pass_direction', metadata.get('orbit_direction', None)).upper()
+    metadata['ORBIT_DIRECTION'] = metadata.get('orbit_pass_direction', metadata.get('orbit_direction', None)).upper()
     metadata['PROJECT_NAME'] = os.path.basename(os.getcwd())
     metadata['START_DATE'] = str(date_list[0])
     metadata['END_DATE'] = str(date_list[-1])
