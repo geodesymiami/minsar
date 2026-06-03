@@ -6,7 +6,7 @@ import re
 import h5py
 import rasterio
 import numpy as np
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
 from matplotlib import pyplot as plt
@@ -17,6 +17,57 @@ from minsar.src.minsar.helper_functions import (
     utm_to_lonlat,
 )
 
+# Minimal attrs present in working insarmaps ingests (SARvey CSV + MintPy Galapagos).
+# hdfeos5_2json_mbtiles.py copies these into metadata.pickle attribute_keys when present on .he5.
+INSARMAPS_ESSENTIAL_ATTRS = (
+    "WIDTH",
+    "LENGTH",
+    "mission",
+    "relative_orbit",
+    "beam_mode",
+    "beam_swath",
+    "processing_type",
+    "processing_software",
+    "post_processing_method",
+    "first_date",
+    "last_date",
+    "history",
+    "REF_LAT",
+    "REF_LON",
+    "look_direction",
+    "atmos_correct_method",
+    "first_frame",
+    "last_frame",
+    "data_footprint",
+    "scene_footprint",
+    "wavelength",
+    "prf",
+)
+
+# Geo grid keys used by hdfeos5_2json_mbtiles (non-high-res); not in SARvey CSV ingest but required for .he5.
+INSARMAPS_GEO_ATTRS = (
+    "X_FIRST",
+    "Y_FIRST",
+    "X_STEP",
+    "Y_STEP",
+)
+
+# Kept on .he5 for naming and MintPy/HDFEOS I/O; not all are ingested into insarmaps attribute_keys.
+HDFEOS_STRUCTURAL_ATTRS = (
+    "PROJECT_NAME",
+    "REF_DATE",
+    "START_DATE",
+    "END_DATE",
+    "ORBIT_DIRECTION",
+    "PROCESSOR",
+    "PLATFORM",
+    "UNIT",
+    "REF_X",
+    "REF_Y",
+    "X_UNIT",
+    "Y_UNIT",
+)
+
 
 def _iso_date(ymd):
     """Convert YYYYMMDD to YYYY-MM-DD."""
@@ -24,20 +75,6 @@ def _iso_date(ymd):
     if len(s) == 8 and s.isdigit():
         return f"{s[0:4]}-{s[4:6]}-{s[6:8]}"
     return s[:10]
-
-
-def _center_line_utc(time_str):
-    """Seconds from midnight UTC for insarmaps CENTER_LINE_UTC."""
-    if not time_str:
-        return None
-    s = str(time_str).strip().replace("T", " ").rstrip("Z")
-    for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
-        try:
-            dt = datetime.strptime(s, fmt)
-            return dt.hour * 3600 + dt.minute * 60 + dt.second + dt.microsecond / 1e6
-        except ValueError:
-            continue
-    return None
 
 
 def _mission_name(metadata):
@@ -73,21 +110,6 @@ def _look_direction(metadata):
     return "R"
 
 
-def _flight_direction(metadata):
-    direction = (
-        metadata.get("orbit_pass_direction")
-        or metadata.get("orbit_direction")
-        or metadata.get("ORBIT_DIRECTION")
-        or ""
-    )
-    d = str(direction).strip().upper()
-    if d.startswith("A"):
-        return "A"
-    if d.startswith("D"):
-        return "D"
-    return d[0] if d else "D"
-
-
 def _ref_lat_lon(latitude, longitude, ref_row, ref_col):
     lat_arr = np.asarray(latitude)
     lon_arr = np.asarray(longitude)
@@ -98,9 +120,8 @@ def _ref_lat_lon(latitude, longitude, ref_row, ref_col):
     return float(np.nanmean(lat_arr)), float(np.nanmean(lon_arr))
 
 
-def populate_insarmaps_metadata(metadata, date_list, latitude, longitude, ref_row, ref_col,
-                                lat_min, lat_max, lon_min, lon_max):
-    """Add UNAVCO/insarmaps metadata expected by hdfeos5_2json_mbtiles.py."""
+def populate_insarmaps_metadata(metadata, date_list, latitude, longitude, ref_row, ref_col):
+    """Set only insarmaps-essential UNAVCO attributes on metadata (see INSARMAPS_ESSENTIAL_ATTRS)."""
     beam_mode, beam_swath = _beam_mode_swath(metadata)
     rel_orbit = metadata.get("track_number", metadata.get("relative_orbit"))
     if rel_orbit is None:
@@ -114,12 +135,8 @@ def populate_insarmaps_metadata(metadata, date_list, latitude, longitude, ref_ro
     wavelength = metadata.get("wavelength")
     if wavelength is None and metadata.get("radar_center_frequency"):
         wavelength = 299792458.0 / float(metadata["radar_center_frequency"])
-    if wavelength is not None:
-        wavelength = float(wavelength)
 
     prf = metadata.get("prf_raw_data", metadata.get("prf", metadata.get("PRF")))
-    if prf is not None:
-        prf = float(prf)
 
     ref_lat, ref_lon = _ref_lat_lon(latitude, longitude, ref_row, ref_col)
     frame = metadata.get("burst_index", 0)
@@ -128,42 +145,39 @@ def populate_insarmaps_metadata(metadata, date_list, latitude, longitude, ref_ro
     except (TypeError, ValueError):
         frame = 0
 
-    center_time = (
-        metadata.get("zero_doppler_start_time")
-        or metadata.get("sensing_start")
-        or metadata.get("reference_datetime")
-    )
-    center_line_utc = _center_line_utc(center_time)
+    footprint = metadata.get("data_footprint") or metadata.get("scene_footprint") or ""
 
-    first_date = _iso_date(date_list[0])
-    last_date = _iso_date(date_list[-1])
-
-    metadata.update({
+    insarmaps = {
         "mission": _mission_name(metadata),
         "beam_mode": beam_mode,
         "beam_swath": beam_swath,
         "relative_orbit": rel_orbit,
         "processing_type": "LOS_TIMESERIES",
-        "first_date": first_date,
-        "last_date": last_date,
-        "flight_direction": _flight_direction(metadata),
+        "first_date": _iso_date(date_list[0]),
+        "last_date": _iso_date(date_list[-1]),
         "look_direction": _look_direction(metadata),
         "history": date.today().isoformat(),
         "atmos_correct_method": "None",
         "first_frame": frame,
         "last_frame": frame,
-        "REF_LAT": str(ref_lat),
-        "REF_LON": str(ref_lon),
-        "mintpy.subset.lalo": f"{lat_min}:{lat_max},{lon_min}:{lon_max}",
-    })
+        "REF_LAT": ref_lat,
+        "REF_LON": ref_lon,
+        "data_footprint": footprint,
+        "scene_footprint": footprint,
+    }
     if wavelength is not None:
-        metadata["wavelength"] = wavelength
+        insarmaps["wavelength"] = float(wavelength)
     if prf is not None:
-        metadata["prf"] = prf
-    if center_line_utc is not None:
-        metadata["CENTER_LINE_UTC"] = str(center_line_utc)
+        insarmaps["prf"] = float(prf)
 
+    metadata.update(insarmaps)
     return metadata
+
+
+def prune_metadata_for_hdfeos(metadata):
+    """Keep only insarmaps-essential, geo-grid, and structural attrs before writing .he5."""
+    keep = set(INSARMAPS_ESSENTIAL_ATTRS) | set(INSARMAPS_GEO_ATTRS) | set(HDFEOS_STRUCTURAL_ATTRS)
+    return {k: metadata[k] for k in keep if k in metadata}
 
 SCRATCHDIR = Path(os.getenv("SCRATCHDIR")) if os.getenv("SCRATCHDIR") else None
 
@@ -593,12 +607,10 @@ def main():
     # Add the date list
     metadata['reference_datetime'] = deformation_data[0]['reference']
     metadata['secondary_datetime'] = deformation_data[-1]['secondary']
-    metadata['data_footprint'] = metadata['scene_footprint'] = metadata['bounding_polygon'] = wkt
+    metadata['data_footprint'] = metadata['scene_footprint'] = wkt
     ref_row, ref_col = int(metadata['REF_Y']), int(metadata['REF_X'])
-    populate_insarmaps_metadata(
-        metadata, date_list, latitude, longitude, ref_row, ref_col,
-        lat_min, lat_max, lon_min, lon_max,
-    )
+    populate_insarmaps_metadata(metadata, date_list, latitude, longitude, ref_row, ref_col)
+    metadata = prune_metadata_for_hdfeos(metadata)
     output_path = str(timeseries_path / get_output_filename(metadata))
 
     create_hdfeos_output(ts_data=stack, mask=temp_coh > 0.65, temporal_coherence=temp_coh, date_list=date_list, output_path=output_path, metadata=metadata,
