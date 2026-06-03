@@ -1,5 +1,8 @@
 # Guide for downloading and processing CSLC using [Dolphin](https://github.com/isce-framework/dolphin)
 ## Download CSLC
+> [!WARNING]
+> CSLC download currently works only for **North America**.
+
 You can use [asf_search module](https://github.com/geodesymiami/minsar/blob/main/minsar/src/minsar/cli/asf_search_args.py) to downlaod **CSLC**.
 MinsarApp bash generates a similar command for that:
 ```bash
