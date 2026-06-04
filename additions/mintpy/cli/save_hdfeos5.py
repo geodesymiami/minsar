@@ -47,8 +47,10 @@ def create_parser(subparsers=None):
     parser.add_argument('-de', '--dem-error', dest='dem_err_file', help='DEM error file')
     parser.add_argument('--suffix', dest='suffix', help='suffix to be appended to file name (e.g. PS).')
 
-    parser.add_argument('--update', action='store_true',
-                        help='Enable update mode, a.k.a. put XXXXXXXX as endDate in filename if endDate < 1 year')
+    parser.add_argument(
+        '--update', action='store_true',
+        help='Enable update mode: use XXXXXXXX in filename when last SAR date is recent (<31 days)'
+    )
     parser.add_argument('--subset', action='store_true',
                         help='Enable subset mode, a.k.a. put suffix _N31700_N32100_E130500_E131100')
     return parser

@@ -56,6 +56,8 @@ def create_parser():
                              'Use comma-separated values to ingest multiple types: --dataset PS,DS or --dataset PS,DS,filt*DS')
     parser.add_argument('--debug', dest='debug', action='store_true',
                         help='Enable debug mode (set -x)')
+    parser.add_argument('--quiet-summary', dest='quiet_summary', action='store_true',
+                        help='pass --quiet-summary to ingest_insarmaps.bash')
     parser.add_argument('--num-workers', dest='num_workers', type=_positive_int, default=None, metavar='N',
                         help='HDFEOS_NUM_WORKERS for hdfeos5_2json_mbtiles (default: env HDFEOS_NUM_WORKERS or 6)')
     parser.add_argument('--mbtiles-num-workers', dest='mbtiles_num_workers', type=_positive_int, default=None, metavar='N',
@@ -115,6 +117,8 @@ def main(iargs=None):
     
     if inps.debug:
         command_parts.append('--debug')
+    if inps.quiet_summary:
+        command_parts.append('--quiet-summary')
 
     if inps.num_workers is not None:
         command_parts.extend(['--num-workers', str(inps.num_workers)])

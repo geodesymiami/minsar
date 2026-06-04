@@ -433,6 +433,10 @@ sacct -j <jobid> --format=JobID,State,ExitCode
 | Job stderr | `run_files/*.e` | Job errors |
 | Rerun log | `run_files/rerun.log` | Resubmitted jobs |
 
+For `minsarApp.bash` end-of-run reporting, **`print_summary`** in `minsar/lib/minsarApp_specifics.sh` takes a **`*.template` path** (or explicit **WORK_DIR**) so the target stack is explicit: **template** paths resolve to **`$SCRATCHDIR/<basename before .template>`** (same rule as `minsarApp.bash`). **`print_summary --filesize TEMPLATE`** prints only HDF-EOS **paths and sizes**; **`print_summary TEMPLATE`** prints the **full** **`upload.log`** and **`insarmaps.log`** when present. The parent run prints **primary** then (if `--opposite-orbit` ran the nested pass) **opposite** template, each with filesize then logs. **`MINSAR_SKIP_PRINT_SUMMARY=1`** is set for the nested opposite `minsarApp` so only the parent emits the paired footers. Replay using the **`printf`** replay lines from stdout, or **`print_summary --help`** after sourcing `minsarApp_specifics.sh`.
+
+When `minsarApp.bash` orchestrates upload/ingest, it passes `--quiet-summary` to suppress intermediate child-script URL printing and keeps URL output consolidated in that end-of-run block. Direct standalone calls to `upload_data_products.py` and `ingest_insarmaps.bash` remain verbose by default.
+
 ### Debugging Job Failures
 
 1. Check job state: `sacct -j <jobid>`
@@ -454,7 +458,8 @@ unwrap       00:10:00    00:02:00    0               ...
 
 1. Add to `setup/platforms_defaults.bash`
 2. Add queue info to `minsar/defaults/queues.cfg`
-3. Update `install_minsar.bash` if needed
+3. Add the same `PLATFORM_NAME` token to `supported_platforms` in `minsar/objects/auto_defaults.py`. If it is missing, `set_job_queue_values()` will not match that row and will use keyed defaults for `CPUS_PER_NODE` and related fields (never `None`).
+4. Update `install_minsar.bash` if needed
 
 ### Modifying Job Resource Limits
 

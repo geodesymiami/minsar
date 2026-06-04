@@ -1,0 +1,1 @@
+# In-repo stub only. At runtime, create_opposite_orbit_template.bash writes the real path into ${WORK_DIR}/opposite_orbit.txt (typically under $TEMPLATES).

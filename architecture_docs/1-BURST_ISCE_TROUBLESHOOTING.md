@@ -155,3 +155,19 @@ After applying these patches (via `install_minsar.bash` symlinks), `SentinelWrap
 **File:** `additions/isce2/contrib/stack/topsStack/mergeBursts.py`.
 
 The skip for `minBurst == maxBurst` was removed. Single-burst swaths are now processed: one burst is appended to `frames` / `referenceFrames` / `fileList`, and `mergeBurstsVirtual` builds a VRT that contains that single burst. Merge steps (reference SLC, geom_reference lat/lon, interferograms, etc.) then complete for 1-burst stacks.
+
+---
+
+## fetchOrbit: "Failed to find S1A orbits" (isce2 2.6.3)
+
+### Symptom
+
+`fetchOrbit.py -i ...SAFE -o ...` prints `Failed to find S1A orbits for tref ...` while the acquisition date is recent and products exist on Copernicus Data Space.
+
+### Cause
+
+Conda **isce2 2.6.3** ships `fetchOrbit.py` for the retired **SciHub GNSS** endpoint (`scihub.copernicus.eu/gnss`). Catalog search fails (connection errors may be hidden).
+
+### Fix (interim)
+
+Symlink CDSE `fetchOrbit.py` from `tools/isce2` at tag **v2.6.4** — see [`docs/ISCE2_UPGRADE.md`](../docs/ISCE2_UPGRADE.md). **Remove** that symlink when the conda lockfile pins **isce2>=2.6.4**.

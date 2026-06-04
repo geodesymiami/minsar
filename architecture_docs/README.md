@@ -20,15 +20,23 @@ MinSAR (Miami INterferometric SAR) is a pipeline for InSAR processing on HPC clu
 minsarApp.bash $SAMPLESDIR/template.template [--start STEP] [--stop STEP] [--mintpy] [--miaplpy]
 ```
 
+**`--clean-start`** runs **`rm -rf`** on **`$SCRATCHDIR/<project>`** before **`mkdir`** (full scratch reset for that project basename).
+
+**AOI mode** (no `*.template` as first arg): if the first two arguments look like an AOI and a project name, `minsarApp.bash` `exec`s [`minsar/scripts/minsarapp_aoi_entry.py`](../minsar/scripts/minsarapp_aoi_entry.py), which runs `create_template.py` under `$TEMPLATES`/`$TE` and then re-executes `minsarApp.bash` with the generated primary `.template` file and any remaining flags. After `create_template`, the bridge sets **`MINSAR_FIRST_ORBIT_TEMPLATE_FILE`** (primary `*.template`) and, for dual-pass output, **`MINSAR_OPPOSITE_ORBIT_TEMPLATE`** (complementary `*.template`). **`minsarApp.bash`** reads those env vars once, **`unset`**s them, and sets readonly shell **`first_orbit_template_file`** and **`opposite_orbit_template_file`** (empty strings on template-first invocations that never ran the AOI bridge). The nested opposite-stack **`minsarApp`** subprocess receives the same **`MINSAR_FIRST_ORBIT_TEMPLATE_FILE`** / **`MINSAR_OPPOSITE_ORBIT_TEMPLATE`** pair so those readonly values are defined there too. Before re-exec it sets **`MINSAR_CLI_COMMAND_AOI`** to a `shlex`-quoted copy of the AOI invocation (basename of `minsarApp.bash` plus argv after bbox argv normalization) so the end-of-run footer can show how the run was started; template-first invocations never set it. If `--flight-dir` requests dual-pass output (`asc,desc` default; also `desc,asc` or legacy `both`), the re-exec also passes `--opposite-orbit` so the opposite-orbit run runs after the primary stack (unless the remainder of the line already has `--opposite-orbit` or `--no-opposite-orbit`). All options accepted by `create_template.py` are supported; list them before the first `minsarApp`-only option (e.g. `--start`), because argv is split with `argparse` against the `create_template` parser first. If `get_sar_coverage.py --select` finds only ascending or only descending coverage, dual-pass (default `asc,desc`, etc.) prints a notice and writes a single template for that pass (you can still set `--flight-dir asc` or `desc` explicitly). For ISCE topsStack, `create_template.py` writes **`topsStack.coregistration`** as **NESD** by default, or **geometry** via **`--coregistration geometry`** or **`--geometry`**.
+
 ### Key Scripts to Understand
 
 | Priority | Script | Purpose |
 |----------|--------|---------|
 | 1 | `minsar/bin/minsarApp.bash` | Main entry point, orchestrates everything |
+| — | `minsar/scripts/minsarapp_aoi_entry.py` | AOI + project name → `create_template.py` in `$TEMPLATES`, then `exec` `minsarApp` with the new `.template` and remaining args |
 | 2 | `minsar/bin/run_workflow.bash` | Job submission and monitoring loop |
 | 3 | `minsar/bin/submit_jobs.bash` | Batch job submission |
 | 4 | `minsar/bin/sbatch_conditional.bash` | Resource-checked sbatch wrapper |
+| — | `minsar/bin/horzvert_timeseries.bash` | Asc/desc LOS: re-reference to `--ref-lalo` (`reference_point_hdfeos5.bash`), then unify short-name vs corner-suffix MiaplPy HE5 duplicates (classic `YYYYMMDD_YYYYMMDD` names and update-style `YYYYMMDD_XXXXXXXX`) — whichever form was resolved, the freshly re-referenced short file is moved onto the long path so the canonical corner-suffix file holds the new REF — geocode, horz/vert (PlotData `horzvert_timeseries.py`), InsarMaps (LOS ingest without re-applying `--ref-lalo`) |
 | 5 | `minsar/lib/utils.sh` | Core bash utilities |
+| 6 | `minsar/scripts/get_sar_coverage.py` | AOI coverage: orbits, counts; `--select` chooses Asc/Desc relative orbit (S1: prefers full-AOI consistency over incidence) |
+| — | `minsar/utils/modify_insarmapslog.py` | Back up and rewrite `insarmaps.log` start coordinates from a reference InsarMaps URL, then print a VolcDef `/data/HDF5EOS/` overlay URL |
 
 ### Processing Flow
 
@@ -56,6 +64,8 @@ minsarApp.bash
 | [burst_testing.md](./burst_testing.md) | Annual template generation, run_templates.sh, testing bursts | Testing burst processing across years |
 | [nasa_earthdata_status_check.md](./nasa_earthdata_status_check.md) | NASA Earthdata status check before ASF downloads (check_nasa_earthdata_status.py/.bash, env vars, minsarApp.bash integration) | Understanding or modifying download pre-checks |
 | [BURST_DOWNLOAD.md](./BURST_DOWNLOAD.md) | burst_download.bash: per-date burst2stack, SLURM restart (check_SAFE_completeness, filter by complete SAFEs) | ASF burst download and burst2stack flow |
+| [ISCE2_UPGRADE.md](../docs/ISCE2_UPGRADE.md) | Interim CDSE fetchOrbit symlink; conda isce2 2.6.4 upgrade and **remove symlink** checklist | fetchOrbit / orbit download failures |
+| [1-BURST_ISCE_TROUBLESHOOTING.md](./1-BURST_ISCE_TROUBLESHOOTING.md) | Single-burst ISCE/TOPS patches; fetchOrbit SciHub vs CDSE | 1-burst stacks, misreg/merge errors |
 | [GEocode_HE5.md](./GEocode_HE5.md) | Geocode S1*.he5 (HDFEOS5) via thin wrapper over MintPy | Geocoding radar .he5 to geographic |
 | [tools/sarvey/docs/ARCHITECTURE.md](../tools/sarvey/docs/ARCHITECTURE.md) | SARvey: MTI time series tool (tools/sarvey), CLI, workflow, inputs | Using or integrating SARvey; displacement from SLC stack |
 
@@ -91,10 +101,11 @@ minsarApp.bash
 |----------|---------|
 | `$MINSAR_HOME` | Repository root |
 | `$SCRATCHDIR` | Processing directory |
-| `$TEMPLATES` / `$TE` | User templates |
-| `$AUTO_TEMPLATES` | Auto-generated opposite-orbit templates (default: sibling of `$TEMPLATES`; see `create_opposite_orbit_template.bash`) |
+| `$TEMPLATES` / `$TE` | User templates (includes opposite-orbit templates from `create_opposite_orbit_template.bash`; AOI mode runs `create_template.py` under this directory via `minsarapp_aoi_entry.py`). |
 | `$SAMPLESDIR` | Sample templates |
 | `$QUEUENAME` | Default SLURM queue |
+
+For the **`--opposite-orbit`** post-step, `minsarApp.bash` runs **`create_opposite_orbit_template.bash`**, then reads **`${WORK_DIR}/opposite_orbit.txt`** to obtain the template path for the nested **`minsarApp`** call (separate from the readonly AOI pair **`first_orbit_template_file`** / **`opposite_orbit_template_file`**). The AOI entry path runs **`create_template`** in Python and never populates **`opposite_orbit.txt`** before the first shell pass; the post-step creates that file when needed.
 
 ### Configuration Files
 

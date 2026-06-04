@@ -46,7 +46,9 @@ SLEEP_SECONDS=60
 attempt=0
 
 while (( attempt < MAX_RETRIES )); do
-    echo "=== Attempt $((attempt+1)) at $(date) ==="
+    if (( attempt > 0 )); then
+        echo "=== Attempt $((attempt+1)) at $(date) ==="
+    fi
 
     #############################################################
     # Step 1: download listings

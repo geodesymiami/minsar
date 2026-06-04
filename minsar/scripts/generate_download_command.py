@@ -17,13 +17,10 @@ inps = None
 EXAMPLE = """example:
     generate_download_command.py $TE/GalapagosSenDT128.template
 
-   OPTIONS NEED TO REVISTED (they don't work)
-       --delta_lat DELTA_LAT
-                        delta to add to latitude from boundingBox field, default is 0.0
-       --seasonalStartDate SEASONALSTARTDATE
-                        seasonal start date to specify download dates within start and end dates, example: a seasonsal start date of January 1 would be added as --seasonalEndDate 0101
-       --seasonalEndDate SEASONALENDDATE
-                        seasonal end date to specify download dates within start and end dates, example: a seasonsal end date of December 31 would be added as --seasonalEndDate 1231
+       --delta-lat DELTA_LAT
+                        delta to add to latitude from boundingBox field, default is 0.1
+       --exclude-season EXCLUDESEASON
+                        recurring excluded window for ASF downloads, format MMDD-MMDD, e.g. 1005-0320
        --parallel PARALLEL   determines whether a parallel download is required with a yes/no
        --processes PROCESSES
                         specifies number of processes for the parallel download, if no value is provided then the number of processors from os.cpu_count() is used
@@ -44,10 +41,8 @@ def create_parser():
     parser.add_argument('--triplets', dest='triplets_flag', action='store_true', default=True, help='uploads numTriNonzeroIntAmbiguity.h5')
     parser.add_argument('--delta-lat', dest='delta_lat', default=0.1, type=float, help='delta to add to latitude from boundingBox field, default is 0.1')
     parser.add_argument('--delta-lon', dest='delta_lon', default=0.1, type=float, help='delta to add to longitude from boundingBox field, default is 0.1')
-    parser.add_argument('--seasonalStartDate', dest='seasonalStartDate', type=str,
-                             help='seasonal start date to specify download dates within start and end dates, example: a seasonsal start date of January 1 would be added as --seasonalEndDate 0101')
-    parser.add_argument('--seasonalEndDate', dest='seasonalEndDate', type=str,
-                             help='seasonal end date to specify download dates within start and end dates, example: a seasonsal end date of December 31 would be added as --seasonalEndDate 1231')
+    parser.add_argument('--exclude-season', dest='exclude_season', type=str,
+                             help='exclude recurring MMDD-MMDD window from ASF results, e.g. 1005-0320')
 
     inps = parser.parse_args()
     inps = putils.create_or_update_template(inps)
@@ -61,6 +56,10 @@ def generate_download_command(template,inps):
 
     dataset_template = Template(template)
     dataset_template.options.update(pathObj.correct_for_ssara_date_format(dataset_template.options))
+    template_exclude_season = dataset_template.options.get('ssaraopt.excludeSeason')
+    if template_exclude_season:
+        template_exclude_season = template_exclude_season.strip().strip("'\"")
+    effective_exclude_season = inps.exclude_season if inps.exclude_season else template_exclude_season
 
     ssaraopt_string, ssaraopt_dict = dataset_template.generate_ssaraopt_string()
     ssaraopt = shlex.split(ssaraopt_string)
@@ -125,6 +124,8 @@ def generate_download_command(template,inps):
 
     # create download_slc.sh (slc method)
     asf_slc_download_cmd = ['asf_search_args.py', '--processingLevel=SLC'] + ssaraopt + ['--dir=SLC', '--print', '--download']
+    if effective_exclude_season:
+        asf_slc_download_cmd.append(f"--exclude-season={effective_exclude_season}")
     with open('download_slc.sh', 'w') as f:
         asf_slc_download_cmd = [arg for arg in asf_slc_download_cmd if arg != '--print']
         f.write(f"#!/usr/bin/env bash\n")
@@ -136,6 +137,8 @@ def generate_download_command(template,inps):
 
     # create download_burst2safe.sh (burst2safe method: download only, listing + two download runs)
     asf_burst_download_opts = ['--processingLevel=BURST'] + ssaraopt + ['--dir=SLC']
+    if effective_exclude_season:
+        asf_burst_download_opts.append(f"--exclude-season={effective_exclude_season}")
     rel_orbit = dataset_template.options.get('ssaraopt.relativeOrbit', '')
     start_date = _to_iso_date(dataset_template.options.get('ssaraopt.startDate', '2000-01-01'))
     end_date = _to_iso_date(dataset_template.options.get('ssaraopt.endDate', '2099-12-31'))
@@ -183,6 +186,8 @@ def generate_download_command(template,inps):
         f"--start-date {start_date} --end-date {end_date} "
         f"--dir SLC"
     )
+    if effective_exclude_season:
+        burst_download_cmd += f" --exclude-season {effective_exclude_season}"
     with open('download_burst2stack.sh', 'w') as f:
         f.write("#!/usr/bin/env bash\n")
         f.write("set -e\n")

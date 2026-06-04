@@ -84,6 +84,26 @@ def _parse_bbox_string(s):
         return None
 
 
+def _normalize_lon(lon):
+    """Normalize longitude into [-180, 180] range."""
+    wrapped = ((lon + 180.0) % 360.0) - 180.0
+    if wrapped == -180.0 and lon > 0:
+        return 180.0
+    return wrapped
+
+
+def _normalize_bounds(min_lat, max_lat, min_lon, max_lon):
+    """Normalize longitudes and return canonical lat/lon bounds."""
+    lon_a = _normalize_lon(min_lon)
+    lon_b = _normalize_lon(max_lon)
+    return (
+        min(min_lat, max_lat),
+        max(min_lat, max_lat),
+        min(lon_a, lon_b),
+        max(lon_a, lon_b),
+    )
+
+
 def _bbox_to_wkt(min_lat, max_lat, min_lon, max_lon):
     """Return WKT POLYGON for a rectangular bbox (lon lat order, closed)."""
     return (
@@ -113,12 +133,12 @@ def _input_to_bounds(input_str):
                 lats.append(float(parts[1]))
         if not longs or not lats:
             raise ValueError("POLYGON has no valid coordinates")
-        return (min(lats), max(lats), min(longs), max(longs))
+        return _normalize_bounds(min(lats), max(lats), min(longs), max(longs))
 
     # 2) S:N,W:E bbox
     bbox = _parse_bbox_string(s)
     if bbox is not None:
-        return bbox
+        return _normalize_bounds(*bbox)
 
     # 3) GoogleEarth-style: "lon,lat,z lon,lat,z ..."
     try:
@@ -130,7 +150,7 @@ def _input_to_bounds(input_str):
                 longs.append(float(parts[0]))
                 lats.append(float(parts[1]))
         if longs and lats:
-            return (min(lats), max(lats), min(longs), max(longs))
+            return _normalize_bounds(min(lats), max(lats), min(longs), max(longs))
     except (ValueError, AttributeError):
         pass
 

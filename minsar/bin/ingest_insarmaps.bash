@@ -46,8 +46,12 @@ Examples:
       --step N                        N is 1 or 2; same effect as the long names above. Also --step=N
       --num-workers N                 Parallel workers for hdfeos5_2json_mbtiles (sets HDFEOS_NUM_WORKERS; default 6 or env)
       --mbtiles-num-workers N         Parallel workers for json_mbtiles2insarmaps (sets MBTILES_NUM_WORKERS; default 6 or env)
+      --quiet-summary                 suppress printing generated insarmaps URLs (still appends to insarmaps.log)
       --debug                         Enable debug mode (set -x)
       Default (no step flags): run both steps in order.
+
+      Uses environment variables 
+      - INSARMAPSHOST_RECENTDATA : when filename contains XXXXXXXX, else INSARMAPSHOST_OLDDATA
 
   Output: With --ref-lalo the selected .he5 in the input dir is modified in place. insarmaps.log appended. No backup files.
 
@@ -85,6 +89,7 @@ stop_date=""
 period=""
 num_workers_cli=""
 mbtiles_num_workers_cli=""
+quiet_summary=0
 
 # Apply ingest step from numeric argument (1 or 2), long flags, or --step N
 _apply_ingest_step_arg() {
@@ -138,6 +143,10 @@ do
             ;;
         --debug)
             debug_flag=1
+            shift
+            ;;
+        --quiet-summary)
+            quiet_summary=1
             shift
             ;;
         --step=*)
@@ -328,9 +337,6 @@ else
     exit 1
 fi
 
-INSARMAPS_HOSTS=${INSARMAPSHOST:-insarmaps.miami.edu}
-IFS=',' read -ra HOSTS <<< "$INSARMAPS_HOSTS"
-
 SSARAHOME=${SSARAHOME:-""}
 if [[ -n "$SSARAHOME" ]]; then
     INSARMAPS_USER=$(python3 -c "import sys; sys.path.insert(0, '$SSARAHOME'); import password_config; print(password_config.docker_insaruser)" 2>/dev/null || echo "")
@@ -355,6 +361,12 @@ fi
 for ingest_file in "${ingest_files[@]}"; do
     echo "####################################"
     echo "Processing: $ingest_file"
+    if [[ "$ingest_file" == *"XXXXXXXX"* ]]; then
+        INSARMAPS_HOSTS="${INSARMAPSHOST_RECENTDATA:-}"
+    else
+        INSARMAPS_HOSTS="${INSARMAPSHOST_OLDDATA:-}"
+    fi
+    IFS=',' read -ra HOSTS <<< "$INSARMAPS_HOSTS"
     if [[ "$ingest_step" != "all" ]]; then
         echo "Ingest mode: $ingest_step"
     fi
@@ -442,7 +454,7 @@ for ingest_file in "${ingest_files[@]}"; do
 
         # Get center coordinates and zoom factorfrom data_footprint
         read CENTER_LAT CENTER_LON < <(get_data_footprint_centroid.py "$ingest_file" 2>/dev/null || echo "0.0000 0.0000")
-        ZOOM_FACTOR=$(get_zoomfactor_from_data_footprint.py "$ingest_file" 2>/dev/null || echo "11.0")
+        ZOOM_FACTOR=$(get_zoomfactor_from_data_footprint.py "$ingest_file" --viewport-fill 0.5 2>/dev/null || echo "11.0")
 
         if [[ "$input_format" == "csv" ]]; then
             DATASET_NAME=$(basename "${ingest_file%.csv}")
@@ -464,7 +476,9 @@ for ingest_file in "${ingest_files[@]}"; do
         done
 
         # Write URLs to log files
-        echo "Appending to insarmaps.log file"
+        if [[ "$quiet_summary" != "1" ]]; then
+            echo "Appending to insarmaps.log file"
+        fi
         # Determine the log directory: use pic/ if it exists, otherwise use DATA_DIR directly
         if [[ -d "${DATA_DIR}/pic" ]]; then
             LOG_DIR="$DATA_DIR/pic"
@@ -473,7 +487,9 @@ for ingest_file in "${ingest_files[@]}"; do
         fi
 
         for url in "${INSARMAPS_URLS[@]}"; do
-            echo "$url"
+            if [[ "$quiet_summary" != "1" ]]; then
+                echo "$url"
+            fi
             # Only write to WORK_DIR/insarmaps.log if it's different from LOG_DIR/insarmaps.log
             # Normalize paths to compare them (handle relative paths like ".")
             if [[ "$(cd "$WORK_DIR" && pwd)" != "$(cd "$LOG_DIR" && pwd)" ]]; then

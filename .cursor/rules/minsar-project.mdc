@@ -168,9 +168,12 @@ For `run_workflow.bash` internals: `minsar/bin/ARCHITECTURE.md`
 - Include `--help` handling for user-facing scripts
 - Source shared libs: `source "${SCRIPT_DIR}/../lib/workflow_utils.sh"`
 - **CLI validation**: Reject unknown options immediately (use `-?*|--*` case before `*)`). Validate types for named args (e.g. `--ref-lalo` must be numeric); exit with error on invalid syntax.
+- **`--help` Examples sections**: The Examples block must contain **only** example command lines (optionally preceded by a single `Examples:` heading). **No** labels, notes, blank lines, or other prose **between** example lines—stack commands back-to-back. All explanatory text belongs in the description, usage synopsis, or argument help **above or below** the Examples block, not mixed into it.
 
 ### Python Scripts
 - Use `argparse` for CLI arguments
+- Prefer each `parser.add_argument(...)` on a **single line** (whole call). Include indentation in the length; if that line would exceed **170** characters, shorten `help` first, then split the call across **two or more** lines as needed (common breaks: before `help=`, or a wrapped `help` string). **`minsar/scripts/create_template.py`** (`create_parser()`) follows this pattern.
+- **`--help` / epilog Examples**: Same rule as Bash—**only** consecutive example command lines inside the Examples section (no commentary or blank lines between them); put prose in `description`, `usage`, or per-argument `help`.
 - Use `pathlib.Path` for file paths
 - Include docstrings for modules/functions
 
@@ -249,3 +252,15 @@ When debugging "Killed" or resource issues, consider which environment the job r
 - `minsar/defaults/job_defaults.cfg` - Walltime, memory per job
 - `minsar/defaults/queues.cfg` - Queue resource limits
 - `samples/*.template` - Example template files
+
+## Legacy, `old*` scripts, `q*` scripts, and `unused/` — do not edit
+
+These paths are archival or temporary copies. **Never modify them** unless the user **explicitly names the exact file path** they want changed.
+
+| Category | Scope | Reason |
+|---|---|---|
+| **`minsar/unused/`** | Entire tree | Kept temporarily; not part of the active workflow |
+| **`old*` basename** | Any script whose basename starts with `old` (e.g. `oldminsarApp.bash`) | Superseded copies |
+| **`q*` legacy** | Basename starts with `q` immediately followed by a canonical script basename (same pattern as the real entry point, e.g. `qrun_workflow`) | Legacy copies of real scripts |
+
+Do not refactor, sync, or "fix" these for consistency with primary scripts unless the user requests that specific file by path.

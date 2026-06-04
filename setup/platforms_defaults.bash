@@ -44,10 +44,19 @@ fi
 if [[ ${HOSTNAME} == perfectly-elegant-tapir ]]
 then
   export PLATFORM_NAME=jetstream
-  export JOBSCHEDULER=NONE
-  export QUEUENAME=NONE
+  export JOBSCHEDULER=SLURM
+  export QUEUENAME=skx-dev
   export WORKDIR=~/insarlab
   export SCRATCHDIR=/data/HDF5EOS
+fi
+###############################################
+if [[ ${HOSTNAME} == dolphin ]]
+then
+  export PLATFORM_NAME=dolphin
+  export JOBSCHEDULER=NONE
+  export QUEUENAME=NONE
+  export WORKDIR=/data/$HOSTNAME/insarlab
+  export SCRATCHDIR=/data/scratch
 fi
 ###############################################
 if  [[ ${HOSTNAME}} =~ ^insarmaps[123]$ ]]

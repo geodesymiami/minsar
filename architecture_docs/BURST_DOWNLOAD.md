@@ -53,7 +53,8 @@ flowchart TD
 
 ```
 burst_download.bash [--relativeOrbit N] [--intersectsWith POL] [--start-date DATE] [--end-date DATE] \
-  [--work-dir DIR] [--slc-dir DIR | --dir DIR] [--parallel N] [--skip-listing] [--help]
+  [--work-dir DIR] [--slc-dir DIR | --dir DIR] [--parallel N] [--skip-listing] \
+  [--no-check-bursts-includeAOI] [--exclude-season MMDD-MMDD] [--help]
 ```
 
 ### Options and defaults
@@ -68,6 +69,8 @@ burst_download.bash [--relativeOrbit N] [--intersectsWith POL] [--start-date DAT
 | --slc-dir / --dir | SLC | SLC output directory |
 | --parallel | 20 | Max parallel burst2stack jobs |
 | --skip-listing | off | Use existing asf_burst_listing.txt |
+| --no-check-bursts-includeAOI | off | Skip check_if_bursts_includeAOI.py and AOI pruning |
+| --exclude-season | (none) | Exclude recurring inclusive MMDD-MMDD window (supports New Year wrap), e.g. 1005-0320 |
 
 **Template mode:** Use `download_burst2safe.sh` and `burst2stack_cmd.sh` (from generate_download_command.py). **Standalone mode:** Pass both `--relativeOrbit` and `--intersectsWith`; no generated scripts needed.
 
@@ -96,6 +99,7 @@ Standalone mode (use generated **download_burst2stack.sh** or pass options):
 # After generate_download_command, run:  ./download_burst2stack.sh
 # Or invoke manually:
 $MINSAR_HOME/minsar/scripts/burst_download.bash --relativeOrbit 36 --intersectsWith='Polygon((25.32 36.33, 25.49 36.33, 25.49 36.49, 25.32 36.49, 25.32 36.33))' --start-date 2014-10-01 --end-date 2015-12-31 --parallel 20 --dir SLC
+$MINSAR_HOME/minsar/scripts/burst_download.bash --relativeOrbit 35 --intersectsWith='Polygon((-121.84 36.2, -121.8 36.2, -121.8 36.28, -121.84 36.28, -121.84 36.2))' --start-date 2016-01-01 --end-date 2026-04-10 --exclude-season 1005-0320 --parallel 20 --dir SLC
 ```
 
 Restart (skip re-fetching listing):
@@ -141,6 +145,18 @@ xargs -P N -I {} bash -c 'cd SLC && {}' < SLC/run_burst2stack_rerun
 - `--extent`: bounds as W S E N (lon_min, lat_min, lon_max, lat_max). From polygon `Polygon((25.32 36.33, 25.49 36.33, 25.49 36.49, 25.32 36.49, 25.32 36.33))` → extent `25.32 36.33 25.49 36.49`.
 - Per date: `--start-date YYYY-MM-DD --end-date YYYY-MM-DD` (end = start + 1 day).
 - Other: `--rel-orbit`, `--pols`, `--swaths`, `--mode`, `--min-bursts`, `--all-anns`, `--keep-files`.
+
+## burst2stack: AOI pruning inside burst_download.bash
+
+After all per-date `burst2stack` commands complete (and after retries / AOI-extension loop), `minsar/scripts/burst_download.bash` (unless **`--no-check-bursts-includeAOI`** is set):
+
+1. Converts the **original** AOI extent (`extent_orig` from `--intersectsWith`, W S E N) into `LAT_S:LAT_N,LON_W:LON_E`. This is **not** the overlap-extension `extent` used for retried `burst2stack` calls after the AOI-extension loop.
+2. Runs `check_if_bursts_includeAOI.py <bbox> "$slc_dir/*.tif*"`, which groups TIFFs by acquisition date (`YYYYMMDD` before `T######` in the filename) and writes `SLC/dates_not_including_AOI.txt` (**one `YYYYMMDD` line per date** whose burst footprint union does not fully cover the bbox).
+3. Reads that file and removes matching paths under `SLC/` (`*${ymd}T*`), which deletes both burst GeoTIFFs and `.SAFE` directories for those dates.
+
+| File | Purpose |
+|------|---------|
+| `SLC/dates_not_including_AOI.txt` | Dates (one `YYYYMMDD` per line) whose footprint union does not fully cover the AOI bbox. Produced by `check_if_bursts_includeAOI.py` and consumed by `burst_download.bash` for deletion. Distinct from `dates_removed.txt` (incomplete `.SAFE` from `check_SAFE_completeness.py`) and `removed_dates_*.txt` (from `check_burst2safe_job_outputs.py`). |
 
 ## Related docs
 

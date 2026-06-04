@@ -34,6 +34,7 @@ TEST_SUITES=(
     "test_run_workflow.bash"
     "test_submit_jobs.bash"
     "test_sbatch_conditional.bash"
+    "test_horzvert_timeseries.bash"
     # "test_minsarApp_options.bash"  # temporarily disabled for pre-push
 )
 
@@ -75,6 +76,9 @@ run_test_suite() {
         echo -e "${RED}ERROR: Test suite not found: $suite_path${NC}"
         ((FAILED_SUITES++))
         FAILED_SUITE_NAMES+=("$suite_name (NOT FOUND)")
+        if [[ -n "${MINSAR_FAILED_BASH_SUITES_LOG:-}" ]]; then
+            printf '%s\n' "$suite_name" >> "$MINSAR_FAILED_BASH_SUITES_LOG"
+        fi
         return 1
     fi
     
@@ -92,6 +96,9 @@ run_test_suite() {
         echo -e "${RED}✗ SUITE FAILED: ${suite_name}${NC}"
         ((FAILED_SUITES++))
         FAILED_SUITE_NAMES+=("$suite_name")
+        if [[ -n "${MINSAR_FAILED_BASH_SUITES_LOG:-}" ]]; then
+            printf '%s\n' "$suite_name" >> "$MINSAR_FAILED_BASH_SUITES_LOG"
+        fi
         return 1
     fi
 }
@@ -110,21 +117,30 @@ print_final_summary() {
     
     if [[ $FAILED_SUITES -gt 0 ]]; then
         echo ""
-        echo -e "${RED}Failed suites:${NC}"
+        echo -e "${RED}Failed bash suites:${NC}"
         for suite in "${FAILED_SUITE_NAMES[@]}"; do
             echo -e "  ${RED}✗${NC} $suite"
+        done
+        echo ""
+        echo -e "${BOLD}Rerun failed suite(s) (from repo root):${NC}"
+        for suite in "${FAILED_SUITE_NAMES[@]}"; do
+            # suite may be "name (NOT FOUND)" — still print a useful command for real failures
+            if [[ "$suite" == *" (NOT FOUND)" ]]; then
+                continue
+            fi
+            echo "  bash \"$SCRIPT_DIR/run_bash_tests.bash\" \"$suite\""
         done
     fi
     
     echo ""
     if [[ $FAILED_SUITES -eq 0 ]]; then
         echo -e "${GREEN}╔══════════════════════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${GREEN}║                    ✅ ALL TEST SUITES PASSED ✅                          ║${NC}"
+        echo -e "${GREEN}║                 ✅ ALL BASH TEST SUITES PASSED ✅                        ║${NC}"
         echo -e "${GREEN}╚══════════════════════════════════════════════════════════════════════════╝${NC}"
         return 0
     else
         echo -e "${RED}╔══════════════════════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${RED}║                   ⚠️  SOME TEST SUITES FAILED ⚠️                          ║${NC}"
+        echo -e "${RED}║                ⚠️  SOME BASH TEST SUITES FAILED ⚠️                       ║${NC}"
         echo -e "${RED}╚══════════════════════════════════════════════════════════════════════════╝${NC}"
         return 1
     fi

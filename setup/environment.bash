@@ -23,7 +23,8 @@ export WORKDIR="${WORKDIR:-$SCRATCHDIR}"
 export USER_PREFERRED="${USER_PREFERRED:-$USER}"
 export NOTIFICATIONEMAIL="${NOTIFICATIONEMAIL:-${USER_PREFERRED}@rsmas.miami.edu}"
 export JOBSCHEDULER_PROJECTNAME="${JOBSCHEDULER_PROJECTNAME:-insarlab}"
-export INSARMAPSHOST="${INSARMAPSHOST:-insarmaps.miami.edu}"
+export INSARMAPSHOST_RECENTDATA="${INSARMAPSHOST_RECENTDATA:-insarmaps.miami.edu}"
+export INSARMAPSHOST_OLDDATA="${INSARMAPSHOST_OLDDATA:-insarmaps.miami.edu}"
 
 export SENTINEL_ORBITS="${SENTINEL_ORBITS:-$WORKDIR/S1orbits}"
 export SENTINEL_AUX="${SENTINEL_AUX:-$WORKDIR/S1aux}"
@@ -66,7 +67,6 @@ export SAMPLESDIR=${MINSAR_HOME}/samples
 export DEMDIR=${WORKDIR}/DEMDIR
 export TEMPLATES=${WORKDIR}/infiles/${USER_PREFERRED}/TEMPLATES
 export TE=${TEMPLATES}
-export AUTO_TEMPLATES="${AUTO_TEMPLATES:-$(dirname "${TEMPLATES}")/AUTO_TEMPLATES}"
 
 ############## DASK ##############
 export DASK_CONFIG=${MINTPY_HOME}/src/mintpy/defaults/
@@ -123,7 +123,6 @@ export PATH=${PATH}:${MIMTPY_HOME}/mimtpy
 export PATH=${PATH}:${SARVEY_HOME}/sarvey
 export PATH=${PATH}:${MINSAR_HOME}/tools/snaphu-v2.0.5/bin
 export PATH=${PATH}:${MINSAR_HOME}/tools/insarmaps_scripts
-export PATH=${PATH}:${MINSAR_HOME}/tools/VolcDef_web/volcdef_web
 export PATH=${PATH}:${MINSAR_HOME}/tools/emirhan_insarmaps_utils
 export PATH=${PATH}:${MINSAR_HOME}/tools/autoencoder
 export PATH=${PATH}:${MINSAR_HOME}/tools/MakeTemplate/src/maketemplate/cli
@@ -133,6 +132,11 @@ export PATH=${ISCE_HOME}/applications:${ISCE_HOME}/bin:${ISCE_STACK}:${ISCE_STAC
 export PATH=${PYTHON3DIR}/bin:${PATH}
 export PATH="${MINSAR_HOME}/tools/sarvey/sarvey:$PATH"
 export PATH="${MINSAR_HOME}/tools/sarplotter-main/app:$PATH"
+if [ -d /var/www/VolcDef_web ]; then
+    export PATH=/var/www/VolcDef_we/volcdef_web:${PATH}
+else
+    export PATH=${MINSAR_HOME}/tools/VolcDef_web/volcdef_web:${PATH}
+fi
 
 export PATH="${PATH}${MATLAB_HOME:+:${MATLAB_HOME}/bin}"
 

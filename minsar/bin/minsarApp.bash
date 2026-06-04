@@ -24,6 +24,8 @@ helptext="                                                                      
       minsarApp.bash  $TE/GalapagosSenDT128.template --start miaplpy --miaplpy-start 6 --miaplpy-stop 6 \n\
       minsarApp.bash  $TE/GalapagosSenDT128.template --start miaplpy --miaplpy-step 6     \n\
       minsarApp.bash  $TE/GalapagosSenDT128.template --miaplpy-stop 1     \n\
+      minsarApp.bash  $TE/GalapagosSenDT128.template --delta-lat 0.1       \n\
+      minsarApp.bash  $TE/GalapagosSenDT128.template --clean-start       \n\
                                                                                  \n\
   Processing steps (start/end/dostep): \n\
    Command line options for steps processing with names are chosen from the following list: \n\
@@ -41,6 +43,7 @@ helptext="                                                                      
    --end STEP, --stop STEP                                                       \n\
    --dostep STEP         run processing at the named step only                   \n\
    --download-method {slc, burst2safe, burst2stack, ssara-slc, ssara-bash, ssara-python} (default: burst2stack) \n\
+   --delta-lat [DEG]     download larger error (default 0; bare --delta-lat: 0.2) \n\
                                                                                  \n\
    --mintpy              use smallbaselineApp.py for time series [default]       \n\
    --miaplpy             use miaplpyApp.py                                       \n\
@@ -53,6 +56,7 @@ helptext="                                                                      
                                                                                  \n\
    --sleep SECS           sleep seconds before running                           \n\
    --chunks               process in form of multiple chunks.                    \n\
+   --clean-start          rm -rf \$SCRATCHDIR/<project> then recreate work dir   \n\
                                                                                  \n\
 For sarvey:                                                                      \n\
    --miaplpy-stop 1      to only run step 1 (load_slc_geometry.py) of miaplpy    \n\
@@ -63,26 +67,66 @@ Debug options:                                                                  
    --skip-miaplpy    skip miaplpy processing (but runs everything else)          \n\
    --start miaplpy --miaplpy-step 5
                                                                                  \n\
+Using AOI and name as postional arguments (for options run: create_template.py --help):\n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --no-mintpy --miaplpy  \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --quick-run 2026 --no-mintpy --miaplpy  \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --last-year --no-mintpy --miaplpy  \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --start-date 2020-01-01 --end-date 2024-12-31 --no-mintpy --miaplpy  \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --period 20210101:20221231 --miaplpy  \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --exclude-season 1101-0430 --no-mintpy --miaplpy  \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --flight-dir asc --miaplpy --platform S1 is optional (default platform is Sentinel-1)    \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --coregistration geometry [--platform S1] --miaplpy   \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --geometry [--platform S1] --miaplpy   \n\
+To test:  \n\
+      minsarApp.bash -0.86:-0.81,-91.19:-91.13 qtestGalapagos --flight-dir asc,desc --start-date 20181001 --end-date 20181231 --no-mintpy --miaplpy  \n\
+                                                                                 \n\
    Coding To Do:                                                                 \n\
        - create .minsarrc for defaults                                           \n
      "
     printf "$helptext"
-    exit 0;
-else
-    PROJECT_NAME=$(basename "$1" | awk -F ".template" '{print $1}')
-    exit_status="$?"
-    if [[ $PROJECT_NAME == "" ]]; then
-       echo "Could not compute basename for that file. Exiting. Make sure you have specified an input file as the first argument."
-       exit 1;
-    fi
+    exit 0
 fi
 
-template_file=$1
+# AOI + project name: first create templates under TEMPLATES, then continue as template mode.
+# Accept AOI as first positional even when it starts with '-' (negative latitude).
+# Exclude long-option invocations and template-file mode.
+if [[ -n "${1-}" && -n "${2-}" && "$1" != --* && "$1" != *".template" && "$2" != -* ]]; then
+  export MINSAR_APP_BASH="${BASH_SOURCE[0]}"
+  exec python3 "${SCRIPT_DIR}/../scripts/minsarapp_aoi_entry.py" "$@"
+fi
+
+# AOI create_template pair (immutable readonly in this shell; nested opposite pass re-sent via env on run_command).
+first_orbit_template_file="${MINSAR_FIRST_ORBIT_TEMPLATE_FILE:-}"
+opposite_orbit_template_file="${MINSAR_OPPOSITE_ORBIT_TEMPLATE:-}"
+cli_command_aoi="${MINSAR_CLI_COMMAND_AOI:-}"
+
+readonly first_orbit_template_file opposite_orbit_template_file
+unset MINSAR_FIRST_ORBIT_TEMPLATE_FILE MINSAR_OPPOSITE_ORBIT_TEMPLATE MINSAR_CLI_COMMAND_AOI
+
+PROJECT_NAME=$(basename -- "$1" | awk -F ".template" '{print $1}')
+exit_status="$?"
+if [[ $PROJECT_NAME == "" ]]; then
+   echo "Could not compute basename for that file. Exiting. Make sure you have specified an input file as the first argument."
+   exit 1
+fi
+
+template_file="$1"
 if [[ $1 == $PWD ]]; then
    template_file=$TEMPLATES/$PROJECT_NAME.template
 fi
 export template_file
+
+## FA 5/2026: We should move all the arg parsing up before creating WORK_DIR (and writing the log). That would make make the code clearer
+clean_start_flag=0
+for __minsar_argv in "$@"; do
+    [[ "$__minsar_argv" == "--clean-start" ]] && clean_start_flag=1 && break
+done
+
 WORK_DIR=${SCRATCHDIR}/${PROJECT_NAME}
+if [[ "$clean_start_flag" == "1" ]]; then
+    echo "$(date +"%Y%m%d:%H-%M") * Removing existing project directory (--clean-start): $WORK_DIR"
+    rm -rf "$WORK_DIR"
+fi
 mkdir -p $WORK_DIR
 cd $WORK_DIR
 
@@ -98,6 +142,13 @@ fi
 echo "#############################################################################################" | tee -a "${WORK_DIR}"/log
 echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $template_print_name ${@:2}" | tee -a "${WORK_DIR}"/log
 cli_command=$(echo "$SCRIPT_NAME $template_print_name ${@:2}")
+if ! [[ -v cli_command_first ]]; then
+  cli_command_first=$cli_command
+  export cli_command_first
+else
+  cli_command_opposite_orbit=$cli_command
+  export cli_command_opposite_orbit
+fi
 
 #Switches
 chunks_flag=0
@@ -125,6 +176,7 @@ opposite_orbit_flag=0
 horzvert_flag=0
 
 download_method="burst2stack"
+delta_lat=0
 miaplpy_startstep=1
 miaplpy_stopstep=9
 
@@ -134,6 +186,7 @@ stopstep_cli_flag=0
 isce_start_cli_flag=0
 isce_stop_cli_flag=0
 miaplpy_start_cli_flag=0
+no_mintpy_cli_flag=0
 
 skip_mintpy_flag=0
 skip_miaplpy_flag=0
@@ -172,6 +225,7 @@ do
             ;;
         --no-mintpy)
             mintpy_flag=0
+            no_mintpy_cli_flag=1
             shift
             ;;
         --isce-start)
@@ -263,6 +317,9 @@ do
             chunks_flag=1
             shift
             ;;
+        --clean-start)
+            shift
+            ;;
         --debug)
             debug_flag=1
             shift
@@ -278,6 +335,16 @@ do
         --download-method)
             download_method=$2
             shift 2
+            ;;
+        --delta-lat)
+            # Consume numeric next arg if present; without arg (only --delta-lat) uses 0.2.
+            if [[ $# -ge 2 ]] && [[ "$2" =~ ^-?[0-9]+(\.[0-9]+)?$ ]]; then
+                delta_lat="$2"
+                shift 2
+            else
+                delta_lat=0.2
+                shift
+            fi
             ;;
 
         *)
@@ -500,6 +567,10 @@ if [[ "$isce_stop_cli_flag" == "1" ]]; then
 elif [[ "$platform_str" == *"SENTINEL-1"* && "$isce_start_cli_flag" == "1" ]]; then
     # For Sentinel: if user provides --isce-start but omits --isce-stop, run ifgram-only range.
     isce_stop="$partial_isce_run_stop"
+elif [[ "$platform_str" == *"SENTINEL-1"* && "$no_mintpy_cli_flag" == "1" && ${template[topsStack.coregistration]} != "geometry" ]]; then
+    # --no-mintpy (e.g. MiaplPy-only): default to partial ISCE (e.g. 1–12 for NESD burst stack), not full through unwrap (16).
+    # Geometry coregistration already uses full_isce_run_stop=12; do not override with partial_isce_run_stop=8 here.
+    isce_stop="$partial_isce_run_stop"
 else
     isce_stop="$full_isce_run_stop"
 fi
@@ -519,17 +590,14 @@ if [[ -v template[ssaraopt.endDate] && "${template[ssaraopt.endDate]}" != "auto"
     orbit_download_flag=0
 fi
 
-
 echo "Switches: download_method: <$download_method> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
 echo "Flags for processing steps:"
 echo "download preprocess dem jobfiles ifgram mintpy miaplpy upload insarmaps opposite_orbit horzvert"
 echo "    $download_flag        $preprocess_flag       $dem_flag      $jobfiles_flag       $ifgram_flag       $mintpy_flag      $miaplpy_flag      $upload_flag       $insarmaps_flag        $opposite_orbit_flag        $horzvert_flag"
 
-step_ranges="Step ranges: isce: $isce_start $isce_stop"
-[[ "$miaplpy_flag" == "1" ]] && step_ranges="$step_ranges  miaplpy: $miaplpy_startstep $miaplpy_stopstep"
 echo ""
-echo ""
-echo "$step_ranges"
+[[ "$ifgram_flag" == "1" ]] && echo "ISCE steps to process: $isce_start-$isce_stop"
+[[ "$miaplpy_flag" == "1" && "$skip_miaplpy_flag" != "1" ]] && echo "MiaplPy steps to process: $miaplpy_startstep-$miaplpy_stopstep"
 
 sleep 5
 
@@ -539,8 +607,8 @@ sleep 5
 
 if [[ $download_flag == "1" ]]; then
 
-    echo "Running.... generate_download_command.py $template_file --delta-lat 0.0 --delta-lon 0.0"
-    run_command "generate_download_command.py $template_file --delta-lat 0.0 --delta-lon 0.0"
+    echo "Running.... generate_download_command.py $template_file --delta-lat $delta_lat --delta-lon 0.0"
+    run_command "generate_download_command.py $template_file --delta-lat $delta_lat --delta-lon 0.0"
 
     mkdir -p $download_dir
 
@@ -721,7 +789,7 @@ if [[ $mintpy_flag == "1" ]]; then
 
     ## insarmaps
     if [[ $insarmaps_flag == "1" ]]; then
-        run_command "create_ingest_insarmaps_jobfile.py mintpy --dataset geo"
+        run_command "create_ingest_insarmaps_jobfile.py mintpy --dataset geo --quiet-summary"
 
         ingest_insarmaps_jobfile=$(ls -t ingest_insar*job | head -n 1)
         run_command "run_workflow.bash --jobfile $PWD/$ingest_insarmaps_jobfile"
@@ -729,7 +797,7 @@ if [[ $mintpy_flag == "1" ]]; then
 
     # upload mintpy directory
     if [[ $upload_flag == "1" ]]; then
-        run_command "upload_data_products.py mintpy ${template[minsar.upload_option]}"
+        run_command "upload_data_products.py mintpy ${template[minsar.upload_option]} --quiet-summary"
     fi
 
 fi
@@ -768,7 +836,11 @@ if [[ $miaplpy_flag == "1" ]]; then
 
     # create and run save_hdf5 jobfile (only when running full miaplpy through step 9)
     if [[ "$miaplpy_stopstep" == "9" ]]; then
-        run_command "create_save_hdfeos5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME --walltime 0:30"
+        # Debugging / resume after outage: stale SLURM logs confuse check_job_outputs on step 10 re-run.
+        if [[ "$skip_miaplpy_flag" == "1" ]]; then
+            rm -f "${network_dir}/run_files/"*run_10_save_hdfeos5_radar*.{e,o}
+        fi
+        run_command "create_save_hdfeos5_jobfile.py  $template_file $network_dir --outdir $network_dir/run_files --outfile run_10_save_hdfeos5_radar_0 --queue $QUEUENAME"
         run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 10"
 
         # create index.html with all images
@@ -783,7 +855,7 @@ if [[ $miaplpy_flag == "1" ]]; then
 
     ## insarmaps
     if [[ $insarmaps_flag == "1" && "$miaplpy_stopstep" == "9" ]]; then
-        run_command "create_ingest_insarmaps_jobfile.py $network_dir --dataset $insarmaps_dataset"
+        run_command "create_ingest_insarmaps_jobfile.py $network_dir --dataset $insarmaps_dataset --quiet-summary"
 
         # run jobfile
         ingest_insarmaps_jobfile=$(ls -t ingest_insar*job | head -n 1)
@@ -794,9 +866,9 @@ if [[ $miaplpy_flag == "1" ]]; then
     # upload data products
     if [[ $upload_flag == "1" ]]; then
         if [[ "$miaplpy_stopstep" == "1" ]]; then
-            run_command "upload_data_products.py ${miaplpy_dir_name}/inputs ${template[minsar.upload_option]}"
+            run_command "upload_data_products.py ${miaplpy_dir_name}/inputs ${template[minsar.upload_option]} --quiet-summary"
         else
-            run_command "upload_data_products.py $network_dir ${template[minsar.upload_option]}"
+            run_command "upload_data_products.py $network_dir ${template[minsar.upload_option]} --quiet-summary"
         fi
     fi
 
@@ -807,14 +879,9 @@ fi
 ########################
 if [[ $opposite_orbit_flag == "1" ]]; then
     echo "Running minsarApp.bash for opposite orbit ..."
-    run_command "create_opposite_orbit_template.bash $template_file"
-    [[ -f "${WORK_DIR}/opposite_orbit.txt" ]] || { echo "missing ${WORK_DIR}/opposite_orbit.txt"; exit 1; }
-    opposite_orbit_template_file=$(tr -d '\r\n' < "${WORK_DIR}/opposite_orbit.txt")
-    [[ -f "$opposite_orbit_template_file" ]] || { echo "opposite-orbit template not found: $opposite_orbit_template_file"; exit 1; }
     reduced_args="$(get_modified_command_line_for_opposite_orbit)"
     run_command "${SCRIPT_DIR}/${SCRIPT_NAME} $opposite_orbit_template_file $reduced_args"
 fi
-
 
 ########################
 #   Horzvert 
@@ -822,44 +889,49 @@ fi
 if [[ $horzvert_flag == "1" ]]; then
     ref_lalo="$(get_ref_lalo_from_template_file)"
     if [[ mintpy_flag == "1" ]]; then
-       cmd="horzvert_timeseries.bash $template_file%.template}/mintpy $opposite_orbit_template_file%.template}/mintpy"
+       opp_mintpy_template="$opposite_orbit_template_file"
+       cmd="horzvert_timeseries.bash ${template_file%.template}/mintpy ${opp_mintpy_template%.template}/mintpy"
        run_command "$cmd"
     fi
 fi
 
+########################
+#   Summarize results 
+########################
+reduced_args="${reduced_args:-}"
+footer_cmd_primary="${SCRIPT_NAME} $(abbrev_path "$first_orbit_template_file") $reduced_args"
+footer_cmd_opposite="${SCRIPT_NAME} $(abbrev_path "$opposite_orbit_template_file") $reduced_args"
 
-
-echo
-if ls mintpy/*he5 1> /dev/null 2>&1; then
-   echo "hdfeos5 files produced:"
-   ls -sh mintpy/*he5
-fi
-if ls $network_dir/*he5 1> /dev/null 2>&1; then
-   echo " hdf5files in network_dir: <$network_dir>"
-   ls -sh $network_dir/*he5
-fi
-
-# Summarize results
-echo
-echo "Done:  $cli_command"
-echo "Yup! That's all!"
+echo "Yup! That's all from minsarApp.bash."
 echo
 
-echo "Data products uploaded to:"
-if [[ -f "upload.log" ]]; then
-    tail -n -1 upload.log
+# AOI entry only: replay full AOI invocation. Template-first: skip (stack command is below).
+if [[ -n "${cli_command_aoi:-}" ]]; then
+    echo "### Command: $cli_command_aoi"
 fi
 
-lines=1
-if [[ "$insarmaps_dataset" == "PSDS" ]]; then
-    lines=2
-fi
-if [[ "$insarmaps_dataset" == "all" ]]; then
-   lines=4
+echo "### Files produced: ###"
+
+print_summary --filesize "$template_file"
+if [[ $opposite_orbit_flag == "1" ]]; then
+   print_summary --filesize  "$opposite_orbit_template_file"
 fi
 
-lines=$((lines * 2))  # multiply as long as we ingestinto two servers
-if [[ -f "insarmaps.log" ]]; then
-    tail -n $lines insarmaps.log
+if [[ -n "${cli_command_aoi:-}" ]]; then
+    echo
+    echo "#################################"
+    echo "### Command: $footer_cmd_primary"
+else
+    echo "### Command: $cli_command"
+fi
+print_summary "$template_file"
+
+if [[ $opposite_orbit_flag == "1" ]]; then
+   if [[ -n "${cli_command_aoi:-}" ]]; then
+      echo
+      echo "#################################"
+   fi
+   echo "### Command: $footer_cmd_opposite"
+   print_summary "$opposite_orbit_template_file"
 fi
 

@@ -6,11 +6,178 @@ import re
 import h5py
 import rasterio
 import numpy as np
+from datetime import date
 from pathlib import Path
 
 from matplotlib import pyplot as plt
 from mintpy.utils import writefile, readfile
-from minsar.src.minsar.helper_functions import get_output_filename, utm_to_lonlat
+from minsar.src.minsar.helper_functions import (
+    extract_identification_metadata,
+    get_output_filename,
+    utm_to_lonlat,
+)
+
+# Minimal attrs present in working insarmaps ingests (SARvey CSV + MintPy Galapagos).
+# hdfeos5_2json_mbtiles.py copies these into metadata.pickle attribute_keys when present on .he5.
+INSARMAPS_ESSENTIAL_ATTRS = (
+    "WIDTH",
+    "LENGTH",
+    "mission",
+    "relative_orbit",
+    "beam_mode",
+    "beam_swath",
+    "processing_type",
+    "processing_software",
+    "post_processing_method",
+    "first_date",
+    "last_date",
+    "history",
+    "REF_LAT",
+    "REF_LON",
+    "look_direction",
+    "atmos_correct_method",
+    "first_frame",
+    "last_frame",
+    "data_footprint",
+    "scene_footprint",
+    "wavelength",
+    "prf",
+)
+
+# Geo grid keys used by hdfeos5_2json_mbtiles (non-high-res); not in SARvey CSV ingest but required for .he5.
+INSARMAPS_GEO_ATTRS = (
+    "X_FIRST",
+    "Y_FIRST",
+    "X_STEP",
+    "Y_STEP",
+)
+
+# Kept on .he5 for naming and MintPy/HDFEOS I/O; not all are ingested into insarmaps attribute_keys.
+HDFEOS_STRUCTURAL_ATTRS = (
+    "PROJECT_NAME",
+    "REF_DATE",
+    "START_DATE",
+    "END_DATE",
+    "ORBIT_DIRECTION",
+    "PROCESSOR",
+    "PLATFORM",
+    "UNIT",
+    "REF_X",
+    "REF_Y",
+    "X_UNIT",
+    "Y_UNIT",
+)
+
+
+def _iso_date(ymd):
+    """Convert YYYYMMDD to YYYY-MM-DD."""
+    s = str(ymd).strip()
+    if len(s) == 8 and s.isdigit():
+        return f"{s[0:4]}-{s[4:6]}-{s[6:8]}"
+    return s[:10]
+
+
+def _mission_name(metadata):
+    platform = str(
+        metadata.get("mission_id")
+        or metadata.get("platform_id")
+        or metadata.get("PLATFORM")
+        or metadata.get("l1_slc_files")
+        or ""
+    ).upper()
+    if "S1" in platform or "SEN" in platform:
+        return "S1"
+    return platform.split(",")[0].strip() or "S1"
+
+
+def _beam_mode_swath(metadata):
+    burst_id = str(metadata.get("burst_id", "")).lower()
+    m = re.search(r"iw(\d+)", burst_id)
+    if m:
+        return "IW", int(m.group(1))
+    product = str(metadata.get("product_type", metadata.get("l1_slc_files", ""))).upper()
+    if "IW" in product:
+        return "IW", int(metadata.get("beam_swath", 0) or 0)
+    return str(metadata.get("beam_mode", "IW")), int(metadata.get("beam_swath", 0) or 0)
+
+
+def _look_direction(metadata):
+    look = str(metadata.get("look_direction", "Right")).strip().lower()
+    if look.startswith("r"):
+        return "R"
+    if look.startswith("l"):
+        return "L"
+    return "R"
+
+
+def _ref_lat_lon(latitude, longitude, ref_row, ref_col):
+    lat_arr = np.asarray(latitude)
+    lon_arr = np.asarray(longitude)
+    if lat_arr.ndim == 2 and lon_arr.ndim == 2:
+        return float(lat_arr[ref_row, ref_col]), float(lon_arr[ref_row, ref_col])
+    if lat_arr.ndim == 1 and lon_arr.ndim == 1:
+        return float(lat_arr[ref_row]), float(lon_arr[ref_col])
+    return float(np.nanmean(lat_arr)), float(np.nanmean(lon_arr))
+
+
+def populate_insarmaps_metadata(metadata, date_list, latitude, longitude, ref_row, ref_col):
+    """Set only insarmaps-essential UNAVCO attributes on metadata (see INSARMAPS_ESSENTIAL_ATTRS)."""
+    beam_mode, beam_swath = _beam_mode_swath(metadata)
+    rel_orbit = metadata.get("track_number", metadata.get("relative_orbit"))
+    if rel_orbit is None:
+        proj = str(metadata.get("PROJECT_NAME", os.path.basename(os.getcwd())))
+        m = re.search(r"[Dd](\d+)", proj)
+        if m:
+            rel_orbit = int(m.group(1))
+    if rel_orbit is not None:
+        rel_orbit = int(rel_orbit)
+
+    wavelength = metadata.get("wavelength")
+    if wavelength is None and metadata.get("radar_center_frequency"):
+        wavelength = 299792458.0 / float(metadata["radar_center_frequency"])
+
+    prf = metadata.get("prf_raw_data", metadata.get("prf", metadata.get("PRF")))
+
+    ref_lat, ref_lon = _ref_lat_lon(latitude, longitude, ref_row, ref_col)
+    frame = metadata.get("burst_index", 0)
+    try:
+        frame = int(frame)
+    except (TypeError, ValueError):
+        frame = 0
+
+    footprint = metadata.get("data_footprint") or metadata.get("scene_footprint") or ""
+
+    insarmaps = {
+        "mission": _mission_name(metadata),
+        "beam_mode": beam_mode,
+        "beam_swath": beam_swath,
+        "relative_orbit": rel_orbit,
+        "processing_type": "LOS_TIMESERIES",
+        "first_date": _iso_date(date_list[0]),
+        "last_date": _iso_date(date_list[-1]),
+        "look_direction": _look_direction(metadata),
+        "history": date.today().isoformat(),
+        "atmos_correct_method": "None",
+        "first_frame": frame,
+        "last_frame": frame,
+        "REF_LAT": ref_lat,
+        "REF_LON": ref_lon,
+        "data_footprint": footprint,
+        "scene_footprint": footprint,
+    }
+    if wavelength is not None:
+        insarmaps["wavelength"] = float(wavelength)
+    if prf is not None:
+        insarmaps["prf"] = float(prf)
+
+    metadata.update(insarmaps)
+    return metadata
+
+
+def prune_metadata_for_hdfeos(metadata):
+    """Keep only insarmaps-essential, geo-grid, and structural attrs before writing .he5."""
+    keep = set(INSARMAPS_ESSENTIAL_ATTRS) | set(INSARMAPS_GEO_ATTRS) | set(HDFEOS_STRUCTURAL_ATTRS)
+    return {k: metadata[k] for k in keep if k in metadata}
 
 SCRATCHDIR = Path(os.getenv("SCRATCHDIR")) if os.getenv("SCRATCHDIR") else None
 
@@ -89,9 +256,9 @@ def create_hdfeos_output(ts_data: np.ndarray, mask: np.ndarray, latitude: np.nda
     metadata['WIDTH'] = str(width)
     metadata['LENGTH'] = str(length)
     metadata['PROCESSOR'] = 'mintpy' if 'dolphin' not in output_path else 'dolphin'
-    metadata['PROJECT_NAME'] = os.path.basename(os.path.dirname(output_path))
+    if not metadata.get('PROJECT_NAME'):
+        metadata['PROJECT_NAME'] = os.path.basename(os.path.dirname(os.path.dirname(output_path)))
     metadata['REF_DATE'] = str(date_list[0])
-    metadata['first_frame'] = ' '
 
     if hasattr(metadata, 'OG_FILE_PATH'):
         metadata['OG_FILE_PATH'] = output_path
@@ -301,7 +468,12 @@ def main():
     ny, nx = deformation_data[0]["data"].shape
     if CSLC:
         with h5py.File(CSLC[0], "r") as hf:
-            metadata2 = {}
+            metadata2 = dict(extract_identification_metadata(hf))
+            if "identification" in hf:
+                def id_visit(name, obj):
+                    if isinstance(obj, h5py.Dataset) and obj.shape == ():
+                        metadata2[name.split("/")[-1]] = normalize(obj[()])
+                hf["identification"].visititems(id_visit)
             grp = hf['/metadata']
             def visit(name, obj):
                 if isinstance(obj, h5py.Dataset) and obj.shape == ():
@@ -435,11 +607,19 @@ def main():
     # Add the date list
     metadata['reference_datetime'] = deformation_data[0]['reference']
     metadata['secondary_datetime'] = deformation_data[-1]['secondary']
-    metadata['data_footprint'] = metadata['scene_footprint'] = metadata['bounding_polygon'] = wkt
+    metadata['data_footprint'] = metadata['scene_footprint'] = wkt
+    ref_row, ref_col = int(metadata['REF_Y']), int(metadata['REF_X'])
+    populate_insarmaps_metadata(metadata, date_list, latitude, longitude, ref_row, ref_col)
+    metadata = prune_metadata_for_hdfeos(metadata)
     output_path = str(timeseries_path / get_output_filename(metadata))
 
     create_hdfeos_output(ts_data=stack, mask=temp_coh > 0.65, temporal_coherence=temp_coh, date_list=date_list, output_path=output_path, metadata=metadata,
                          latitude=latitude, longitude=longitude, height=height, azimuth=az, incidence=incidence)
+
+    he5_name = os.path.basename(output_path)
+    mbtiles_name = he5_name.replace('.he5', '.mbtiles')
+    print(f'\nIngest with:\n  ingest_insarmaps.bash "{output_path}"')
+    print(f'  (not the older S1_desc_000_* file if one exists in {timeseries_path})')
 
 
     if False:
