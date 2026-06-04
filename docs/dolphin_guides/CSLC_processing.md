@@ -31,8 +31,6 @@ If you want to optimize the processing speed, add this option to the command lin
 --worker-settings.threads-per-worker 1 --worker-settings.block-shape 1024 1024 --n-parallel-bursts 6 --unwrap-options.n-parallel-jobs 8 --unwrap-options.snaphu-options.n-parallel-tiles 4 --timeseries-options.num-parallel-blocks 8 --timeseries-options.block-shape 512 512 --phase-linking.ministack-size 15 --phase-linking.shp-method GLRT --outfile dolphin_config.yaml
 ```
 
-(For Falk, in minsar dolphin is aliased to some insarmaps thing, so you have to `unalias dolphin` before using dolphin.
-
 A new config file will be created `dolphin_config.yaml`
 
 ## Run Dolphin
