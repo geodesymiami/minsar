@@ -8,21 +8,20 @@ MinsarApp bash generates a similar command for that:
 ```bash
 cat download_slc.sh
 #!/usr/bin/env bash
-asf_download.sh --processingLevel=SLC --relativeOrbit=143 --platform=SENTINEL-1 --intersectsWith='Polygon((-98.71 18.96, -98.55 18.96, -98.55 19.08, -98.71 19.08, -98.71 18.96))' --start=2014-10-01 --end=2026-05-09 --parallel=6 --dir=SLC --download
-check_download.py $PWD/SLC --delete
-asf_download.sh --processingLevel=SLC --relativeOrbit=143 --platform=SENTINEL-1 --intersectsWith='Polygon((-98.71 18.96, -98.55 18.96, -98.55 19.08, -98.71 19.08, -98.71 18.96))' --start=2014-10-01 --end=2026-05-09 --parallel=6 --dir=SLC --download
+asf_download.sh --processingLevel=CSLC --relativeOrbit=143 --platform=SENTINEL-1 --intersectsWith='Polygon((-98.71 18.96, -98.55 18.96, -98.55 19.08, -98.71 19.08, -98.71 18.96))' --start=2014-10-01 --end=2026-05-09 --parallel=6 --dir=SLC --download
+check_download.py $PWD/CSLC --delete
+asf_download.sh --processingLevel=CSLC --relativeOrbit=143 --platform=SENTINEL-1 --intersectsWith='Polygon((-98.71 18.96, -98.55 18.96, -98.55 19.08, -98.71 19.08, -98.71 18.96))' --start=2014-10-01 --end=2026-05-09 --parallel=6 --dir=CSLC --download
 ```
 
-Just replace **SLC** with **CSLC**
 ```bash
-asf_download.sh --processingLevel=SLC --relativeOrbit=143 --platform=SENTINEL-1 --intersectsWith='Polygon((-98.71 18.96, -98.55 18.96, -98.55 19.08, -98.71 19.08, -98.71 18.96))' --start=2014-10-01 --end=2026-05-09 --parallel=6 --dir=SLC --download
+mkdir PopocatepetlSenD143
+cd PopocatepetlSenD143
+asf_download.sh --processingLevel=CSLC --relativeOrbit=143 --platform=SENTINEL-1 --intersectsWith='Polygon((-98.71 18.96, -98.55 18.96, -98.55 19.08, -98.71 19.08, -98.71 18.96))' --start=2014-10-01 --end=2026-05-09 --parallel=6 --dir=CSLC --download
 ```
-
-One is out!
 
 ## Process with Doplhin
 First we need to generate the config file, Easy!
-Get into the working directory and switch to Dolphin (once you have installed it of course)
+Get into the working directory and switch to Dolphin
 ```bash
 conda activate dolphin-env
 dolphin config --slc-files CSLC/*.h5  --subdataset "/data/VV" --output-options.bounds -90.6679 14.3203 -90.5455 14.4157
