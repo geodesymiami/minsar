@@ -1,4 +1,7 @@
 # Process data using [Sweets](https://github.com/isce-framework/sweets) workflow
+## Installation
+Follow the installation [here](https://github.com/isce-framework/sweets#Install)
+
 ## Create the usual minsar template
 ```bash
 cd $TE
