@@ -290,11 +290,11 @@ User selects "Ascending" in dropdown
 5. updatePeriodHeader()
     │
     ▼
-No iframe.src is set. The newly visible iframe is NOT reloaded.
+No iframe.src is set. Point selection is preloaded on background iframes when the user clicks (immediate sync), so the newly visible iframe already has the marker.
 (If Time Controls open: handleDatasetChangeInTimeControls → loadPeriodsForDataset → new period iframes.)
 ```
 
-**Key point**: No iframe is reloaded when switching via dropdown. Contour state is synced by overlay sending `insarmaps-set-contour` to all iframes when the user toggles contour.
+**Key point**: Dataset switch is show/hide only (instant). Point selection is synced to background iframes immediately on click via `syncPointToBackgroundIframes()` — not on switch. Contour state is synced by overlay sending `insarmaps-set-contour` to all iframes when the user toggles contour.
 
 ### Time Slider Change (postMessage)
 ```
@@ -331,7 +331,7 @@ overlay.html receives message
 
 | Action | Reloaded iframes | Uses currentMapParams? |
 |--------|------------------|------------------------|
-| Dropdown switch | **None** (show/hide only; contour synced via postMessage) | N/A |
+| Dropdown switch | **None** (show/hide only; point preloaded on background iframes at click time) | N/A |
 | Contour only | **None** (postMessage `insarmaps-set-contour` to all iframes) | N/A |
 | Pan/zoom / time slider / color scale / background / opacity | All except sender | YES |
 
@@ -355,13 +355,7 @@ The `buildInsarmapsUrl()` function passes the SAME `startDate` and `endDate` to 
 **Symptom**: Only part of the data area displays, with the rest cut off.
 
 **Root Cause Analysis**:
-This was previously traced to `pointLat`, `pointLon`, `refPointLat`, `refPointLon` parameters causing Mapbox rendering issues. These parameters have been REMOVED from synchronization:
-
-```javascript
-// These are intentionally NOT synced:
-// - pointLat, pointLon (selected point)
-// - refPointLat, refPointLon (reference point)
-```
+This was previously traced to `pointLat`, `pointLon`, `refPointLat`, `refPointLon` parameters causing Mapbox rendering issues in some Mapbox versions. Point params are synced via `buildInsarmapsUrl()`, `syncPointToBackgroundIframes()`, and `iframePointSynced` tracking. Background iframes reload on point click (immediate); dataset switch does not reload.
 
 **If still occurring**: The issue may be related to:
 1. iframe sizing/CSS
@@ -507,9 +501,9 @@ The +/− button itself never triggers loading or reloading.
 
 | Parameter | Reason |
 |-----------|--------|
-| pointLat/pointLon | Causes rectangle cut-off bug |
-| refPointLat/refPointLon | Causes rectangle cut-off bug |
 | startDataset | Each iframe has its own dataset |
+
+**Point selection (`pointLat`/`pointLon`, `refPointLat`/`refPointLon`):** Synced across dataset iframes via `warmAllBackgroundIframes()` / `scheduleWarmAll()`. Background iframes start loading on page create with **stable preload URLs** (`_t=stable_dsN`, one load each — no duplicate warm pass). Param updates are **batched** (150ms debounce) so insarmaps startup messages trigger one warm, not many; point clicks warm immediately. Skips reload when URL params already match (`insarmapsUrlsEquivalent`, ignores `_t`) or iframe is already loading (`iframeWarmInFlight`). Dataset switch stays instant (show/hide only). Insarmaps has no `insarmaps-set-point` postMessage (unlike contours), so URL reload of background iframes is required when params change.
 
 ---
 

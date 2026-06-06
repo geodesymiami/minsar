@@ -590,7 +590,7 @@
         // Build insarmaps URL with given parameters
         // uniqueId is optional - used to ensure unique cache-busting for multiple iframes
         let urlCounter = 0;
-        function buildInsarmapsUrl(baseUrl, dataset, lat, lon, zoom, mapParams, uniqueId) {
+        function buildInsarmapsUrl(baseUrl, dataset, lat, lon, zoom, mapParams, uniqueId, stableCache) {
             const params = new URLSearchParams();
             params.set('flyToDatasetCenter', 'false');
             params.set('startDataset', dataset);
@@ -606,11 +606,51 @@
             if (mapParams.colorscale) params.set('colorscale', mapParams.colorscale);
             if (mapParams.refPointLat) params.set('refPointLat', mapParams.refPointLat);
             if (mapParams.refPointLon) params.set('refPointLon', mapParams.refPointLon);
-            // Unique cache-buster: timestamp + counter + optional uniqueId
-            const cacheBuster = uniqueId !== undefined ? `${Date.now()}_${urlCounter++}_${uniqueId}` : `${Date.now()}_${urlCounter++}`;
-            params.set('_t', cacheBuster);
+            if (mapParams.pointLat) params.set('pointLat', mapParams.pointLat);
+            if (mapParams.pointLon) params.set('pointLon', mapParams.pointLon);
+            // stableCache: fixed _t per iframe slot for initial preload (browser can reuse). Otherwise bust cache.
+            if (stableCache && uniqueId !== undefined) {
+                params.set('_t', `stable_${uniqueId}`);
+            } else {
+                const cacheBuster = uniqueId !== undefined ? `${Date.now()}_${urlCounter++}_${uniqueId}` : `${Date.now()}_${urlCounter++}`;
+                params.set('_t', cacheBuster);
+            }
             
             return `${baseUrl}/start/${lat}/${lon}/${zoom}?${params.toString()}`;
+        }
+
+        function stripUrlCacheBuster(url) {
+            try {
+                const u = new URL(url, baseUrl || window.location.href);
+                u.searchParams.delete('_t');
+                return u.toString();
+            } catch (e) {
+                return url.replace(/([&?])_t=[^&]*&?/, '$1').replace(/[&?]$/, '');
+            }
+        }
+
+        // Canonical compare: sorted params, contour/contours normalized (avoids false reloads).
+        function canonicalInsarmapsUrl(url) {
+            if (!url) return '';
+            try {
+                const u = new URL(url, baseUrl || window.location.href);
+                u.searchParams.delete('_t');
+                const contourRaw = u.searchParams.get('contour') || u.searchParams.get('contours');
+                u.searchParams.delete('contour');
+                u.searchParams.delete('contours');
+                const contourNorm = normalizeContourValue(contourRaw);
+                if (contourNorm) u.searchParams.set('contours', contourNorm);
+                const entries = [...u.searchParams.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+                const qs = new URLSearchParams(entries).toString();
+                return `${u.pathname}${qs ? '?' + qs : ''}`;
+            } catch (e) {
+                return stripUrlCacheBuster(url);
+            }
+        }
+
+        function insarmapsUrlsEquivalent(urlA, urlB) {
+            if (!urlA || !urlB) return false;
+            return canonicalInsarmapsUrl(urlA) === canonicalInsarmapsUrl(urlB);
         }
 
         // Extract lat/lon/zoom from an insarmaps URL
@@ -630,6 +670,7 @@
         let iframeDatasets = new Map();  // index -> dataset name
         let iframeLabels = new Map();    // index -> label (Descending, etc.)
         let iframeSynced = new Map();    // index -> sync key (tracks if iframe has current params)
+        let iframePointSynced = new Map(); // index -> point key (tracks if iframe has current point selection)
         let baseUrl = '';
         let currentViewCode = 'desc';
         let currentDataset = null;  // Current active dataset name
@@ -639,6 +680,35 @@
         // Sync control - defined early so it's available everywhere
         let lastSyncTime = 0;
         const SYNC_COOLDOWN_MS = 3000;
+        let syncTimeout = null;
+        let lastSyncedKey = '';
+        let datasetSwitchSuppressUntil = 0; // block cross-iframe reloads briefly after dataset switch
+        let backgroundsWarmed = false; // true after first parallel preload of all dataset iframes
+        let iframeWarmInFlight = new Map(); // index -> syncKey currently loading
+        let lastWarmSyncKey = '';
+        let warmTimeout = null;
+        let pendingWarm = null;
+        const WARM_DEBOUNCE_MS = 200; // batch pan/zoom; point changes still immediate
+        let activeDatasetIdx = 0;
+
+        function iframeLabelForLog(index) {
+            return iframeLabels.get(index) || `iframe${index}`;
+        }
+
+        function setIframeSrc(iframe, newUrl, meta) {
+            const label = meta.label || '?';
+            const reason = meta.reason || 'unknown';
+            if (iframe.src && insarmapsUrlsEquivalent(iframe.src, newUrl)) {
+                console.log(`[overlay] iframe SKIP  ${label}  reason=${reason}  (URL params unchanged)`);
+                return false;
+            }
+            console.log(`[overlay] iframe RELOAD ${label}  reason=${reason}`, {
+                from: iframe.src ? canonicalInsarmapsUrl(iframe.src) : '(empty)',
+                to: canonicalInsarmapsUrl(newUrl)
+            });
+            iframe.src = newUrl;
+            return true;
+        }
         
         // Background period iframe loading tracker
         let loadingPeriodIndices = new Set();
@@ -681,8 +751,229 @@
                 contour: params.contour,
                 colorscale: params.colorscale,
                 refPointLat: params.refPointLat,
-                refPointLon: params.refPointLon
+                refPointLon: params.refPointLon,
+                pointLat: params.pointLat,
+                pointLon: params.pointLon
             });
+        }
+
+        function getPointKey(params) {
+            return JSON.stringify({
+                pointLat: params.pointLat ?? null,
+                pointLon: params.pointLon ?? null,
+                refPointLat: params.refPointLat ?? null,
+                refPointLon: params.refPointLon ?? null
+            });
+        }
+
+        function paramsNeedBackgroundWarm(prev, next) {
+            return (
+                prev.lat !== next.lat ||
+                prev.lon !== next.lon ||
+                prev.zoom !== next.zoom ||
+                prev.minScale !== next.minScale ||
+                prev.maxScale !== next.maxScale ||
+                prev.startDate !== next.startDate ||
+                prev.endDate !== next.endDate ||
+                prev.pixelSize !== next.pixelSize ||
+                prev.background !== next.background ||
+                prev.opacity !== next.opacity ||
+                normalizeContourValue(prev.contour) !== normalizeContourValue(next.contour) ||
+                prev.colorscale !== next.colorscale ||
+                getPointKey(prev) !== getPointKey(next)
+            );
+        }
+
+        function allBackgroundsSynced(mapParams, senderIndex) {
+            const syncKey = getSyncKey(mapParams);
+            const pointKey = getPointKey(mapParams);
+            for (const [index] of iframeDatasets) {
+                if (index === senderIndex) continue;
+                if (iframeSynced.get(index) !== syncKey || iframePointSynced.get(index) !== pointKey) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        function hasPointSelection(params) {
+            return getPointKey(params) !== getPointKey({});
+        }
+
+        function backgroundsPreloadInProgress() {
+            return iframeWarmInFlight.size > 0;
+        }
+
+        function scheduleWarmAll(senderIndex, lat, lon, zoom, mapParams, warmReason) {
+            pendingWarm = { senderIndex, lat, lon, zoom, mapParams, warmReason };
+            if (warmTimeout) clearTimeout(warmTimeout);
+            warmTimeout = setTimeout(() => {
+                warmTimeout = null;
+                const p = pendingWarm;
+                pendingWarm = null;
+                if (p) {
+                    warmAllBackgroundIframes(
+                        p.senderIndex, p.lat, p.lon, p.zoom, p.mapParams, p.warmReason
+                    );
+                }
+            }, WARM_DEBOUNCE_MS);
+        }
+
+        function cancelPendingWarm() {
+            if (warmTimeout) {
+                clearTimeout(warmTimeout);
+                warmTimeout = null;
+                pendingWarm = null;
+            }
+        }
+
+        function flushWarmAll(senderIndex, lat, lon, zoom, mapParams, warmReason) {
+            cancelPendingWarm();
+            warmAllBackgroundIframes(senderIndex, lat, lon, zoom, mapParams, warmReason);
+        }
+
+        function maybeCatchupWarmAfterLoad() {
+            if (backgroundsPreloadInProgress()) return;
+            if (!currentMapParams.lat || !currentMapParams.lon || !currentMapParams.zoom) return;
+            if (allBackgroundsSynced(currentMapParams, activeDatasetIdx)) return;
+            scheduleWarmAll(
+                activeDatasetIdx,
+                currentMapParams.lat, currentMapParams.lon, currentMapParams.zoom,
+                currentMapParams, 'catchup-after-load'
+            );
+        }
+
+        // Apply current point to one iframe if tracking says it is stale (used on dataset switch).
+        function syncPointToIframeIfStale(index, reason) {
+            if (!hasPointSelection(currentMapParams)) return;
+            if (iframeWarmInFlight.has(index)) {
+                console.log(`[overlay] switch-point-sync SKIP ${iframeLabelForLog(index)}  reason=preload-in-flight`);
+                return;
+            }
+            const pointKey = getPointKey(currentMapParams);
+            if (iframePointSynced.get(index) === pointKey) return;
+            const dataset = iframeDatasets.get(index);
+            const iframe = document.getElementById(`iframe${index}`);
+            if (!iframe || !dataset || !currentMapParams.lat || !currentMapParams.lon || !currentMapParams.zoom) {
+                return;
+            }
+            const syncKey = getSyncKey(currentMapParams);
+            const newUrl = buildInsarmapsUrl(
+                baseUrl, dataset,
+                currentMapParams.lat, currentMapParams.lon, currentMapParams.zoom,
+                currentMapParams, `ds${index}`, false
+            );
+            if (setIframeSrc(iframe, newUrl, { label: iframeLabelForLog(index), reason })) {
+                iframeWarmInFlight.set(index, syncKey);
+                iframe.onload = () => {
+                    iframeWarmInFlight.delete(index);
+                    console.log(`[overlay] iframe LOADED ${iframeLabelForLog(index)}  reason=${reason}`);
+                    maybeCatchupWarmAfterLoad();
+                };
+                lastWarmSyncKey = syncKey;
+            }
+            iframeSynced.set(index, syncKey);
+            iframePointSynced.set(index, pointKey);
+        }
+
+        function mergeParamsFromInsarmapsMessage(urlPath, eventData, baseParams) {
+            const pathMatch = urlPath.match(/^\/start\/([^\/]+)\/([^\/]+)\/([^?]+)/);
+            if (!pathMatch) return null;
+            const [, lat, lon, zoom] = pathMatch;
+            const queryStart = urlPath.indexOf('?');
+            const params = queryStart >= 0 ? new URLSearchParams(urlPath.substring(queryStart)) : new URLSearchParams();
+            const getContourValue = () => {
+                if (params.has('contour')) return params.get('contour');
+                if (params.has('contours')) return params.get('contours');
+                if (eventData && eventData.contour !== undefined) return String(eventData.contour);
+                if (eventData && eventData.contours !== undefined) return String(eventData.contours);
+                return baseParams.contour;
+            };
+            const contourValue = normalizeContourValue(getContourValue());
+            return {
+                lat, lon, zoom,
+                minScale: params.get('minScale') ?? baseParams.minScale,
+                maxScale: params.get('maxScale') ?? baseParams.maxScale,
+                startDate: params.get('startDate') ?? baseParams.startDate,
+                endDate: params.get('endDate') ?? baseParams.endDate,
+                pixelSize: params.get('pixelSize') ?? baseParams.pixelSize,
+                background: params.get('background') ?? baseParams.background,
+                opacity: params.get('opacity') ?? baseParams.opacity,
+                contour: contourValue,
+                colorscale: params.get('colorscale') || baseParams.colorscale,
+                refPointLat: params.get('refPointLat') ?? baseParams.refPointLat ?? null,
+                refPointLon: params.get('refPointLon') ?? baseParams.refPointLon ?? null,
+                pointLat: params.get('pointLat') ?? baseParams.pointLat ?? null,
+                pointLon: params.get('pointLon') ?? baseParams.pointLon ?? null
+            };
+        }
+
+        // Eagerly preload all background dataset iframes in parallel (instant, no reload on dataset switch).
+        function warmAllBackgroundIframes(senderIndex, lat, lon, zoom, mapParams, warmReason) {
+            if (!lat || !lon || !zoom) return;
+            const syncKey = getSyncKey(mapParams);
+            const pointKey = getPointKey(mapParams);
+            const reason = warmReason || 'warm-background';
+            const isPointWarm = String(reason).includes('point');
+            if (!isPointWarm && backgroundsPreloadInProgress()) {
+                console.log(`[overlay] warmAll SKIP  reason=${reason}:preload-in-progress`);
+                return;
+            }
+            if (!isPointWarm && syncKey === lastWarmSyncKey && allBackgroundsSynced(mapParams, senderIndex)) {
+                console.log(`[overlay] warmAll SKIP  reason=${reason}:already-warm`);
+                return;
+            }
+            let reloaded = 0;
+            let skipped = 0;
+            console.log(`[overlay] warmAll START  reason=${reason}  sender=${senderIndex >= 0 ? iframeLabelForLog(senderIndex) : 'none'}`);
+            iframeDatasets.forEach((originalDataset, index) => {
+                if (index === senderIndex) return;
+                const label = iframeLabelForLog(index);
+                if (iframeSynced.get(index) === syncKey && iframePointSynced.get(index) === pointKey) {
+                    console.log(`[overlay] iframe SKIP  ${label}  reason=${reason}:already-synced`);
+                    skipped++;
+                    return;
+                }
+                if (iframeWarmInFlight.has(index)) {
+                    if (iframeWarmInFlight.get(index) === syncKey) {
+                        console.log(`[overlay] iframe SKIP  ${label}  reason=${reason}:in-flight-same`);
+                        skipped++;
+                        return;
+                    }
+                    if (!isPointWarm) {
+                        console.log(`[overlay] iframe SKIP  ${label}  reason=${reason}:in-flight-dont-abort`);
+                        skipped++;
+                        return;
+                    }
+                }
+                const iframe = document.getElementById(`iframe${index}`);
+                if (!iframe || !originalDataset) return;
+                const newUrl = buildInsarmapsUrl(
+                    baseUrl, originalDataset, lat, lon, zoom, mapParams, `ds${index}`, false
+                );
+                if (setIframeSrc(iframe, newUrl, { label, reason })) {
+                    iframeWarmInFlight.set(index, syncKey);
+                    iframe.onload = () => {
+                        iframeWarmInFlight.delete(index);
+                        console.log(`[overlay] iframe LOADED ${label}  reason=${reason}`);
+                        maybeCatchupWarmAfterLoad();
+                    };
+                    reloaded++;
+                    iframeSynced.set(index, syncKey);
+                    iframePointSynced.set(index, pointKey);
+                } else {
+                    skipped++;
+                    // Only mark synced when URL already matches (setIframeSrc skips on equivalence)
+                    iframeSynced.set(index, syncKey);
+                    iframePointSynced.set(index, pointKey);
+                }
+            });
+            if (senderIndex >= 0) {
+                iframePointSynced.set(senderIndex, pointKey);
+                iframeSynced.set(senderIndex, syncKey);
+            }
+            if (reloaded > 0) lastWarmSyncKey = syncKey;
+            console.log(`[overlay] warmAll DONE   reason=${reason}  reloaded=${reloaded}  skipped=${skipped}`);
         }
 
         // Append "Individual URLs:" footer — one link per insarmaps.log line; label from URL path/name (desc, asc, vert, horz)
@@ -823,7 +1114,9 @@
                     contour: initialParams.contour,
                     colorscale: initialParams.colorscale,
                     refPointLat: initialParams.refPointLat,
-                    refPointLon: initialParams.refPointLon
+                    refPointLon: initialParams.refPointLon,
+                    pointLat: initialParams.pointLat,
+                    pointLon: initialParams.pointLon
                 };
                 
                 // Create panels for each URL
@@ -894,17 +1187,21 @@
                         panel.style.pointerEvents = 'none';
                     }
                     
-                    // Build iframe URL - use overlay params if available
+                    // Build iframe URL - active iframe loads now; backgrounds use stable preload URLs (single load each)
                     let iframeSrc = url;
                     const dataset = iframeDatasets.get(index);
-                    if (currentMapParams.lat && currentMapParams.lon && currentMapParams.zoom && dataset) {
+                    const hasCoords = currentMapParams.lat && currentMapParams.lon && currentMapParams.zoom && dataset;
+                    if (hasCoords) {
+                        const isActive = index === initialActiveIndex;
                         iframeSrc = buildInsarmapsUrl(
-                            baseUrl, 
-                            dataset, 
-                            currentMapParams.lat, 
-                            currentMapParams.lon, 
-                            currentMapParams.zoom, 
-                            currentMapParams
+                            baseUrl,
+                            dataset,
+                            currentMapParams.lat,
+                            currentMapParams.lon,
+                            currentMapParams.zoom,
+                            currentMapParams,
+                            isActive ? 'active' : `ds${index}`,
+                            !isActive
                         );
                     } else {
                         iframeSrc = url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now();
@@ -914,15 +1211,29 @@
                     const iframe = document.createElement('iframe');
                     iframe.id = `iframe${index}`;
                     iframe.title = iframeLabels.get(index);
-                    iframe.src = iframeSrc;
+                    setIframeSrc(iframe, iframeSrc, {
+                        label: iframeLabels.get(index),
+                        reason: index === initialActiveIndex ? 'initial-active' : 'initial-preload'
+                    });
+                    if (hasCoords && index !== initialActiveIndex) {
+                        iframeWarmInFlight.set(index, getSyncKey(currentMapParams));
+                        iframe.onload = () => iframeWarmInFlight.delete(index);
+                    }
                     iframe.setAttribute('allowfullscreen', '');
                     
                     // Mark iframe as synced with initial params
                     iframeSynced.set(index, getSyncKey(currentMapParams));
+                    iframePointSynced.set(index, getPointKey(currentMapParams));
                     
                     panel.appendChild(iframe);
                     container.appendChild(panel);
                 });
+
+                // Background iframes already started loading above with stable URLs (no duplicate warm pass)
+                if (currentMapParams.lat && currentMapParams.lon && currentMapParams.zoom && urls.length > 1) {
+                    backgroundsWarmed = true;
+                    lastSyncedKey = getSyncKey(currentMapParams);
+                }
                 
                 // Show controls bar and hide loading
                 document.getElementById('controls-bar').style.display = 'flex';
@@ -954,8 +1265,8 @@
                 frameSelect.size = Math.min(numOptions, 6);
                 frameSelect.value = initialActiveIndex.toString();
                 
-                // Active dataset index
-                let activeDatasetIdx = initialActiveIndex;
+                // Active dataset index (global activeDatasetIdx, set at init)
+                activeDatasetIdx = initialActiveIndex;
                 
                 // Frame selector change handler
                 frameSelect.addEventListener('change', (e) => {
@@ -965,7 +1276,16 @@
                 
                 // Function to select a dataset
                 function selectDataset(index) {
+                    // Cancel pending debounced sync/scheduled warm only — never abort in-flight iframe loads
+                    if (syncTimeout) {
+                        clearTimeout(syncTimeout);
+                        syncTimeout = null;
+                    }
+                    cancelPendingWarm();
                     const previousIdx = activeDatasetIdx;
+                    datasetSwitchSuppressUntil = Date.now() + SYNC_COOLDOWN_MS;
+                    console.log(`[overlay] dataset SWITCH  ${iframeLabelForLog(previousIdx)} → ${iframeLabelForLog(index)}  (show/hide; point sync if stale)`);
+
                     activeDatasetIdx = index;
                     const label = iframeLabels.get(index);
                     currentViewCode = viewCodes[label] || label.toLowerCase();
@@ -988,7 +1308,7 @@
                         panel.classList.remove('active');
                     });
                     
-                    // Show the selected panel (no reload – contour applied when we switch, see below)
+                    // Show the selected panel (instant; no reload on switch)
                     const selectedPanel = document.getElementById(`panel${index}`);
                     if (selectedPanel) {
                         selectedPanel.style.visibility = 'visible';
@@ -997,9 +1317,13 @@
                         selectedPanel.classList.add('active');
                     }
                     
+                    const visibleIframe = document.getElementById(`iframe${index}`);
+                    
+                    // If a point is selected but this iframe never got it, sync point only (not a full map resync)
+                    syncPointToIframeIfStale(index, 'switch-point-sync');
+                    
                     // Send contour state to the newly visible iframe so it matches currentMapParams
                     const contourOn = (currentMapParams.contour === 'true' || currentMapParams.contour === 'on');
-                    const visibleIframe = document.getElementById(`iframe${index}`);
                     if (visibleIframe && visibleIframe.contentWindow) {
                         try {
                             visibleIframe.contentWindow.postMessage({ type: 'insarmaps-set-contour', value: contourOn }, '*');
@@ -1019,9 +1343,7 @@
                 updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, preserveTC, preserveTC ? urlPeriods : undefined);
                 
                 // ===== IFRAME SYNCHRONIZATION =====
-                let syncTimeout = null;
                 const SYNC_DEBOUNCE_MS = 1500;
-                let lastSyncedKey = '';
                 
                 // Listen for URL updates and time-series date clicks from any iframe
                 window.addEventListener('message', (event) => {
@@ -1079,6 +1401,67 @@
                     if (!isFromActiveIframe && now - lastSyncTime < SYNC_COOLDOWN_MS) {
                         console.log('Ignoring message from non-active iframe during cooldown');
                         return;
+                    }
+                    
+                    // Eagerly warm all background iframes in parallel (initial load, point click, pan/zoom, etc.)
+                    if (isFromActiveIframe) {
+                        let quickSenderIndex = -1;
+                        for (let i = 0; i < urlsList.length; i++) {
+                            const iframe = document.getElementById(`iframe${i}`);
+                            if (iframe && event.source === iframe.contentWindow) {
+                                quickSenderIndex = i;
+                                break;
+                            }
+                        }
+                        if (quickSenderIndex >= 0) {
+                            const merged = mergeParamsFromInsarmapsMessage(
+                                event.data.url, event.data, currentMapParams
+                            );
+                            if (merged) {
+                                const prevParams = { ...currentMapParams };
+                                const prevKey = getSyncKey(prevParams);
+                                const newKey = getSyncKey(merged);
+                                const keyChanged = newKey !== prevKey;
+                                const needWarm = paramsNeedBackgroundWarm(prevParams, merged);
+                                const pointChanged = getPointKey(prevParams) !== getPointKey(merged);
+                                const inSwitchSuppress = Date.now() < datasetSwitchSuppressUntil;
+                                if (!backgroundsWarmed || keyChanged) {
+                                    currentMapParams = { ...merged };
+                                    if (typeof updateAddPeriodButton === 'function') updateAddPeriodButton();
+                                    const inTC = (typeof timeControlsActive !== 'undefined' && timeControlsActive);
+                                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, inTC,
+                                        inTC && typeof periods !== 'undefined' ? periods : undefined);
+                                    let shouldWarm = needWarm && (!inSwitchSuppress || pointChanged)
+                                        && (!allBackgroundsSynced(currentMapParams, quickSenderIndex) || pointChanged);
+                                    if (shouldWarm && !pointChanged && backgroundsPreloadInProgress()) {
+                                        console.log('[overlay] warmAll SKIP  reason=active-postMessage:preload-in-progress');
+                                        shouldWarm = false;
+                                    }
+                                    if (shouldWarm) {
+                                        const warmReason = pointChanged ? 'active-postMessage:point' : 'active-postMessage';
+                                        if (pointChanged) {
+                                            flushWarmAll(
+                                                quickSenderIndex, merged.lat, merged.lon, merged.zoom,
+                                                currentMapParams, warmReason
+                                            );
+                                        } else {
+                                            scheduleWarmAll(
+                                                quickSenderIndex, merged.lat, merged.lon, merged.zoom,
+                                                currentMapParams, warmReason
+                                            );
+                                        }
+                                    } else if (needWarm) {
+                                        console.log('[overlay] warmAll SKIP  reason=active-postMessage', {
+                                            needWarm, pointChanged, inSwitchSuppress,
+                                            preloadInProgress: backgroundsPreloadInProgress(),
+                                            allSynced: allBackgroundsSynced(currentMapParams, quickSenderIndex)
+                                        });
+                                    }
+                                    backgroundsWarmed = true;
+                                    lastSyncedKey = newKey;
+                                }
+                            }
+                        }
                     }
                     
                     if (syncTimeout) clearTimeout(syncTimeout);
@@ -1154,6 +1537,8 @@
                         const refPointLon = params.get('refPointLon') ?? currentMapParams.refPointLon ?? null;
                         const pointLat = params.get('pointLat') ?? currentMapParams.pointLat ?? null;
                         const pointLon = params.get('pointLon') ?? currentMapParams.pointLon ?? null;
+                        const prevPointKey = getPointKey(currentMapParams);
+                        const newPointKey = getPointKey({ pointLat, pointLon, refPointLat, refPointLon });
                         // Resolve params from URL with fallback to currentMapParams so contour-only messages
                         // (insarmaps often omits minScale, startDate, etc.) are detected and don't trigger reloads
                         const minScale = params.get('minScale') ?? currentMapParams.minScale;
@@ -1163,7 +1548,7 @@
                         const pixelSize = params.get('pixelSize') ?? currentMapParams.pixelSize;
                         const background = params.get('background') ?? currentMapParams.background;
                         const opacity = params.get('opacity') ?? currentMapParams.opacity;
-                        const syncKey = JSON.stringify({
+                        const incomingParams = {
                             lat, lon, zoom,
                             minScale, maxScale, startDate, endDate,
                             pixelSize, background, opacity,
@@ -1171,7 +1556,8 @@
                             colorscale: colorscaleValue,
                             refPointLat, refPointLon,
                             pointLat, pointLon
-                        });
+                        };
+                        const syncKey = getSyncKey(incomingParams);
                         
                         if (syncKey === lastSyncedKey) return;
                         lastSyncedKey = syncKey;
@@ -1191,6 +1577,7 @@
                             background !== currentMapParams.background ||
                             opacity !== currentMapParams.opacity
                         );
+                        const pointOnlyChanged = (newPointKey !== prevPointKey) && !displayParamsChanged;
                         
                         // Update current map params (use resolved values so state is consistent)
                         currentMapParams = {
@@ -1273,19 +1660,7 @@
                         // target iframes are not ready. Also fixes contours-below-data ordering.
                             // When message is from a period iframe, skip reloading dataset iframes (they're hidden in TC mode;
                             // avoids cascade of reloads -> postMessage -> reload that can trigger full-page reload in Safari).
-                            if (senderPeriodIndex < 0) {
-                                iframeDatasets.forEach((originalDataset, index) => {
-                                    if (index === senderIndex || index === activeDatasetIdx) return;
-                                    const newUrl = buildInsarmapsUrl(
-                                        baseUrl, originalDataset, lat, lon, zoom, currentMapParams
-                                    );
-                                    const iframe = document.getElementById(`iframe${index}`);
-                                    if (iframe) {
-                                        iframe.src = newUrl;
-                                        iframeSynced.set(index, newSyncKey);
-                                    }
-                                });
-                            }
+                            // Background warm handled instantly by active-postMessage handler above (no 1500ms duplicate)
                             // Reload period iframes with new params (lat, lon, zoom, minScale, maxScale, pixelSize, background, opacity, colorscale).
                             // When message is from a period iframe, only reload after cooldown unless display params changed.
                             const exitSuppressActive = typeof periodSelectionModeExitSuppressUntil !== 'undefined' && Date.now() < periodSelectionModeExitSuppressUntil;
