@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 
+import argparse
+import json
 import os
 import glob
 import re
 import h5py
 import rasterio
 import numpy as np
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from matplotlib import pyplot as plt
@@ -179,6 +181,88 @@ def prune_metadata_for_hdfeos(metadata):
     keep = set(INSARMAPS_ESSENTIAL_ATTRS) | set(INSARMAPS_GEO_ATTRS) | set(HDFEOS_STRUCTURAL_ATTRS)
     return {k: metadata[k] for k in keep if k in metadata}
 
+
+def _debug_log(location, message, data=None, hypothesis_id=""):
+    """#region agent log"""
+    payload = {
+        "sessionId": "cd3173",
+        "location": location,
+        "message": message,
+        "data": data or {},
+        "timestamp": int(datetime.now().timestamp() * 1000),
+        "runId": "chiles-patch",
+        "hypothesisId": hypothesis_id,
+    }
+    try:
+        with open("/home/exouser/code/minsar/.cursor/debug-cd3173.log", "a") as f:
+            f.write(json.dumps(payload) + "\n")
+    except OSError:
+        pass
+    """#endregion"""
+
+
+def _normalize_attr_value(v):
+    if isinstance(v, (bytes, bytearray)):
+        return v.decode(errors="ignore")
+    if isinstance(v, np.bytes_):
+        return v.astype(str)
+    if isinstance(v, np.generic):
+        return v.item()
+    return v
+
+
+def _infer_project_name(he5_path, metadata):
+    if metadata.get("PROJECT_NAME") and metadata["PROJECT_NAME"] not in ("timeseries", "dolphin", "mintpy"):
+        return metadata["PROJECT_NAME"]
+    resolved = Path(he5_path).resolve()
+    for parent in (resolved.parent, resolved.parent.parent, resolved.parent.parent.parent):
+        name = parent.name
+        if name not in ("timeseries", "dolphin", "mintpy", "miaplpy", "JSON", "outputs", ""):
+            return name
+    return metadata.get("PROJECT_NAME", "unknown")
+
+
+def patch_hdfeos_insarmaps_attrs(he5_path, project_name=None):
+    """Backfill insarmaps-essential metadata on an existing Dolphin .he5 file."""
+    he5_path = str(Path(he5_path).resolve())
+    with h5py.File(he5_path, "r") as f:
+        metadata = {_k: _normalize_attr_value(_v) for _k, _v in f.attrs.items()}
+        lats = f["HDFEOS/GRIDS/timeseries/geometry/latitude"][:]
+        lons = f["HDFEOS/GRIDS/timeseries/geometry/longitude"][:]
+        raw_dates = f["HDFEOS/GRIDS/timeseries/observation/date"][:]
+    date_list = [_normalize_attr_value(d) for d in raw_dates]
+    ref_row, ref_col = int(metadata["REF_Y"]), int(metadata["REF_X"])
+    metadata["PROJECT_NAME"] = project_name or _infer_project_name(he5_path, metadata)
+    before_keys = {k for k in INSARMAPS_ESSENTIAL_ATTRS if k in metadata}
+    populate_insarmaps_metadata(metadata, date_list, lats, lons, ref_row, ref_col)
+    patched = prune_metadata_for_hdfeos(metadata)
+    patched["FILE_TYPE"] = "HDFEOS"
+    patched["FILE_PATH"] = he5_path
+    after_keys = {k for k in INSARMAPS_ESSENTIAL_ATTRS if k in patched}
+    _debug_log(
+        "create_dolphin_files.py:patch_hdfeos_insarmaps_attrs",
+        "patching he5 metadata",
+        {
+            "he5_path": he5_path,
+            "project_name": patched.get("PROJECT_NAME"),
+            "essential_before": sorted(before_keys),
+            "essential_after": sorted(after_keys),
+            "added": sorted(after_keys - before_keys),
+        },
+        hypothesis_id="H1-H3",
+    )
+    with h5py.File(he5_path, "r+") as f:
+        for k, v in patched.items():
+            if isinstance(v, (float, int, np.floating, np.integer)):
+                f.attrs[k] = v
+            else:
+                f.attrs[k] = str(v)
+    print(f"Patched insarmaps metadata on: {he5_path}")
+    print(f"  PROJECT_NAME: {patched.get('PROJECT_NAME')}")
+    print(f"  Added attrs: {', '.join(sorted(after_keys - before_keys)) or '(none)'}")
+    return he5_path
+
+
 SCRATCHDIR = Path(os.getenv("SCRATCHDIR")) if os.getenv("SCRATCHDIR") else None
 
 def create_hdfeos_output(ts_data: np.ndarray, mask: np.ndarray, latitude: np.ndarray, longitude: np.ndarray,
@@ -257,7 +341,11 @@ def create_hdfeos_output(ts_data: np.ndarray, mask: np.ndarray, latitude: np.nda
     metadata['LENGTH'] = str(length)
     metadata['PROCESSOR'] = 'mintpy' if 'dolphin' not in output_path else 'dolphin'
     if not metadata.get('PROJECT_NAME'):
-        metadata['PROJECT_NAME'] = os.path.basename(os.path.dirname(os.path.dirname(output_path)))
+        parent = os.path.dirname(output_path)
+        if os.path.basename(parent) in ('timeseries', 'mintpy', 'miaplpy', 'dolphin'):
+            metadata['PROJECT_NAME'] = os.path.basename(os.path.dirname(parent))
+        else:
+            metadata['PROJECT_NAME'] = os.path.basename(parent)
     metadata['REF_DATE'] = str(date_list[0])
 
     if hasattr(metadata, 'OG_FILE_PATH'):
@@ -637,5 +725,16 @@ def main():
         plot_to_test(deformation_data, temp_coh)
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Create or patch Dolphin HDFEOS5 files for insarmaps.")
+    parser.add_argument("--patch-he5", metavar="FILE.he5", help="Backfill insarmaps metadata on an existing .he5 file")
+    parser.add_argument("--project-name", help="PROJECT_NAME for --patch-he5 (default: infer from path)")
+    return parser.parse_args()
+
+
 if __name__ == '__main__':
-    main()
+    args = parse_args()
+    if args.patch_he5:
+        patch_hdfeos_insarmaps_attrs(args.patch_he5, project_name=args.project_name)
+    else:
+        main()
