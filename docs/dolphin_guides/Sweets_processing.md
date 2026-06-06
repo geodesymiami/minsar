@@ -22,5 +22,6 @@ create_sweet.py $TE/PopocatepetlSenD143.template
 
 ## Run job file
 ```bash
+sbatch config_sweets.job
 sbatch run_sweets.job 
 ```
