@@ -668,8 +668,9 @@
         function updateLoadingIndicator() {
             const el = document.getElementById('loading-indicator');
             if (!el) return;
-            if (loadingPeriodIndices.size > 0) {
-                el.textContent = `Loading... (${loadingPeriodIndices.size})`;
+            const count = loadingPeriodIndices.size + iframeWarmInFlight.size;
+            if (count > 0) {
+                el.textContent = `Loading... (${count})`;
                 el.classList.add('visible');
             } else {
                 el.classList.remove('visible');
@@ -838,6 +839,40 @@
             );
         }
 
+        // Load a dataset iframe on demand (deferred backgrounds or early dataset switch).
+        function ensureDatasetIframeLoaded(index, reason) {
+            const iframe = document.getElementById(`iframe${index}`);
+            const dataset = iframeDatasets.get(index);
+            if (!iframe || !dataset) return;
+            if (iframe.src) return;
+            const hasCoords = currentMapParams.lat && currentMapParams.lon && currentMapParams.zoom;
+            let newUrl;
+            if (hasCoords) {
+                newUrl = buildInsarmapsUrl(
+                    baseUrl, dataset,
+                    currentMapParams.lat, currentMapParams.lon, currentMapParams.zoom,
+                    currentMapParams, `ds${index}`, false
+                );
+            } else {
+                const url = urlsList[index];
+                if (!url) return;
+                newUrl = url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now();
+            }
+            const syncKey = getSyncKey(currentMapParams);
+            if (setIframeSrc(iframe, newUrl, { label: iframeLabelForLog(index), reason })) {
+                iframeWarmInFlight.set(index, syncKey);
+                updateLoadingIndicator();
+                iframe.onload = () => {
+                    iframeWarmInFlight.delete(index);
+                    updateLoadingIndicator();
+                    console.log(`[overlay] iframe LOADED ${iframeLabelForLog(index)}  reason=${reason}`);
+                    maybeCatchupWarmAfterLoad();
+                };
+            }
+            iframeSynced.set(index, syncKey);
+            iframePointSynced.set(index, getPointKey(currentMapParams));
+        }
+
         // Apply current point to one iframe if tracking says it is stale (used on dataset switch).
         function syncPointToIframeIfStale(index, reason) {
             if (!hasPointSelection(currentMapParams)) return;
@@ -860,8 +895,10 @@
             );
             if (setIframeSrc(iframe, newUrl, { label: iframeLabelForLog(index), reason })) {
                 iframeWarmInFlight.set(index, syncKey);
+                updateLoadingIndicator();
                 iframe.onload = () => {
                     iframeWarmInFlight.delete(index);
+                    updateLoadingIndicator();
                     console.log(`[overlay] iframe LOADED ${iframeLabelForLog(index)}  reason=${reason}`);
                     maybeCatchupWarmAfterLoad();
                 };
@@ -948,8 +985,10 @@
                 );
                 if (setIframeSrc(iframe, newUrl, { label, reason })) {
                     iframeWarmInFlight.set(index, syncKey);
+                    updateLoadingIndicator();
                     iframe.onload = () => {
                         iframeWarmInFlight.delete(index);
+                        updateLoadingIndicator();
                         console.log(`[overlay] iframe LOADED ${label}  reason=${reason}`);
                         maybeCatchupWarmAfterLoad();
                     };
@@ -1200,54 +1239,56 @@
                         panel.style.pointerEvents = 'none';
                     }
                     
-                    // Build iframe URL - active iframe loads now; backgrounds use stable preload URLs (single load each)
-                    let iframeSrc = url;
+                    // Build iframe URL - only the active dataset loads immediately; backgrounds defer
                     const dataset = iframeDatasets.get(index);
                     const hasCoords = currentMapParams.lat && currentMapParams.lon && currentMapParams.zoom && dataset;
-                    if (hasCoords) {
-                        const isActive = index === initialActiveIndex;
-                        iframeSrc = buildInsarmapsUrl(
-                            baseUrl,
-                            dataset,
-                            currentMapParams.lat,
-                            currentMapParams.lon,
-                            currentMapParams.zoom,
-                            currentMapParams,
-                            isActive ? 'active' : `ds${index}`,
-                            !isActive
-                        );
-                    } else {
-                        iframeSrc = url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now();
+                    const isActive = index === initialActiveIndex;
+                    let iframeSrc = null;
+                    if (isActive) {
+                        if (hasCoords) {
+                            iframeSrc = buildInsarmapsUrl(
+                                baseUrl,
+                                dataset,
+                                currentMapParams.lat,
+                                currentMapParams.lon,
+                                currentMapParams.zoom,
+                                currentMapParams,
+                                'active',
+                                false
+                            );
+                        } else {
+                            iframeSrc = url + (url.includes('?') ? '&' : '?') + '_t=' + Date.now();
+                        }
                     }
                     
                     // Create iframe
                     const iframe = document.createElement('iframe');
                     iframe.id = `iframe${index}`;
                     iframe.title = iframeLabels.get(index);
-                    setIframeSrc(iframe, iframeSrc, {
-                        label: iframeLabels.get(index),
-                        reason: index === initialActiveIndex ? 'initial-active' : 'initial-preload'
-                    });
-                    if (hasCoords && index !== initialActiveIndex) {
-                        iframeWarmInFlight.set(index, getSyncKey(currentMapParams));
-                        iframe.onload = () => iframeWarmInFlight.delete(index);
+                    if (iframeSrc) {
+                        setIframeSrc(iframe, iframeSrc, {
+                            label: iframeLabels.get(index),
+                            reason: 'initial-active'
+                        });
+                        iframeSynced.set(index, getSyncKey(currentMapParams));
+                        iframePointSynced.set(index, getPointKey(currentMapParams));
+                        iframe.onload = () => {
+                            console.log(`[overlay] iframe LOADED ${iframeLabelForLog(index)}  reason=initial-active`);
+                            if (urls.length > 1 && hasCoords) {
+                                scheduleWarmAll(
+                                    index,
+                                    currentMapParams.lat, currentMapParams.lon, currentMapParams.zoom,
+                                    currentMapParams, 'after-initial-active'
+                                );
+                            }
+                        };
                     }
                     iframe.setAttribute('allowfullscreen', '');
-                    
-                    // Mark iframe as synced with initial params
-                    iframeSynced.set(index, getSyncKey(currentMapParams));
-                    iframePointSynced.set(index, getPointKey(currentMapParams));
                     
                     panel.appendChild(iframe);
                     container.appendChild(panel);
                 });
 
-                // Background iframes already started loading above with stable URLs (no duplicate warm pass)
-                if (currentMapParams.lat && currentMapParams.lon && currentMapParams.zoom && urls.length > 1) {
-                    backgroundsWarmed = true;
-                    lastSyncedKey = getSyncKey(currentMapParams);
-                }
-                
                 // Show controls bar
                 document.getElementById('controls-bar').style.display = 'flex';
                 
@@ -1324,6 +1365,9 @@
                     }
                     
                     const visibleIframe = document.getElementById(`iframe${index}`);
+                    
+                    // Load iframe if background preload has not reached it yet
+                    ensureDatasetIframeLoaded(index, 'switch-load');
                     
                     // If a point is selected but this iframe never got it, sync point only (not a full map resync)
                     syncPointToIframeIfStale(index, 'switch-point-sync');

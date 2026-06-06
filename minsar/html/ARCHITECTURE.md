@@ -16,10 +16,11 @@
 2. **Parse and sort** – URLs sorted by dataset type (desc → asc → horz → vert).
 3. **Initial params** – `currentMapParams` from overlay URL (hash or query) or from the first insarmaps URL.
 4. **One panel per URL** – each gets a `.panel` and an **iframe**.
-5. **Initial iframe `src`** – each iframe gets `src` via `buildInsarmapsUrl(baseUrl, dataset, lat, lon, zoom, currentMapParams)`. So **all dataset iframes load once** with the same map params. Only one panel is visible; others use `visibility: hidden` but stay in the DOM, so their iframes still load.
-6. **Loading overlay** – hidden on first `postMessage` type `insarmaps-url-update`, or after 15s timeout.
+5. **Initial iframe `src`** – only the **active** (default) iframe gets `src` immediately via `buildInsarmapsUrl(...)`. Background dataset iframes are created without `src` so they do not compete for bandwidth on first paint.
+6. **Background preload** – after the active iframe fires `onload`, `scheduleWarmAll(..., 'after-initial-active')` loads all other dataset iframes in parallel. The small "Loading... (N)" indicator tracks background iframes still in flight.
+7. **Loading overlay** – hidden on first `postMessage` type `insarmaps-url-update`, or after 15s timeout.
 
-So the only trigger for **initial** load is **page load**: every dataset iframe gets one URL and loads once.
+So the only trigger for **initial** visible load is **page load**: one active dataset iframe. Background iframes load shortly after, without blocking the default view.
 
 ### 1.2 postMessage from the active iframe (sync)
 
@@ -53,7 +54,7 @@ So: **Trigger** = any insarmaps URL change in the active iframe. **Effect** = al
 
 | Trigger | What loads | Which iframes |
 |--------|------------|----------------|
-| Page load | Initial URL per dataset | All dataset iframes |
+| Page load | Initial URL for active dataset only | Active iframe; backgrounds after `onload` |
 | postMessage (any param in active iframe) | New URL on others | All dataset iframes **except** sender |
 | Dataset dropdown (Time Controls off) | No reload; show/hide panel only | None |
 | Dataset dropdown (Time Controls on) | New period panels | New period iframes for selected dataset |
@@ -217,17 +218,18 @@ Insarmaps (mainPage.js) listens for `insarmaps-set-contour`: it adds/removes the
 4. Sort URLs by dataset type (desc, asc, horz, vert)
 5. Read overlay.html URL params (hash or query string)
 6. Initialize currentMapParams from URL or first insarmaps URL
-7. Create iframe for each URL entry
+7. Create iframe for each URL entry (only active iframe gets `src` on init)
 8. Set initial active iframe based on URL params
 9. Show dropdown selector (only if multiple datasets)
-10. Hide loading overlay on first postMessage (insarmaps-url-update) or after 15s timeout
+10. After active iframe `onload`, preload background dataset iframes via `scheduleWarmAll`
+11. Hide loading overlay on first postMessage (insarmaps-url-update) or after 15s timeout
 ```
 
 ### 2. What Triggers Data Loading (summary)
 
 | Trigger | What Happens | iframes Affected |
 |---------|--------------|------------------|
-| **Page Load** | All iframes get `src` set with initial params | ALL |
+| **Page Load** | Active iframe gets `src`; backgrounds preload after active `onload` | Active first, then ALL others |
 | **Dropdown Change** | Show/hide panel only. If Time Controls on: new period iframes for new dataset | None / new period only |
 | **postMessage (any param in active iframe)** | Other iframes get new `src` after debounce | ALL EXCEPT sender |
 
