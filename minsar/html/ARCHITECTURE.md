@@ -211,7 +211,8 @@ Insarmaps (mainPage.js) listens for `insarmaps-set-contour`: it adds/removes the
 ### 1. Page Load
 ```
 1. Show "Loading InSAR Data..." overlay
-2. Fetch insarmaps.log
+2. Fetch insarmaps.log (reject HTTP errors, HTML error pages, empty/invalid lines; 10s timeout)
+   - On failure: show error on overlay, then navigate back via `document.referrer` or `history.back()` after 3s
 3. Parse URLs from log file
 4. Sort URLs by dataset type (desc, asc, horz, vert)
 5. Read overlay.html URL params (hash or query string)

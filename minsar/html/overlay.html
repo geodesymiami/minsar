@@ -337,6 +337,18 @@
         .loading-overlay.hidden {
             display: none;
         }
+        .loading-overlay.error .loading-spinner {
+            display: none;
+        }
+        .loading-overlay.error .loading-overlay-text {
+            color: #c62828;
+            max-width: 80%;
+            text-align: center;
+            line-height: 1.4;
+        }
+        .loading-overlay.error .loading-overlay-subtext {
+            color: #666;
+        }
         .loading-spinner {
             width: 50px;
             height: 50px;
@@ -734,6 +746,72 @@
                 }
             }
         }
+
+        const INSARMAPS_LOG_ERROR_REDIRECT_MS = 3000;
+        const INSARMAPS_LOG_FETCH_TIMEOUT_MS = 10000;
+        const INSARMAPS_LOG_USER_ERROR = 'Volcano not found. Please contact the webmaster of this website.';
+        let insarmapsLogErrorShown = false;
+        let insarmapsLogResolved = false;
+
+        function isValidInsarmapsLogUrl(url) {
+            try {
+                const urlObj = new URL(url);
+                return urlObj.pathname.includes('/start/') || urlObj.searchParams.has('startDataset');
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function parseInsarmapsLogUrls(data) {
+            return data
+                .split('\n')
+                .map(line => line.trim())
+                .filter(line => line && (line.startsWith('http://') || line.startsWith('https://')))
+                .filter(isValidInsarmapsLogUrl);
+        }
+
+        function navigateToPreviousPage() {
+            const overlay = document.getElementById('loading-overlay');
+            const ref = document.referrer || '';
+            const cameFromOverlay = ref.includes('overlay.html') || ref.includes('index.html');
+            if (ref && !cameFromOverlay) {
+                window.location.replace(ref);
+                return;
+            }
+            if (window.history.length > 1) {
+                window.history.back();
+                return;
+            }
+            if (overlay) {
+                overlay.classList.add('hidden');
+            }
+        }
+
+        function showInsarmapsLogError(detail) {
+            if (insarmapsLogErrorShown) return;
+            insarmapsLogErrorShown = true;
+            insarmapsLogResolved = true;
+            dataLoaded = true;
+            const overlay = document.getElementById('loading-overlay');
+            if (overlay) {
+                overlay.classList.add('error');
+                const textEl = overlay.querySelector('.loading-overlay-text');
+                const subtextEl = overlay.querySelector('.loading-overlay-subtext');
+                if (textEl) {
+                    textEl.textContent = INSARMAPS_LOG_USER_ERROR;
+                }
+                if (subtextEl) {
+                    subtextEl.textContent = 'Returning to previous page...';
+                }
+            }
+            const loading = document.getElementById('loading');
+            if (loading) {
+                loading.textContent = INSARMAPS_LOG_USER_ERROR;
+                loading.style.color = '#c62828';
+            }
+            console.error('insarmaps.log error:', detail);
+            setTimeout(navigateToPreviousPage, INSARMAPS_LOG_ERROR_REDIRECT_MS);
+        }
         
         // Generate a sync key from current params
         function getSyncKey(params) {
@@ -1031,16 +1109,34 @@
         }
 
         // Parse insarmaps.log and create iframes dynamically
+        const insarmapsLogFetchTimer = setTimeout(() => {
+            if (!insarmapsLogResolved) {
+                showInsarmapsLogError('Timed out loading insarmaps.log');
+            }
+        }, INSARMAPS_LOG_FETCH_TIMEOUT_MS);
+
+        function finishInsarmapsLogFetch() {
+            insarmapsLogResolved = true;
+            clearTimeout(insarmapsLogFetchTimer);
+        }
+
         fetch('insarmaps.log')
-            .then(response => response.text())
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`insarmaps.log not found (HTTP ${response.status})`);
+                }
+                const contentType = (response.headers.get('content-type') || '').toLowerCase();
+                if (contentType.includes('text/html')) {
+                    throw new Error('insarmaps.log not found (server returned an HTML page)');
+                }
+                return response.text();
+            })
             .then(data => {
-                const lines = data.split('\n');
-                const urls = lines
-                    .map(line => line.trim())
-                    .filter(line => line && (line.startsWith('http://') || line.startsWith('https://')));
-                
+                finishInsarmapsLogFetch();
+                const urls = parseInsarmapsLogUrls(data);
+
                 if (urls.length === 0) {
-                    document.getElementById('loading').textContent = 'No URLs found in insarmaps.log';
+                    showInsarmapsLogError('No valid URLs found in insarmaps.log');
                     return;
                 }
 
@@ -2447,8 +2543,8 @@
                     });
             })
             .catch(error => {
-                console.error('Error loading insarmaps.log:', error);
-                document.getElementById('loading').textContent = 'Error loading insarmaps.log: ' + error.message;
+                finishInsarmapsLogFetch();
+                showInsarmapsLogError('Error loading insarmaps.log: ' + error.message);
             });
     </script>
 </body>
