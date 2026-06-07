@@ -751,6 +751,8 @@
         let userNarrowedDateRange = null;  // { startDate, endDate } or null
         // How the user last set the narrowed period: 'slider' | 'chart-dot' | 'iframe-sync' | null
         let periodSelectionSource = null;
+        let lastSliderCaptureAt = 0;
+        const SLIDER_REASSERT_GUARD_MS = 2500;
         // Default dates from insarmaps.log (not a user narrow).
         let logTemplateDateRange = null;  // { startDate, endDate } or null
         // Per-switch outcome tracking (ref + dates on target iframe).
@@ -1148,6 +1150,7 @@
                 return false;
             }
             if (source) periodSelectionSource = source;
+            if (source === 'slider') lastSliderCaptureAt = Date.now();
             userNarrowedDateRange = { startDate: startDate, endDate: endDate };
             // #region agent log
             fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:captureUserNarrowedDateRange',message:'user narrowed period captured',data:{startDate,endDate,senderIndex:idx,activeDatasetIdx,periodSource:periodSelectionSource,source:source||null,logTemplate:logTemplateDateRange},timestamp:Date.now(),hypothesisId:'V,W',runId:'post-fix24'})}).catch(()=>{});
@@ -1257,20 +1260,35 @@
                 awaitRef: awaitRef
             });
             // #region agent log
-            fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:reassertNarrowedDatesToIframe',message:awaitRef?'reassert dates pending ref':'reassert dates after iframe widen',data:{index,label:iframeLabelForLog(index),reason,startDate:dates.startDate,endDate:dates.endDate,awaitRef},timestamp:Date.now(),hypothesisId:'AF',runId:'post-fix28'})}).catch(()=>{});
+            fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:reassertNarrowedDatesToIframe',message:awaitRef?'reassert dates pending ref':'reassert dates after iframe widen',data:{index,label:iframeLabelForLog(index),reason,startDate:dates.startDate,endDate:dates.endDate,awaitRef},timestamp:Date.now(),hypothesisId:'AF,AO',runId:'post-fix32'})}).catch(()=>{});
             // #endregion
             if (awaitRef) return;
             tryApplyNarrowedDatesToIframe(index, REASSERT_DATE_SYNC_RETRIES);
         }
 
+        function shouldReassertAfterDateReject(path, resolved) {
+            if (path === 'url-update-debounced') return false;
+            if (periodSelectionSource === 'slider' && lastSliderCaptureAt &&
+                Date.now() - lastSliderCaptureAt < SLIDER_REASSERT_GUARD_MS) {
+                return false;
+            }
+            // Widen rejects are expected while refSwitch iframes load without dates in URL.
+            // ref-applied date sync handles the real apply; reassert here fights slider drags.
+            if (resolved.action === 'rejected-widen-kept-user') return false;
+            if (resolved.action !== 'rejected-dataset-full-kept-user') return false;
+            if (!hasCustomRefPoint(currentMapParams)) return false;
+            if (!refAppliedForDateSyncByIndex.has(activeDatasetIdx)) return false;
+            if (pendingDateSyncByIndex.has(activeDatasetIdx)) return false;
+            return true;
+        }
+
         function logDateResolve(senderIndex, rawStartDate, rawEndDate, resolved, path) {
             if (resolved.action === 'unchanged' || resolved.action === 'background-no-date-change') return;
+            const willReassert = senderIndex === activeDatasetIdx && shouldReassertAfterDateReject(path, resolved);
             // #region agent log
-            fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:resolveDatesFromIframeUpdate',message:'date resolve',data:{path,senderIndex,activeDatasetIdx,rawStartDate,rawEndDate,action:resolved.action,resolvedStart:resolved.startDate,resolvedEnd:resolved.endDate,userNarrowed:userNarrowedDateRange,currentStart:currentMapParams.startDate,currentEnd:currentMapParams.endDate},timestamp:Date.now(),hypothesisId:'V,W,Y',runId:'post-fix22'})}).catch(()=>{});
+            fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:resolveDatesFromIframeUpdate',message:'date resolve',data:{path,senderIndex,activeDatasetIdx,rawStartDate,rawEndDate,action:resolved.action,resolvedStart:resolved.startDate,resolvedEnd:resolved.endDate,userNarrowed:userNarrowedDateRange,currentStart:currentMapParams.startDate,currentEnd:currentMapParams.endDate,willReassert,periodSelectionSource,msSinceSliderCapture:lastSliderCaptureAt?Date.now()-lastSliderCaptureAt:null},timestamp:Date.now(),hypothesisId:'V,W,Y,AO',runId:'post-fix32'})}).catch(()=>{});
             // #endregion
-            if (senderIndex === activeDatasetIdx && userNarrowedDateRange &&
-                (resolved.action === 'rejected-widen-kept-user' ||
-                 resolved.action === 'rejected-dataset-full-kept-user')) {
+            if (willReassert) {
                 reassertNarrowedDatesToIframe(senderIndex, resolved.action);
             }
         }
