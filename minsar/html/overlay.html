@@ -16,12 +16,12 @@
     <style>
         body {
             margin: 0;
-            padding: 10px;
+            padding: 15px;
             font-family: Arial, sans-serif;
             background-color: #f5f5f5;
         }
         .controls-bar {
-            margin-bottom: 10px;
+            margin-bottom: 15px;
             padding: 10px;
             background-color: white;
             border: 2px solid #ddd;
@@ -262,9 +262,16 @@
         }
         .container {
             width: 100%;
-            height: calc(100vh - 120px);
+            height: calc(100vh - 135px);
             max-width: 100%;
             position: relative;
+            margin-bottom: 30px;
+        }
+        .page-footer {
+            margin: 30px 15px;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            line-height: 1.6;
         }
         .panel {
             background-color: white;
@@ -538,12 +545,13 @@
             if (window.location.hash !== newHash) {
                 window.history.replaceState({}, '', newHash);
             }
+            refreshIndividualUrlsFooter();
         }
 
         // Build insarmaps URL with given parameters
         // uniqueId is optional - used to ensure unique cache-busting for multiple iframes
         let urlCounter = 0;
-        function buildInsarmapsUrl(baseUrl, dataset, lat, lon, zoom, mapParams, uniqueId, stableCache) {
+        function buildInsarmapsUrl(baseUrl, dataset, lat, lon, zoom, mapParams, uniqueId, stableCache, shareable) {
             const params = new URLSearchParams();
             params.set('flyToDatasetCenter', 'false');
             params.set('startDataset', dataset);
@@ -561,15 +569,43 @@
             if (mapParams.refPointLon) params.set('refPointLon', mapParams.refPointLon);
             if (mapParams.pointLat) params.set('pointLat', mapParams.pointLat);
             if (mapParams.pointLon) params.set('pointLon', mapParams.pointLon);
-            // stableCache: fixed _t per iframe slot for initial preload (browser can reuse). Otherwise bust cache.
-            if (stableCache && uniqueId !== undefined) {
-                params.set('_t', `stable_${uniqueId}`);
-            } else {
-                const cacheBuster = uniqueId !== undefined ? `${Date.now()}_${urlCounter++}_${uniqueId}` : `${Date.now()}_${urlCounter++}`;
-                params.set('_t', cacheBuster);
+            // shareable links (footer) omit _t; iframes use cache-busting unless stableCache is set.
+            if (!shareable) {
+                if (stableCache && uniqueId !== undefined) {
+                    params.set('_t', `stable_${uniqueId}`);
+                } else {
+                    const cacheBuster = uniqueId !== undefined ? `${Date.now()}_${urlCounter++}_${uniqueId}` : `${Date.now()}_${urlCounter++}`;
+                    params.set('_t', cacheBuster);
+                }
             }
             
             return `${baseUrl}/start/${lat}/${lon}/${zoom}?${params.toString()}`;
+        }
+
+        function buildIndividualDatasetLinkUrl(logUrl) {
+            try {
+                const urlObj = new URL(logUrl);
+                const dataset = urlObj.searchParams.get('startDataset');
+                const origin = urlObj.origin;
+                if (!dataset || !currentMapParams.lat || !currentMapParams.lon || !currentMapParams.zoom) {
+                    return logUrl;
+                }
+                return buildInsarmapsUrl(
+                    origin, dataset,
+                    currentMapParams.lat, currentMapParams.lon, currentMapParams.zoom,
+                    currentMapParams, undefined, false, true
+                );
+            } catch (e) {
+                return logUrl;
+            }
+        }
+
+        function refreshIndividualUrlsFooter() {
+            const wrap = document.getElementById('individual-urls-footer');
+            if (!wrap) return;
+            wrap.querySelectorAll('a[data-log-url]').forEach((a) => {
+                a.href = buildIndividualDatasetLinkUrl(a.dataset.logUrl);
+            });
         }
 
         function stripUrlCacheBuster(url) {
@@ -692,12 +728,60 @@
             }
         }
 
+        function isFullInsarmapsLogUrl(line) {
+            return line.startsWith('http://') || line.startsWith('https://');
+        }
+
+        // Lines without startDataset= and not http(s):// are dataset names only (expanded from first URL line).
+        function isDatasetNameOnlyLine(line) {
+            if (!line) return false;
+            if (isFullInsarmapsLogUrl(line)) return false;
+            if (line.includes('startDataset=')) return false;
+            return true;
+        }
+
+        function expandDatasetNameLine(datasetName, templateUrl) {
+            const u = new URL(templateUrl);
+            u.searchParams.set('startDataset', datasetName.trim());
+            return u.toString();
+        }
+
         function parseInsarmapsLogUrls(data) {
-            return data
-                .split('\n')
-                .map(line => line.trim())
-                .filter(line => line && (line.startsWith('http://') || line.startsWith('https://')))
-                .filter(isValidInsarmapsLogUrl);
+            const lines = data.split('\n').map((line) => line.trim()).filter(Boolean);
+            let templateUrl = null;
+            const urls = [];
+            for (const line of lines) {
+                if (isFullInsarmapsLogUrl(line)) {
+                    if (!isValidInsarmapsLogUrl(line)) continue;
+                    if (!templateUrl) templateUrl = line;
+                    urls.push(line);
+                    continue;
+                }
+                if (isDatasetNameOnlyLine(line)) {
+                    if (!templateUrl) {
+                        console.warn('[overlay] insarmaps.log: dataset name before template URL, skipped:', line);
+                        continue;
+                    }
+                    const expanded = expandDatasetNameLine(line, templateUrl);
+                    if (expanded && isValidInsarmapsLogUrl(expanded)) {
+                        urls.push(expanded);
+                    } else {
+                        console.warn('[overlay] insarmaps.log: could not expand dataset name:', line);
+                    }
+                    continue;
+                }
+                if (line.includes('startDataset=') && templateUrl) {
+                    try {
+                        const origin = new URL(templateUrl).origin;
+                        const path = line.startsWith('/start/') ? line : `/start/${line.replace(/^\//, '')}`;
+                        const expanded = new URL(path, origin).toString();
+                        if (isValidInsarmapsLogUrl(expanded)) urls.push(expanded);
+                    } catch (e) {
+                        console.warn('[overlay] insarmaps.log: could not parse partial URL line:', line);
+                    }
+                }
+            }
+            return urls;
         }
 
         function navigateToPreviousPage() {
@@ -1034,11 +1118,12 @@
 
             const wrap = document.createElement('div');
             wrap.id = 'individual-urls-footer';
-            wrap.style.cssText = 'margin: 20px; font-family: Arial, sans-serif; text-align: center;';
+            wrap.className = 'page-footer';
 
             const makeLink = (url, label) => {
                 const a = document.createElement('a');
-                a.href = url;
+                a.dataset.logUrl = url;
+                a.href = buildIndividualDatasetLinkUrl(url);
                 a.textContent = label;
                 a.target = '_blank';
                 a.rel = 'noopener noreferrer';
@@ -2482,7 +2567,7 @@
                     .then(response => response.text())
                     .then(() => {
                         const p = document.createElement('p');
-                        p.style.cssText = 'margin: 20px; font-family: Arial, sans-serif; text-align: center;';
+                        p.className = 'page-footer';
                         p.innerHTML = 'Data download: <a href="download_commands.txt" target="_blank">link</a>';
                         document.body.appendChild(p);
                     })

@@ -12,7 +12,7 @@
 
 ### 1.1 Page load (initial)
 
-1. **Fetch `insarmaps.log`** – list of insarmaps URLs (one per dataset).
+1. **Fetch `insarmaps.log`** – one entry per dataset. Lines may be full `http(s)://` URLs, or **dataset names only** (no `startDataset=`); name-only lines are expanded from the first full URL line (`parseInsarmapsLogUrls()`).
 2. **Parse and sort** – URLs sorted by dataset type (desc → asc → horz → vert).
 3. **Initial params** – `currentMapParams` from overlay URL (hash or query) or from the first insarmaps URL.
 4. **One panel per URL** – each gets a `.panel` and an **iframe**.
@@ -214,7 +214,7 @@ Insarmaps (mainPage.js) listens for `insarmaps-set-contour`: it adds/removes the
 1. Show "Loading InSAR Data..." overlay
 2. Fetch insarmaps.log (reject HTTP errors, HTML error pages, empty/invalid lines; 10s timeout)
    - On failure: show error on overlay, then navigate back via `document.referrer` or `history.back()` after 3s
-3. Parse URLs from log file
+3. Parse URLs from log file (full URL lines, or dataset-name lines expanded from the first URL)
 4. Sort URLs by dataset type (desc, asc, horz, vert)
 5. Read overlay.html URL params (hash or query string)
 6. Initialize currentMapParams from URL or first insarmaps URL
