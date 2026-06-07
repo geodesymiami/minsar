@@ -644,12 +644,36 @@
 
         // Extract lat/lon/zoom from an insarmaps URL
         function parseInsarmapsUrl(url) {
+            const params = parseInsarmapsUrlParams(url);
+            if (!params || !params.lat || !params.lon || !params.zoom) return null;
+            return { lat: params.lat, lon: params.lon, zoom: params.zoom };
+        }
+
+        // Display params from an insarmaps URL (first insarmaps.log line is the template when overlay URL is bare).
+        function parseInsarmapsUrlParams(url) {
             try {
                 const urlObj = new URL(url);
                 const pathMatch = urlObj.pathname.match(/\/start\/([^\/]+)\/([^\/]+)\/([^\/]+)/);
-                if (pathMatch) {
-                    return { lat: pathMatch[1], lon: pathMatch[2], zoom: pathMatch[3] };
-                }
+                const q = urlObj.searchParams;
+                const contourRaw = q.has('contour') ? q.get('contour') : (q.has('contours') ? q.get('contours') : null);
+                return {
+                    lat: pathMatch ? pathMatch[1] : null,
+                    lon: pathMatch ? pathMatch[2] : null,
+                    zoom: pathMatch ? pathMatch[3] : null,
+                    minScale: q.get('minScale'),
+                    maxScale: q.get('maxScale'),
+                    startDate: q.get('startDate'),
+                    endDate: q.get('endDate'),
+                    pixelSize: q.get('pixelSize'),
+                    background: q.get('background'),
+                    opacity: q.get('opacity'),
+                    contour: normalizeContourValue(contourRaw),
+                    colorscale: q.get('colorscale'),
+                    refPointLat: q.get('refPointLat'),
+                    refPointLon: q.get('refPointLon'),
+                    pointLat: q.get('pointLat'),
+                    pointLon: q.get('pointLon')
+                };
             } catch (e) {}
             return null;
         }
@@ -1225,8 +1249,9 @@
                 const initialParams = getOverlayUrlParams();
                 
                 // When URL has timeControls=true and periods, startDate/endDate come from first period
-                let initialStartDate = initialParams.startDate;
-                let initialEndDate = initialParams.endDate;
+                const firstLogDefaults = parseInsarmapsUrlParams(urlsFileOrder[0]);
+                let initialStartDate = initialParams.startDate ?? firstLogDefaults?.startDate ?? null;
+                let initialEndDate = initialParams.endDate ?? firstLogDefaults?.endDate ?? null;
                 if (initialParams.timeControls === 'true') {
                     const urlPeriods = parsePeriodsFromUrl(initialParams.periods);
                     if (urlPeriods && urlPeriods.length > 0) {
@@ -1235,25 +1260,24 @@
                     }
                 }
                 
-                // Initialize current map params from overlay URL or first insarmaps URL
-                const firstUrlCoords = parseInsarmapsUrl(urls[0]);
+                // Initialize current map params from overlay URL or first insarmaps.log line (file order)
                 currentMapParams = {
-                    lat: initialParams.lat || (firstUrlCoords ? firstUrlCoords.lat : null),
-                    lon: initialParams.lon || (firstUrlCoords ? firstUrlCoords.lon : null),
-                    zoom: initialParams.zoom || (firstUrlCoords ? firstUrlCoords.zoom : null),
-                    minScale: initialParams.minScale,
-                    maxScale: initialParams.maxScale,
+                    lat: initialParams.lat || firstLogDefaults?.lat || null,
+                    lon: initialParams.lon || firstLogDefaults?.lon || null,
+                    zoom: initialParams.zoom || firstLogDefaults?.zoom || null,
+                    minScale: initialParams.minScale ?? firstLogDefaults?.minScale ?? null,
+                    maxScale: initialParams.maxScale ?? firstLogDefaults?.maxScale ?? null,
                     startDate: initialStartDate,
                     endDate: initialEndDate,
-                    pixelSize: initialParams.pixelSize,
-                    background: initialParams.background,
-                    opacity: initialParams.opacity,
-                    contour: initialParams.contour,
-                    colorscale: initialParams.colorscale,
-                    refPointLat: initialParams.refPointLat,
-                    refPointLon: initialParams.refPointLon,
-                    pointLat: initialParams.pointLat,
-                    pointLon: initialParams.pointLon
+                    pixelSize: initialParams.pixelSize ?? firstLogDefaults?.pixelSize ?? null,
+                    background: initialParams.background ?? firstLogDefaults?.background ?? null,
+                    opacity: initialParams.opacity ?? firstLogDefaults?.opacity ?? null,
+                    contour: initialParams.contour ?? firstLogDefaults?.contour ?? null,
+                    colorscale: initialParams.colorscale ?? firstLogDefaults?.colorscale ?? null,
+                    refPointLat: initialParams.refPointLat ?? firstLogDefaults?.refPointLat ?? null,
+                    refPointLon: initialParams.refPointLon ?? firstLogDefaults?.refPointLon ?? null,
+                    pointLat: initialParams.pointLat ?? firstLogDefaults?.pointLat ?? null,
+                    pointLon: initialParams.pointLon ?? firstLogDefaults?.pointLon ?? null
                 };
                 
                 // Create panels for each URL
