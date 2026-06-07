@@ -43,7 +43,15 @@ S1_horz_120_142_mintpy_20141013_XXXXXXXX_N0099W07826_N0099W07768_N0051W07768_N00
 
 Iframe list URLs are automatically sorted by dataset type: desc, asc, horz, vert.
 
-## Known issues
+## Architecture and debugging
 
-See **overlay.html** in `ARCHITECTURE.md` for detailed behaviour and known limitations. As of 2026-02-13: **Reference point in Time Controls mode** — changing the reference point in the visible period iframe does not apply to other period iframes’ data (only the visible iframe is updated). Documented in ARCHITECTURE.md; to be retried when tooling improves.
+See **`ARCHITECTURE.md`** in this directory for:
+
+- How dataset switching, custom reference points, and narrowed time periods work
+- postMessage vs URL-reload sync (cross-origin constraints)
+- **§19 — Reference point waiting:** user status messages, watchdogs, `insarmaps-ref-failed`, what remains broken
+- Bug history and checklist for recreating overlay.html
+- Switch-result table format for debugging Desc/Asc/Horz/Vert transfers
+
+**Known limitation (2026-02-13):** In Time Controls mode, changing the reference point in the visible period iframe does not re-reference other period iframes’ data. Documented in `ARCHITECTURE.md` §13.
 

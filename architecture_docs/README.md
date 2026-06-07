@@ -37,6 +37,7 @@ minsarApp.bash $SAMPLESDIR/template.template [--start STEP] [--stop STEP] [--min
 | 5 | `minsar/lib/utils.sh` | Core bash utilities |
 | 6 | `minsar/scripts/get_sar_coverage.py` | AOI coverage: orbits, counts; `--select` chooses Asc/Desc relative orbit (S1: prefers full-AOI consistency over incidence) |
 | — | `minsar/utils/modify_insarmapslog.py` | Back up and rewrite `insarmaps.log` start coordinates from a reference InsarMaps URL, then print a VolcDef `/data/HDF5EOS/` overlay URL |
+| — | `minsar/html/ARCHITECTURE.md` | overlay.html: multi-dataset iframe sync, custom ref, narrowed dates, postMessage protocol, debugging tables |
 
 ### Processing Flow
 

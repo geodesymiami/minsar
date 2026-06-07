@@ -592,11 +592,6 @@
                 if (mapParams.pointLat) params.set('pointLat', mapParams.pointLat);
                 if (mapParams.pointLon) params.set('pointLon', mapParams.pointLon);
             }
-            // #region agent log
-            if (urlOptions.omitPointSelection || hasCustomRef) {
-                fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:buildInsarmapsUrl',message:'iframe URL built',data:{dataset,hasCustomRef,refPointLat:mapParams.refPointLat,refPointLon:mapParams.refPointLon,startDate:mapParams.startDate,endDate:mapParams.endDate,colorscale:mapParams.colorscale,pointLat:mapParams.pointLat,canonical:canonicalInsarmapsUrl(`${baseUrl}/start/${lat}/${lon}/${zoom}?${params.toString()}`)},timestamp:Date.now(),hypothesisId:'G',runId:'post-fix2'})}).catch(()=>{});
-            }
-            // #endregion
             // shareable links (footer) omit _t; iframes use cache-busting unless stableCache is set.
             if (!shareable) {
                 if (stableCache && uniqueId !== undefined) {
@@ -842,9 +837,6 @@
                 datesOk: null,
                 t0: Date.now()
             };
-            // #region agent log
-            fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:beginSwitchTracking',message:'switch attempt',data:activeSwitchTracking,timestamp:Date.now(),hypothesisId:'AA,AB',runId:'post-fix24'})}).catch(()=>{});
-            // #endregion
         }
 
         function logSwitchOutcomePart(index, kind, ok, extra) {
@@ -858,9 +850,6 @@
             const outcome = (t.refOk && t.datesOk) ? 'success' :
                 (!t.refOk && !t.datesOk) ? 'ref-and-dates-failed' :
                 (!t.refOk) ? 'ref-failed' : 'dates-failed';
-            // #region agent log
-            fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:logSwitchOutcome',message:'switch outcome',data:Object.assign({outcome,elapsedMs:Date.now()-t.t0},t,extra||{}),timestamp:Date.now(),hypothesisId:'AA,AB',runId:'post-fix24'})}).catch(()=>{});
-            // #endregion
             activeSwitchTracking = null;
         }
 
@@ -956,9 +945,6 @@
                     'Switch to another view and back, or wait — we will retry automatically.',
                     true
                 );
-                // #region agent log
-                fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:scheduleRefRecoveryWatchdogs',message:'ref slow advisory shown',data:{index,label,reason},timestamp:Date.now(),hypothesisId:'AI',runId:'post-fix29'})}).catch(()=>{});
-                // #endregion
             }, REF_STATUS_ADVISE_MS));
             refStuckWatchdogByIndex.set(index, setTimeout(() => {
                 refStuckWatchdogByIndex.delete(index);
@@ -977,18 +963,12 @@
                     'Switch to another dataset and back to retry.',
                     true
                 );
-                // #region agent log
-                fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:tryRefStuckRecovery',message:'ref recovery exhausted',data:{index,label,trigger,detail,retries},timestamp:Date.now(),hypothesisId:'AI',runId:'post-fix29'})}).catch(()=>{});
-                // #endregion
                 return;
             }
             refAutoRetryCountByIndex.set(index, retries + 1);
             updateRefStatusIndicator(`Retrying reference point load on ${label}…`, true);
             clearRefAppliedForDateSync(index);
             cancelRefRecoveryTimers(index);
-            // #region agent log
-            fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:tryRefStuckRecovery',message:'ref stuck auto retry',data:{index,label,trigger,detail,retry:retries+1},timestamp:Date.now(),hypothesisId:'AI',runId:'post-fix29'})}).catch(()=>{});
-            // #endregion
             reloadDatasetIframe(index, `ref-retry-${trigger}`, 'refSwitch');
             scheduleRefRecoveryWatchdogs(index, `after-${trigger}`);
         }
@@ -1002,9 +982,6 @@
                 `Reference point could not be applied on ${label}. Retrying…`,
                 true
             );
-            // #region agent log
-            fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:handleInsarmapsRefFailed',message:'insarmaps-ref-failed received',data:{failIndex,label,reason:data&&data.reason,isRef:data&&data.isRef},timestamp:Date.now(),hypothesisId:'AJ',runId:'post-fix29'})}).catch(()=>{});
-            // #endregion
             tryRefStuckRecovery(failIndex, 'insarmaps-failed', data && data.reason);
         }
         
@@ -1089,11 +1066,6 @@
                     }
                 }
             }
-            // #region agent log
-            if (baselineMissionDateRange) {
-                fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:seedBaselineFromInsarmapsUrls',message:'baseline seeded from insarmaps.log',data:{baselineStart:formatDate(baselineMissionDateRange.firstDate),baselineEnd:formatDate(baselineMissionDateRange.lastDate),urlCount:urlList.length},timestamp:Date.now(),hypothesisId:'S',runId:'post-fix17'})}).catch(()=>{});
-            }
-            // #endregion
         }
 
         // Expand mission baseline from dataset attribute first_date/last_date (never shrink).
@@ -1143,18 +1115,12 @@
             const idx = senderIndex ?? activeDatasetIdx;
             if (!shouldCaptureAsUserNarrow(idx, startDate, endDate)) {
                 if (userNarrowedDateRange && isWiderOrEqualDateRange(startDate, endDate, userNarrowedDateRange)) {
-                    // #region agent log
-                    fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:captureUserNarrowedDateRange',message:'rejected widen period',data:{startDate,endDate,senderIndex:idx,activeDatasetIdx,kept:userNarrowedDateRange,source:source||periodSelectionSource},timestamp:Date.now(),hypothesisId:'V,W,Y',runId:'post-fix24'})}).catch(()=>{});
-                    // #endregion
                 }
                 return false;
             }
             if (source) periodSelectionSource = source;
             if (source === 'slider') lastSliderCaptureAt = Date.now();
             userNarrowedDateRange = { startDate: startDate, endDate: endDate };
-            // #region agent log
-            fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:captureUserNarrowedDateRange',message:'user narrowed period captured',data:{startDate,endDate,senderIndex:idx,activeDatasetIdx,periodSource:periodSelectionSource,source:source||null,logTemplate:logTemplateDateRange},timestamp:Date.now(),hypothesisId:'V,W',runId:'post-fix24'})}).catch(()=>{});
-            // #endregion
             return true;
         }
 
@@ -1259,9 +1225,6 @@
                 endDate: dates.endDate,
                 awaitRef: awaitRef
             });
-            // #region agent log
-            fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:reassertNarrowedDatesToIframe',message:awaitRef?'reassert dates pending ref':'reassert dates after iframe widen',data:{index,label:iframeLabelForLog(index),reason,startDate:dates.startDate,endDate:dates.endDate,awaitRef},timestamp:Date.now(),hypothesisId:'AF,AO',runId:'post-fix32'})}).catch(()=>{});
-            // #endregion
             if (awaitRef) return;
             tryApplyNarrowedDatesToIframe(index, REASSERT_DATE_SYNC_RETRIES);
         }
@@ -1285,9 +1248,6 @@
         function logDateResolve(senderIndex, rawStartDate, rawEndDate, resolved, path) {
             if (resolved.action === 'unchanged' || resolved.action === 'background-no-date-change') return;
             const willReassert = senderIndex === activeDatasetIdx && shouldReassertAfterDateReject(path, resolved);
-            // #region agent log
-            fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:resolveDatesFromIframeUpdate',message:'date resolve',data:{path,senderIndex,activeDatasetIdx,rawStartDate,rawEndDate,action:resolved.action,resolvedStart:resolved.startDate,resolvedEnd:resolved.endDate,userNarrowed:userNarrowedDateRange,currentStart:currentMapParams.startDate,currentEnd:currentMapParams.endDate,willReassert,periodSelectionSource,msSinceSliderCapture:lastSliderCaptureAt?Date.now()-lastSliderCaptureAt:null},timestamp:Date.now(),hypothesisId:'V,W,Y,AO',runId:'post-fix32'})}).catch(()=>{});
-            // #endregion
             if (willReassert) {
                 reassertNarrowedDatesToIframe(senderIndex, resolved.action);
             }
@@ -1325,15 +1285,9 @@
                     );
                     scheduleRefRecoveryWatchdogs(index, 'date-sync-deferred');
                 }
-                // #region agent log
-                fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:tryApplyNarrowedDatesToIframe',message:'date sync deferred awaiting ref',data:Object.assign({index,label:iframeLabelForLog(index),reason,startDate:pending&&pending.startDate,endDate:pending&&pending.endDate,periodSource:periodSelectionSource},extra||{}),timestamp:Date.now(),hypothesisId:'AH',runId:'post-fix28'})}).catch(()=>{});
-                // #endregion
                 return;
             }
             logSwitchOutcomePart(index, 'dates', false, { reason, startDate: pending && pending.startDate, endDate: pending && pending.endDate });
-            // #region agent log
-            fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:tryApplyNarrowedDatesToIframe',message:'postMessage date sync failed',data:Object.assign({index,label:iframeLabelForLog(index),reason,startDate:pending&&pending.startDate,endDate:pending&&pending.endDate,periodSource:periodSelectionSource},extra||{}),timestamp:Date.now(),hypothesisId:'S,U',runId:'post-fix24'})}).catch(()=>{});
-            // #endregion
             clearPendingDateSync(index);
         }
 
@@ -1343,16 +1297,10 @@
                 clearRefRecoveryState(index);
             }
             logSwitchOutcomePart(index, 'dates', true, { startDate, endDate });
-            // #region agent log
-            fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:onDateSyncApplied',message:'postMessage date sync applied',data:{index,label:iframeLabelForLog(index),startDate,endDate,retriesLeft,periodSource:periodSelectionSource},timestamp:Date.now(),hypothesisId:'S,U',runId:'post-fix24'})}).catch(()=>{});
-            // #endregion
         }
 
         function maybeStartDateSyncAfterRef(index) {
             if (!shouldAcceptRefAppliedForDateSync(index)) {
-                // #region agent log
-                fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:maybeStartDateSyncAfterRef',message:'ignored ref date sync wrong iframe',data:{index,label:iframeLabelForLog(index),activeDatasetIdx,switchTo:activeSwitchTracking?activeSwitchTracking.to:null},timestamp:Date.now(),hypothesisId:'AD',runId:'post-fix25'})}).catch(()=>{});
-                // #endregion
                 return;
             }
             const dates = effectiveNarrowedDatesForSync();
@@ -1373,9 +1321,6 @@
             cancelRefRecoveryTimers(index);
             refAutoRetryCountByIndex.delete(index);
             updateRefStatusIndicator('', false);
-            // #region agent log
-            fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:maybeStartDateSyncAfterRef',message:'ref ready, starting date sync',data:{index,label:iframeLabelForLog(index),startDate:dates.startDate,endDate:dates.endDate,userNarrowed:userNarrowedDateRange},timestamp:Date.now(),hypothesisId:'U,T',runId:'post-fix23'})}).catch(()=>{});
-            // #endregion
             tryApplyNarrowedDatesToIframe(index);
         }
 
@@ -1418,9 +1363,6 @@
                     startDate: startDate,
                     endDate: endDate
                 }, '*');
-                // #region agent log
-                fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:tryApplyNarrowedDatesToIframe',message:'postMessage set-dates sent',data:{index,label:iframeLabelForLog(index),startDate,endDate,retriesLeft},timestamp:Date.now(),hypothesisId:'S,U',runId:'post-fix20'})}).catch(()=>{});
-                // #endregion
                 if (retriesLeft > 0) {
                     setTimeout(() => {
                         if (pendingDateSyncByIndex.has(index)) tryApplyNarrowedDatesToIframe(index, retriesLeft - 1);
@@ -1443,9 +1385,6 @@
         function scheduleNarrowedDateSync(index, reason) {
             const dates = effectiveNarrowedDatesForSync();
             const awaitRef = hasCustomRefPoint(currentMapParams);
-            // #region agent log
-            fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:scheduleNarrowedDateSync',message:dates?'date sync scheduled':'date sync skipped no dates',data:{index,label:iframeLabelForLog(index),reason,dates,userNarrowed:userNarrowedDateRange,periodSource:periodSelectionSource,currentStart:currentMapParams.startDate,currentEnd:currentMapParams.endDate,hasCustomRef:hasCustomRefPoint(currentMapParams),awaitRef,isFullMission:isFullMissionDateRange()},timestamp:Date.now(),hypothesisId:'S,U,W',runId:'post-fix24'})}).catch(()=>{});
-            // #endregion
             if (!dates) return;
             pendingDateSyncByIndex.set(index, {
                 startDate: dates.startDate,
@@ -1462,9 +1401,6 @@
                     const pending = pendingDateSyncByIndex.get(index);
                     if (!pending || !pending.awaitRef || index !== activeDatasetIdx) return;
                     pending.awaitRef = false;
-                    // #region agent log
-                    fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:scheduleNarrowedDateSync',message:'ref-await watchdog forcing date sync',data:{index,label:iframeLabelForLog(index),startDate:pending.startDate,endDate:pending.endDate},timestamp:Date.now(),hypothesisId:'AE',runId:'post-fix25'})}).catch(()=>{});
-                    // #endregion
                     tryApplyNarrowedDatesToIframe(index);
                 }, REF_AWAIT_WATCHDOG_MS);
             }
@@ -1521,9 +1457,6 @@
             const syncKey = getSyncKey(iframeParams);
             const storedSyncKey = iframeSynced.get(index);
             const iframeSrc = iframe.src ? canonicalInsarmapsUrl(iframe.src) : '(empty)';
-            // #region agent log
-            fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:syncDatasetIframeOnSwitch',message:'switch sync check',data:{index,label:iframeLabelForLog(index),storedSyncKey,storedMatches:storedSyncKey===syncKey,iframeSrc,startDate:iframeParams.startDate,endDate:iframeParams.endDate,pointLat:iframeParams.pointLat,refPointLat:iframeParams.refPointLat},timestamp:Date.now(),hypothesisId:'J',runId:'post-fix7'})}).catch(()=>{});
-            // #endregion
             if (storedSyncKey === syncKey && iframe.src) {
                 console.log(`[overlay] dataset switch SKIP reload ${iframeLabelForLog(index)}  (iframe already synced)`);
                 return;
@@ -1792,9 +1725,6 @@
                             return false;
                         }
                     })();
-                    // #region agent log
-                    fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:reloadDatasetIframe',message:'date phase after ref',data:{index,label:iframeLabelForLog(index),dataset,isMintpy:isMintpyDataset(dataset),isFullDatasetRange:isFullDatasetDateRange(index),isFullMissionRange:isFullMissionDateRange(),iframeHasDates,startDate:currentMapParams.startDate,endDate:currentMapParams.endDate,reason},timestamp:Date.now(),hypothesisId:'Q',runId:'post-fix15'})}).catch(()=>{});
-                    // #endregion
                     if (!iframeHasDates) {
                         reloadDatasetIframe(index, 'apply-dates-after-ref', 'dateAfterRef', { skipDatePhase: true });
                         return;
@@ -1802,9 +1732,6 @@
                 } else if (loadKind === 'refSwitch' && hasCustomRefPoint(currentMapParams) &&
                     currentMapParams.startDate && currentMapParams.endDate &&
                     (isMintpyDataset(dataset) || !isFullMissionDateRange())) {
-                    // #region agent log
-                    fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:reloadDatasetIframe',message:'skip date phase',data:{index,label:iframeLabelForLog(index),dataset,isMintpy:isMintpyDataset(dataset),isFullDatasetRange:isFullDatasetDateRange(index),isFullMissionRange:isFullMissionDateRange(),baselineStart:baselineMissionDateRange?formatDate(baselineMissionDateRange.firstDate):null,baselineEnd:baselineMissionDateRange?formatDate(baselineMissionDateRange.lastDate):null,startDate:currentMapParams.startDate,endDate:currentMapParams.endDate,reason},timestamp:Date.now(),hypothesisId:'Q,R',runId:'post-fix16'})}).catch(()=>{});
-                    // #endregion
                     scheduleNarrowedDateSync(index, reason);
                 }
                 maybeCatchupWarmAfterLoad();
@@ -1812,34 +1739,20 @@
             lastWarmSyncKey = syncKey;
             iframeSynced.set(index, syncKey);
             iframePointSynced.set(index, pointKey);
-            // #region agent log
-                    fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:reloadDatasetIframe',message:'forced reload',data:{index,reason,loadKind,label:iframeLabelForLog(index),dataset,isMintpy:isMintpyDataset(dataset),isFullDatasetRange:isFullDatasetDateRange(index),isFullMissionRange:isFullMissionDateRange(),baselineStart:baselineMissionDateRange?formatDate(baselineMissionDateRange.firstDate):null,baselineEnd:baselineMissionDateRange?formatDate(baselineMissionDateRange.lastDate):null,skipDatePhase:!shouldRunDateAfterRef(index),targetUrlCanonical:canonicalInsarmapsUrl(newUrl),refPointLat:iframeParams.refPointLat,refPointLon:iframeParams.refPointLon,pointLat:iframeParams.pointLat,pointLon:iframeParams.pointLon,startDate:iframeParams.startDate,endDate:iframeParams.endDate,contour:iframeParams.contour,pixelSize:iframeParams.pixelSize,phase:reloadOptions.skipDatePhase?'dates':'ref'},timestamp:Date.now(),hypothesisId:'I,Q,R',runId:'post-fix16'})}).catch(()=>{});
-            // #endregion
             return true;
         }
 
         // Apply current point to one iframe if tracking says it is stale (used on dataset switch).
         function syncPointToIframeIfStale(index, reason) {
-            // #region agent log
-            const _dbgPointKey = getPointKey(currentMapParams);
-            const _dbgIframe = document.getElementById(`iframe${index}`);
-            fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:syncPointToIframeIfStale',message:'syncPointToIframeIfStale entry',data:{index,reason,label:iframeLabelForLog(index),hasPointSelection:hasPointSelection(currentMapParams),pointKey:_dbgPointKey,storedPointKey:iframePointSynced.get(index),warmInFlight:iframeWarmInFlight.has(index),iframeSrcCanonical:_dbgIframe&&_dbgIframe.src?canonicalInsarmapsUrl(_dbgIframe.src):'(empty)',refPointLat:currentMapParams.refPointLat,refPointLon:currentMapParams.refPointLon},timestamp:Date.now(),hypothesisId:'A,B'})}).catch(()=>{});
-            // #endregion
             if (!hasPointSelection(currentMapParams)) return;
             if (iframeWarmInFlight.has(index)) {
                 console.log(`[overlay] switch-point-sync SKIP ${iframeLabelForLog(index)}  reason=preload-in-flight`);
-                // #region agent log
-                fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:syncPointToIframeIfStale',message:'SKIP preload-in-flight',data:{index,reason},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
-                // #endregion
                 return;
             }
             const pointKey = getPointKey(currentMapParams);
             const forceReloadOnSwitch = reason === 'switch-point-sync' &&
                 currentMapParams.refPointLat != null && currentMapParams.refPointLon != null;
             if (!forceReloadOnSwitch && iframePointSynced.get(index) === pointKey) {
-                // #region agent log
-                fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:syncPointToIframeIfStale',message:'SKIP already-synced',data:{index,reason,pointKey,iframeSrcCanonical:_dbgIframe&&_dbgIframe.src?canonicalInsarmapsUrl(_dbgIframe.src):'(empty)'},timestamp:Date.now(),hypothesisId:'A,E'})}).catch(()=>{});
-                // #endregion
                 return;
             }
             const dataset = iframeDatasets.get(index);
@@ -1884,9 +1797,6 @@
             }
             iframeSynced.set(index, syncKey);
             iframePointSynced.set(index, pointKey);
-            // #region agent log
-            fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:syncPointToIframeIfStale',message:'syncPointToIframeIfStale done',data:{index,reason,forceReloadOnSwitch,reloaded,targetUrlCanonical:canonicalInsarmapsUrl(newUrl)},timestamp:Date.now(),hypothesisId:'A,C,E',runId:'post-fix'})}).catch(()=>{});
-            // #endregion
         }
 
         function mergeParamsFromInsarmapsMessage(urlPath, eventData, baseParams) {
@@ -1974,9 +1884,6 @@
                 const newUrl = buildInsarmapsUrl(
                     baseUrl, originalDataset, lat, lon, zoom, iframeParams, `ds${index}`, false, false
                 );
-                // #region agent log
-                if (isPointWarm) fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:warmAllBackgroundIframes',message:'point-warm iframe URL',data:{index,label,reason,warmLoadKind,targetUrlCanonical:canonicalInsarmapsUrl(newUrl),refPointLat:mapParams.refPointLat,refPointLon:mapParams.refPointLon,startDate:iframeParams.startDate,endDate:iframeParams.endDate,colorscaleInUrl:canonicalInsarmapsUrl(newUrl).includes('colorscale')},timestamp:Date.now(),hypothesisId:'C,F,M',runId:'post-fix9'})}).catch(()=>{});
-                // #endregion
                 if (setIframeSrc(iframe, newUrl, { label, reason })) {
                     iframeWarmInFlight.set(index, syncKey);
                     updateLoadingIndicator();
@@ -2390,9 +2297,6 @@
                     } else {
                         syncDatasetIframeOnSwitch(index);
                     }
-                    // #region agent log
-                    fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:selectDataset',message:'dataset switch complete',data:{from:previousIdx,to:index,fromLabel:iframeLabelForLog(previousIdx),toLabel:iframeLabelForLog(index),startDate:currentMapParams.startDate,endDate:currentMapParams.endDate,userNarrowed:userNarrowedDateRange,pointLat:currentMapParams.pointLat,hasCustomRef:hasCustomRefPoint(currentMapParams),visibleIframeSrc:visibleIframe&&visibleIframe.src?canonicalInsarmapsUrl(visibleIframe.src):'(empty)'},timestamp:Date.now(),hypothesisId:'J,M,W',runId:'post-fix22'})}).catch(()=>{});
-                    // #endregion
                     
                     // Send contour state to the newly visible iframe so it matches currentMapParams
                     const contourOn = (currentMapParams.contour === 'true' || currentMapParams.contour === 'on');
@@ -2429,17 +2333,11 @@
                     if (event.data.type === 'insarmaps-ref-applied' &&
                         event.data.refPointLat != null && event.data.refPointLon != null) {
                         const refIndex = iframeIndexForMessageSource(event.source);
-                        // #region agent log
-                        fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:insarmaps-ref-applied',message:'ref applied postMessage received',data:{refIndex,label:refIndex>=0?iframeLabelForLog(refIndex):null,refPointLat:event.data.refPointLat,refPointLon:event.data.refPointLon,expectedRefLat:currentMapParams.refPointLat,expectedRefLon:currentMapParams.refPointLon,coordsMatch:refIndex>=0&&refCoordsMatch(currentMapParams.refPointLat,currentMapParams.refPointLon,event.data.refPointLat,event.data.refPointLon),pendingSync:refIndex>=0?pendingDateSyncByIndex.has(refIndex):false},timestamp:Date.now(),hypothesisId:'U,T',runId:'post-fix22'})}).catch(()=>{});
-                        // #endregion
                         const coordsMatch = refIndex >= 0 &&
                             refCoordsMatch(currentMapParams.refPointLat, currentMapParams.refPointLon,
                                 event.data.refPointLat, event.data.refPointLon);
                         const acceptForDateSync = coordsMatch && shouldAcceptRefAppliedForDateSync(refIndex);
                         if (coordsMatch && !acceptForDateSync) {
-                            // #region agent log
-                            fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:insarmaps-ref-applied',message:'ignored background ref-applied',data:{refIndex,label:refIndex>=0?iframeLabelForLog(refIndex):null,activeDatasetIdx,switchTo:activeSwitchTracking?activeSwitchTracking.to:null},timestamp:Date.now(),hypothesisId:'AD',runId:'post-fix25'})}).catch(()=>{});
-                            // #endregion
                         }
                         if (acceptForDateSync) {
                             logSwitchOutcomePart(refIndex, 'ref', true, {
@@ -2470,9 +2368,6 @@
                     if (event.data.type === 'insarmaps-timeseries-date' && event.data.date) {
                         let dateStr = String(event.data.date).trim().replace(/-/g, '');
                         if (dateStr.length === 8) {
-                            // #region agent log
-                            fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:insarmaps-timeseries-date',message:'chart dot date click',data:{date:dateStr,addPeriodState,activeDatasetIdx,userNarrowed:userNarrowedDateRange},timestamp:Date.now(),hypothesisId:'AC',runId:'post-fix24'})}).catch(()=>{});
-                            // #endregion
                             console.log('[overlay] insarmaps-timeseries-date received', dateStr, 'addPeriodState:', addPeriodState);
                             // Accept as start date when waiting for start (need_start, or idle/need_point so we're forgiving)
                             if (addPeriodState === 'need_start' || addPeriodState === 'need_point' || addPeriodState === 'idle') {
@@ -2493,9 +2388,6 @@
                     if (msgFirstDate && msgLastDate) {
                         updateBaselineMissionDateRange(msgFirstDate, msgLastDate);
                     }
-                    
-                    // Debug: log full event.data to see what insarmaps sends
-                    console.log('postMessage received:', JSON.stringify(event.data, null, 2));
                     
                     // Check if message is from the active iframe
                     // In Time Controls mode, the visible period iframe is the active one
@@ -2569,9 +2461,6 @@
                                     }
                                     if (shouldWarm) {
                                         const warmReason = pointChanged ? 'active-postMessage:point' : 'active-postMessage';
-                                        // #region agent log
-                                        if (pointChanged) fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:active-postMessage',message:'point changed warm triggered',data:{warmReason,senderIndex:quickSenderIndex,refPointLat:currentMapParams.refPointLat,refPointLon:currentMapParams.refPointLon,pointLat:currentMapParams.pointLat,pointLon:currentMapParams.pointLon},timestamp:Date.now(),hypothesisId:'C,D'})}).catch(()=>{});
-                                        // #endregion
                                         if (pointChanged) {
                                             flushWarmAll(
                                                 quickSenderIndex, merged.lat, merged.lon, merged.zoom,
@@ -2798,9 +2687,6 @@
                             iframeSynced.set(senderIndex, newSyncKey);
                         }
                         if (datesChanged && senderIndex >= 0) {
-                            // #region agent log
-                            fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:'overlay.html:date-change',message:'date change on active iframe',data:{senderIndex,isFullDatasetRange:isFullDatasetDateRange(senderIndex),isFullMissionRange:isFullMissionDateRange(),prevStartDate,prevEndDate,startDate,endDate,hasCustomRef:hasCustomRefPoint(currentMapParams),willSkipDatePhase:hasCustomRefPoint(currentMapParams)&&!isFullMissionDateRange()},timestamp:Date.now(),hypothesisId:'Q,R',runId:'post-fix15'})}).catch(()=>{});
-                            // #endregion
                         }
                         if (senderIndex >= 0 && pendingDateSyncByIndex.has(senderIndex)) {
                             const pendingRefSync = pendingDateSyncByIndex.get(senderIndex);

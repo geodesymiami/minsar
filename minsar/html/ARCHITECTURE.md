@@ -1,528 +1,632 @@
 # overlay.html Architecture Documentation
 
+**Last updated:** 2026-06-07 (post custom-ref + narrowed-period dataset-switch fixes)
+
 ## Overview
 
-`overlay.html` is a multi-dataset InSAR map viewer that embeds multiple insarmaps instances (each showing a different dataset like Descending, Ascending, Vertical, Horizontal) in iframes and synchronizes their view state (position, zoom, display parameters). It also supports **Time Controls** mode: one iframe per time period for the active dataset (step-through or play).
+`overlay.html` is a multi-dataset InSAR map viewer. It embeds one **insarmaps** iframe per dataset (Descending, Ascending, Horizontal, Vertical) and keeps their **view state** in sync: map position, color scale, time period, pixel size, contours, time-series point, and custom reference point.
+
+The overlay page is served from the **data server** (e.g. `http://149.165.154.65/data/HDF5EOS/.../overlay.html`). Each iframe loads **insarmaps** from a separate origin (e.g. `http://149.165.153.50`). That cross-origin split is central to the design.
+
+**Primary source file:** `minsar/html/overlay.html`  
+**Companion insarmaps changes:** `tools/insarmaps/public/js/mainPage.js`, `mainMap.js`, `GraphsController.js` (required for custom ref + narrowed dates on dataset switch).
 
 ---
 
-## 1. What Triggers the Loading of Data
-
-“Loading” here means setting `iframe.src` (so the browser loads the insarmaps page) or creating new iframes and setting their `src`.
-
-### 1.1 Page load (initial)
-
-1. **Fetch `insarmaps.log`** – one entry per dataset. Lines may be full `http(s)://` URLs, or **dataset names only** (no `startDataset=`); name-only lines are expanded from the first full URL line (`parseInsarmapsLogUrls()`).
-2. **Parse and sort** – URLs sorted by dataset type (desc → asc → horz → vert).
-3. **Initial params** – `currentMapParams` from overlay URL (hash or query) or from the first insarmaps URL.
-4. **One panel per URL** – each gets a `.panel` and an **iframe**.
-5. **Initial iframe `src`** – only the **active** (default) iframe gets `src` immediately via `buildInsarmapsUrl(...)`. Background dataset iframes are created without `src` so they do not compete for bandwidth on first paint.
-6. **Background preload** – after the active iframe fires `onload`, `scheduleWarmAll(..., 'after-initial-active')` loads all other dataset iframes in parallel. The small "Loading... (N)" indicator tracks background iframes still in flight.
-7. **Loading overlay** – hidden on first `postMessage` type `insarmaps-url-update`, or after 15s timeout.
-
-So the only trigger for **initial** visible load is **page load**: one active dataset iframe. Background iframes load shortly after, without blocking the default view.
-
-### 1.2 postMessage from the active iframe (sync)
-
-When the user changes something **inside** the visible insarmaps iframe (pan, zoom, time slider, color scale, background, contour, etc.), insarmaps sends:
-
-`window.parent.postMessage({ type: 'insarmaps-url-update', url: '/start/...?params...' }, '*');`
-
-Overlay’s handler (debounced 1500 ms):
-
-1. Parses the URL and builds a **sync key** (lat, lon, zoom, minScale, maxScale, startDate, endDate, pixelSize, background, opacity, contour).
-2. If key equals `lastSyncedKey`, does nothing.
-3. Updates `currentMapParams` and overlay hash URL.
-4. Finds the **sender** iframe index.
-5. For **every other** dataset iframe, builds a new URL with `currentMapParams` and sets **`iframe.src = newUrl`** (reload).
-
-So: **Trigger** = any insarmaps URL change in the active iframe. **Effect** = all iframes **except the active one** are reloaded with the new params. The active iframe is **not** reloaded.
-
-### 1.3 Dataset change (dropdown)
-
-- **Time Controls closed:** `selectDataset(index)` only switches visibility and updates overlay URL. No iframe reload; contour is kept in sync by postMessage to all iframes (§ 7).
-- **Time Controls open:** `selectDataset(index)` calls `handleDatasetChangeInTimeControls(index)` → `loadPeriodsForDataset(newDatasetIdx)`: **clears** period panels and **creates new** period panels (and iframes) for the new dataset. So “loading” here is **new period iframes**, not the main dataset iframes.
-
-### 1.4 Time Controls: open and change period
-
-- **Open Time Controls:** `openTimeControls()` → `loadPeriodsForDataset(activeDatasetIdx)`. Creates one panel per period, each with its own iframe (URL includes that period’s startDate/endDate). So **opening** triggers **loading of N period iframes**.
-- **Change period (◀/▶/Play):** `showPeriod(periodIdx)` only changes which period panel is visible. **No iframe reload.**
-- **Change period length or Sequential:** Calls `loadPeriodsForDataset(activeDatasetIdx)` again → period panels cleared and recreated → **all period iframes loaded again**.
-- **Period selection mode (+/−):** See **§ 8. Period Selection Mode** – entering or exiting this mode does **not** trigger any reload or panel switch.
-
-### 1.5 Summary: when is an iframe loaded?
-
-| Trigger | What loads | Which iframes |
-|--------|------------|----------------|
-| Page load | Initial URL for active dataset only | Active iframe; backgrounds after `onload` |
-| postMessage (any param in active iframe) | New URL on others | All dataset iframes **except** sender |
-| Dataset dropdown (Time Controls off) | No reload; show/hide panel only | None |
-| Dataset dropdown (Time Controls on) | New period panels | New period iframes for selected dataset |
-| Open Time Controls | Period panels | All period iframes for current dataset |
-| Change period (◀/▶/Play) | Nothing | None |
-| Change period length / Sequential | Rebuild periods | Period iframes recreated and loaded |
-
----
-
-## 2. How Data Are Cached
-
-### 2.1 No application-level cache of “data”
-
-Overlay does **not** cache tiles or API responses. It only keeps: **`currentMapParams`**, **`iframeSynced`** (per-iframe sync key), **`lastSyncedKey`**. So “cache” here means “we don’t reload the sender iframe on sync” and “we don’t reload period iframes when stepping.”
-
-### 2.2 Cache-busting when building URLs
-
-`buildInsarmapsUrl()` adds `_t={timestamp}_{urlCounter}_{uniqueId?}`. So every URL we set is unique; the browser does not serve a cached page for that iframe. Period iframes get `uniqueId` (e.g. `period_${periodIdx}`).
-
-### 2.3 What is effectively “cached” (not reloaded)
-
-- **Sender iframe on sync** – we never set the active iframe’s `src` again.
-- **Period panels** – once created, their `src` is not updated by postMessage; we only **show** another panel when changing period.
-
----
-
-## 3. What Happens When Switching Iframes (Dataset Dropdown)
-
-### 3.1 Time Controls closed
-
-1. `frameSelect` change → `selectDataset(selectedIndex)`.
-2. All panels hidden; selected panel shown (visibility, z-index, pointer-events).
-3. `updateOverlayUrl(...)` updates overlay hash.
-4. **No reload.** The newly visible iframe already has contour in sync (overlay sends `insarmaps-set-contour` to all iframes when contour changes).
-
-### 3.2 Time Controls open
-
-1. `selectDataset(index)` sees `timeControlsActive` and index change → `handleDatasetChangeInTimeControls(index)` and return.
-2. `loadPeriodsForDataset(newDatasetIdx)`: **clearPeriods()** (remove period panels from DOM), then create new period panels/iframes for the new dataset.
-3. `showPeriod(0)`, `updateControls()`.
-
-So “switching iframe” (dataset) with Time Controls on = **replace** the set of period panels with that for the new dataset. Main dataset panels are unchanged.
-
----
-
-## 4. What Happens When a New startDate/endDate Is Selected
-
-### 4.1 Via time slider (inside insarmaps)
-
-1. User drags time slider in active iframe → insarmaps sends postMessage with new URL (new startDate/endDate).
-2. Overlay (after debounce): update `currentMapParams`, overlay URL; for every **other** dataset iframe set **`iframe.src = newUrl`**.
-3. Active iframe is **not** reloaded; all other dataset iframes **reload** with new dates.
-
-### 4.2 Via Time Controls (overlay)
-
-1. Opening Time Controls creates one iframe **per period** (each URL has that period’s startDate/endDate).
-2. ◀/▶/Play → `showPeriod(periodIdx)`: only the selected period panel is shown; `currentMapParams.startDate`/`endDate` and overlay URL updated. **No iframe reload.**
-
-So: **Time slider** = one iframe per dataset; change dates → reload other dataset iframes. **Time Controls** = one iframe per period; change period → show that period’s iframe (no reload).
-
----
-
-## 5. Same Behavior for Different Datasets vs Different Time Periods
-
-- **Different datasets:** One iframe per dataset. Switching dataset = show that panel (no reload). When one iframe sends postMessage, we reload **all other dataset iframes** so they share the same params (including startDate/endDate).
-- **Different time periods (Time Controls):** One iframe per period for the **active** dataset. Switching period = show that period panel (no reload).
-
-So both “dataset” and “period” are “which iframe to show.” Difference: dataset iframes are created at **page load** and **synced** on postMessage; period iframes are created when **Time Controls open** and are **not** updated by postMessage (sync only touches `iframeDatasets` indices).
-
----
-
-## 6. Difference in Actions Between User Options
-
-Changes **inside** the active insarmaps iframe trigger postMessage → debounce → update `currentMapParams`. **Contour** is then synced by posting to all iframes (no reload). **All other params** (color limits, background, time slider, etc.) are synced by reloading all other dataset iframes. The active iframe is never reloaded.
-
-| User action | Where | What overlay does | Iframes reloaded? |
-|-------------|--------|-------------------|--------------------|
-| **Color limits** (minScale/maxScale) | Insarmaps | postMessage → set `src` on other iframes | All except active |
-| **Background** | Insarmaps | Same | All except active |
-| **Contour** | Insarmaps | postMessage **to all iframes** `insarmaps-set-contour` (no reload) | None |
-| **Dataset** (dropdown) | Overlay | Show/hide panel only; if Time Controls on, load periods for new dataset | None (or new period iframes only when Time Controls on) |
-| **Period** via **time slider** | Insarmaps | postMessage → set `src` on other iframes | All except active |
-| **Period** via **Time Controls** (◀/▶/Play) | Overlay | `showPeriod(idx)` – change visible period panel | None |
-
-So: **Color limits, background, time slider** → postMessage → reload all other dataset iframes. **Contour** → when **only** contour changes, overlay does **not** reload; it sends **postMessage** to **all** iframes to add/remove the contour layer (see § 7). **Dataset dropdown** → no reload; only show/hide panel. **Period via Time Controls** → no reload; only which period panel is visible.
-
----
-
-## 7. Contour toggle – add/remove in all iframes (no reload)
-
-To avoid unnecessary reloads and to make contours show when switching iframes, contour is **not** synced by reloading. Instead:
-
-1. User toggles the contour button **inside** the active insarmaps iframe.
-2. Insarmaps updates its URL and sends `postMessage({ type: 'insarmaps-url-update', url: '...' })`.
-3. Overlay receives the message (after debounce), updates `currentMapParams.contour` and the overlay hash URL.
-4. Overlay checks whether **only** the contour param changed (same lat/lon/zoom, scale, dates, background, opacity; only `contour` differs from last sync).
-   - **If only contour changed:** Overlay does **not** reload any iframe. It sends a **postMessage** to **every** dataset iframe: `{ type: 'insarmaps-set-contour', value: true|false }`. Each iframe (when embedded) listens for this and calls `myMap.addContourLines()` or `myMap.removeContourLines()` and updates the contour button state. So all iframes get the same contour state without reload; when the user switches dataset, the newly visible iframe already has contours on or off.
-   - **If any other param changed:** Overlay behaves as before: reloads **all other** iframes with the new URL (which includes the current contour).
-
-Insarmaps (mainPage.js) listens for `insarmaps-set-contour`: it adds/removes the contour layer and the button “toggled” state so the UI stays in sync.
-
-### Parameter values
-
-- Overlay uses **`contour=true`** and **`contour=false`** in its hash and in built iframe URLs; it normalizes `on`/`off` from insarmaps to `true`/`false`.
-
----
-
-## Data Flow Diagram
+## 1. High-level architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              overlay.html                                    │
-│                                                                             │
-│  ┌──────────────┐    ┌──────────────────┐    ┌──────────────────────────┐  │
-│  │ insarmaps.log│───>│ URL Parsing      │───>│ iframe Creation          │  │
-│  │ (data source)│    │ getOverlayUrlParams│   │ buildInsarmapsUrl()      │  │
-│  └──────────────┘    └──────────────────┘    └──────────────────────────┘  │
-│                                                          │                  │
-│                                                          ▼                  │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                    IFRAMES (one per dataset)                          │  │
-│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐                  │  │
-│  │  │ iframe0 │  │ iframe1 │  │ iframe2 │  │ iframe3 │                  │  │
-│  │  │  desc   │  │   asc   │  │  horz   │  │  vert   │                  │  │
-│  │  └────┬────┘  └────┬────┘  └────┬────┘  └────┬────┘                  │  │
-│  │       │            │            │            │                        │  │
-│  │       └────────────┴────────────┴────────────┘                        │  │
-│  │                           │                                           │  │
-│  │                    postMessage()                                      │  │
-│  │                    (insarmaps-url-update)                             │  │
-│  │                           │                                           │  │
-│  └───────────────────────────┼──────────────────────────────────────────┘  │
-│                              ▼                                              │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │                  Message Handler (window.addEventListener)            │  │
-│  │                                                                       │  │
-│  │  1. Parse incoming URL from sender iframe                             │  │
-│  │  2. Extract lat/lon/zoom and query params                             │  │
-│  │  3. Create syncKey (JSON of all sync-relevant params)                 │  │
-│  │  4. Compare with lastSyncedKey (skip if identical)                    │  │
-│  │  5. Update currentMapParams                                           │  │
-│  │  6. Update overlay.html URL (hash-based)                              │  │
-│  │  7. Reload ALL OTHER iframes with new params                          │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────────────┐  │
-│  │  Dropdown: show/hide panel only. Contour: postMessage to all iframes.      │  │
-│  │  If Time Controls open: loadPeriodsForDataset(newIdx) → new panels.       │  │
-│  └──────────────────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│  overlay.html  (data server origin, e.g. 149.165.154.65)               │
+│                                                                         │
+│  State: currentMapParams, userNarrowedDateRange, iframeSynced, ...     │
+│                                                                         │
+│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐                    │
+│  │ iframe0 │  │ iframe1 │  │ iframe2 │  │ iframe3 │   one per dataset  │
+│  │  desc   │  │   asc   │  │  horz   │  │  vert   │                    │
+│  └────┬────┘  └────┬────┘  └────┬────┘  └────┬────┘                    │
+│       │            │            │            │                          │
+│       └────────────┴────────────┴────────────┘                          │
+│                         │                                               │
+│              postMessage (both directions)                                │
+│                         │                                               │
+└─────────────────────────┼───────────────────────────────────────────────┘
+                          ▼
+              insarmaps (separate origin, e.g. 149.165.153.50)
 ```
 
-## Initialization Sequence
+### Two sync mechanisms (do not conflate them)
 
-### 1. Page Load
+| Mechanism | When used | What it can set |
+|-----------|-----------|-----------------|
+| **URL reload** (`iframe.src = buildInsarmapsUrl(...)`) | Background warm, dataset switch, pan/zoom/scale sync to other iframes | Everything insarmaps reads from URL: view, scales, dates, point, ref, pixelSize, contour, colorscale |
+| **postMessage** | Contours, narrowed dates after custom-ref switch, ref-applied ack, chart dot clicks | Only what insarmaps explicitly handles in `mainPage.js` listeners |
+
+**Critical rule:** The overlay **cannot** call `iframe.contentWindow.myMap...` (cross-origin `SecurityError`). All in-iframe control after load must go through **postMessage** or a **new URL reload**.
+
+---
+
+## 2. Data sources and URL building
+
+### insarmaps.log
+
+Read at page load. Two line types (see `minsar/html/README.md`):
+
+1. **Full URL** — template for map options (lat/lon/zoom, scales, dates, point, etc.).
+2. **Dataset name only** — expanded via `expandDatasetNameLine()` using the first full URL.
+
+Datasets are sorted: **desc → asc → horz → vert**.
+
+### expandDatasetNameLine — mintpy pitfall
+
+Mintpy logs often put **descending-only** params on the first URL line (`colorscale=velocity`, `startDate`, `endDate`, `pointLat`/`pointLon`). Name-only lines (e.g. `S1_asc_...`) must **not** inherit those.
+
+`TEMPLATE_PARAMS_STRIP_ON_EXPAND` deletes before building asc/horz/vert URLs:
+
+`pointLat`, `pointLon`, `refPointLat`, `refPointLon`, `colorscale`, `startDate`, `endDate`
+
+| Param in ascending iframe URL | sarvey-style log | mintpy-style log (before strip) |
+|------------------------------|------------------|----------------------------------|
+| `refPointLat`/`refPointLon` | when user sets ref | when user sets ref |
+| `colorscale=velocity` | usually absent | was copied from desc — **strip** |
+| `startDate`/`endDate` | usually absent | was copied from desc — **strip on expand** |
+| `pointLat`/`pointLon` | usually absent | was copied from desc — **strip on expand** |
+
+### buildInsarmapsUrl()
+
+Builds `/start/{lat}/{lon}/{zoom}?flyToDatasetCenter=false&startDataset=...&{params}&_t=...`
+
+- `_t` — cache-bust on every intentional reload.
+- `mapParamsForIframeLoad(mapParams, loadKind)` may strip params per load kind (see §5).
+
+### Overlay URL (bookmarkable)
+
+Hash-based (preferred):
+
 ```
-1. Show "Loading InSAR Data..." overlay
-2. Fetch insarmaps.log (reject HTTP errors, HTML error pages, empty/invalid lines; 10s timeout)
-   - On failure: show error on overlay, then navigate back via `document.referrer` or `history.back()` after 3s
-3. Parse URLs from log file (full URL lines, or dataset-name lines expanded from the first URL)
-4. Sort URLs by dataset type (desc, asc, horz, vert)
-5. Read overlay.html URL params (hash or query string)
-6. Initialize currentMapParams from URL or first insarmaps URL
-7. Create iframe for each URL entry (only active iframe gets `src` on init)
-8. Set initial active iframe based on URL params
-9. Show dropdown selector (only if multiple datasets)
-10. After active iframe `onload`, preload background dataset iframes via `scheduleWarmAll`
-11. Hide loading overlay on first postMessage (insarmaps-url-update) or after 15s timeout
+overlay.html#/start/0.7480/-77.9687/9.8000?startDataset=S1_desc_...&minScale=-3&maxScale=3&startDate=...&endDate=...
 ```
 
-### 2. What Triggers Data Loading (summary)
+---
 
-| Trigger | What Happens | iframes Affected |
-|---------|--------------|------------------|
-| **Page Load** | Active iframe gets `src`; backgrounds preload after active `onload` | Active first, then ALL others |
-| **Dropdown Change** | Show/hide panel only. If Time Controls on: new period iframes for new dataset | None / new period only |
-| **postMessage (any param in active iframe)** | Other iframes get new `src` after debounce | ALL EXCEPT sender |
+## 3. In-memory state (what a rewrite must preserve)
 
-See **§ 1. What Triggers the Loading of Data** and **§ 6. Difference in Actions Between User Options** for full detail.
+| Variable | Purpose |
+|----------|---------|
+| `currentMapParams` | Authoritative overlay state: view, scales, dates, point, ref, pixelSize, contour, colorscale, background, opacity |
+| `userNarrowedDateRange` | User's intentionally narrowed period; survives iframe "widen" noise during refSwitch |
+| `periodSelectionSource` | How period was set: `'slider'`, `'chart-dot'`, `'iframe-sync'`, or null |
+| `baselineMissionDateRange` | Mission-wide first/last date (union of all datasets); used to detect "full period" vs narrowed |
+| `datasetDateRanges` | Per-dataset `first_date`/`last_date` from insarmaps postMessages |
+| `iframeSynced` / `iframePointSynced` | Per-iframe sync keys — skip reload if URL already matches |
+| `iframeWarmInFlight` | Background preload in progress |
+| `pendingDateSyncByIndex` | Awaiting `insarmaps-set-dates-applied` ack for narrowed dates |
+| `refAppliedForDateSyncByIndex` | Custom ref confirmed on iframe; gates date postMessage |
+| `activeSwitchTracking` | Per-switch debug outcome: refOk, datesOk (see §12) |
 
-## Key Functions
+### Sync keys
 
-### `getOverlayUrlParams()`
-Parses overlay.html's URL (hash-based or legacy path-based) and extracts:
-- `view` or `startDataset` (which dataset to show)
-- `lat`, `lon`, `zoom` (map position)
-- Display params: `minScale`, `maxScale`, `startDate`, `endDate`, `pixelSize`, `background`, `opacity`, `contour`
-
-### `buildInsarmapsUrl(baseUrl, dataset, lat, lon, zoom, mapParams)`
-Constructs a full insarmaps URL with:
-- Path: `/start/{lat}/{lon}/{zoom}`
-- Query: `flyToDatasetCenter=false&startDataset={dataset}&{all mapParams}&_t={timestamp}`
-
-The `_t` timestamp parameter forces browser to reload the iframe (cache-busting).
-
-### `updateOverlayUrl(viewCodeOrDataset, mapParams, currentDataset)`
-Updates the browser URL (hash-based) to reflect current state for bookmarking/sharing.
-
-## Synchronization Mechanism
-
-### postMessage Flow (from insarmaps)
-When insarmaps changes its URL state (pan, zoom, slider change), it calls:
 ```javascript
-window.parent.postMessage({
-    type: 'insarmaps-url-update',
-    url: '/start/lat/lon/zoom?params...'
-}, '*');
+getSyncKey(params)   // view + display + dates + point + ref + colorscale
+getPointKey(params)  // pointLat/Lon + refPointLat/Lon only
 ```
-
-### Debounce & Cooldown
-- **SYNC_DEBOUNCE_MS = 1500ms**: Wait for user to stop interacting before syncing
-- **SYNC_COOLDOWN_MS = 3000ms**: Ignore incoming messages for 3s after syncing (prevents feedback loops)
-
-### syncKey Comparison
-```javascript
-const syncKey = JSON.stringify({
-    lat, lon, zoom,
-    minScale, maxScale,
-    startDate, endDate,
-    pixelSize, background, opacity, contour
-});
-if (syncKey === lastSyncedKey) return; // Skip if no actual change
-```
-
-## Comparison: Dataset Switch vs Time Slider Change
-
-### Dataset Switch (Dropdown Change)
-```
-User selects "Ascending" in dropdown
-    │
-    ▼
-1. Hide all panels (visibility, z-index, pointer-events)
-2. Show selected panel (panel${index})
-3. Update currentViewCode, currentDataset
-4. Update overlay.html hash URL
-5. updatePeriodHeader()
-    │
-    ▼
-No iframe.src is set. Point selection is preloaded on background iframes when the user clicks (immediate sync), so the newly visible iframe already has the marker.
-(If Time Controls open: handleDatasetChangeInTimeControls → loadPeriodsForDataset → new period iframes.)
-```
-
-**Key point**: Dataset switch is show/hide only (instant). Point selection is synced to background iframes immediately on click via `syncPointToBackgroundIframes()` — not on switch. Contour state is synced by overlay sending `insarmaps-set-contour` to all iframes when the user toggles contour.
-
-### Time Slider Change (postMessage)
-```
-User drags time slider in iframe0 (Descending)
-    │
-    ▼
-insarmaps calls appendOrReplaceUrlVar() which sends:
-    postMessage({ type: 'insarmaps-url-update', url: '...' })
-    │
-    ▼
-overlay.html receives message
-    │
-    ▼
-1. Check cooldown (skip if < 3000ms since last sync)
-2. Clear previous debounce timer
-3. Start new debounce timer (1500ms)
-    │
-    ▼ (after 1500ms)
-4. Parse URL from message
-5. Create syncKey
-6. Compare with lastSyncedKey (skip if same)
-7. Update currentMapParams
-8. Update overlay.html hash URL
-9. Find sender iframe (iframe0)
-10. Set lastSyncTime = Date.now()
-11. For each OTHER iframe (1, 2, 3):
-    - Build new URL with currentMapParams
-    - Set iframe.src = newUrl  ← IFRAME RELOADS
-```
-
-**Key point**: The SENDER iframe is NOT reloaded. All OTHER iframes are reloaded.
-
-## Critical Difference Summary
-
-| Action | Reloaded iframes | Uses currentMapParams? |
-|--------|------------------|------------------------|
-| Dropdown switch | **None** (show/hide only; point preloaded on background iframes at click time) | N/A |
-| Contour only | **None** (postMessage `insarmaps-set-contour` to all iframes) | N/A |
-| Pan/zoom / time slider / color scale / background / opacity | All except sender | YES |
-
-## Known Issues & Analysis
-
-### Issue 1: Iframes Not Properly Displayed in Time Series Control Mode
-
-**Symptom**: When using time series controls, frames don't show differences.
-
-**Root Cause Analysis**:
-The `buildInsarmapsUrl()` function passes the SAME `startDate` and `endDate` to all iframes. When insarmaps receives these parameters, it should display the data for that time range. However:
-
-1. Each dataset may have different date ranges available
-2. If the requested date range is outside the dataset's available range, insarmaps may default to its own range
-3. The datasets should show different data for the same dates (they're different viewing geometries), but if parameter passing fails, they'll show their defaults
-
-**Verification needed**: Check if `startDate`/`endDate` are actually being included in the iframe URLs being set.
-
-### Issue 2: Rectangle Cut-off
-
-**Symptom**: Only part of the data area displays, with the rest cut off.
-
-**Root Cause Analysis**:
-This was previously traced to `pointLat`, `pointLon`, `refPointLat`, `refPointLon` parameters causing Mapbox rendering issues in some Mapbox versions. Point params are synced via `buildInsarmapsUrl()`, `syncPointToBackgroundIframes()`, and `iframePointSynced` tracking. Background iframes reload on point click (immediate); dataset switch does not reload.
-
-**If still occurring**: The issue may be related to:
-1. iframe sizing/CSS
-2. Mapbox GL JS projection errors
-3. Timing issues during rapid reloads
-
-### Issue 3: Initial Loading Silence
-
-**Symptom**: Nothing happens for several seconds on first load.
-
-**Solution implemented**: Added a loading overlay with spinner that shows "Loading InSAR Data..." until the first `postMessage` (insarmaps-url-update) is received from any iframe, or after a 15s fallback timeout.
-
-### Issue 4: Contour toggle – contours may not show when switching frames
-
-**Symptom**: After toggling contours, `contour=on` (or `contour=true`) appears in overlay.html’s URL, but the loaded map in the iframe does not show contour lines.
-
-**Current behaviour**: Overlay sends `insarmaps-set-contour` to all iframes (no reload). Contours still often do not show when switching frames. For the detailed reason, see **Known limitations** below.
-
-
-See **§ 7. Contour toggle** and **Known limitations** below.
-
-## Known limitations
-
-### Contours do not show when switching frames
-
-**Observed behaviour**: Contour lines do not reliably appear on the map when switching to another dataset (iframe) via the Dataset dropdown, even though the overlay URL shows `contour=true` and the overlay sends `insarmaps-set-contour` to all iframes.
-
-**Intended behaviour**: When the user turns contours on in one iframe, overlay sends a postMessage to every iframe to add the contour layer. Switching to another iframe should then show that iframe with contours already on.
-
-**Reasons this can fail (as far as we can tell)**:
-
-1. **postMessage timing and iframe readiness**  
-   Overlay sends `insarmaps-set-contour` as soon as it gets the URL-update message from the active iframe (after debounce). The other iframes may still be loading or their map may not be fully initialised. Insarmaps' listener runs `myMap.addContourLines()` only if `myMap` exists; if the target iframe's map is not ready yet, the call may do nothing or the layer may not attach correctly. So a frame that was hidden and never "ready" when the message was sent may never show contours.
-
-2. **Contour layer added only after map load in insarmaps**  
-   In insarmaps, contours are added on initial load from the URL via a `setTimeout(..., 1000)` so the map is ready first. When we later send `insarmaps-set-contour`, we call `addContourLines()` immediately. If the map in that iframe was loaded while **hidden** (e.g. it is not the active frame), Mapbox may not have finished layout or style loading for that document. Adding a layer in that state can fail or not render, and there is no retry. So frames that were never the active one when contours were toggled can end up without contours even after receiving the message.
-
-3. **Cross-origin and target of postMessage**  
-   Overlay does `iframe.contentWindow.postMessage(...)`. If the iframe is same-origin (same insarmaps origin), the message is delivered. If there is any cross-origin or security setup that blocks or alters messaging, the target iframe might not receive the message or might receive it in a context where `myMap` is not the same instance. That would also prevent contours from being added.
-
-4. **No reload on dataset switch**  
-   We deliberately avoid reloading the selected iframe when switching datasets (to avoid unnecessary data reloads). So the newly visible iframe is whatever state it was left in. If that iframe never successfully applied the contour layer (for the reasons above), it will still show no contours when made visible. The overlay URL and overlay-side logic are correct; the failure is in the target iframe actually applying the contour layer.
-
-5. **Single "fire once" message**  
-   Overlay sends one `insarmaps-set-contour` per contour toggle. If an iframe is not ready at that moment, it never gets a second chance unless the user toggles contour again (or we add retries / re-send when a frame becomes visible, which we do not do today).
-
-**Why background works**: The base map (e.g. `background=satellite`) is part of the initial map style and is applied when the iframe loads. It does not depend on a separate "add layer" call or a delayed init. So when we do reload other iframes (on pan/zoom/scale/background change), they load with the new background and it shows. Contours are a separate layer added later, so they are more sensitive to timing and readiness.
-
-**Summary**: Contours are a **known limitation**: they may not show when switching frames because (a) the non-active iframes may not be ready when the sync message is sent, (b) insarmaps adds the contour layer in a way that can fail when the map was loaded while hidden, and (c) we do not reload or re-send the contour state when the user switches dataset. The overlay URL and postMessage design are correct; the limitation is in reliably applying the contour layer in every iframe at the right time.
-
-## Caching Behavior
-
-See **§ 2. How Data Are Cached** for the full description.
-
-### Browser Cache
-- The `_t={timestamp}` parameter in iframe URLs forces browser to bypass cache
-- Each iframe reload gets a fresh URL, preventing stale data
-
-### insarmaps Internal Cache
-- insarmaps may cache tile data internally
-- This is controlled by insarmaps, not overlay.html
-
-### There is NO explicit caching in overlay.html
-- `currentMapParams` stores the current state in memory
-- `lastSyncedKey` stores the last synced state to prevent duplicate syncs
-- Neither of these persist across page reloads
-
-## Single Dataset Mode
-
-When `insarmaps.log` contains only ONE URL:
-1. `singleDatasetMode = true`
-2. Dropdown selector is hidden
-3. Container gets extra height (no selector bar)
-4. postMessage sync still works but doesn't update other iframes (there are none)
-
-## URL Format
-
-### Hash-based (preferred, shareable):
-```
-overlay.html#/start/0.7480/-77.9687/9.8000?startDataset=S1_desc_...&minScale=-3&maxScale=3
-```
-
-### Legacy path-based (backwards compatible):
-```
-overlay.html/start/0.7480/-77.9687/9.8000?view=desc&minScale=-3&maxScale=3
-```
-
-## Synchronized Parameters
-
-| Parameter | Description | Source |
-|-----------|-------------|--------|
-| lat | Map center latitude | Map position |
-| lon | Map center longitude | Map position |
-| zoom | Map zoom level | Map position |
-| minScale | Color scale minimum | Scale slider |
-| maxScale | Color scale maximum | Scale slider |
-| colorscale | Color scale type (e.g. `velocity`, `displacement`); only in URL when set (no default – insarmaps uses its own default otherwise) | Scale type toggle in insarmaps |
-| startDate | Time range start | Time slider |
-| endDate | Time range end | Time slider |
-| pixelSize | Point size | Pixel slider |
-| background | Map background | Layer selector |
-| opacity | Layer opacity | Opacity slider |
-| contour | Contour display (`contour=true` / `contour=false` in URL) | Contour toggle |
-
-## 8. Period Selection Mode
-
-Period selection mode (the +/− button) allows the user to register start and end dates for a new time period. The mode is a pure UI toggle: it enables or disables the Start/End date inputs and the ability to pick dates from the timeseries chart.
-
-### 8.1 What happens when entering period selection mode (+)
-
-1. `periodSelectionModeActive = true`
-2. `replaceNextPeriodWithNew = true` (next committed period replaces; subsequent ones append)
-3. `updateOverlayUrl(...)` – URL keeps existing periods if present
-4. `updateControls()` – updates period indicator, arrow state, etc.
-5. `updateAddPeriodButton()` – button shows "−", title "Close period selection mode", Start/End boxes visible
-6. `sendKeepChartsOpenToVisibleIframe()` – tells insarmaps to keep the timeseries open
-7. If no point selected: `addPeriodState = 'need_point'`, grey inputs, return
-8. Otherwise: `addPeriodState = 'need_start'`, grey inputs
-
-**No reload. No panel switch. No clearPeriods().** The same view (period panel or main dataset panel) stays visible. The timeseries window is not affected.
-
-### 8.2 What happens when exiting period selection mode (−)
-
-1. `periodSelectionModeActive = false`
-2. `periodSelectionModeExitSuppressUntil = Date.now() + 2000` – suppress postMessage-driven reloads for 2 seconds (clicking − can cause iframe blur/resize → insarmaps sends postMessage → overlay would reload other period iframes)
-3. `updateAddPeriodButton()` – button shows "+", title "Click to select periods", Start/End boxes collapse
-4. `sendKeepChartsOpenToVisibleIframe()` – tells insarmaps to keep the timeseries open
-
-**No reload. No panel switch. No loadPeriodsForDataset().** The same view stays visible. The timeseries window is not affected. Any postMessage that arrives shortly after exiting (e.g. from iframe blur or layout resize) is suppressed from triggering period iframe reloads.
-
-### 8.3 When are period panels created or updated?
-
-- Period panels are created when **Time Controls are opened** (`openTimeControls()` → `loadPeriodsForDataset()`)
-- Period panels are updated when the user **commits a period** from dot selection (`commitPeriodFromDotSelection()`) – but only when **not** in period selection mode (so committing updates panels only after the user has exited the mode)
-- Changing period length or Sequential input triggers `loadPeriodsForDataset()` again
-- Switching dataset while Time Controls are open triggers `loadPeriodsForDataset()` for the new dataset
-
-The +/− button itself never triggers loading or reloading.
 
 ---
 
-## NOT Synchronized (by design)
+## 4. Page load and iframe lifecycle
 
-| Parameter | Reason |
-|-----------|--------|
-| startDataset | Each iframe has its own dataset |
+1. Fetch `insarmaps.log` (10s timeout; error → redirect back).
+2. Parse, sort, seed `baselineMissionDateRange` from template URLs.
+3. Create one `.panel` + iframe per dataset; only **active** iframe gets `src` immediately.
+4. On active `onload` → `scheduleWarmAll()` preloads background iframes.
+5. Loading overlay hidden on first `insarmaps-url-update` or 15s timeout.
 
-**Point selection (`pointLat`/`pointLon`, `refPointLat`/`refPointLon`):** Synced across dataset iframes via `warmAllBackgroundIframes()` / `scheduleWarmAll()`. Background iframes start loading on page create with **stable preload URLs** (`_t=stable_dsN`, one load each — no duplicate warm pass). Param updates are **batched** (150ms debounce) so insarmaps startup messages trigger one warm, not many; point clicks warm immediately. Skips reload when URL params already match (`insarmapsUrlsEquivalent`, ignores `_t`) or iframe is already loading (`iframeWarmInFlight`). Dataset switch stays instant (show/hide only). Insarmaps has no `insarmaps-set-point` postMessage (unlike contours), so URL reload of background iframes is required when params change.
+Background iframes use `visibility: visible` + `z-index: -1` so they load without blocking the active view.
 
 ---
 
-## Known issue: Reference point in Time Controls mode (unresolved)
+## 5. Dataset switch — the critical path
 
-**Date:** 2026-02-13
+`selectDataset(index)`:
 
-**Problem:** In Time Controls mode, when the user changes the reference point in the visible period iframe, only that iframe reloads with the new reference point applied to the data. The other (background) period iframes show the black dot at the new reference point location but their data remain referred to the previous reference point. When the user steps to another period (◀/▶), that period’s data are not reprocessed with the new reference point. The desired behaviour is the same as for minScale/maxScale: changing the reference point should reload all period iframes so every period’s data uses the new reference point.
+1. Show/hide panels (instant).
+2. **If custom ref** (`hasCustomRefPoint`): `reloadDatasetIframe(index, 'switch-dataset-ref', 'refSwitch')` — **always force reload**.
+3. **Else**: `syncDatasetIframeOnSwitch(index)` — reload only if sync key stale.
+4. postMessage `insarmaps-set-contour` to newly visible iframe.
+5. `beginSwitchTracking(from, to)` for debug logging.
 
-**What was tried:**
+### mapParamsForIframeLoad — load kinds
 
-1. **Treat visible period iframe as “active”** so its postMessages bypass the 3s cooldown and are always processed.
-2. **Include lat/lon/zoom in display-params change detection** so map view changes trigger background period iframe reloads within the 5s period sync cooldown.
-3. **Include refPointLat/refPointLon in displayParamsChanged** so reference-point-only changes trigger reload of all period iframes.
-4. **Point-only message path:** when a period iframe sends only refPoint (no full path), update state and reload all non-sender period iframes with the new refPoint in the URL.
-5. **Display-time reload in `showPeriod`:** store a sync key per period panel (params it was loaded with); when showing a period, if its sync key differs from current params (e.g. refPoint changed), reload that iframe so insarmaps applies the new reference point while the iframe is visible.
-6. **Orange “Loading…” indicator** to show when background period iframes are reloading (so the user knows to wait).
+When **custom ref** is set:
 
-**Result:** Did not resolve the issue. Background period iframes still did not apply the new reference point to their data; only the visible iframe did. Changes were reverted. To be retried when tooling/models improve.
+| loadKind | Stripped from URL | Kept |
+|----------|-------------------|------|
+| `refSwitch` | `colorscale`, **`startDate`**, **`endDate`** | `pointLat`/`pointLon`, `refPointLat`/`refPointLon`, scales, view, pixelSize, contour |
+| `crossDataset` | `colorscale` only | dates, point, ref, everything else |
+| `dateAfterRef` | `colorscale`, `contour`, `pixelSize` | dates + ref (sarvey full-period only; see below) |
+
+**Why refSwitch drops dates:** Loading custom ref + narrowed dates in one URL makes insarmaps run date recolor **before** custom ref recolor applies → map shows default-referenced data with a custom ref marker. Fix: phase 1 = ref only; phase 2 = dates via postMessage.
+
+### Two-phase flow (custom ref + narrowed period)
+
+```
+User on Desc: custom ref + narrowed period
+        │
+        ▼
+selectDataset(Asc)
+        │
+        ▼
+Phase 1: refSwitch reload
+  URL: point + ref + scales + view  (NO startDate/endDate)
+        │
+        ▼
+insarmaps applies ref from URL → postMessage insarmaps-ref-applied
+        │
+        ▼
+Phase 2: overlay postMessage insarmaps-set-dates { startDate, endDate }
+        │
+        ▼
+insarmaps applies dates → postMessage insarmaps-set-dates-applied
+        │
+        ▼
+Done: Asc has custom ref + narrowed period
+```
+
+`scheduleNarrowedDateSync()` / `maybeStartDateSyncAfterRef()` orchestrate phase 2. Phase 2 waits for `insarmaps-ref-applied` when `awaitRef` is true.
+
+### dateAfterRef (legacy second URL load)
+
+`shouldRunDateAfterRef()` — only for **non-mintpy** datasets when period is **full mission** (`isFullMissionDateRange()`). Mintpy always skips; narrowed periods always use postMessage instead.
+
+---
+
+## 6. postMessage protocol
+
+### iframe → overlay (insarmaps sends)
+
+| type | Purpose |
+|------|---------|
+| `insarmaps-url-update` | Any URL change (pan, zoom, slider, scales, ref, point). Includes `url`, optional `firstDate`/`lastDate`. Debounced 1500ms for background sync. |
+| `insarmaps-ref-applied` | Custom ref recolor succeeded. `{ refPointLat, refPointLon }`. Triggers phase-2 date sync. |
+| `insarmaps-ref-failed` | Ref application failed; overlay may auto-retry refSwitch. |
+| `insarmaps-set-dates-applied` | Ack that dates were applied inside iframe. |
+| `insarmaps-timeseries-date` | User clicked a date on the displacement chart (Time Controls period selection). |
+
+### overlay → iframe (overlay sends)
+
+| type | Purpose | Handler in insarmaps |
+|------|---------|---------------------|
+| `insarmaps-set-contour` | `{ value: true/false }` — no reload | `mainPage.js` |
+| `insarmaps-set-dates` | `{ startDate, endDate }` YYYYMMDD — cross-origin date apply | `mainPage.js` → `GraphsController.applyInsarDateRangeFromYyyymmdd()` |
+
+**No `insarmaps-set-point` or `insarmaps-set-ref`** — point and ref must go in the **iframe URL** on reload.
+
+---
+
+## 7. Narrowed time period — capture and resolve
+
+### Problem this solves
+
+After `refSwitch`, the iframe loads without dates and temporarily reports the **full dataset span** in `insarmaps-url-update`. Without guards, overlay would overwrite the user's narrowed period.
+
+### captureUserNarrowedDateRange()
+
+Records `{ startDate, endDate }` when the user narrows via slider or chart. Rejects:
+
+- Log-template full-span dates from `insarmaps.log`
+- Dataset full-span (`first_date`–`last_date`)
+- Widen attempts relative to stored narrow range
+
+### resolveDatesFromIframeUpdate()
+
+For each incoming date update, returns an **action**:
+
+| action | Meaning |
+|--------|---------|
+| `captured-user-narrow` | New user narrow accepted |
+| `rejected-widen-kept-user` | Iframe tried to widen; kept `userNarrowedDateRange` |
+| `rejected-dataset-full-kept-user` | Iframe reported full dataset span during refSwitch load |
+| `rejected-log-template-kept-user` | Iframe echoed insarmaps.log template dates |
+| `accepted-active` | Normal active iframe date change |
+| `ignored-background` | Background iframe widen ignored |
+
+### reassertNarrowedDatesToIframe — do not over-use
+
+Sends another `insarmaps-set-dates` when overlay rejects a widen. **Over-aggressive reassert caused slider snap-back** (post-fix32): reassert fired during user slider drags and redundant set-dates triggered map refresh.
+
+`shouldReassertAfterDateReject()` now skips:
+
+- `path === 'url-update-debounced'` (user dragging)
+- Within 2.5s of last slider capture
+- All `rejected-widen-kept-user` (expected during refSwitch)
+
+---
+
+## 8. Active-iframe changes (postMessage debounce)
+
+When the **active** iframe changes pan/zoom/scales/dates (not contour-only):
+
+1. Debounce 1500ms (`SYNC_DEBOUNCE_MS`).
+2. Update `currentMapParams` (dates through `resolveDatesFromIframeUpdate`).
+3. Reload **all other** dataset iframes with new URL.
+4. Active iframe is **never** reloaded.
+
+**Contour-only:** postMessage `insarmaps-set-contour` to all iframes — no reload.
+
+**Cooldown:** Non-active iframe messages ignored for 3s after a sync (`SYNC_COOLDOWN_MS`) to prevent feedback loops. Active iframe bypasses cooldown.
+
+---
+
+## 9. What must transfer on dataset switch (checklist for rewrites)
+
+When switching Desc ↔ Asc ↔ Horz ↔ Vert, these should persist:
+
+| State | How it transfers | Common failure |
+|-------|------------------|----------------|
+| Map view (lat/lon/zoom) | In reload URL | Usually OK |
+| minScale / maxScale | In reload URL | Usually OK |
+| **Custom ref** (`refPointLat`/`refPointLon`) | `refSwitch` URL + insarmaps ref recolor | Marker shows but **data not re-referenced** if dates/colorscale race ref |
+| **Time-series point** (`pointLat`/`pointLon`) | In reload URL | Lost if `mapParamsForIframeLoad` strips point |
+| **Narrowed period** | Phase 2 `insarmaps-set-dates` postMessage | Lost if dates in refSwitch URL; lost if cross-origin slider access attempted |
+| pixelSize | In reload URL (refSwitch keeps it) | Lost if stripped in `dateAfterRef` |
+| contours | URL on reload + `insarmaps-set-contour` on switch | Timing: hidden iframe may miss contour message |
+| colorscale | Stripped on cross-dataset when custom ref | Intentional — `colorscale=velocity` races ref recolor on mintpy |
+
+---
+
+## 10. Bug history — lessons for a clean rewrite
+
+These bugs were found during 2026 debugging (mintpy/qChiles, testChiles, testMiami/sarvey). A rewrite should implement the **correct behaviour** without repeating the trial-and-error fixes.
+
+### 10.1 Custom ref not applied on switched dataset
+
+**Symptom:** Ref marker correct; displacement data still default-referenced.
+
+**Causes (layered):**
+
+1. **URL param races** — `colorscale=velocity` + `startDate`/`endDate` in same load as `refPointLat`/`refPointLon` → insarmaps date recolor runs before ref recolor.
+2. **False "already synced"** — `iframeSynced` matched but insarmaps never applied ref internally.
+3. **Tile timing in insarmaps** — `refreshDatasetWithNewReferencePoint()` before tiles rendered → silent no-op.
+4. **expandDatasetNameLine** — mintpy asc inherited desc-only params from template URL.
+
+**Fix pattern:** `refSwitch` = minimal URL (ref + point + scales, no dates/colorscale); wait for `insarmaps-ref-applied`; then `insarmaps-set-dates`.
+
+**Full detail on waiting, user messages, watchdogs, and what remains broken:** see **§19**.
+
+### 10.2 Time period lost on switch
+
+**Symptom:** After switch, slider shows full dataset span.
+
+**Causes:**
+
+1. Dates stripped from switch URL (correct for ref) but phase 2 never ran.
+2. Cross-origin attempt to set slider via `iframe.contentWindow.myMap.graphsController` — **blocked**.
+3. `reassertNarrowedDatesToIframe` fighting user slider drags.
+4. `mainPage.js` calling `refreshDatasetWithNewReferencePoint` on every `insarmaps-set-dates` even when dates unchanged → slider reset.
+
+**Fix pattern:** postMessage dates only; `datesChanged` guard before map refresh; conservative reassert.
+
+### 10.3 Time-series graph lost on switch
+
+**Symptom:** No displacement chart after switch.
+
+**Cause:** `mapParamsForIframeLoad` stripped `pointLat`/`pointLon` while fixing ref.
+
+**Fix:** Always keep point in refSwitch/crossDataset URLs.
+
+### 10.4 Slider snap-back after ref + switch
+
+**Symptom:** Slider works without custom ref; breaks after ref + Desc→Asc or Asc→Desc.
+
+**Cause:** Feedback loop — overlay reassert + insarmaps redundant refresh on unchanged dates.
+
+**Fix (post-fix32):** `shouldReassertAfterDateReject()` + `datesChanged` check in `mainPage.js` `insarmaps-set-dates` handler.
+
+### 10.5 Background warm with partial ref
+
+**Symptom:** Asc preloaded with `refPointLat` only, `refPointLon` null.
+
+**Fix:** `hasPartialCustomRef()` — do not warm until both coords present.
+
+---
+
+## 11. Insarmaps companion requirements
+
+Overlay alone is insufficient for custom ref + narrowed dates. Insarmaps must provide:
+
+| Feature | File | Notes |
+|---------|------|-------|
+| `insarmaps-set-dates` handler | `mainPage.js` | Applies dates; replies `insarmaps-set-dates-applied`. Only `refreshDatasetWithNewReferencePoint` when **dates actually changed**. |
+| `insarmaps-ref-applied` postMessage | `mainMap.js` | After custom ref recolor verified. |
+| `applyInsarDateRangeFromYyyymmdd()` | `GraphsController.js` | Slider + chart navigator sync; `_programmaticDateSync` flag to avoid feedback loops. |
+| Deferred ref until tiles loaded | `mainMap.js` | `applyStartingDatasetPointSelections` (waits for `queryRenderedFeatures` before synthetic click). |
+| `insarmaps-ref-failed` postMessage | `mainMap.js` | When URL ref apply exhausts retries. |
+
+Deploy overlay to **data server**; deploy insarmaps JS to **insarmaps server** (different hosts).
+
+---
+
+## 12. Debugging — switch-result table
+
+Switch-result tables were built from debug instrumentation (since removed). The tracking hooks (`beginSwitchTracking`, `logSwitchOutcomePart`) remain in code but no longer emit logs. To re-enable debugging, add fetch/post to a log ingest endpoint at these locations. Key log messages for building switch-result tables:
+
+| Log `message` | Source | Use |
+|---------------|--------|-----|
+| `switch attempt` | `beginSwitchTracking` | Start of switch: from/to, `userNarrowedAtSwitch`, `hasCustomRef` |
+| `switch outcome` | `logSwitchOutcome` | End: `outcome`, `refOk`, `datesOk`, `elapsedMs` |
+| `ref applied postMessage received` | ref-applied handler | Ref phase success |
+| `postMessage set-dates sent` | `tryApplyNarrowedDatesToIframe` | Date phase started |
+| `postMessage date sync applied` | `onDateSyncApplied` | Date phase ack |
+| `date resolve` | `logDateResolve` | Widen rejects, `willReassert` |
+| `user slider drag` | `GraphsController.js` | Confirms slider not fighting overlay |
+
+### Switch-result table format
+
+Build one row per completed switch from `switch attempt` + `switch outcome` pairs:
+
+| # | Switch | Period (start → end) | pixel_size | contours | Ref | Dates | Outcome |
+|---|--------|----------------------|------------|----------|-----|-------|---------|
+| 1 | Desc → Asc | 20160525 → 20190820 | 6.5 | on | ✓ (`refIndex:1`, coords match) | ✓ (`onDateSyncApplied`) | **success** |
+| 2 | Desc → Asc | 20150914 → 20260304 | 6.5 | on | ✗ (no `ref-applied` in time) | ✗ (`no-ack`) | **FAILED** |
+
+**Column sources:**
+
+- **Switch** — `fromLabel` → `toLabel` from `switch attempt`
+- **Period** — `userNarrowedAtSwitch` or `currentMapParams` at switch time
+- **pixel_size / contours** — `currentMapParams.pixelSize`, `currentMapParams.contour`
+- **Ref** — `refOk` from `switch outcome`; verify with `insarmaps-ref-applied` + coord match
+- **Dates** — `datesOk`; verify with `insarmaps-set-dates-applied` matching pending range
+- **Outcome** — `outcome` field: `success`, `ref-failed`, `dates-failed`, `ref-and-dates-failed`
+
+### Example outcomes from test sessions (2026-06)
+
+| Scenario | Custom ref | Narrowed period | Typical result after fixes |
+|----------|------------|-----------------|---------------------------|
+| Reload, no ref, slider on Desc+Asc | No | Any | ✓ both datasets |
+| Ref on Desc, switch to Asc | Yes | No | ✓ ref transfers |
+| Ref on Desc, narrow slider, switch to Asc | Yes | Yes | ✓ ref + period (post-fix32) |
+| Full mission period | Yes | No (full) | ✓ sarvey may use dateAfterRef URL phase |
+
+---
+
+## 13. Time Controls mode
+
+(Unchanged core behaviour; custom-ref sync above applies to main dataset iframes, not period iframes.)
+
+- **Open Time Controls:** `loadPeriodsForDataset()` — one iframe per period for active dataset.
+- **Change period (◀/▶/Play):** `showPeriod(idx)` — show/hide only, no reload.
+- **Dataset switch with TC on:** `restoreToBaselineState()` for new dataset.
+
+### Known limitation: Reference point in Time Controls mode (unresolved, 2026-02-13)
+
+Changing ref in the visible period iframe does not re-reference other period iframes' data. Only the visible period applies the new ref. Documented for retry later.
+
+---
+
+## 14. Period Selection Mode (+/−)
+
+See original §8 behaviour: pure UI toggle for registering start/end dates from chart dot clicks. No reload on enter/exit. `insarmaps-timeseries-date` postMessage feeds the Start/End inputs.
+
+---
+
+## 15. Action summary table (current behaviour)
+
+| User action | Overlay response | Iframes reloaded? |
+|-------------|------------------|-----------------|
+| Pan/zoom/scales/background/opacity/slider | Debounced sync → reload **other** datasets | Others only |
+| Contour toggle | `insarmaps-set-contour` to **all** | None |
+| Dataset switch, **no custom ref** | Show/hide; reload target if stale | Target if stale |
+| Dataset switch, **custom ref** | `refSwitch` reload → wait ref → `set-dates` postMessage | Target always |
+| Point/ref click | Warm background iframes with new URL | Backgrounds |
+| Time Controls period step | Show/hide period panel | None |
+
+---
+
+## 16. Key functions (quick reference)
+
+| Function | Role |
+|----------|------|
+| `parseInsarmapsLogUrls()` | Parse log; expand name-only lines |
+| `expandDatasetNameLine()` | Build per-dataset URL; strip template params |
+| `buildInsarmapsUrl()` | Full iframe URL with cache-bust |
+| `mapParamsForIframeLoad()` | Strip params per load kind (refSwitch critical) |
+| `selectDataset()` | Dataset switch orchestration |
+| `reloadDatasetIframe()` | Force iframe reload with reason + loadKind |
+| `syncDatasetIframeOnSwitch()` | Conditional reload when no custom ref |
+| `scheduleWarmAll()` / `warmAllBackgroundIframes()` | Background preload |
+| `resolveDatesFromIframeUpdate()` | Accept/reject date changes from iframes |
+| `captureUserNarrowedDateRange()` | Store user's narrowed period |
+| `scheduleNarrowedDateSync()` / `tryApplyNarrowedDatesToIframe()` | Phase-2 date postMessage |
+| `maybeStartDateSyncAfterRef()` | Start dates after `insarmaps-ref-applied` |
+| `shouldReassertAfterDateReject()` | Guard against reassert feedback loops |
+| `beginSwitchTracking()` / `logSwitchOutcomePart()` | Debug switch tables |
+| `getSyncKey()` / `getPointKey()` | Staleness detection |
+
+---
+
+## 17. Known limitations
+
+### Contours may not show when switching frames
+
+Contour is applied via postMessage without reload. Hidden iframes may not be ready when the message arrives. See historical analysis in git history of this file. Workaround: toggle contour again after switch.
+
+### Cross-origin
+
+Overlay and insarmaps are different origins. All in-iframe manipulation after load requires postMessage or URL reload.
+
+### Mintpy vs sarvey log formats
+
+Mintpy `insarmaps.log` first lines carry more query params. Any rewrite must treat **per-dataset URL building** and **template param stripping** as first-class, not an afterthought.
+
+---
+
+## 19. Reference point application — waiting, user messages, and recovery
+
+**Rewrite priority.** This is the hardest unsolved part of overlay.html. The reference **marker** can appear while displacement **data** still uses the database default reference. Dataset switch with a narrowed period depends on ref finishing before date sync — if ref never completes, dates and slider also fail.
+
+### 19.1 Symptom vs internal state
+
+| What user sees | What may be true internally |
+|----------------|----------------------------|
+| Black ref marker at correct location | `addReferencePointSourceAndLayer` ran |
+| Map colors look like default reference | `refreshDatasetWithNewReferencePoint` never ran or ran on empty tiles |
+| Time series graph shows wrong reference | `/point` displacement fetch failed or used stale ref |
+| Switch "succeeds" but map wrong on new dataset | `insarmaps-ref-applied` never received, or received from **wrong** iframe |
+| Status banner "still loading" for 15+ s | Ref genuinely stuck, not merely slow |
+
+### 19.2 Why ref application is asynchronous and fragile
+
+Insarmaps was built for **user click** on a rendered InSAR point, not for overlay-driven cross-origin sync. On iframe load with `refPointLat`/`refPointLon` in the URL, `applyStartingDatasetPointSelections()` in `mainMap.js`:
+
+1. Waits for `onceRendered` (map style loaded — **not** the same as InSAR tiles queryable).
+2. Calls `map.queryRenderedFeatures(pt)` at the ref coordinates.
+3. If no feature → retry up to **40** `onceRendered` cycles; else post `insarmaps-ref-failed` (`url-ref-retries-exhausted`).
+4. On hit → `leftClickOnAPoint` → async `/point` fetch for displacements.
+5. Waits up to **80** more `onceRendered` cycles for `nonDefaultReferencePoint()`; else `url-ref-wait-exhausted`.
+
+**Failure modes:**
+
+- Iframe loaded while **hidden** (background warm) — tiles may never become queryable.
+- **Cold datasets** (especially Vert/Horz first switch) — tiles slow; retries exhaust.
+- **Date recolor races ref** — if dates hit URL or `insarmaps-set-dates` before ref ready, `mainPage.js` logs `waitingForRef: true` and map stays default-referenced.
+- **False success signal** — in overlay iframe mode, `addReferencePointFromClick` posts `insarmaps-ref-applied` when the **click path** completes but sets `_deferRefRecolorUntilSetDates = true`; map recolor waits for parent's `insarmaps-set-dates`. Overlay treats ref-applied as "phase 1 done" even though **map pixels may not be re-referenced yet**.
+
+### 19.3 Two-phase switch depends on ref acknowledgment
+
+```
+refSwitch reload
+    → insarmaps applyStartingDatasetPointSelections
+    → (hopefully) insarmaps-ref-applied
+    → overlay maybeStartDateSyncAfterRef
+    → insarmaps-set-dates
+    → insarmaps-set-dates-applied
+```
+
+If step 3 never happens, phase 2 is blocked (`pending.awaitRef === true`) or date sync returns `waitingForRef: true` and fails with `no-ack`.
+
+**Waiting helps when ref is slow; waiting does not help when ref is stuck.** Session logs showed a Vert switch where the user waited **31 s** but `insarmaps-ref-applied` never arrived — only `url point applied`, not `url ref applied`.
+
+### 19.4 User-facing messages (`#ref-status-indicator`)
+
+Orange banner below the dataset dropdown (`aria-live="polite"`). Shown via `updateRefStatusIndicator(text, visible)`.
+
+| When shown | Message text |
+|------------|--------------|
+| Date sync gave up retries but ref still pending (`shouldDeferDateSyncFailure`) | `Applying reference point on {label}… Map and time series may be incomplete until it finishes.` |
+| **8 s** after switch with ref still pending (`REF_STATUS_ADVISE_MS`) | `Reference point is still loading on {label}. Switch to another view and back, or wait — we will retry automatically.` |
+| **15 s** watchdog triggers auto-retry (`REF_STUCK_WATCHDOG_MS`) | `Retrying reference point load on {label}…` |
+| Auto-retry exhausted (`MAX_REF_AUTO_RETRIES = 1`) | `Reference point did not load on {label}. Switch to another dataset and back to retry.` |
+| `insarmaps-ref-failed` received from active iframe | `Reference point could not be applied on {label}. Retrying…` |
+
+Banner clears when `insarmaps-ref-applied` is accepted and `clearRefRecoveryState()` runs.
+
+### 19.5 postMessage contract (ref-specific)
+
+**iframe → overlay**
+
+| type | When sent | Payload |
+|------|-----------|---------|
+| `insarmaps-ref-applied` | Ref click + displacement fetch succeeded (overlay path may defer map recolor) | `{ refPointLat, refPointLon }` |
+| `insarmaps-ref-failed` | URL ref apply exhausted retries or apply failed | `{ reason, isRef, refPointLat?, refPointLon? }` |
+
+**`reason` values from insarmaps:**
+
+| reason | Meaning |
+|--------|---------|
+| `url-ref-retries-exhausted` | No queryable InSAR feature at ref coords after 40 tile-wait cycles |
+| `url-ref-wait-exhausted` | Click happened but `nonDefaultReferencePoint()` never became true after 80 cycles |
+| `url-ref-apply-failed` | `clickAtLatLon` callback returned false |
+| `url-point-retries-exhausted` | Time-series point click failed (point phase before ref) |
+
+**overlay acceptance rules (`shouldAcceptRefAppliedForDateSync`):**
+
+- Accept only from **active iframe** (`activeDatasetIdx`) or **current switch target** (`activeSwitchTracking.to`).
+- **Ignore** ref-applied from background warm reloads (e.g. Desc finishing warm while user switched to Asc) — logged as `ignored background ref-applied`.
+
+### 19.6 Overlay recovery mechanisms (what we built)
+
+| Mechanism | Timing / trigger | Action |
+|-----------|------------------|--------|
+| `scheduleNarrowedDateSync` + `awaitRef` | On iframe load after refSwitch | Hold `insarmaps-set-dates` until ref-applied |
+| `REF_AWAIT_WATCHDOG_MS` (6 s) | No ref-applied yet | Force `tryApplyNarrowedDatesToIframe` anyway (may still get `waitingForRef`) |
+| `shouldDeferDateSyncFailure` | `no-ack` while ref pending | **Keep** pending; show "Applying reference point…"; do **not** mark switch dates failed |
+| `reassert` with `awaitRef` | Iframe reports full-span widen | Update pending dates only; no set-dates until ref applied (post-fix28) |
+| `scheduleRefRecoveryWatchdogs` | Switch + date-sync-deferred | 8 s advisory banner; 15 s auto `refSwitch` retry |
+| `tryRefStuckRecovery` | 15 s watchdog or ref-failed | `reloadDatasetIframe(..., 'refSwitch')` once (`MAX_REF_AUTO_RETRIES = 1`) |
+| `handleInsarmapsRefFailed` | `insarmaps-ref-failed` on active iframe | Banner + immediate `tryRefStuckRecovery` |
+| `refAppliedForDateSyncByIndex` | Set on accepted ref-applied | Gates reassert and date-sync failure handling |
+
+### 19.7 Chronology of fix attempts (2026)
+
+| Iteration | What we tried | Result |
+|-----------|---------------|--------|
+| Early | Put ref + dates in one switch URL | Ref lost — date recolor races ref |
+| post-fix9–11 | `refSwitch` without dates; postMessage dates | Correct architecture; ref still flaky inside insarmaps |
+| insarmaps | `applyStartingDatasetPointSelections` waits for tiles | Better; still fails on hidden/cold iframes |
+| insarmaps | `_deferRefRecolorUntilSetDates`; ref-applied before set-dates | Overlay can proceed to dates; map recolor lags |
+| post-fix25 | `shouldAcceptRefAppliedForDateSync` | Fixed Desc background stealing Asc date sync |
+| post-fix28 | `no-ack` keeps pending while ref expected; reassert awaits ref | Fixed premature date failure; watchdog can still fire |
+| post-fix29 | 8 s / 15 s watchdogs, user banner, `insarmaps-ref-failed`, 1 auto-retry | User visibility; helps slow ref; **stuck ref still fails** after 1 retry |
+| post-fix32 | Stop reassert fighting slider; `datesChanged` guard | Slider fixed after ref+switch; ref stuck unchanged |
+
+### 19.8 What a rewrite should do differently
+
+Problems in the current design that a clean implementation could address:
+
+1. **Synthetic click is the wrong abstraction** — Simulate click only because insarmaps has no `insarmaps-set-ref` API. A rewrite should add an explicit server-side or API-level "re-reference dataset to lat/lon" that does not depend on `queryRenderedFeatures` on a hidden iframe.
+
+2. **`insarmaps-ref-applied` semantics are ambiguous** — Today it means "click path finished", not "map tiles re-referenced". Split into `ref-displacements-ready` and `ref-map-recolored`, or block ref-applied until `refreshDatasetWithNewReferencePoint` confirms.
+
+3. **Hidden iframe ref apply** — Background warm + ref in URL is unreliable. Options: do not warm with ref until user switches; or apply ref only when iframe becomes visible; or use a dedicated visible reload on switch (current `refSwitch` force reload).
+
+4. **Stuck vs slow detection** — Distinguish tile-wait exhaustion (`ref-failed`) from slow load (extend retries when iframe visible). `MAX_REF_AUTO_RETRIES = 1` is minimal; cold Vert may need more or a user-triggered retry button.
+
+5. **Date sync must never run before ref** — `waitingForRef` in insarmaps is correct; overlay must never spam set-dates (reassert guards, post-fix28/32). Keep this invariant in any rewrite.
+
+6. **Do not use ref-applied from wrong iframe** — Any multi-iframe design needs switch-target gating from day one.
+
+### 19.9 Debug log lines for ref-wait problems
+
+| Log `message` | Interpretation |
+|---------------|----------------|
+| `url ref retries exhausted` | No tile at ref coords — stuck or hidden iframe |
+| `url ref wait exhausted` | Click worked but displacements never became non-default |
+| `posting insarmaps-ref-failed` | Insarmaps giving up; overlay should retry |
+| `ignored background ref-applied` | Correct — prevented wrong-iframe date sync |
+| `date sync deferred awaiting ref` | Dates held; user banner may show |
+| `ref slow advisory shown` | 8 s passed without ref-applied |
+| `ref stuck auto retry` | 15 s watchdog fired refSwitch reload |
+| `ref recovery exhausted` | Auto-retry used up; user must switch away and back |
+| `waitingForRef: true` (insarmaps) | set-dates arrived too early |
+| `switch outcome` + `ref-failed` | Switch table Ref column = ✗ |
+
+---
+
+## 18. Recreating overlay.html — minimum viable design
+
+If rebuilding from scratch with a new implementation:
+
+1. **One iframe per dataset**, background preload after active load.
+2. **Single `currentMapParams` object** plus explicit `userNarrowedDateRange` for narrowed-period semantics.
+3. **Two sync channels:** URL reload for bulk state; postMessage for contour + dates-after-ref only.
+4. **Custom ref switch = two phases:** ref URL without dates → wait `insarmaps-ref-applied` → `insarmaps-set-dates`.
+5. **Never put dates + custom ref in the same refSwitch URL** when period is narrowed.
+6. **Strip `colorscale` on cross-dataset loads** when custom ref is set.
+7. **Strip template params** in `expandDatasetNameLine` for name-only log lines.
+8. **Do not call iframe internals** — design for cross-origin from day one.
+9. **Insarmaps must post `insarmaps-ref-applied` and handle `insarmaps-set-dates`** — contract, not optional.
+10. **Add switch-result logging** from the start (`switch attempt` / `switch outcome` with refOk + datesOk).
+11. **Read §19 before designing ref sync** — synthetic URL click + wait is the main fragility; plan explicit ref API or visible-only apply.
+
+---
+
+## Related files
+
+| File | Role |
+|------|------|
+| `minsar/html/overlay.html` | Implementation |
+| `minsar/html/README.md` | insarmaps.log format, template list |
+| `tools/insarmaps/public/js/mainPage.js` | postMessage listeners |
+| `tools/insarmaps/public/js/mainMap.js` | Ref point application, ref-applied message |
+| `tools/insarmaps/public/js/GraphsController.js` | Date slider, chart navigator |
+| `create_insarmaps_framepages.py` | Copies templates to project directory |
