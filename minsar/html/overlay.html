@@ -970,6 +970,8 @@
         const switchDebugRows = [];
         const switchDebugFollowUpTimers = new Map();  // id -> timeoutId
         const lastKnownRefByIndex = new Map();  // index -> { refPointLat, refPointLon }
+        // User-picked ref coords (first manual selection); used for all refSwitch URLs — not per-dataset snaps.
+        let canonicalUserRefCoords = null;  // { refPointLat, refPointLon } or null
 
         // #region agent log
         function dbgLog(location, message, data, hypothesisId) {
@@ -995,6 +997,28 @@
             currentMapParams.refPointLat = String(lat);
             currentMapParams.refPointLon = String(lon);
             return true;
+        }
+
+        function recordCanonicalUserRef(lat, lon) {
+            if (lat == null || lon == null || lat === '' || lon === '') return;
+            canonicalUserRefCoords = { refPointLat: String(lat), refPointLon: String(lon) };
+        }
+
+        function effectiveRefCoords() {
+            if (canonicalUserRefCoords) return { ...canonicalUserRefCoords };
+            if (hasCustomRefPoint(currentMapParams)) {
+                return {
+                    refPointLat: currentMapParams.refPointLat,
+                    refPointLon: currentMapParams.refPointLon
+                };
+            }
+            return null;
+        }
+
+        function applyEffectiveRefToMapParams() {
+            const ref = effectiveRefCoords();
+            if (!ref) return false;
+            return applyRefToMapParams(ref.refPointLat, ref.refPointLon);
         }
 
         function formatCoordPair(lat, lon) {
@@ -1108,6 +1132,15 @@
         }
 
         function syncRefFromSwitchState(fromState, fromIdx) {
+            if (canonicalUserRefCoords) {
+                applyRefToMapParams(canonicalUserRefCoords.refPointLat, canonicalUserRefCoords.refPointLon);
+                // #region agent log
+                dbgLog('overlay.html:syncRefFromSwitchState', 'using canonical user ref', {
+                    fromIdx, canonicalUserRefCoords
+                }, 'A');
+                // #endregion
+                return true;
+            }
             if (!fromState) {
                 // #region agent log
                 dbgLog('overlay.html:syncRefFromSwitchState', 'no fromState', { fromIdx }, 'A');
@@ -1532,6 +1565,14 @@
             const dLat = Math.abs(parseFloat(mapRefLat) - parseFloat(lat));
             const dLon = Math.abs(parseFloat(mapRefLon) - parseFloat(lon));
             return dLat < 0.002 && dLon < 0.002;
+        }
+
+        function refCoordsMatchExpected(lat, lon) {
+            const expected = effectiveRefCoords();
+            if (expected && refCoordsMatch(expected.refPointLat, expected.refPointLon, lat, lon)) {
+                return true;
+            }
+            return refCoordsMatch(currentMapParams.refPointLat, currentMapParams.refPointLon, lat, lon);
         }
 
         function isLogTemplateDateRange(startDate, endDate) {
@@ -2316,6 +2357,15 @@
                 setTimeout(() => {
                     const pending = pendingDateSyncByIndex.get(index);
                     if (!pending || !pending.awaitRef || index !== activeDatasetIdx) return;
+                    if (hasCustomRefPoint(currentMapParams) && !refAppliedForDateSyncByIndex.has(index)) {
+                        // #region agent log
+                        dbgLog('overlay.html:scheduleNarrowedDateSync', 'ref-await watchdog — still pending ref', {
+                            index, label: iframeLabelForLog(index)
+                        }, 'B');
+                        // #endregion
+                        scheduleRefRecoveryWatchdogs(index, 'ref-await-watchdog');
+                        return;
+                    }
                     pending.awaitRef = false;
                     tryApplyNarrowedDatesToIframe(index);
                 }, REF_AWAIT_WATCHDOG_MS);
@@ -2725,6 +2775,11 @@
             }
             iframeWarmInFlight.delete(index);
             const syncParams = mapParamsForPeriodSync(currentMapParams);
+            const effRef = effectiveRefCoords();
+            if (effRef) {
+                syncParams.refPointLat = effRef.refPointLat;
+                syncParams.refPointLon = effRef.refPointLon;
+            }
             const iframeParams = mapParamsForIframeLoad(syncParams, loadKind);
             const fullSwitchParams = mapParamsForIframeLoad(syncParams, 'crossDataset');
             const syncKey = getSyncKey(fullSwitchParams);
@@ -2761,10 +2816,14 @@
                         reloadDatasetIframe(index, 'apply-dates-after-ref', 'dateAfterRef', { skipDatePhase: true });
                         return;
                     }
-                } else if (loadKind === 'refSwitch' && hasCustomRefPoint(currentMapParams) &&
-                    currentMapParams.startDate && currentMapParams.endDate &&
-                    (isMintpyDataset(dataset) || !isFullMissionDateRange())) {
-                    scheduleNarrowedDateSync(index, reason);
+                } else if (loadKind === 'refSwitch' && hasCustomRefPoint(currentMapParams)) {
+                    // Dates sync only after insarmaps-ref-applied (maybeStartDateSyncAfterRef).
+                    // scheduleNarrowedDateSync here raced URL ref apply on Desc/Vert.
+                    // #region agent log
+                    dbgLog('overlay.html:reloadDatasetIframe', 'refSwitch onload — defer dates until ref ack', {
+                        index, label: iframeLabelForLog(index), reason, effRef: effectiveRefCoords()
+                    }, 'B');
+                    // #endregion
                 }
                 maybeResolveSwitchDatesOnIframeLoad(index);
                 maybeCatchupWarmAfterLoad();
@@ -3336,6 +3395,7 @@
 
                 function performDatasetSwitch(previousIdx, index, fromState) {
                     syncRefFromSwitchState(fromState, previousIdx);
+                    applyEffectiveRefToMapParams();
                     if (userNarrowedDateRange) {
                         currentMapParams.startDate = userNarrowedDateRange.startDate;
                         currentMapParams.endDate = userNarrowedDateRange.endDate;
@@ -3344,6 +3404,7 @@
                     dbgLog('overlay.html:performDatasetSwitch', 'switch decision', {
                         from: previousIdx, to: index,
                         hasCustomRef: hasCustomRefPoint(currentMapParams),
+                        canonicalUserRefCoords,
                         mapParamsRef: pointRefFromMapParams(currentMapParams),
                         userNarrowedDateRange,
                         fromStateRef: fromState ? {
@@ -3469,6 +3530,9 @@
                         if (refIndex >= 0) {
                             recordKnownRefCoords(refIndex, event.data.refPointLat, event.data.refPointLon, 'ref-applied');
                         }
+                        if (!activeSwitchTracking) {
+                            recordCanonicalUserRef(event.data.refPointLat, event.data.refPointLon);
+                        }
                         if (refIndex >= 0 && (refIndex === activeDatasetIdx ||
                             (activeSwitchTracking && activeSwitchTracking.to === refIndex))) {
                             applyRefToMapParams(event.data.refPointLat, event.data.refPointLon);
@@ -3480,8 +3544,7 @@
                             // #endregion
                         }
                         const coordsMatch = refIndex >= 0 &&
-                            refCoordsMatch(currentMapParams.refPointLat, currentMapParams.refPointLon,
-                                event.data.refPointLat, event.data.refPointLon);
+                            refCoordsMatchExpected(event.data.refPointLat, event.data.refPointLon);
                         const acceptForDateSync = coordsMatch && shouldAcceptRefAppliedForDateSync(refIndex);
                         if (coordsMatch && !acceptForDateSync) {
                         }
@@ -3873,8 +3936,7 @@
                         if (senderIndex >= 0 && pendingDateSyncByIndex.has(senderIndex)) {
                             const pendingRefSync = pendingDateSyncByIndex.get(senderIndex);
                             if (pendingRefSync && pendingRefSync.awaitRef && hasCustomRefPoint(currentMapParams) &&
-                                refCoordsMatch(currentMapParams.refPointLat, currentMapParams.refPointLon,
-                                    refPointLat, refPointLon)) {
+                                refCoordsMatchExpected(refPointLat, refPointLon)) {
                                 maybeStartDateSyncAfterRef(senderIndex);
                             }
                         }
