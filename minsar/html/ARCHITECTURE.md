@@ -1,6 +1,6 @@
 # overlay.html Architecture Documentation
 
-**Last updated:** 2026-06-07 (default-ref narrowed-period seamless switch; custom-ref fixes retained)
+**Last updated:** 2026-06-07 (autoColorScale sync; default-ref period switch)
 
 ## Overview
 
@@ -93,7 +93,7 @@ overlay.html#/start/0.7480/-77.9687/9.8000?startDataset=S1_desc_...&minScale=-3&
 
 | Variable | Purpose |
 |----------|---------|
-| `currentMapParams` | Authoritative overlay state: view, scales, dates, point, ref, pixelSize, contour, colorscale, background, opacity |
+| `currentMapParams` | Authoritative overlay state: view, scales, dates, point, ref, pixelSize, contour, colorscale, background, opacity, `autoColorScale` |
 | `userNarrowedDateRange` | User's intentionally narrowed period; survives iframe "widen" noise during refSwitch |
 | `periodSelectionSource` | How period was set: `'slider'`, `'chart-dot'`, `'iframe-sync'`, or null |
 | `baselineMissionDateRange` | Mission-wide first/last date (union of all datasets); used to detect "full period" vs narrowed |
@@ -199,6 +199,7 @@ Done: Asc has custom ref + narrowed period
 |------|---------|---------------------|
 | `insarmaps-set-contour` | `{ value: true/false }` — no reload | `mainPage.js` |
 | `insarmaps-set-dates` | `{ startDate, endDate }` YYYYMMDD — cross-origin date apply | `mainPage.js` → `GraphsController.applyInsarDateRangeFromYyyymmdd()` |
+| `insarmaps-set-auto-color-scale` | `{ mode: 'true'\|'false', minScale?, maxScale? }` — URL `autoColorScale=true\|false`; `true`=data min/max centered on 0, `false`=manual (+ `minScale`/`maxScale`) | `mainMap.setAutoColorScaleMode()` / `disableAutoColorScaleWithLimits()` |
 
 **No `insarmaps-set-point` or `insarmaps-set-ref`** — point and ref must go in the **iframe URL** on reload.
 
@@ -262,7 +263,7 @@ With **default ref** and a slider-narrowed period, Desc→Asc switch showed: nar
 |-------|-----------|---------|
 | **Pin intent** | `rejected-iframe-drift-kept-slider-narrow` in `resolveDatesFromIframeUpdate()` | After slider capture (`periodSelectionSource === 'slider'`), reject acquisition snap on `active-postMessage`; keep `userNarrowedDateRange` |
 | **Pre-warm** | `schedulePeriodBackgroundWarm()` / `flushPeriodBackgroundWarm()` | Reload **background** iframes with `mapParamsForPeriodSync()` (uses pinned `userNarrowedDateRange`). Reason suffix `:period` bypasses preload-in-progress skips. `iframeSynced` committed on **onload**, not on `setIframeSrc` start |
-| **Switch** | `syncDatasetIframeOnSwitch()` set-dates fast path | If view params match (`getViewSyncKey`) and period is narrowed: `insarmaps-set-dates` postMessage instead of full reload. Insarmaps snaps per dataset without iframe flash |
+| **Switch** | `syncDatasetIframeOnSwitch()` set-dates fast path | If view params match (`getViewSyncKey`) and period is narrowed: `insarmaps-set-dates` postMessage instead of full reload — **including when sync-key skip would apply** (calendar URL dates ≠ per-dataset snapped display). Insarmaps snaps per dataset without iframe flash |
 
 **Custom ref is unchanged** — still `refSwitch` reload → wait `insarmaps-ref-applied` → `insarmaps-set-dates`. Drift pin and set-dates fast path are gated on `!hasCustomRefPoint()`.
 
@@ -270,7 +271,7 @@ With **default ref** and a slider-narrowed period, Desc→Asc switch showed: nar
 
 When the **active** iframe changes pan/zoom/scales/dates (not contour-only):
 
-1. **Immediate path** (`active-postMessage`): default-ref period changes → `schedulePeriodBackgroundWarm()` after 150ms (`PERIOD_WARM_DEBOUNCE_MS`).
+1. **Immediate path** (`active-postMessage`): default-ref period changes → `schedulePeriodBackgroundWarm()` after 150ms (`PERIOD_WARM_DEBOUNCE_MS`). Updates `currentMapParams` when `datesChanged` even if `backgroundsWarmed && !keyChanged` (period-only slider moves after initial warm).
 2. **Debounced path** (1500ms `SYNC_DEBOUNCE_MS`): `flushPeriodBackgroundWarm()` if `backgroundsPeriodWarmNeeded()` (checks sync keys, URL dates, in-flight loads).
 3. Update `currentMapParams` (dates through `resolveDatesFromIframeUpdate()`).
 4. Active iframe is **never** reloaded for period-only changes (default ref).

@@ -484,6 +484,7 @@
                 refPointLon: params.get('refPointLon'),
                 pointLat: params.get('pointLat'),
                 pointLon: params.get('pointLon'),
+                autoColorScale: params.get('autoColorScale'),
                 timeControls: params.get('timeControls'),
                 periods: params.get('periods')
             };
@@ -509,6 +510,119 @@
             return result.length > 0 ? result : null;
         }
 
+        // Resolve autoColorScale vs explicit minScale/maxScale for URL and iframe sync.
+        function normalizeAutoColorScaleParam(param) {
+            if (param === 'false') return 'false';
+            if (param === 'true' || param === 'coarse' || param === 'fine') return 'true';
+            return 'true';
+        }
+
+        function resolveAutoColorScaleState(minScale, maxScale, autoColorScaleParam) {
+            if (autoColorScaleParam == null || autoColorScaleParam === '') {
+                if (minScale && maxScale) {
+                    return { autoColorScale: 'false', minScale: minScale, maxScale: maxScale };
+                }
+                return { autoColorScale: 'true', minScale: null, maxScale: null };
+            }
+            const mode = normalizeAutoColorScaleParam(autoColorScaleParam);
+            if (mode === 'true') {
+                return { autoColorScale: 'true', minScale: null, maxScale: null };
+            }
+            return { autoColorScale: 'false', minScale: minScale || null, maxScale: maxScale || null };
+        }
+
+        function isAutoColorScaleMode(mode) {
+            return normalizeAutoColorScaleParam(mode) === 'true';
+        }
+
+        const INSARMAP_URL_DEFAULTS = {
+            flyToDatasetCenter: 'true',
+            colorscale: 'velocity',
+            pixelSize: '3',
+            opacity: '100',
+            background: 'hillshade',
+            contours: 'false',
+            autoColorScale: 'true',
+            minScale: '-2',
+            maxScale: '2'
+        };
+
+        function numUrlValueDiffers(value, defaultValue) {
+            if (value == null || value === '') return false;
+            const v = parseFloat(value);
+            const d = parseFloat(defaultValue);
+            if (!isNaN(v) && !isNaN(d)) return Math.abs(v - d) > 1e-9;
+            return String(value) !== String(defaultValue);
+        }
+
+        function formatUrlNumber(value) {
+            const f = parseFloat(value);
+            if (isNaN(f)) return String(value);
+            return String(f);
+        }
+
+        function appendScaleParamsToUrlSearchParams(params, mapParams) {
+            const scaleState = resolveAutoColorScaleState(
+                mapParams.minScale, mapParams.maxScale,
+                mapParams.autoColorScale ?? INSARMAP_URL_DEFAULTS.autoColorScale
+            );
+            if (scaleState.autoColorScale !== INSARMAP_URL_DEFAULTS.autoColorScale) {
+                params.set('autoColorScale', scaleState.autoColorScale);
+            }
+            if (scaleState.autoColorScale === 'false') {
+                if (scaleState.minScale && numUrlValueDiffers(scaleState.minScale, INSARMAP_URL_DEFAULTS.minScale)) {
+                    params.set('minScale', formatUrlNumber(scaleState.minScale));
+                }
+                if (scaleState.maxScale && numUrlValueDiffers(scaleState.maxScale, INSARMAP_URL_DEFAULTS.maxScale)) {
+                    params.set('maxScale', formatUrlNumber(scaleState.maxScale));
+                }
+            }
+        }
+
+        function appendCanonicalInsarmapsQueryParams(params, mapParams, options = {}) {
+            if (options.startDataset) params.set('startDataset', options.startDataset);
+            else if (options.view) params.set('view', options.view);
+            const ftc = options.flyToDatasetCenter ?? mapParams.flyToDatasetCenter ?? INSARMAP_URL_DEFAULTS.flyToDatasetCenter;
+            if (ftc !== INSARMAP_URL_DEFAULTS.flyToDatasetCenter) {
+                params.set('flyToDatasetCenter', ftc);
+            }
+
+            if (mapParams.pointLat && mapParams.pointLon && !options.omitPointSelection) {
+                params.set('pointLat', mapParams.pointLat);
+                params.set('pointLon', mapParams.pointLon);
+            }
+            if (mapParams.refPointLat && mapParams.refPointLon) {
+                params.set('refPointLat', mapParams.refPointLat);
+                params.set('refPointLon', mapParams.refPointLon);
+            }
+
+            const hasCustomRef = hasCustomRefPoint(mapParams);
+            if (mapParams.colorscale && mapParams.colorscale !== INSARMAP_URL_DEFAULTS.colorscale && !hasCustomRef) {
+                params.set('colorscale', mapParams.colorscale);
+            }
+            if (mapParams.pixelSize && numUrlValueDiffers(mapParams.pixelSize, INSARMAP_URL_DEFAULTS.pixelSize)) {
+                params.set('pixelSize', formatUrlNumber(mapParams.pixelSize));
+            }
+            if (mapParams.opacity && numUrlValueDiffers(mapParams.opacity, INSARMAP_URL_DEFAULTS.opacity)) {
+                params.set('opacity', String(mapParams.opacity));
+            }
+            if (mapParams.background && mapParams.background !== INSARMAP_URL_DEFAULTS.background) {
+                params.set('background', mapParams.background);
+            }
+            const normalizedContour = normalizeContourValue(mapParams.contour);
+            if (normalizedContour && normalizedContour !== INSARMAP_URL_DEFAULTS.contours) {
+                params.set('contours', normalizedContour);
+            }
+
+            appendScaleParamsToUrlSearchParams(params, mapParams);
+
+            const narrowedDates = options.narrowedDates;
+            if (narrowedDates) {
+                if (narrowedDates.startDate) params.set('startDate', narrowedDates.startDate);
+                if (narrowedDates.endDate) params.set('endDate', narrowedDates.endDate);
+            }
+        }
+
         // Normalize contour to "true"/"false" for URL (insarmaps accepts true/false/on/1 for enabled)
         function normalizeContourValue(value) {
             if (!value) return null;
@@ -524,22 +638,15 @@
         // When periodsArray is not provided but current URL has timeControls and periods, preserve them (e.g. before TC open)
         function updateOverlayUrl(viewCodeOrDataset, mapParams, currentDataset, timeControlsActive, periodsArray) {
             const params = new URLSearchParams();
-            if (USE_FULL_DATASET_IN_URL && currentDataset) params.set('startDataset', currentDataset);
-            else if (viewCodeOrDataset) params.set('view', viewCodeOrDataset);
-            if (mapParams.minScale) params.set('minScale', mapParams.minScale);
-            if (mapParams.maxScale) params.set('maxScale', mapParams.maxScale);
-            if (mapParams.startDate) params.set('startDate', mapParams.startDate);
-            if (mapParams.endDate) params.set('endDate', mapParams.endDate);
-            if (mapParams.pixelSize) params.set('pixelSize', mapParams.pixelSize);
-            if (mapParams.background) params.set('background', mapParams.background);
-            if (mapParams.opacity) params.set('opacity', mapParams.opacity);
-            const nc = normalizeContourValue(mapParams.contour);
-            if (nc) params.set('contour', nc);
-            if (mapParams.colorscale) params.set('colorscale', mapParams.colorscale);
-            if (mapParams.refPointLat) params.set('refPointLat', mapParams.refPointLat);
-            if (mapParams.refPointLon) params.set('refPointLon', mapParams.refPointLon);
-            if (mapParams.pointLat) params.set('pointLat', mapParams.pointLat);
-            if (mapParams.pointLon) params.set('pointLon', mapParams.pointLon);
+            appendCanonicalInsarmapsQueryParams(params, mapParams, {
+                startDataset: USE_FULL_DATASET_IN_URL && currentDataset ? currentDataset : null,
+                view: (!USE_FULL_DATASET_IN_URL && viewCodeOrDataset) ? viewCodeOrDataset : null,
+                narrowedDates: narrowedDatesForUrl(mapParams)
+            });
+            if (params.has('contours')) {
+                params.set('contour', params.get('contours'));
+                params.delete('contours');
+            }
             if (timeControlsActive && periodsArray && periodsArray.length > 0) {
                 params.set('timeControls', 'true');
                 params.set('periods', serializePeriods(periodsArray));
@@ -569,29 +676,12 @@
         function buildInsarmapsUrl(baseUrl, dataset, lat, lon, zoom, mapParams, uniqueId, stableCache, shareable, urlOptions) {
             urlOptions = urlOptions || {};
             const params = new URLSearchParams();
-            params.set('flyToDatasetCenter', 'false');
-            params.set('startDataset', dataset);
-            if (mapParams.minScale) params.set('minScale', mapParams.minScale);
-            if (mapParams.maxScale) params.set('maxScale', mapParams.maxScale);
-            if (mapParams.startDate) params.set('startDate', mapParams.startDate);
-            if (mapParams.endDate) params.set('endDate', mapParams.endDate);
-            if (mapParams.pixelSize) params.set('pixelSize', mapParams.pixelSize);
-            if (mapParams.background) params.set('background', mapParams.background);
-            if (mapParams.opacity) params.set('opacity', mapParams.opacity);
-            const normalizedContour = normalizeContourValue(mapParams.contour);
-            if (normalizedContour) params.set('contours', normalizedContour);
-            const hasCustomRef = hasCustomRefPoint(mapParams);
-            // colorscale=velocity in iframe URL races with custom ref-point recolor on background loads
-            // (mintpy desc+asc logs propagate colorscale from the descending template line).
-            if (mapParams.colorscale && !hasCustomRef) {
-                params.set('colorscale', mapParams.colorscale);
-            }
-            if (mapParams.refPointLat) params.set('refPointLat', mapParams.refPointLat);
-            if (mapParams.refPointLon) params.set('refPointLon', mapParams.refPointLon);
-            if (!urlOptions.omitPointSelection) {
-                if (mapParams.pointLat) params.set('pointLat', mapParams.pointLat);
-                if (mapParams.pointLon) params.set('pointLon', mapParams.pointLon);
-            }
+            appendCanonicalInsarmapsQueryParams(params, mapParams, {
+                startDataset: dataset,
+                flyToDatasetCenter: 'false',
+                omitPointSelection: urlOptions.omitPointSelection,
+                narrowedDates: narrowedDatesForUrl(mapParams)
+            });
             // shareable links (footer) omit _t; iframes use cache-busting unless stableCache is set.
             if (!shareable) {
                 if (stableCache && uniqueId !== undefined) {
@@ -695,7 +785,8 @@
                     refPointLat: q.get('refPointLat'),
                     refPointLon: q.get('refPointLon'),
                     pointLat: q.get('pointLat'),
-                    pointLon: q.get('pointLon')
+                    pointLon: q.get('pointLon'),
+                    autoColorScale: q.get('autoColorScale')
                 };
             } catch (e) {}
             return null;
@@ -1166,7 +1257,8 @@
                 }
                 // Default ref: keep slider-selected period; ignore insarmaps acquisition snap drift.
                 if (!hasCustomRefPoint(currentMapParams) && userNarrowedDateRange &&
-                    periodSelectionSource === 'slider' && path === 'active-postMessage' &&
+                    (periodSelectionSource === 'slider' || periodSelectionSource === 'iframe-sync') &&
+                    path === 'active-postMessage' &&
                     (rawStartDate !== userNarrowedDateRange.startDate ||
                         rawEndDate !== userNarrowedDateRange.endDate)) {
                     resolved.startDate = userNarrowedDateRange.startDate;
@@ -1262,6 +1354,20 @@
             if (willReassert) {
                 reassertNarrowedDatesToIframe(senderIndex, resolved.action);
             }
+        }
+
+        function narrowedDatesForUrl(mapParams) {
+            const out = { startDate: null, endDate: null };
+            if (!mapParams) return out;
+            const fullStart = baselineMissionDateRange ? formatDate(baselineMissionDateRange.firstDate) : null;
+            const fullEnd = baselineMissionDateRange ? formatDate(baselineMissionDateRange.lastDate) : null;
+            if (mapParams.startDate && fullStart && mapParams.startDate !== fullStart) {
+                out.startDate = mapParams.startDate;
+            }
+            if (mapParams.endDate && fullEnd && mapParams.endDate !== fullEnd) {
+                out.endDate = mapParams.endDate;
+            }
+            return out;
         }
 
         function effectiveNarrowedDatesForSync() {
@@ -1513,15 +1619,17 @@
             const storedViewKey = storedDates ? getViewSyncKey(storedDates) : null;
             const viewMatch = !storedViewKey || storedViewKey === expectedViewKey;
             const useSetDatesPath = !hasCustomRefPoint(currentMapParams) && narrowed && !!iframe.src && viewMatch;
-            if (willSkip) {
-                console.log(`[overlay] dataset switch SKIP reload ${iframeLabelForLog(index)}  (iframe already synced)`);
-                return false;
-            }
+            // Default ref + narrowed period: always postMessage set-dates (per-dataset snap), even when
+            // sync key matches — background iframe may be "synced" at calendar dates but still show full span.
             if (useSetDatesPath) {
                 applyDatesToIframeOnSwitch(index, narrowed.startDate, narrowed.endDate);
                 iframeSynced.set(index, syncKey);
                 iframePointSynced.set(index, getPointKey(iframeParams));
-                console.log(`[overlay] dataset switch SET-DATES ${iframeLabelForLog(index)}  (no reload)`);
+                console.log(`[overlay] dataset switch SET-DATES ${iframeLabelForLog(index)}  (${willSkip ? 'skip-reload' : 'no-reload'})`);
+                return false;
+            }
+            if (willSkip) {
+                console.log(`[overlay] dataset switch SKIP reload ${iframeLabelForLog(index)}  (iframe already synced)`);
                 return false;
             }
             return reloadDatasetIframe(index, 'switch-dataset', 'crossDataset');
@@ -1605,12 +1713,15 @@
         
         // Generate a sync key from current params
         function getSyncKey(params) {
+            const autoColorScale = normalizeAutoColorScaleParam(params.autoColorScale ?? 'true');
+            const autoActive = isAutoColorScaleMode(autoColorScale);
             return JSON.stringify({
                 lat: params.lat,
                 lon: params.lon,
                 zoom: params.zoom,
-                minScale: params.minScale,
-                maxScale: params.maxScale,
+                autoColorScale: autoColorScale,
+                minScale: autoActive ? null : params.minScale,
+                maxScale: autoActive ? null : params.maxScale,
                 startDate: params.startDate,
                 endDate: params.endDate,
                 pixelSize: params.pixelSize,
@@ -1645,18 +1756,9 @@
         }
 
         function applyDatesToIframeOnSwitch(index, startDate, endDate) {
-            const iframe = document.getElementById(`iframe${index}`);
-            if (!iframe || !iframe.contentWindow || !startDate || !endDate) return false;
-            try {
-                iframe.contentWindow.postMessage({
-                    type: 'insarmaps-set-dates',
-                    startDate: startDate,
-                    endDate: endDate
-                }, '*');
-                return true;
-            } catch (e) {
-                return false;
-            }
+            if (!startDate || !endDate) return false;
+            pendingDateSyncByIndex.set(index, { startDate: startDate, endDate: endDate, awaitRef: false });
+            return tryApplyNarrowedDatesToIframe(index);
         }
 
         function getPointKey(params) {
@@ -1673,6 +1775,7 @@
                 prev.lat !== next.lat ||
                 prev.lon !== next.lon ||
                 prev.zoom !== next.zoom ||
+                prev.autoColorScale !== next.autoColorScale ||
                 prev.minScale !== next.minScale ||
                 prev.maxScale !== next.maxScale ||
                 prev.startDate !== next.startDate ||
@@ -1949,6 +2052,22 @@
             iframePointSynced.set(index, pointKey);
         }
 
+        function broadcastAutoColorScaleToIframes() {
+            const mode = normalizeAutoColorScaleParam(currentMapParams.autoColorScale ?? 'true');
+            iframeDatasets.forEach((_, index) => {
+                const iframe = document.getElementById(`iframe${index}`);
+                if (!iframe || !iframe.contentWindow) return;
+                const msg = { type: 'insarmaps-set-auto-color-scale', mode: mode };
+                if (mode === 'false') {
+                    msg.minScale = currentMapParams.minScale;
+                    msg.maxScale = currentMapParams.maxScale;
+                }
+                try {
+                    iframe.contentWindow.postMessage(msg, '*');
+                } catch (e) {}
+            });
+        }
+
         function mergeParamsFromInsarmapsMessage(urlPath, eventData, baseParams) {
             const pathMatch = urlPath.match(/^\/start\/([^\/]+)\/([^\/]+)\/([^?]+)/);
             if (!pathMatch) return null;
@@ -1963,12 +2082,17 @@
                 return baseParams.contour;
             };
             const contourValue = normalizeContourValue(getContourValue());
+            const rawMinScale = params.get('minScale') ?? baseParams.minScale;
+            const rawMaxScale = params.get('maxScale') ?? baseParams.maxScale;
+            const rawAutoColorScale = params.get('autoColorScale') ?? (baseParams.autoColorScale ?? 'true');
+            const scaleState = resolveAutoColorScaleState(rawMinScale, rawMaxScale, rawAutoColorScale);
             return {
                 lat, lon, zoom,
-                minScale: params.get('minScale') ?? baseParams.minScale,
-                maxScale: params.get('maxScale') ?? baseParams.maxScale,
-                startDate: params.get('startDate') ?? baseParams.startDate,
-                endDate: params.get('endDate') ?? baseParams.endDate,
+                autoColorScale: scaleState.autoColorScale,
+                minScale: scaleState.minScale,
+                maxScale: scaleState.maxScale,
+                startDate: (eventData && eventData.startDate) ?? params.get('startDate') ?? baseParams.startDate,
+                endDate: (eventData && eventData.endDate) ?? params.get('endDate') ?? baseParams.endDate,
                 pixelSize: params.get('pixelSize') ?? baseParams.pixelSize,
                 background: params.get('background') ?? baseParams.background,
                 opacity: params.get('opacity') ?? baseParams.opacity,
@@ -2222,12 +2346,18 @@
                 }
                 
                 // Initialize current map params from overlay URL or first insarmaps.log line (file order)
+                const initialScaleState = resolveAutoColorScaleState(
+                    initialParams.minScale ?? firstLogDefaults?.minScale ?? null,
+                    initialParams.maxScale ?? firstLogDefaults?.maxScale ?? null,
+                    initialParams.autoColorScale ?? firstLogDefaults?.autoColorScale ?? 'true'
+                );
                 currentMapParams = {
                     lat: initialParams.lat || firstLogDefaults?.lat || null,
                     lon: initialParams.lon || firstLogDefaults?.lon || null,
                     zoom: initialParams.zoom || firstLogDefaults?.zoom || null,
-                    minScale: initialParams.minScale ?? firstLogDefaults?.minScale ?? null,
-                    maxScale: initialParams.maxScale ?? firstLogDefaults?.maxScale ?? null,
+                    autoColorScale: initialScaleState.autoColorScale,
+                    minScale: initialScaleState.minScale,
+                    maxScale: initialScaleState.maxScale,
                     startDate: initialStartDate,
                     endDate: initialEndDate,
                     pixelSize: initialParams.pixelSize ?? firstLogDefaults?.pixelSize ?? null,
@@ -2470,6 +2600,7 @@
                             visibleIframe.contentWindow.postMessage({ type: 'insarmaps-set-contour', value: contourOn }, '*');
                         } catch (e) {}
                     }
+                    broadcastAutoColorScaleToIframes();
                     
                     updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, false);
                     updatePeriodHeader();
@@ -2615,7 +2746,7 @@
                                     prevParams.endDate !== merged.endDate;
                                 const periodWarmDefaultRef = datesChanged && !hasCustomRefPoint(merged);
                                 const inSwitchSuppress = Date.now() < datasetSwitchSuppressUntil;
-                                if (!backgroundsWarmed || keyChanged) {
+                                if (!backgroundsWarmed || keyChanged || datesChanged) {
                                     currentMapParams = { ...merged };
                                     if (typeof updateAddPeriodButton === 'function') updateAddPeriodButton();
                                     const inTC = (typeof timeControlsActive !== 'undefined' && timeControlsActive);
@@ -2803,9 +2934,14 @@
                         const prevEndDate = currentMapParams.endDate;
                         
                         // Update current map params (use resolved values so state is consistent)
+                        const mergedScaleState = resolveAutoColorScaleState(minScale, maxScale,
+                            params.get('autoColorScale') ?? (currentMapParams.autoColorScale ?? 'true'));
                         currentMapParams = {
                             lat, lon, zoom,
-                            minScale, maxScale, startDate, endDate,
+                            autoColorScale: mergedScaleState.autoColorScale,
+                            minScale: mergedScaleState.minScale,
+                            maxScale: mergedScaleState.maxScale,
+                            startDate, endDate,
                             pixelSize, background, opacity,
                             contour: contourValue,
                             colorscale: colorscaleValue,
