@@ -341,6 +341,90 @@
             color: #666;
             font-size: 14px;
         }
+        #switch-debug-panel {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            max-height: 38vh;
+            background: rgba(255, 255, 255, 0.97);
+            border-top: 2px solid #333;
+            font-size: 11px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.15);
+        }
+        #switch-debug-panel.collapsed #switch-debug-body {
+            display: none;
+        }
+        #switch-debug-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 10px;
+            background: #333;
+            color: #fff;
+            font-weight: bold;
+            font-size: 12px;
+            flex-shrink: 0;
+        }
+        #switch-debug-header span {
+            flex: 1;
+        }
+        #switch-debug-header button {
+            background: #555;
+            color: #fff;
+            border: none;
+            padding: 2px 8px;
+            cursor: pointer;
+            border-radius: 3px;
+            font-size: 11px;
+        }
+        #switch-debug-header button:hover {
+            background: #777;
+        }
+        #switch-debug-body {
+            overflow: auto;
+            flex: 1;
+        }
+        #switch-debug-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        #switch-debug-table th,
+        #switch-debug-table td {
+            border: 1px solid #ccc;
+            padding: 3px 6px;
+            text-align: left;
+            white-space: nowrap;
+        }
+        #switch-debug-table th {
+            background: #eee;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+        #switch-debug-table tr.row-pending {
+            background: #fffde7;
+        }
+        #switch-debug-table tr.row-success {
+            background: #e8f5e9;
+        }
+        #switch-debug-table tr.row-fail {
+            background: #ffebee;
+        }
+        #switch-debug-table tr.row-incomplete {
+            background: #fff3e0;
+        }
+        .switch-debug-bad {
+            color: #c62828;
+            font-weight: bold;
+        }
+        .switch-debug-good {
+            color: #2e7d32;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
@@ -394,7 +478,40 @@
         </div>
     </div>
     <div class="container" id="container"></div>
-    
+    <div id="switch-debug-panel">
+        <div id="switch-debug-header">
+            <span>Dataset switch debug — period &amp; ref tracking</span>
+            <button type="button" id="switch-debug-clear" title="Clear table">Clear</button>
+            <button type="button" id="switch-debug-toggle" title="Collapse/expand">−</button>
+        </div>
+        <div id="switch-debug-body">
+            <table id="switch-debug-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Switch</th>
+                        <th>Period @ switch</th>
+                        <th>Period after (iframe)</th>
+                        <th>Source</th>
+                        <th>px</th>
+                        <th>contour</th>
+                        <th>Ref</th>
+                        <th>Dates</th>
+                        <th>Path</th>
+                        <th>Point @sw</th>
+                        <th>Ref @sw</th>
+                        <th>Point after</th>
+                        <th>Ref after</th>
+                        <th>Chart</th>
+                        <th>Outcome</th>
+                        <th>ms</th>
+                    </tr>
+                </thead>
+                <tbody id="switch-debug-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+
     <script>
         // ===== CONFIGURATION (EDIT THIS LINE TO SWITCH BETWEEN FORMATS) =====
         // To switch: comment out one line and uncomment the other
@@ -845,6 +962,565 @@
         // Per-switch outcome tracking (ref + dates on target iframe).
         let switchAttemptId = 0;
         let activeSwitchTracking = null;  // { id, from, to, fromLabel, toLabel, userNarrowedAtSwitch, periodSource, hasCustomRef, refOk, datesOk, t0 }
+        const lastReportedDatesByIndex = new Map();  // index -> { startDate, endDate, datesNarrowed? }
+        let switchOpInFlight = false;
+        let pendingSelectIndex = null;
+        let switchOpFinishTimer = null;
+
+        const switchDebugRows = [];
+        const switchDebugFollowUpTimers = new Map();  // id -> timeoutId
+        const lastKnownRefByIndex = new Map();  // index -> { refPointLat, refPointLon }
+
+        // #region agent log
+        function dbgLog(location, message, data, hypothesisId) {
+            fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b4a2c9' },
+                body: JSON.stringify({
+                    sessionId: 'b4a2c9', location, message, data,
+                    hypothesisId: hypothesisId || '', timestamp: Date.now(), runId: 'ref-switch'
+                })
+            }).catch(() => {});
+        }
+        // #endregion
+
+        function recordKnownRefCoords(index, lat, lon, source) {
+            if (index < 0 || lat == null || lon == null || lat === '' || lon === '') return;
+            const entry = { refPointLat: String(lat), refPointLon: String(lon), source: source || '' };
+            lastKnownRefByIndex.set(index, entry);
+        }
+
+        function applyRefToMapParams(lat, lon) {
+            if (lat == null || lon == null || lat === '' || lon === '') return false;
+            currentMapParams.refPointLat = String(lat);
+            currentMapParams.refPointLon = String(lon);
+            return true;
+        }
+
+        function formatCoordPair(lat, lon) {
+            if (lat == null || lon == null || lat === '' || lon === '') return '-';
+            return `${parseFloat(lat).toFixed(3)}/${parseFloat(lon).toFixed(3)}`;
+        }
+
+        function snapshotPointRefOnIframe(index) {
+            const iframe = document.getElementById(`iframe${index}`);
+            if (!iframe || !iframe.src) return null;
+            const p = parseInsarmapsUrlParams(iframe.src);
+            if (!p) return null;
+            return {
+                pointLat: p.pointLat, pointLon: p.pointLon,
+                refPointLat: p.refPointLat, refPointLon: p.refPointLon
+            };
+        }
+
+        function pointRefFromMapParams(params) {
+            if (!params) return null;
+            return {
+                pointLat: params.pointLat, pointLon: params.pointLon,
+                refPointLat: params.refPointLat, refPointLon: params.refPointLon,
+                hasCustomRef: hasCustomRefPoint(params)
+            };
+        }
+
+        function fillMissingReportedDates(index, startDate, endDate) {
+            let start = startDate;
+            let end = endDate;
+            const stored = index >= 0 ? datasetDateRanges.get(index) : null;
+            if (!start && stored && stored.firstDate) {
+                start = formatDate(stored.firstDate);
+            }
+            if (!end && stored && stored.lastDate) {
+                end = formatDate(stored.lastDate);
+            }
+            if (!start && baselineMissionDateRange) {
+                start = formatDate(baselineMissionDateRange.firstDate);
+            }
+            if (!end && baselineMissionDateRange) {
+                end = formatDate(baselineMissionDateRange.lastDate);
+            }
+            return { startDate: start, endDate: end };
+        }
+
+        function recordInsarmapsReportedDates(index, eventData, urlPath) {
+            if (index < 0 || !eventData) return;
+            let startDate = eventData.startDate ?? null;
+            let endDate = eventData.endDate ?? null;
+            if (urlPath) {
+                const queryStart = urlPath.indexOf('?');
+                if (queryStart >= 0) {
+                    const params = new URLSearchParams(urlPath.substring(queryStart));
+                    startDate = startDate ?? params.get('startDate');
+                    endDate = endDate ?? params.get('endDate');
+                }
+            }
+            const filled = fillMissingReportedDates(index, startDate, endDate);
+            startDate = filled.startDate;
+            endDate = filled.endDate;
+            if (!startDate || !endDate) return;
+            const narrowed = !!eventData.datesNarrowed ||
+                isNarrowedDateRange(startDate, endDate);
+            lastReportedDatesByIndex.set(index, {
+                startDate: startDate,
+                endDate: endDate,
+                datesNarrowed: narrowed
+            });
+            // Do not update userNarrowedDateRange here — resolveDatesFromIframeUpdate owns that.
+            // Capturing snapped dates from postMessage caused ~2-day drift per dataset switch (log b4a2c9).
+        }
+
+        function capturePeriodBeforeSwitch(fromIdx, dates) {
+            if (!dates || !dates.startDate || !dates.endDate) return;
+            lastReportedDatesByIndex.set(fromIdx, {
+                startDate: dates.startDate,
+                endDate: dates.endDate,
+                datesNarrowed: !!dates.datesNarrowed
+            });
+            // Pin calendar intent: only capture from user slider/chart, not per-dataset snap on switch.
+            if (!userNarrowedDateRange &&
+                (dates.datesNarrowed || isNarrowedDateRange(dates.startDate, dates.endDate))) {
+                captureUserNarrowedDateRange(dates.startDate, dates.endDate, fromIdx, 'slider');
+            }
+        }
+
+        function finishSwitchOp() {
+            if (switchOpFinishTimer) {
+                clearTimeout(switchOpFinishTimer);
+                switchOpFinishTimer = null;
+            }
+            switchOpInFlight = false;
+            ensureChartsOpenOnIframe(activeDatasetIdx);
+            if (pendingSelectIndex !== null && pendingSelectIndex !== activeDatasetIdx) {
+                const next = pendingSelectIndex;
+                pendingSelectIndex = null;
+                selectDataset(next);
+            } else {
+                pendingSelectIndex = null;
+            }
+        }
+
+        function scheduleSwitchOpFinish(delayMs) {
+            if (switchOpFinishTimer) clearTimeout(switchOpFinishTimer);
+            switchOpFinishTimer = setTimeout(finishSwitchOp, delayMs || 500);
+        }
+
+        function ensureChartsOpenOnIframe(index) {
+            const iframe = document.getElementById(`iframe${index}`);
+            if (!iframe || !iframe.contentWindow || !hasPointSelection(currentMapParams)) return;
+            try {
+                iframe.contentWindow.postMessage({ type: 'insarmaps-keep-charts-open' }, '*');
+            } catch (e) {}
+        }
+
+        function syncRefFromSwitchState(fromState, fromIdx) {
+            if (!fromState) {
+                // #region agent log
+                dbgLog('overlay.html:syncRefFromSwitchState', 'no fromState', { fromIdx }, 'A');
+                // #endregion
+                return false;
+            }
+            let lat = fromState.refPointLat;
+            let lon = fromState.refPointLon;
+            const hasInternal = !!(fromState.hasCustomRef || fromState.refAppliedInternal);
+            if ((!lat || !lon) && hasInternal && fromIdx >= 0) {
+                const cached = lastKnownRefByIndex.get(fromIdx);
+                if (cached) {
+                    lat = cached.refPointLat;
+                    lon = cached.refPointLon;
+                }
+            }
+            if (lat && lon) {
+                recordKnownRefCoords(fromIdx, lat, lon, fromState.source);
+                applyRefToMapParams(lat, lon);
+                // #region agent log
+                dbgLog('overlay.html:syncRefFromSwitchState', 'synced ref', {
+                    fromIdx, refPointLat: lat, refPointLon: lon,
+                    source: fromState.source, hasInternal
+                }, 'A');
+                // #endregion
+                return true;
+            }
+            if (hasInternal && hasCustomRefPoint(currentMapParams)) {
+                // #region agent log
+                dbgLog('overlay.html:syncRefFromSwitchState', 'using existing mapParams ref', {
+                    fromIdx, mapParamsRef: pointRefFromMapParams(currentMapParams), hasInternal
+                }, 'A');
+                // #endregion
+                return true;
+            }
+            // #region agent log
+            dbgLog('overlay.html:syncRefFromSwitchState', 'ref sync failed — no coords', {
+                fromIdx, hasInternal, fromStateSource: fromState.source,
+                refAppliedInternal: fromState.refAppliedInternal,
+                mapParamsRef: pointRefFromMapParams(currentMapParams),
+                cachedRef: fromIdx >= 0 ? lastKnownRefByIndex.get(fromIdx) : null
+            }, 'A,B');
+            // #endregion
+            return false;
+        }
+
+        function hasActiveCustomRef(fromState) {
+            if (hasCustomRefPoint(currentMapParams)) return true;
+            if (!fromState) return false;
+            return !!(fromState.hasCustomRef || fromState.refAppliedInternal);
+        }
+
+        function queryActiveIframeSwitchState(index, callback) {
+            const iframe = document.getElementById(`iframe${index}`);
+            const urlFallback = () => {
+                const fromUrl = snapshotPointRefOnIframe(index);
+                const dates = lastReportedDatesByIndex.get(index) || null;
+                return {
+                    startDate: dates && dates.startDate,
+                    endDate: dates && dates.endDate,
+                    datesNarrowed: dates && dates.datesNarrowed,
+                    pointLat: fromUrl && fromUrl.pointLat,
+                    pointLon: fromUrl && fromUrl.pointLon,
+                    refPointLat: fromUrl && fromUrl.refPointLat,
+                    refPointLon: fromUrl && fromUrl.refPointLon,
+                    hasCustomRef: !!(fromUrl && fromUrl.refPointLat && fromUrl.refPointLon) ||
+                        (index >= 0 && lastKnownRefByIndex.has(index)),
+                    chartsVisible: null,
+                    source: 'url-fallback'
+                };
+            };
+            if (!iframe || !iframe.contentWindow) {
+                callback(urlFallback());
+                return;
+            }
+            let settled = false;
+            const finish = (state) => {
+                if (settled) return;
+                settled = true;
+                window.removeEventListener('message', handler);
+                clearTimeout(timeoutId);
+                callback(state);
+            };
+            const handler = (event) => {
+                if (!event.data || event.data.type !== 'insarmaps-switch-state') return;
+                if (event.source !== iframe.contentWindow) return;
+                finish({
+                    startDate: event.data.startDate,
+                    endDate: event.data.endDate,
+                    datesNarrowed: !!event.data.datesNarrowed,
+                    pointLat: event.data.pointLat,
+                    pointLon: event.data.pointLon,
+                    refPointLat: event.data.refPointLat,
+                    refPointLon: event.data.refPointLon,
+                    hasCustomRef: !!event.data.hasCustomRef,
+                    chartsVisible: event.data.chartsVisible,
+                    refAppliedInternal: !!event.data.refAppliedInternal,
+                    source: 'insarmaps-query'
+                });
+            };
+            const timeoutId = setTimeout(() => {
+                const fb = urlFallback();
+                if (index >= 0 && lastKnownRefByIndex.has(index)) {
+                    const cached = lastKnownRefByIndex.get(index);
+                    if (!fb.refPointLat && cached.refPointLat) fb.refPointLat = cached.refPointLat;
+                    if (!fb.refPointLon && cached.refPointLon) fb.refPointLon = cached.refPointLon;
+                    fb.hasCustomRef = !!(fb.refPointLat && fb.refPointLon);
+                    fb.refAppliedInternal = fb.hasCustomRef;
+                }
+                finish(fb);
+            }, 400);
+            window.addEventListener('message', handler);
+            try {
+                iframe.contentWindow.postMessage({ type: 'insarmaps-query-switch-state' }, '*');
+            } catch (e) {
+                finish(urlFallback());
+            }
+        }
+
+        function queryActiveIframeDates(index, callback) {
+            queryActiveIframeSwitchState(index, (state) => {
+                callback(state && state.startDate && state.endDate ? {
+                    startDate: state.startDate,
+                    endDate: state.endDate,
+                    datesNarrowed: state.datesNarrowed
+                } : null);
+            });
+        }
+
+        function effectivePeriodAtSwitch(fromIdx) {
+            if (userNarrowedDateRange) return { ...userNarrowedDateRange };
+            const reported = lastReportedDatesByIndex.get(fromIdx);
+            if (reported && reported.startDate && reported.endDate) {
+                return { startDate: reported.startDate, endDate: reported.endDate };
+            }
+            if (currentMapParams.startDate && currentMapParams.endDate) {
+                return {
+                    startDate: currentMapParams.startDate,
+                    endDate: currentMapParams.endDate
+                };
+            }
+            return null;
+        }
+
+        function formatPeriodRange(range) {
+            if (!range) return '(none)';
+            if (!range.startDate || !range.endDate) return '(no dates)';
+            if (baselineMissionDateRange &&
+                formatDate(baselineMissionDateRange.firstDate) === range.startDate &&
+                formatDate(baselineMissionDateRange.lastDate) === range.endDate) {
+                return `${range.startDate}→${range.endDate} (full)`;
+            }
+            return `${range.startDate}→${range.endDate}`;
+        }
+
+        function periodRangesMatch(a, b) {
+            if (!a || !b) return !a && !b;
+            return a.startDate === b.startDate && a.endDate === b.endDate;
+        }
+
+        function classifyRefStatus(hasCustomRef, refOk) {
+            if (!hasCustomRef) return { text: 'n/a', cls: '' };
+            if (refOk === true) return { text: 'kept', cls: 'switch-debug-good' };
+            if (refOk === false) return { text: 'lost', cls: 'switch-debug-bad' };
+            return { text: '…', cls: '' };
+        }
+
+        function classifyDatesStatus(expected, iframeDates, datesOk) {
+            if (datesOk === true) return { text: 'synced', cls: 'switch-debug-good' };
+            if (datesOk === false) return { text: 'failed', cls: 'switch-debug-bad' };
+            if (!expected || !expected.startDate) {
+                return { text: iframeDates ? formatPeriodRange(iframeDates) : '…', cls: '' };
+            }
+            if (iframeDates && periodRangesMatch(expected, iframeDates)) {
+                return { text: 'synced', cls: 'switch-debug-good' };
+            }
+            if (iframeDates && iframeDates.startDate) {
+                return { text: `≠ ${formatPeriodRange(iframeDates)}`, cls: 'switch-debug-bad' };
+            }
+            return { text: '…', cls: '' };
+        }
+
+        function snapshotPeriodOnIframe(index) {
+            const iframe = document.getElementById(`iframe${index}`);
+            if (!iframe || !iframe.src) return null;
+            return datesFromIframeSrc(iframe.src);
+        }
+
+        function renderSwitchDebugTable() {
+            const tbody = document.getElementById('switch-debug-tbody');
+            if (!tbody) return;
+            tbody.innerHTML = '';
+            switchDebugRows.forEach((row) => {
+                const tr = document.createElement('tr');
+                const rowClass = row.outcome === 'pending' ? 'row-pending' :
+                    row.outcome === 'success' ? 'row-success' :
+                    row.outcome === 'incomplete' ? 'row-incomplete' : 'row-fail';
+                tr.className = rowClass;
+                const refSt = classifyRefStatus(row.hasCustomRef, row.refOk);
+                const datesSt = classifyDatesStatus(row.periodAtSwitch, row.periodAfterIframe, row.datesOk);
+                const chartAfter = row.chartsAfter === true ? 'yes' :
+                    row.chartsAfter === false ? 'no' : '?';
+                const cells = [
+                    row.id,
+                    row.switchLabel,
+                    formatPeriodRange(row.periodAtSwitch),
+                    formatPeriodRange(row.periodAfterIframe),
+                    row.periodSource || '-',
+                    row.pixelSize || '-',
+                    row.contours || '-',
+                    refSt.text,
+                    datesSt.text,
+                    row.switchPath || '-',
+                    formatCoordPair(row.pointAtSwitch && row.pointAtSwitch.pointLat,
+                        row.pointAtSwitch && row.pointAtSwitch.pointLon),
+                    formatCoordPair(row.refAtSwitch && row.refAtSwitch.refPointLat,
+                        row.refAtSwitch && row.refAtSwitch.refPointLon),
+                    formatCoordPair(row.pointAfter && row.pointAfter.pointLat,
+                        row.pointAfter && row.pointAfter.pointLon),
+                    formatCoordPair(row.refAfter && row.refAfter.refPointLat,
+                        row.refAfter && row.refAfter.refPointLon),
+                    chartAfter,
+                    row.outcome,
+                    row.elapsedMs != null ? String(row.elapsedMs) : '-'
+                ];
+                cells.forEach((text, ci) => {
+                    const td = document.createElement('td');
+                    td.textContent = text;
+                    if (ci === 7) td.className = refSt.cls;
+                    if (ci === 8) td.className = datesSt.cls;
+                    if (ci === 14 && row.chartsAfter === false) td.className = 'switch-debug-bad';
+                    if (ci === 14 && row.chartsAfter === true) td.className = 'switch-debug-good';
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+            tbody.parentElement.parentElement.scrollTop = tbody.parentElement.parentElement.scrollHeight;
+        }
+
+        function switchDebugOnAttempt(tracking, extra) {
+            extra = extra || {};
+            const pr = pointRefFromMapParams(currentMapParams);
+            const row = {
+                id: tracking.id,
+                switchLabel: `${tracking.fromLabel} → ${tracking.toLabel}`,
+                periodAtSwitch: tracking.userNarrowedAtSwitch
+                    ? { ...tracking.userNarrowedAtSwitch }
+                    : effectivePeriodAtSwitch(tracking.from),
+                periodAfterIframe: null,
+                periodSource: tracking.periodSource,
+                pixelSize: currentMapParams.pixelSize || '-',
+                contours: currentMapParams.contour || '-',
+                hasCustomRef: tracking.hasCustomRef,
+                refOk: tracking.refOk,
+                datesOk: tracking.datesOk,
+                switchPath: extra.switchPath || '-',
+                pointAtSwitch: extra.fromState ? {
+                    pointLat: extra.fromState.pointLat, pointLon: extra.fromState.pointLon
+                } : { pointLat: pr && pr.pointLat, pointLon: pr && pr.pointLon },
+                refAtSwitch: (() => {
+                    const fs = extra.fromState;
+                    if (fs && fs.refPointLat && fs.refPointLon) {
+                        return { refPointLat: fs.refPointLat, refPointLon: fs.refPointLon };
+                    }
+                    const synced = pointRefFromMapParams(currentMapParams);
+                    if (synced && synced.refPointLat && synced.refPointLon) {
+                        return { refPointLat: synced.refPointLat, refPointLon: synced.refPointLon };
+                    }
+                    return { refPointLat: pr && pr.refPointLat, refPointLon: pr && pr.refPointLon };
+                })(),
+                pointAfter: null,
+                refAfter: null,
+                chartsAfter: null,
+                outcome: 'pending',
+                elapsedMs: null,
+                toIndex: tracking.to,
+                t0: tracking.t0
+            };
+            switchDebugRows.push(row);
+            renderSwitchDebugTable();
+            // #region agent log
+            dbgLog('overlay.html:switchDebugOnAttempt', 'switch attempt', {
+                id: tracking.id, switch: row.switchLabel, switchPath: row.switchPath,
+                periodAtSwitch: row.periodAtSwitch, refAtSwitch: row.refAtSwitch,
+                hasCustomRef: tracking.hasCustomRef, mapParamsRef: pointRefFromMapParams(currentMapParams)
+            }, 'A,B');
+            // #endregion
+            const prevTimer = switchDebugFollowUpTimers.get(tracking.id);
+            if (prevTimer) clearTimeout(prevTimer);
+            switchDebugFollowUpTimers.set(tracking.id, setTimeout(() => {
+                switchDebugFollowUpSnapshot(tracking.id, tracking.to);
+            }, 2000));
+        }
+
+        function switchDebugSnapshotAfterState(switchId, toIndex) {
+            const row = switchDebugRows.find((r) => r.id === switchId);
+            if (!row) return;
+            queryActiveIframeSwitchState(toIndex, (state) => {
+                row.pointAfter = {
+                    pointLat: state && state.pointLat,
+                    pointLon: state && state.pointLon
+                };
+                row.refAfter = {
+                    refPointLat: state && state.refPointLat,
+                    refPointLon: state && state.refPointLon
+                };
+                row.chartsAfter = state ? state.chartsVisible : null;
+                if (!row.periodAfterIframe) {
+                    row.periodAfterIframe = state && state.startDate && state.endDate
+                        ? { startDate: state.startDate, endDate: state.endDate } : snapshotPeriodOnIframe(toIndex);
+                }
+                renderSwitchDebugTable();
+                // #region agent log
+                dbgLog('overlay.html:switchDebugSnapshotAfterState', 'switch after snapshot', {
+                    id: switchId, toIndex, refAfter: row.refAfter,
+                    refAppliedInternal: state && state.refAppliedInternal,
+                    hasCustomRef: state && state.hasCustomRef, chartsAfter: row.chartsAfter
+                }, 'A,D');
+                // #endregion
+            });
+        }
+
+        function switchDebugFollowUpSnapshot(switchId, toIndex) {
+            const row = switchDebugRows.find((r) => r.id === switchId);
+            if (!row || row.outcome !== 'pending') return;
+            row.periodAfterIframe = snapshotPeriodOnIframe(toIndex);
+            switchDebugSnapshotAfterState(switchId, toIndex);
+            renderSwitchDebugTable();
+            switchDebugFollowUpTimers.set(switchId, setTimeout(() => {
+                switchDebugFinalizeIfPending(switchId, toIndex);
+            }, 6000));
+        }
+
+        function switchDebugFinalizeIfPending(switchId, toIndex) {
+            const row = switchDebugRows.find((r) => r.id === switchId);
+            if (!row || row.outcome !== 'pending') return;
+            row.periodAfterIframe = snapshotPeriodOnIframe(toIndex);
+            switchDebugSnapshotAfterState(switchId, toIndex);
+            row.elapsedMs = Date.now() - (row.t0 || Date.now());
+            if (row.hasCustomRef && row.refOk === null) row.refOk = false;
+            if (row.datesOk === null) {
+                row.datesOk = row.periodAtSwitch && row.periodAfterIframe &&
+                    periodRangesMatch(row.periodAtSwitch, row.periodAfterIframe);
+            }
+            row.outcome = 'incomplete';
+            renderSwitchDebugTable();
+            console.log('[overlay] switch incomplete (timeout)', row);
+        }
+
+        function switchDebugOnOutcome(tracking, outcome, extra) {
+            const row = switchDebugRows.find((r) => r.id === tracking.id);
+            if (!row) return;
+            const timer = switchDebugFollowUpTimers.get(tracking.id);
+            if (timer) {
+                clearTimeout(timer);
+                switchDebugFollowUpTimers.delete(tracking.id);
+            }
+            row.refOk = tracking.refOk;
+            row.datesOk = tracking.datesOk;
+            row.outcome = outcome;
+            row.elapsedMs = Date.now() - tracking.t0;
+            row.periodAfterIframe = snapshotPeriodOnIframe(tracking.to);
+            switchDebugSnapshotAfterState(tracking.id, tracking.to);
+            if (extra && extra.startDate && extra.endDate) {
+                row.periodAck = { startDate: extra.startDate, endDate: extra.endDate };
+            }
+            renderSwitchDebugTable();
+            // #region agent log
+            dbgLog('overlay.html:switchDebugOnOutcome', 'switch outcome', {
+                id: tracking.id, outcome, refOk: tracking.refOk, datesOk: tracking.datesOk,
+                switchPath: row.switchPath, refAtSwitch: row.refAtSwitch, refAfter: row.refAfter
+            }, 'A,C');
+            // #endregion
+        }
+
+        function initSwitchDebugPanel() {
+            const toggle = document.getElementById('switch-debug-toggle');
+            const clearBtn = document.getElementById('switch-debug-clear');
+            const panel = document.getElementById('switch-debug-panel');
+            if (toggle && panel) {
+                toggle.addEventListener('click', () => {
+                    panel.classList.toggle('collapsed');
+                    toggle.textContent = panel.classList.contains('collapsed') ? '+' : '−';
+                });
+            }
+            if (clearBtn) {
+                clearBtn.addEventListener('click', () => {
+                    switchDebugRows.length = 0;
+                    switchDebugFollowUpTimers.forEach((t) => clearTimeout(t));
+                    switchDebugFollowUpTimers.clear();
+                    renderSwitchDebugTable();
+                });
+            }
+        }
+
+        function maybeResolveSwitchDatesOnIframeLoad(index) {
+            if (!activeSwitchTracking || activeSwitchTracking.to !== index) return;
+            if (activeSwitchTracking.datesOk !== null) return;
+            if (pendingDateSyncByIndex.has(index)) return;
+            if (hasCustomRefPoint(currentMapParams)) return;
+            const expected = activeSwitchTracking.userNarrowedAtSwitch || effectiveNarrowedDatesForSync();
+            const iframeDates = snapshotPeriodOnIframe(index);
+            if (!expected || !expected.startDate) {
+                logSwitchOutcomePart(index, 'dates', true, iframeDates || {});
+                return;
+            }
+            const ok = !!(iframeDates && periodRangesMatch(expected, iframeDates));
+            logSwitchOutcomePart(index, 'dates', ok, iframeDates || {});
+        }
 
         function iframeIndexForMessageSource(source) {
             if (!source) return -1;
@@ -914,21 +1590,25 @@
             return isNarrowedDateRange(startDate, endDate);
         }
 
-        function beginSwitchTracking(fromIdx, toIdx) {
+        function beginSwitchTracking(fromIdx, toIdx, debugExtra) {
             switchAttemptId += 1;
+            const periodAtSwitch = effectivePeriodAtSwitch(fromIdx);
+            const fromState = debugExtra && debugExtra.fromState;
+            const hasRef = hasActiveCustomRef(fromState);
             activeSwitchTracking = {
                 id: switchAttemptId,
                 from: fromIdx,
                 to: toIdx,
                 fromLabel: iframeLabelForLog(fromIdx),
                 toLabel: iframeLabelForLog(toIdx),
-                userNarrowedAtSwitch: userNarrowedDateRange ? { ...userNarrowedDateRange } : null,
+                userNarrowedAtSwitch: periodAtSwitch ? { ...periodAtSwitch } : null,
                 periodSource: periodSelectionSource,
-                hasCustomRef: hasCustomRefPoint(currentMapParams),
-                refOk: hasCustomRefPoint(currentMapParams) ? null : true,
+                hasCustomRef: hasRef,
+                refOk: hasRef ? null : true,
                 datesOk: null,
                 t0: Date.now()
             };
+            switchDebugOnAttempt(activeSwitchTracking, debugExtra || {});
         }
 
         function logSwitchOutcomePart(index, kind, ok, extra) {
@@ -942,6 +1622,7 @@
             const outcome = (t.refOk && t.datesOk) ? 'success' :
                 (!t.refOk && !t.datesOk) ? 'ref-and-dates-failed' :
                 (!t.refOk) ? 'ref-failed' : 'dates-failed';
+            switchDebugOnOutcome(t, outcome, extra);
             activeSwitchTracking = null;
         }
 
@@ -1066,6 +1747,13 @@
         }
 
         function handleInsarmapsRefFailed(failIndex, data) {
+            // #region agent log
+            dbgLog('overlay.html:insarmaps-ref-failed', 'ref apply failed', {
+                failIndex, reason: data && data.reason,
+                refPointLat: data && data.refPointLat, refPointLon: data && data.refPointLon,
+                mapParamsRef: pointRefFromMapParams(currentMapParams)
+            }, 'C');
+            // #endregion
             if (failIndex < 0 || failIndex !== activeDatasetIdx) return;
             if (!hasCustomRefPoint(currentMapParams)) return;
             if (refAppliedForDateSyncByIndex.has(failIndex)) return;
@@ -1445,6 +2133,10 @@
             if (index === activeDatasetIdx && refAppliedForDateSyncByIndex.has(index)) {
                 clearRefRecoveryState(index);
             }
+            ensureChartsOpenOnIframe(index);
+            if (index === activeDatasetIdx && switchOpInFlight) {
+                finishSwitchOp();
+            }
             logSwitchOutcomePart(index, 'dates', true, { startDate, endDate });
         }
 
@@ -1597,10 +2289,10 @@
         function syncDatasetIframeOnSwitch(index) {
             const dataset = iframeDatasets.get(index);
             const iframe = document.getElementById(`iframe${index}`);
-            if (!iframe || !dataset) return false;
+            if (!iframe || !dataset) return { reloaded: false, path: 'no-iframe' };
             if (!currentMapParams.lat || !currentMapParams.lon || !currentMapParams.zoom) {
                 ensureDatasetIframeLoaded(index, 'switch-load');
-                return false;
+                return { reloaded: false, path: 'switch-load' };
             }
             const iframeParams = paramsForDatasetSwitch(index);
             const syncKey = getSyncKey(iframeParams);
@@ -1626,13 +2318,19 @@
                 iframeSynced.set(index, syncKey);
                 iframePointSynced.set(index, getPointKey(iframeParams));
                 console.log(`[overlay] dataset switch SET-DATES ${iframeLabelForLog(index)}  (${willSkip ? 'skip-reload' : 'no-reload'})`);
-                return false;
+                return { reloaded: false, path: 'set-dates' };
             }
             if (willSkip) {
                 console.log(`[overlay] dataset switch SKIP reload ${iframeLabelForLog(index)}  (iframe already synced)`);
-                return false;
+                if (!pendingDateSyncByIndex.has(index)) {
+                    const iframeDates = snapshotPeriodOnIframe(index);
+                    const ok = !narrowed || !!(iframeDates && periodRangesMatch(narrowed, iframeDates));
+                    logSwitchOutcomePart(index, 'dates', ok, iframeDates || {});
+                }
+                return { reloaded: false, path: 'skip-synced' };
             }
-            return reloadDatasetIframe(index, 'switch-dataset', 'crossDataset');
+            const reloaded = reloadDatasetIframe(index, 'switch-dataset', 'crossDataset');
+            return { reloaded: reloaded, path: 'crossDataset-reload' };
         }
 
         function expandDatasetNameLine(datasetName, templateUrl) {
@@ -1987,6 +2685,7 @@
                     (isMintpyDataset(dataset) || !isFullMissionDateRange())) {
                     scheduleNarrowedDateSync(index, reason);
                 }
+                maybeResolveSwitchDatesOnIframeLoad(index);
                 maybeCatchupWarmAfterLoad();
             };
             lastWarmSyncKey = syncKey;
@@ -2497,6 +3196,7 @@
 
                 // Show controls bar
                 document.getElementById('controls-bar').style.display = 'flex';
+                initSwitchDebugPanel();
                 
                 // Single-file mode: hide frame selector if only one dataset
                 const isSingleFileMode = urls.length === 1;
@@ -2529,16 +3229,45 @@
                 
                 // Function to select a dataset
                 function selectDataset(index) {
-                    // Cancel pending debounced sync/scheduled warm only — never abort in-flight iframe loads
+                    if (index === activeDatasetIdx) return;
+                    if (switchOpInFlight) {
+                        pendingSelectIndex = index;
+                        return;
+                    }
+                    switchOpInFlight = true;
                     if (syncTimeout) {
                         clearTimeout(syncTimeout);
                         syncTimeout = null;
                     }
                     cancelPendingWarm();
                     const previousIdx = activeDatasetIdx;
+                    queryActiveIframeSwitchState(previousIdx, (fromState) => {
+                        if (fromState && fromState.startDate && fromState.endDate) {
+                            capturePeriodBeforeSwitch(previousIdx, {
+                                startDate: fromState.startDate,
+                                endDate: fromState.endDate,
+                                datesNarrowed: fromState.datesNarrowed
+                            });
+                        }
+                        performDatasetSwitch(previousIdx, index, fromState);
+                    });
+                }
+
+                function performDatasetSwitch(previousIdx, index, fromState) {
+                    syncRefFromSwitchState(fromState, previousIdx);
+                    // #region agent log
+                    dbgLog('overlay.html:performDatasetSwitch', 'switch decision', {
+                        from: previousIdx, to: index,
+                        hasCustomRef: hasCustomRefPoint(currentMapParams),
+                        mapParamsRef: pointRefFromMapParams(currentMapParams),
+                        fromStateRef: fromState ? {
+                            refPointLat: fromState.refPointLat, refPointLon: fromState.refPointLon,
+                            hasCustomRef: fromState.hasCustomRef, refAppliedInternal: fromState.refAppliedInternal
+                        } : null
+                    }, 'A,B');
+                    // #endregion
                     datasetSwitchSuppressUntil = Date.now() + SYNC_COOLDOWN_MS;
                     console.log(`[overlay] dataset SWITCH  ${iframeLabelForLog(previousIdx)} → ${iframeLabelForLog(index)}  (show/hide; point sync if stale)`);
-                    beginSwitchTracking(previousIdx, index);
                     clearRefAppliedForDateSync(index);
                     cancelRefRecoveryTimers(previousIdx);
                     cancelRefRecoveryTimers(index);
@@ -2554,8 +3283,11 @@
                     const isTimeControlsActive = (typeof timeControlsActive !== 'undefined' && timeControlsActive);
                     
                     if (isTimeControlsActive && previousIdx !== index) {
-                        // Time controls active and dataset changed → restore to BASELINE STATE for the new dataset
+                        beginSwitchTracking(previousIdx, index, {
+                            fromState, switchPath: 'time-controls-restore'
+                        });
                         restoreToBaselineState();
+                        finishSwitchOp();
                         return;
                     }
                     
@@ -2572,12 +3304,25 @@
 
                     // Sync/reload before reveal so stale iframe content (e.g. full period) is not flashed.
                     let switchReloaded = false;
+                    let switchPath = 'show-hide';
                     if (hasCustomRefPoint(currentMapParams)) {
+                        switchPath = 'refSwitch';
                         switchReloaded = reloadDatasetIframe(index, 'switch-dataset-ref', 'refSwitch');
                         scheduleRefRecoveryWatchdogs(index, 'switch-dataset-ref');
+                        // #region agent log
+                        dbgLog('overlay.html:performDatasetSwitch', 'refSwitch reload', {
+                            to: index, reloadUrl: (() => {
+                                const iframe = document.getElementById(`iframe${index}`);
+                                return iframe && iframe.src ? canonicalInsarmapsUrl(iframe.src) : null;
+                            })()
+                        }, 'A');
+                        // #endregion
                     } else {
-                        switchReloaded = syncDatasetIframeOnSwitch(index);
+                        const syncResult = syncDatasetIframeOnSwitch(index);
+                        switchPath = syncResult.path;
+                        switchReloaded = syncResult.reloaded;
                     }
+                    beginSwitchTracking(previousIdx, index, { fromState, switchPath });
 
                     const revealSelectedPanel = () => {
                         if (selectedPanel) {
@@ -2601,9 +3346,15 @@
                         } catch (e) {}
                     }
                     broadcastAutoColorScaleToIframes();
-                    
+                    ensureChartsOpenOnIframe(index);
+
                     updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, false);
                     updatePeriodHeader();
+                    if (pendingDateSyncByIndex.has(index)) {
+                        scheduleSwitchOpFinish(900);
+                    } else {
+                        scheduleSwitchOpFinish(250);
+                    }
                 }
                 
                 // Update overlay URL with initial state. Preserve timeControls and periods from URL when present
@@ -2629,6 +3380,19 @@
                     if (event.data.type === 'insarmaps-ref-applied' &&
                         event.data.refPointLat != null && event.data.refPointLon != null) {
                         const refIndex = iframeIndexForMessageSource(event.source);
+                        if (refIndex >= 0) {
+                            recordKnownRefCoords(refIndex, event.data.refPointLat, event.data.refPointLon, 'ref-applied');
+                        }
+                        if (refIndex >= 0 && (refIndex === activeDatasetIdx ||
+                            (activeSwitchTracking && activeSwitchTracking.to === refIndex))) {
+                            applyRefToMapParams(event.data.refPointLat, event.data.refPointLon);
+                            // #region agent log
+                            dbgLog('overlay.html:insarmaps-ref-applied', 'stored ref', {
+                                refIndex, refPointLat: event.data.refPointLat, refPointLon: event.data.refPointLon,
+                                activeSwitchTracking: activeSwitchTracking ? activeSwitchTracking.to : null
+                            }, 'A,C');
+                            // #endregion
+                        }
                         const coordsMatch = refIndex >= 0 &&
                             refCoordsMatch(currentMapParams.refPointLat, currentMapParams.refPointLon,
                                 event.data.refPointLat, event.data.refPointLon);
@@ -2664,9 +3428,13 @@
                     if (event.data.type === 'insarmaps-timeseries-date' && event.data.date) {
                         let dateStr = String(event.data.date).trim().replace(/-/g, '');
                         if (dateStr.length === 8) {
+                            const inPeriodPick = (typeof timeControlsActive !== 'undefined' && timeControlsActive &&
+                                typeof periodSelectionModeActive !== 'undefined' && periodSelectionModeActive);
+                            if (!inPeriodPick) {
+                                return;
+                            }
                             console.log('[overlay] insarmaps-timeseries-date received', dateStr, 'addPeriodState:', addPeriodState);
-                            // Accept as start date when waiting for start (need_start, or idle/need_point so we're forgiving)
-                            if (addPeriodState === 'need_start' || addPeriodState === 'need_point' || addPeriodState === 'idle') {
+                            if (addPeriodState === 'need_start' || addPeriodState === 'need_point') {
                                 if (addStartDateInput) { addStartDateInput.value = dateStr; addStartDateInput.disabled = false; addStartDateInput.classList.remove('greyed'); }
                                 addPeriodState = 'need_end';
                                 updateAddPeriodButton();
@@ -2726,6 +3494,7 @@
                             }
                         }
                         if (quickSenderIndex >= 0) {
+                            recordInsarmapsReportedDates(quickSenderIndex, event.data, event.data.url);
                             const merged = mergeParamsFromInsarmapsMessage(
                                 event.data.url, event.data, currentMapParams
                             );
@@ -2747,6 +3516,9 @@
                                 const periodWarmDefaultRef = datesChanged && !hasCustomRefPoint(merged);
                                 const inSwitchSuppress = Date.now() < datasetSwitchSuppressUntil;
                                 if (!backgroundsWarmed || keyChanged || datesChanged) {
+                                    if (quickSenderIndex >= 0 && merged.refPointLat && merged.refPointLon) {
+                                        recordKnownRefCoords(quickSenderIndex, merged.refPointLat, merged.refPointLon, 'url-update');
+                                    }
                                     currentMapParams = { ...merged };
                                     if (typeof updateAddPeriodButton === 'function') updateAddPeriodButton();
                                     const inTC = (typeof timeControlsActive !== 'undefined' && timeControlsActive);
@@ -2891,8 +3663,11 @@
 
                         const minScale = params.get('minScale') ?? currentMapParams.minScale;
                         const maxScale = params.get('maxScale') ?? currentMapParams.maxScale;
-                        const rawStartDate = params.get('startDate') ?? currentMapParams.startDate;
-                        const rawEndDate = params.get('endDate') ?? currentMapParams.endDate;
+                        const rawStartDate = event.data.startDate ?? params.get('startDate') ?? currentMapParams.startDate;
+                        const rawEndDate = event.data.endDate ?? params.get('endDate') ?? currentMapParams.endDate;
+                        if (senderIndex >= 0) {
+                            recordInsarmapsReportedDates(senderIndex, event.data, newUrlPath);
+                        }
                         const dateResolved = resolveDatesFromIframeUpdate(senderIndex, rawStartDate, rawEndDate, 'url-update-debounced');
                         logDateResolve(senderIndex, rawStartDate, rawEndDate, dateResolved, 'url-update-debounced');
                         const startDate = dateResolved.startDate;
@@ -2948,7 +3723,7 @@
                             refPointLat, refPointLon,
                             pointLat, pointLon
                         };
-                        
+
                         if (typeof updateAddPeriodButton === 'function') updateAddPeriodButton();
                         
                         // Update overlay.html's browser URL
@@ -3246,6 +4021,7 @@
                 
                 // Commit the current Start/End as one period: first after + replaces, subsequent append; update URL only (no reload)
                 function commitPeriodFromDotSelection() {
+                    if (!timeControlsActive || !periodSelectionModeActive) return false;
                     const startStr = addStartDateInput && addStartDateInput.value ? addStartDateInput.value.trim() : '';
                     const endStr = addEndDateInput && addEndDateInput.value ? addEndDateInput.value.trim() : '';
                     if (!isValidYyyymmdd(startStr) || !isValidYyyymmdd(endStr)) return false;
