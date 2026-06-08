@@ -1075,11 +1075,7 @@
                 endDate: dates.endDate,
                 datesNarrowed: !!dates.datesNarrowed
             });
-            // Pin calendar intent: only capture from user slider/chart, not per-dataset snap on switch.
-            if (!userNarrowedDateRange &&
-                (dates.datesNarrowed || isNarrowedDateRange(dates.startDate, dates.endDate))) {
-                captureUserNarrowedDateRange(dates.startDate, dates.endDate, fromIdx, 'slider');
-            }
+            // Never set userNarrowedDateRange here — switch query returns per-dataset acquisition snap.
         }
 
         function finishSwitchOp() {
@@ -1563,6 +1559,14 @@
                     parseInt(endDate, 10) > parseInt(than.endDate, 10));
         }
 
+        function isStrictCalendarNarrowing(startDate, endDate, than) {
+            if (!than || !startDate || !endDate) return false;
+            const startOk = parseInt(startDate, 10) >= parseInt(than.startDate, 10);
+            const endOk = parseInt(endDate, 10) <= parseInt(than.endDate, 10);
+            return startOk && endOk &&
+                (startDate !== than.startDate || endDate !== than.endDate);
+        }
+
         function isNearDatasetOrMissionFullSpan(senderIndex, startDate, endDate) {
             if (!startDate || !endDate || !baselineMissionDateRange) return false;
             const missionStart = formatDate(baselineMissionDateRange.firstDate);
@@ -1893,6 +1897,9 @@
 
         function captureUserNarrowedDateRange(startDate, endDate, senderIndex, source) {
             const idx = senderIndex ?? activeDatasetIdx;
+            if (Date.now() < datasetSwitchSuppressUntil && userNarrowedDateRange) {
+                return false;
+            }
             if (!shouldCaptureAsUserNarrow(idx, startDate, endDate)) {
                 if (userNarrowedDateRange && isWiderOrEqualDateRange(startDate, endDate, userNarrowedDateRange)) {
                 }
@@ -1901,6 +1908,11 @@
             if (source) periodSelectionSource = source;
             if (source === 'slider') lastSliderCaptureAt = Date.now();
             userNarrowedDateRange = { startDate: startDate, endDate: endDate };
+            // #region agent log
+            dbgLog('overlay.html:captureUserNarrowedDateRange', 'pinned user period', {
+                startDate, endDate, senderIndex: idx, source, periodSelectionSource
+            }, 'H');
+            // #endregion
             return true;
         }
 
@@ -1934,6 +1946,12 @@
             }
 
             if (senderIndex === activeDatasetIdx) {
+                if (Date.now() < datasetSwitchSuppressUntil && userNarrowedDateRange) {
+                    resolved.startDate = userNarrowedDateRange.startDate;
+                    resolved.endDate = userNarrowedDateRange.endDate;
+                    resolved.action = 'rejected-switch-suppress-kept-user';
+                    return resolved;
+                }
                 if (isDatasetFullDateRangeForIndex(senderIndex, rawStartDate, rawEndDate) ||
                     isLogTemplateDateRange(rawStartDate, rawEndDate)) {
                     const kept = keptDates();
@@ -1943,15 +1961,15 @@
                         ? 'rejected-log-template-kept-user' : 'rejected-dataset-full-kept-user';
                     return resolved;
                 }
-                // Default ref: keep slider-selected period; ignore insarmaps acquisition snap drift.
+                // Keep calendar intent: ignore per-dataset acquisition snap (allow user narrowing further).
                 if (!hasCustomRefPoint(currentMapParams) && userNarrowedDateRange &&
-                    (periodSelectionSource === 'slider' || periodSelectionSource === 'iframe-sync') &&
-                    path === 'active-postMessage' &&
                     (rawStartDate !== userNarrowedDateRange.startDate ||
-                        rawEndDate !== userNarrowedDateRange.endDate)) {
+                        rawEndDate !== userNarrowedDateRange.endDate) &&
+                    !isStrictCalendarNarrowing(rawStartDate, rawEndDate, userNarrowedDateRange) &&
+                    !isWiderOrEqualDateRange(rawStartDate, rawEndDate, userNarrowedDateRange)) {
                     resolved.startDate = userNarrowedDateRange.startDate;
                     resolved.endDate = userNarrowedDateRange.endDate;
-                    resolved.action = 'rejected-iframe-drift-kept-slider-narrow';
+                    resolved.action = 'rejected-acquisition-snap-kept-user';
                     return resolved;
                 }
                 const periodSource = path === 'url-update-debounced' ? 'slider' : 'iframe-sync';
@@ -2038,6 +2056,15 @@
 
         function logDateResolve(senderIndex, rawStartDate, rawEndDate, resolved, path) {
             if (resolved.action === 'unchanged' || resolved.action === 'background-no-date-change') return;
+            // #region agent log
+            if (resolved.action.includes('reject') || resolved.action.includes('capture')) {
+                dbgLog('overlay.html:logDateResolve', 'date resolve', {
+                    senderIndex, path, rawStartDate, rawEndDate,
+                    resolved: resolved.action, outStart: resolved.startDate, outEnd: resolved.endDate,
+                    userNarrowed: userNarrowedDateRange, inSwitchSuppress: Date.now() < datasetSwitchSuppressUntil
+                }, 'H');
+            }
+            // #endregion
             const willReassert = senderIndex === activeDatasetIdx && shouldReassertAfterDateReject(path, resolved);
             if (willReassert) {
                 reassertNarrowedDatesToIframe(senderIndex, resolved.action);
@@ -2166,6 +2193,10 @@
 
         function onDateSyncApplied(index, startDate, endDate, retriesLeft) {
             clearPendingDateSync(index);
+            if (userNarrowedDateRange) {
+                currentMapParams.startDate = userNarrowedDateRange.startDate;
+                currentMapParams.endDate = userNarrowedDateRange.endDate;
+            }
             if (index === activeDatasetIdx && refAppliedForDateSyncByIndex.has(index)) {
                 clearRefRecoveryState(index);
             }
@@ -2500,6 +2531,12 @@
         function applyDatesToIframeOnSwitch(index, startDate, endDate) {
             if (!startDate || !endDate) return false;
             pendingDateSyncByIndex.set(index, { startDate: startDate, endDate: endDate, awaitRef: false });
+            // #region agent log
+            dbgLog('overlay.html:applyDatesToIframeOnSwitch', 'set-dates on switch', {
+                index, label: iframeLabelForLog(index), startDate, endDate,
+                userNarrowed: userNarrowedDateRange
+            }, 'H');
+            // #endregion
             return tryApplyNarrowedDatesToIframe(index);
         }
 
@@ -3299,11 +3336,16 @@
 
                 function performDatasetSwitch(previousIdx, index, fromState) {
                     syncRefFromSwitchState(fromState, previousIdx);
+                    if (userNarrowedDateRange) {
+                        currentMapParams.startDate = userNarrowedDateRange.startDate;
+                        currentMapParams.endDate = userNarrowedDateRange.endDate;
+                    }
                     // #region agent log
                     dbgLog('overlay.html:performDatasetSwitch', 'switch decision', {
                         from: previousIdx, to: index,
                         hasCustomRef: hasCustomRefPoint(currentMapParams),
                         mapParamsRef: pointRefFromMapParams(currentMapParams),
+                        userNarrowedDateRange,
                         fromStateRef: fromState ? {
                             refPointLat: fromState.refPointLat, refPointLon: fromState.refPointLon,
                             hasCustomRef: fromState.hasCustomRef, refAppliedInternal: fromState.refAppliedInternal
