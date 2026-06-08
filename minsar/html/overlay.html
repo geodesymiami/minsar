@@ -945,9 +945,11 @@
         const REF_AWAIT_WATCHDOG_MS = 6000;
         const REF_STATUS_ADVISE_MS = 8000;   // show user advisory before auto-retry
         const REF_STUCK_WATCHDOG_MS = 15000; // auto refSwitch retry if ref never applies
-        const MAX_REF_AUTO_RETRIES = 1;
+        const MAX_REF_AUTO_RETRIES = 2;
         // Target iframe ref ack for current switch; no-ack before this stays pending for watchdog/ref-applied.
         const refAppliedForDateSyncByIndex = new Set();
+        // Horz/Vert only: after refSwitch ref+dates, reload with point for time-series chart.
+        const pointAfterRefInFlightByIndex = new Set();
         const refStuckWatchdogByIndex = new Map();   // index -> timeoutId
         const refStatusAdviseByIndex = new Map();    // index -> timeoutId
         const refAutoRetryCountByIndex = new Map();  // index -> retry count this switch
@@ -1433,6 +1435,11 @@
             switchDebugFollowUpTimers.set(tracking.id, setTimeout(() => {
                 switchDebugFollowUpSnapshot(tracking.id, tracking.to);
             }, 2000));
+            if (hasPointSelection(currentMapParams)) {
+                switchDebugFollowUpTimers.set(tracking.id + ':chart', setTimeout(() => {
+                    switchDebugSnapshotAfterState(tracking.id, tracking.to);
+                }, 3500));
+            }
         }
 
         function switchDebugSnapshotAfterState(switchId, toIndex) {
@@ -1447,7 +1454,11 @@
                     refPointLat: state && state.refPointLat,
                     refPointLon: state && state.refPointLon
                 };
-                row.chartsAfter = state ? state.chartsVisible : null;
+                if (state && state.chartsVisible === true) {
+                    row.chartsAfter = true;
+                } else if (row.chartsAfter !== true) {
+                    row.chartsAfter = state ? state.chartsVisible : null;
+                }
                 if (!row.periodAfterIframe) {
                     row.periodAfterIframe = state && state.startDate && state.endDate
                         ? { startDate: state.startDate, endDate: state.endDate } : snapshotPeriodOnIframe(toIndex);
@@ -1649,6 +1660,7 @@
                 userNarrowedAtSwitch: periodAtSwitch ? { ...periodAtSwitch } : null,
                 periodSource: periodSelectionSource,
                 hasCustomRef: hasRef,
+                switchPath: (debugExtra && debugExtra.switchPath) || null,
                 refOk: hasRef ? null : true,
                 datesOk: null,
                 t0: Date.now()
@@ -1673,6 +1685,94 @@
 
         function iframeLabelForLog(index) {
             return iframeLabels.get(index) || `iframe${index}`;
+        }
+
+        function isHorzOrVertIndex(index) {
+            const label = iframeLabels.get(index);
+            return label === 'Horizontal' || label === 'Vertical';
+        }
+
+        function refSwitchLoadKindForIndex(index) {
+            return isHorzOrVertIndex(index) ? 'refSwitchNoPoint' : 'refSwitch';
+        }
+
+        function revealDatasetPanel(index) {
+            const panel = document.getElementById(`panel${index}`);
+            if (!panel) return;
+            panel.style.visibility = 'visible';
+            panel.style.zIndex = '10';
+            panel.style.pointerEvents = 'auto';
+            panel.classList.add('active');
+        }
+
+        function hideDatasetPanelsExcept(keepIndex) {
+            document.querySelectorAll('.panel').forEach((panel) => {
+                if (panel.id === `panel${keepIndex}`) return;
+                panel.style.visibility = 'hidden';
+                panel.style.zIndex = '-1';
+                panel.style.pointerEvents = 'none';
+                panel.classList.remove('active');
+            });
+        }
+
+        function needsPointInUrl(index) {
+            if (!hasPointSelection(currentMapParams)) return false;
+            const iframe = document.getElementById(`iframe${index}`);
+            if (!iframe || !iframe.src) return true;
+            try {
+                const u = new URL(iframe.src, window.location.href);
+                return getPointKey({
+                    pointLat: u.searchParams.get('pointLat'),
+                    pointLon: u.searchParams.get('pointLon')
+                }) !== getPointKey(currentMapParams);
+            } catch (e) {
+                return true;
+            }
+        }
+
+        function completePointAfterRefPhase(index) {
+            if (!pointAfterRefInFlightByIndex.has(index)) return;
+            pointAfterRefInFlightByIndex.delete(index);
+            iframePointSynced.set(index, getPointKey(currentMapParams));
+            ensureChartsOpenOnIframe(index);
+            if (index === activeDatasetIdx && switchOpInFlight) {
+                finishSwitchOp();
+            }
+            // #region agent log
+            dbgLog('overlay.html:completePointAfterRefPhase', 'horz/vert point restore done', {
+                index, label: iframeLabelForLog(index),
+                datesForSync: datesForRefRecolorSync()
+            }, 'J');
+            // #endregion
+            setTimeout(() => {
+                const row = switchDebugRows.filter((r) => r.toIndex === index).pop();
+                if (row) switchDebugSnapshotAfterState(row.id, index);
+            }, 800);
+            setTimeout(() => {
+                const row = switchDebugRows.filter((r) => r.toIndex === index).pop();
+                if (row) switchDebugSnapshotAfterState(row.id, index);
+            }, 2800);
+        }
+
+        function applyPointAfterRefSwitch(index) {
+            if (pointAfterRefInFlightByIndex.has(index) || iframeWarmInFlight.has(index)) return;
+            pointAfterRefInFlightByIndex.add(index);
+            revealDatasetPanel(index);
+            // #region agent log
+            dbgLog('overlay.html:applyPointAfterRefSwitch', 'horz/vert point reload', {
+                index, label: iframeLabelForLog(index)
+            }, 'I');
+            // #endregion
+            reloadDatasetIframe(index, 'point-after-ref', 'pointAfterRef', { skipDatePhase: true });
+        }
+
+        function shouldApplyPointAfterRefSwitch(index, switchPath) {
+            return switchPath === 'refSwitchNoPoint' &&
+                isHorzOrVertIndex(index) &&
+                index === activeDatasetIdx &&
+                hasPointSelection(currentMapParams) &&
+                refAppliedForDateSyncByIndex.has(index) &&
+                needsPointInUrl(index);
         }
 
         // Only the visible/switch-target iframe may trigger narrowed date sync after ref-applied.
@@ -1787,7 +1887,8 @@
             updateRefStatusIndicator(`Retrying reference point load on ${label}…`, true);
             clearRefAppliedForDateSync(index);
             cancelRefRecoveryTimers(index);
-            reloadDatasetIframe(index, `ref-retry-${trigger}`, 'refSwitch');
+            revealDatasetPanel(index);
+            reloadDatasetIframe(index, `ref-retry-${trigger}`, refSwitchLoadKindForIndex(index));
             scheduleRefRecoveryWatchdogs(index, `after-${trigger}`);
         }
 
@@ -2241,11 +2342,18 @@
             if (index === activeDatasetIdx && refAppliedForDateSyncByIndex.has(index)) {
                 clearRefRecoveryState(index);
             }
+            const track = activeSwitchTracking;
+            const switchPath = track && track.to === index ? track.switchPath : null;
+            const needPointPhase = shouldApplyPointAfterRefSwitch(index, switchPath);
+            logSwitchOutcomePart(index, 'dates', true, { startDate, endDate });
+            if (needPointPhase) {
+                applyPointAfterRefSwitch(index);
+                return;
+            }
             ensureChartsOpenOnIframe(index);
             if (index === activeDatasetIdx && switchOpInFlight) {
                 finishSwitchOp();
             }
-            logSwitchOutcomePart(index, 'dates', true, { startDate, endDate });
         }
 
         function maybeStartDateSyncAfterRef(index) {
@@ -2392,10 +2500,21 @@
             if (!hasCustomRefPoint(mapParams)) {
                 return p;
             }
-            if (loadKind === 'crossDataset' || loadKind === 'refSwitch' || loadKind === 'dateAfterRef') {
+            if (loadKind === 'crossDataset' || loadKind === 'refSwitch' || loadKind === 'refSwitchNoPoint' ||
+                loadKind === 'dateAfterRef' || loadKind === 'pointAfterRef') {
                 p.colorscale = null;
             }
-            if (loadKind === 'refSwitch') {
+            if (loadKind === 'refSwitch' || loadKind === 'refSwitchNoPoint') {
+                p.startDate = null;
+                p.endDate = null;
+            }
+            // Horz/Vert: point-before-ref on cold tiles blocks ref; omit point on first load.
+            if (loadKind === 'refSwitchNoPoint') {
+                p.pointLat = null;
+                p.pointLon = null;
+            }
+            // Dates in pointAfterRef URL race ref recolor (same as refSwitch); parent sends set-dates after ref ack.
+            if (loadKind === 'pointAfterRef') {
                 p.startDate = null;
                 p.endDate = null;
             }
@@ -2792,6 +2911,15 @@
             console.log(`[overlay] iframe RELOAD ${iframeLabelForLog(index)}  reason=${reason}`, {
                 to: canonicalInsarmapsUrl(newUrl)
             });
+            // #region agent log
+            if (loadKind === 'refSwitch' || loadKind === 'refSwitchNoPoint' || loadKind === 'pointAfterRef') {
+                dbgLog('overlay.html:reloadDatasetIframe', `${loadKind} url params`, {
+                    index, label: iframeLabelForLog(index), reason,
+                    hasPointInUrl: !!(iframeParams.pointLat && iframeParams.pointLon),
+                    effRef: effectiveRefCoords()
+                }, loadKind === 'pointAfterRef' ? 'I' : 'H');
+            }
+            // #endregion
             iframe.src = newUrl;
             iframeWarmInFlight.set(index, syncKey);
             updateLoadingIndicator();
@@ -2816,12 +2944,20 @@
                         reloadDatasetIframe(index, 'apply-dates-after-ref', 'dateAfterRef', { skipDatePhase: true });
                         return;
                     }
-                } else if (loadKind === 'refSwitch' && hasCustomRefPoint(currentMapParams)) {
+                } else if (loadKind === 'pointAfterRef') {
+                    setTimeout(() => {
+                        if (pointAfterRefInFlightByIndex.has(index)) {
+                            completePointAfterRefPhase(index);
+                        }
+                    }, 12000);
+                    return;
+                } else if ((loadKind === 'refSwitch' || loadKind === 'refSwitchNoPoint') &&
+                    hasCustomRefPoint(currentMapParams)) {
                     // Dates sync only after insarmaps-ref-applied (maybeStartDateSyncAfterRef).
-                    // scheduleNarrowedDateSync here raced URL ref apply on Desc/Vert.
                     // #region agent log
                     dbgLog('overlay.html:reloadDatasetIframe', 'refSwitch onload — defer dates until ref ack', {
-                        index, label: iframeLabelForLog(index), reason, effRef: effectiveRefCoords()
+                        index, label: iframeLabelForLog(index), reason, loadKind,
+                        effRef: effectiveRefCoords()
                     }, 'B');
                     // #endregion
                 }
@@ -3416,6 +3552,7 @@
                     datasetSwitchSuppressUntil = Date.now() + SYNC_COOLDOWN_MS;
                     console.log(`[overlay] dataset SWITCH  ${iframeLabelForLog(previousIdx)} → ${iframeLabelForLog(index)}  (show/hide; point sync if stale)`);
                     clearRefAppliedForDateSync(index);
+                    pointAfterRefInFlightByIndex.clear();
                     cancelRefRecoveryTimers(previousIdx);
                     cancelRefRecoveryTimers(index);
                     refAutoRetryCountByIndex.delete(index);
@@ -3438,13 +3575,18 @@
                         return;
                     }
                     
-                    // Hide all panels (push to back)
-                    document.querySelectorAll('.panel').forEach(panel => {
-                        panel.style.visibility = 'hidden';
-                        panel.style.zIndex = '-1';
-                        panel.style.pointerEvents = 'none';
-                        panel.classList.remove('active');
-                    });
+                    const refSwitchActive = hasCustomRefPoint(currentMapParams);
+                    if (refSwitchActive) {
+                        hideDatasetPanelsExcept(index);
+                        revealDatasetPanel(index);
+                    } else {
+                        document.querySelectorAll('.panel').forEach(panel => {
+                            panel.style.visibility = 'hidden';
+                            panel.style.zIndex = '-1';
+                            panel.style.pointerEvents = 'none';
+                            panel.classList.remove('active');
+                        });
+                    }
 
                     const selectedPanel = document.getElementById(`panel${index}`);
                     const visibleIframe = document.getElementById(`iframe${index}`);
@@ -3452,13 +3594,14 @@
                     // Sync/reload before reveal so stale iframe content (e.g. full period) is not flashed.
                     let switchReloaded = false;
                     let switchPath = 'show-hide';
-                    if (hasCustomRefPoint(currentMapParams)) {
-                        switchPath = 'refSwitch';
-                        switchReloaded = reloadDatasetIframe(index, 'switch-dataset-ref', 'refSwitch');
+                    if (refSwitchActive) {
+                        switchPath = refSwitchLoadKindForIndex(index);
+                        switchReloaded = reloadDatasetIframe(index, 'switch-dataset-ref', switchPath);
                         scheduleRefRecoveryWatchdogs(index, 'switch-dataset-ref');
                         // #region agent log
                         dbgLog('overlay.html:performDatasetSwitch', 'refSwitch reload', {
-                            to: index, reloadUrl: (() => {
+                            to: index, loadKind: switchPath, horzVert: isHorzOrVertIndex(index),
+                            reloadUrl: (() => {
                                 const iframe = document.getElementById(`iframe${index}`);
                                 return iframe && iframe.src ? canonicalInsarmapsUrl(iframe.src) : null;
                             })()
@@ -3479,9 +3622,9 @@
                             selectedPanel.classList.add('active');
                         }
                     };
-                    if (switchReloaded && visibleIframe) {
+                    if (switchReloaded && visibleIframe && !refSwitchActive) {
                         visibleIframe.addEventListener('load', revealSelectedPanel, { once: true });
-                    } else {
+                    } else if (!refSwitchActive) {
                         revealSelectedPanel();
                     }
                     
@@ -3542,6 +3685,21 @@
                                 activeSwitchTracking: activeSwitchTracking ? activeSwitchTracking.to : null
                             }, 'A,C');
                             // #endregion
+                        }
+                        if (refIndex >= 0 && pointAfterRefInFlightByIndex.has(refIndex)) {
+                            if (refIndex === activeDatasetIdx ||
+                                (activeSwitchTracking && activeSwitchTracking.to === refIndex)) {
+                                applyRefToMapParams(event.data.refPointLat, event.data.refPointLon);
+                            }
+                            // #region agent log
+                            dbgLog('overlay.html:insarmaps-ref-applied', 'pointAfterRef ref ack — date sync', {
+                                refIndex, label: iframeLabelForLog(refIndex)
+                            }, 'J');
+                            // #endregion
+                            markRefAppliedForDateSync(refIndex);
+                            maybeStartDateSyncAfterRef(refIndex);
+                            completePointAfterRefPhase(refIndex);
+                            return;
                         }
                         const coordsMatch = refIndex >= 0 &&
                             refCoordsMatchExpected(event.data.refPointLat, event.data.refPointLon);
