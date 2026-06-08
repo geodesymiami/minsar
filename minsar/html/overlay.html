@@ -725,6 +725,7 @@
         let warmTimeout = null;
         let pendingWarm = null;
         const WARM_DEBOUNCE_MS = 200; // batch pan/zoom; point changes still immediate
+        const PERIOD_WARM_DEBOUNCE_MS = 150; // default-ref period slider: warm backgrounds soon after drag stops
         let activeDatasetIdx = 0;
         let dataFirstDate = null;
         let dataLastDate = null;
@@ -871,6 +872,14 @@
             const reason = meta.reason || 'unknown';
             if (iframe.src && insarmapsUrlsEquivalent(iframe.src, newUrl)) {
                 console.log(`[overlay] iframe SKIP  ${label}  reason=${reason}  (URL params unchanged)`);
+                // #region agent log
+                if (isPeriodWarmReason(reason)) {
+                    logPeriodPrewarm('overlay.html:setIframeSrc','period warm url-equivalent skip',{
+                        label,reason,srcDates:datesFromIframeSrc(iframe.src),
+                        newDates:datesFromIframeSrc(newUrl)
+                    },'H3');
+                }
+                // #endregion
                 return false;
             }
             console.log(`[overlay] iframe RELOAD ${label}  reason=${reason}`, {
@@ -1163,6 +1172,16 @@
                         ? 'rejected-log-template-kept-user' : 'rejected-dataset-full-kept-user';
                     return resolved;
                 }
+                // Default ref: keep slider-selected period; ignore insarmaps acquisition snap drift.
+                if (!hasCustomRefPoint(currentMapParams) && userNarrowedDateRange &&
+                    periodSelectionSource === 'slider' && path === 'active-postMessage' &&
+                    (rawStartDate !== userNarrowedDateRange.startDate ||
+                        rawEndDate !== userNarrowedDateRange.endDate)) {
+                    resolved.startDate = userNarrowedDateRange.startDate;
+                    resolved.endDate = userNarrowedDateRange.endDate;
+                    resolved.action = 'rejected-iframe-drift-kept-slider-narrow';
+                    return resolved;
+                }
                 const periodSource = path === 'url-update-debounced' ? 'slider' : 'iframe-sync';
                 if (captureUserNarrowedDateRange(rawStartDate, rawEndDate, senderIndex, periodSource)) {
                     resolved.startDate = rawStartDate;
@@ -1261,6 +1280,38 @@
                 startDate: currentMapParams.startDate,
                 endDate: currentMapParams.endDate
             };
+        }
+
+        // Stable narrowed dates for period warm + dataset switch (prefer userNarrowedDateRange).
+        function mapParamsForPeriodSync(mapParams) {
+            const narrowed = effectiveNarrowedDatesForSync();
+            if (!narrowed || hasCustomRefPoint(mapParams)) return { ...mapParams };
+            return { ...mapParams, startDate: narrowed.startDate, endDate: narrowed.endDate };
+        }
+
+        function iframeDatesMatchExpected(iframeSrc, startDate, endDate) {
+            if (!startDate || !endDate) return true;
+            const d = datesFromIframeSrc(iframeSrc);
+            if (!d || !d.startDate || !d.endDate) return false;
+            return d.startDate === startDate && d.endDate === endDate;
+        }
+
+        function backgroundsPeriodWarmNeeded(mapParams, senderIndex) {
+            const syncParams = mapParamsForPeriodSync(mapParams);
+            const syncKey = getSyncKey(syncParams);
+            const pointKey = getPointKey(syncParams);
+            for (const [index] of iframeDatasets) {
+                if (index === senderIndex) continue;
+                if (iframeSynced.get(index) !== syncKey || iframePointSynced.get(index) !== pointKey) {
+                    return true;
+                }
+                if (iframeWarmInFlight.has(index)) return true;
+                const iframe = document.getElementById(`iframe${index}`);
+                if (!iframeDatesMatchExpected(iframe?.src, syncParams.startDate, syncParams.endDate)) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         function clearPendingDateSync(index) {
@@ -1441,27 +1492,56 @@
         }
 
         function paramsForDatasetSwitch(index) {
-            return mapParamsForIframeLoad(currentMapParams, 'crossDataset');
+            return mapParamsForIframeLoad(mapParamsForPeriodSync(currentMapParams), 'crossDataset');
         }
 
         // On dataset switch, reload if iframe URL does not match full current state (incl. startDate/endDate).
         function syncDatasetIframeOnSwitch(index) {
             const dataset = iframeDatasets.get(index);
             const iframe = document.getElementById(`iframe${index}`);
-            if (!iframe || !dataset) return;
+            if (!iframe || !dataset) return false;
             if (!currentMapParams.lat || !currentMapParams.lon || !currentMapParams.zoom) {
                 ensureDatasetIframeLoaded(index, 'switch-load');
-                return;
+                return false;
             }
             const iframeParams = paramsForDatasetSwitch(index);
             const syncKey = getSyncKey(iframeParams);
             const storedSyncKey = iframeSynced.get(index);
-            const iframeSrc = iframe.src ? canonicalInsarmapsUrl(iframe.src) : '(empty)';
-            if (storedSyncKey === syncKey && iframe.src) {
+            const srcDatesMatch = iframeDatesMatchExpected(
+                iframe.src, iframeParams.startDate, iframeParams.endDate
+            );
+            const inFlight = iframeWarmInFlight.has(index);
+            const willSkip = storedSyncKey === syncKey && !!iframe.src && srcDatesMatch && !inFlight;
+            const narrowed = effectiveNarrowedDatesForSync();
+            let expectedDates = null;
+            let storedDates = null;
+            try { expectedDates = JSON.parse(syncKey); } catch (e) {}
+            try { storedDates = storedSyncKey ? JSON.parse(storedSyncKey) : null; } catch (e) {}
+            const expectedViewKey = getViewSyncKey(iframeParams);
+            const storedViewKey = storedDates ? getViewSyncKey(storedDates) : null;
+            const viewMatch = !storedViewKey || storedViewKey === expectedViewKey;
+            const useSetDatesPath = !hasCustomRefPoint(currentMapParams) && narrowed && !!iframe.src && viewMatch;
+            // #region agent log
+            logPeriodPrewarm('overlay.html:syncDatasetIframeOnSwitch','dataset switch sync check',{
+                index,label:iframeLabelForLog(index),willSkip,hasCustomRef:hasCustomRefPoint(currentMapParams),
+                expectedStart:expectedDates&&expectedDates.startDate,expectedEnd:expectedDates&&expectedDates.endDate,
+                storedStart:storedDates&&storedDates.startDate,storedEnd:storedDates&&storedDates.endDate,
+                srcDates:datesFromIframeSrc(iframe.src),keysMatch:storedSyncKey===syncKey,
+                srcDatesMatch,inFlight,userNarrowed:userNarrowedDateRange,useSetDatesPath,viewMatch
+            },'H7,H8,H11');
+            // #endregion
+            if (willSkip) {
                 console.log(`[overlay] dataset switch SKIP reload ${iframeLabelForLog(index)}  (iframe already synced)`);
-                return;
+                return false;
             }
-            reloadDatasetIframe(index, 'switch-dataset', 'crossDataset');
+            if (useSetDatesPath) {
+                applyDatesToIframeOnSwitch(index, narrowed.startDate, narrowed.endDate);
+                iframeSynced.set(index, syncKey);
+                iframePointSynced.set(index, getPointKey(iframeParams));
+                console.log(`[overlay] dataset switch SET-DATES ${iframeLabelForLog(index)}  (no reload)`);
+                return false;
+            }
+            return reloadDatasetIframe(index, 'switch-dataset', 'crossDataset');
         }
 
         function expandDatasetNameLine(datasetName, templateUrl) {
@@ -1562,6 +1642,40 @@
             });
         }
 
+        function getViewSyncKey(params) {
+            return JSON.stringify({
+                lat: params.lat,
+                lon: params.lon,
+                zoom: params.zoom,
+                minScale: params.minScale,
+                maxScale: params.maxScale,
+                pixelSize: params.pixelSize,
+                background: params.background,
+                opacity: params.opacity,
+                contour: normalizeContourValue(params.contour),
+                colorscale: params.colorscale,
+                refPointLat: params.refPointLat,
+                refPointLon: params.refPointLon,
+                pointLat: params.pointLat,
+                pointLon: params.pointLon
+            });
+        }
+
+        function applyDatesToIframeOnSwitch(index, startDate, endDate) {
+            const iframe = document.getElementById(`iframe${index}`);
+            if (!iframe || !iframe.contentWindow || !startDate || !endDate) return false;
+            try {
+                iframe.contentWindow.postMessage({
+                    type: 'insarmaps-set-dates',
+                    startDate: startDate,
+                    endDate: endDate
+                }, '*');
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+
         function getPointKey(params) {
             return JSON.stringify({
                 pointLat: params.pointLat ?? null,
@@ -1632,6 +1746,61 @@
             }
         }
 
+        function isPeriodWarmReason(reason) {
+            return String(reason || '').includes('period');
+        }
+
+        function datesFromIframeSrc(src) {
+            if (!src) return null;
+            try {
+                const u = new URL(src, window.location.href);
+                return {
+                    startDate: u.searchParams.get('startDate'),
+                    endDate: u.searchParams.get('endDate')
+                };
+            } catch (e) {
+                return null;
+            }
+        }
+
+        // #region agent log
+        function logPeriodPrewarm(location, message, data, hypothesisId) {
+            fetch('http://localhost:7319/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d65846'},body:JSON.stringify({sessionId:'d65846',location:location,message:message,data:data,timestamp:Date.now(),runId:'post-fix2',hypothesisId:hypothesisId})}).catch(()=>{});
+        }
+        // #endregion
+
+        // Default ref only: pre-warm other datasets after active iframe period change.
+        function schedulePeriodBackgroundWarm(senderIndex, lat, lon, zoom, mapParams, warmReason) {
+            const periodParams = mapParamsForPeriodSync(mapParams);
+            // #region agent log
+            logPeriodPrewarm('overlay.html:schedulePeriodBackgroundWarm','period warm scheduled',{senderIndex,label:iframeLabelForLog(senderIndex),warmReason,hasCustomRef:hasCustomRefPoint(mapParams),startDate:periodParams.startDate,endDate:periodParams.endDate,willRun:!!(lat&&lon&&zoom&&!hasCustomRefPoint(mapParams))},'H1');
+            // #endregion
+            if (!lat || !lon || !zoom || hasCustomRefPoint(mapParams)) return;
+            const reason = `${warmReason}:period`;
+            pendingWarm = { senderIndex, lat, lon, zoom, mapParams: periodParams, warmReason: reason };
+            if (warmTimeout) clearTimeout(warmTimeout);
+            warmTimeout = setTimeout(() => {
+                warmTimeout = null;
+                const p = pendingWarm;
+                pendingWarm = null;
+                if (p) {
+                    warmAllBackgroundIframes(
+                        p.senderIndex, p.lat, p.lon, p.zoom, p.mapParams, p.warmReason
+                    );
+                }
+            }, PERIOD_WARM_DEBOUNCE_MS);
+        }
+
+        function flushPeriodBackgroundWarm(senderIndex, lat, lon, zoom, mapParams, warmReason) {
+            const periodParams = mapParamsForPeriodSync(mapParams);
+            // #region agent log
+            logPeriodPrewarm('overlay.html:flushPeriodBackgroundWarm','period warm flush',{senderIndex,label:iframeLabelForLog(senderIndex),warmReason,hasCustomRef:hasCustomRefPoint(mapParams),startDate:periodParams.startDate,endDate:periodParams.endDate,willRun:!!(lat&&lon&&zoom&&!hasCustomRefPoint(mapParams))},'H1');
+            // #endregion
+            if (!lat || !lon || !zoom || hasCustomRefPoint(mapParams)) return;
+            cancelPendingWarm();
+            warmAllBackgroundIframes(senderIndex, lat, lon, zoom, periodParams, `${warmReason}:period`);
+        }
+
         function flushWarmAll(senderIndex, lat, lon, zoom, mapParams, warmReason) {
             cancelPendingWarm();
             warmAllBackgroundIframes(senderIndex, lat, lon, zoom, mapParams, warmReason);
@@ -1641,6 +1810,15 @@
             if (Date.now() < datasetSwitchSuppressUntil) return;
             if (backgroundsPreloadInProgress()) return;
             if (!currentMapParams.lat || !currentMapParams.lon || !currentMapParams.zoom) return;
+            if (!hasCustomRefPoint(currentMapParams) && effectiveNarrowedDatesForSync()) {
+                if (!backgroundsPeriodWarmNeeded(currentMapParams, activeDatasetIdx)) return;
+                schedulePeriodBackgroundWarm(
+                    activeDatasetIdx,
+                    currentMapParams.lat, currentMapParams.lon, currentMapParams.zoom,
+                    currentMapParams, 'catchup-after-load'
+                );
+                return;
+            }
             if (allBackgroundsSynced(currentMapParams, activeDatasetIdx)) return;
             scheduleWarmAll(
                 activeDatasetIdx,
@@ -1693,8 +1871,9 @@
                 return false;
             }
             iframeWarmInFlight.delete(index);
-            const iframeParams = mapParamsForIframeLoad(currentMapParams, loadKind);
-            const fullSwitchParams = mapParamsForIframeLoad(currentMapParams, 'crossDataset');
+            const syncParams = mapParamsForPeriodSync(currentMapParams);
+            const iframeParams = mapParamsForIframeLoad(syncParams, loadKind);
+            const fullSwitchParams = mapParamsForIframeLoad(syncParams, 'crossDataset');
             const syncKey = getSyncKey(fullSwitchParams);
             const pointKey = getPointKey(fullSwitchParams);
             const newUrl = buildInsarmapsUrl(
@@ -1835,7 +2014,8 @@
         function warmAllBackgroundIframes(senderIndex, lat, lon, zoom, mapParams, warmReason) {
             if (!lat || !lon || !zoom) return;
             const isPointWarm = String(warmReason || '').includes('point');
-            if (!isPointWarm && Date.now() < datasetSwitchSuppressUntil) {
+            const isUrgentWarm = isPointWarm || isPeriodWarmReason(warmReason);
+            if (!isUrgentWarm && Date.now() < datasetSwitchSuppressUntil) {
                 console.log(`[overlay] warmAll SKIP  reason=${warmReason || 'warm-background'}:switch-suppress`);
                 return;
             }
@@ -1843,14 +2023,18 @@
                 console.log(`[overlay] warmAll SKIP  reason=${warmReason || 'warm-background'}:incomplete-ref`);
                 return;
             }
+            if (isPeriodWarmReason(warmReason)) {
+                mapParams = mapParamsForPeriodSync(mapParams);
+            }
             const syncKey = getSyncKey(mapParams);
             const pointKey = getPointKey(mapParams);
             const reason = warmReason || 'warm-background';
-            if (!isPointWarm && backgroundsPreloadInProgress()) {
+            const commitSyncOnLoad = isPeriodWarmReason(reason);
+            if (!isUrgentWarm && backgroundsPreloadInProgress()) {
                 console.log(`[overlay] warmAll SKIP  reason=${reason}:preload-in-progress`);
                 return;
             }
-            if (!isPointWarm && syncKey === lastWarmSyncKey && allBackgroundsSynced(mapParams, senderIndex)) {
+            if (!isUrgentWarm && syncKey === lastWarmSyncKey && allBackgroundsSynced(mapParams, senderIndex)) {
                 console.log(`[overlay] warmAll SKIP  reason=${reason}:already-warm`);
                 return;
             }
@@ -1871,7 +2055,7 @@
                         skipped++;
                         return;
                     }
-                    if (!isPointWarm) {
+                    if (!isUrgentWarm) {
                         console.log(`[overlay] iframe SKIP  ${label}  reason=${reason}:in-flight-dont-abort`);
                         skipped++;
                         return;
@@ -1884,6 +2068,8 @@
                 const newUrl = buildInsarmapsUrl(
                     baseUrl, originalDataset, lat, lon, zoom, iframeParams, `ds${index}`, false, false
                 );
+                const loadedSyncKey = getSyncKey(iframeParams);
+                const loadedPointKey = getPointKey(iframeParams);
                 if (setIframeSrc(iframe, newUrl, { label, reason })) {
                     iframeWarmInFlight.set(index, syncKey);
                     updateLoadingIndicator();
@@ -1891,6 +2077,8 @@
                         iframeWarmInFlight.delete(index);
                         updateLoadingIndicator();
                         console.log(`[overlay] iframe LOADED ${label}  reason=${reason}`);
+                        iframeSynced.set(index, loadedSyncKey);
+                        iframePointSynced.set(index, loadedPointKey);
                         if (warmLoadKind === 'refSwitch' && shouldRunDateAfterRef(index)) {
                             reloadDatasetIframe(index, `${reason}-dates-after-ref`, 'dateAfterRef', { skipDatePhase: true });
                             return;
@@ -1898,16 +2086,16 @@
                         maybeCatchupWarmAfterLoad();
                     };
                     reloaded++;
-                    const loadedSyncKey = getSyncKey(iframeParams);
-                    const loadedPointKey = getPointKey(iframeParams);
-                    iframeSynced.set(index, loadedSyncKey);
-                    iframePointSynced.set(index, loadedPointKey);
+                    if (!commitSyncOnLoad) {
+                        iframeSynced.set(index, loadedSyncKey);
+                        iframePointSynced.set(index, loadedPointKey);
+                    }
                 } else {
                     skipped++;
-                    const loadedSyncKey = getSyncKey(iframeParams);
-                    const loadedPointKey = getPointKey(iframeParams);
-                    iframeSynced.set(index, loadedSyncKey);
-                    iframePointSynced.set(index, loadedPointKey);
+                    if (iframeDatesMatchExpected(iframe.src, iframeParams.startDate, iframeParams.endDate)) {
+                        iframeSynced.set(index, loadedSyncKey);
+                        iframePointSynced.set(index, loadedPointKey);
+                    }
                 }
             });
             if (senderIndex >= 0) {
@@ -1918,6 +2106,26 @@
             }
             if (reloaded > 0) lastWarmSyncKey = syncKey;
             console.log(`[overlay] warmAll DONE   reason=${reason}  reloaded=${reloaded}  skipped=${skipped}`);
+            // #region agent log
+            if (isPeriodWarmReason(reason)) {
+                const bgState = [];
+                iframeDatasets.forEach((_, idx) => {
+                    if (idx === senderIndex) return;
+                    const ifr = document.getElementById(`iframe${idx}`);
+                    const sk = iframeSynced.get(idx);
+                    let skDates = null;
+                    try { skDates = sk ? JSON.parse(sk) : null; } catch (e) {}
+                    bgState.push({
+                        index: idx,
+                        label: iframeLabelForLog(idx),
+                        inFlight: iframeWarmInFlight.has(idx),
+                        srcDates: ifr && ifr.src ? datesFromIframeSrc(ifr.src) : null,
+                        syncedDates: skDates ? { startDate: skDates.startDate, endDate: skDates.endDate } : null
+                    });
+                });
+                logPeriodPrewarm('overlay.html:warmAllBackgroundIframes','period warm done',{reason,reloaded,skipped,targetStart:mapParams.startDate,targetEnd:mapParams.endDate,bgState},'H2,H3');
+            }
+            // #endregion
         }
 
         // Append "Individual URLs:" footer — one link per insarmaps.log line; label from URL path/name (desc, asc, vert, horz)
@@ -2277,25 +2485,31 @@
                         panel.style.pointerEvents = 'none';
                         panel.classList.remove('active');
                     });
-                    
-                    // Show the selected panel (instant; no reload on switch)
+
                     const selectedPanel = document.getElementById(`panel${index}`);
-                    if (selectedPanel) {
-                        selectedPanel.style.visibility = 'visible';
-                        selectedPanel.style.zIndex = '10';
-                        selectedPanel.style.pointerEvents = 'auto';
-                        selectedPanel.classList.add('active');
-                    }
-                    
                     const visibleIframe = document.getElementById(`iframe${index}`);
-                    
-                    // Custom ref: always force reload (mintpy asc needs minimal URL, no colorscale).
-                    // Otherwise: reload only when dates/point/view state is stale.
+
+                    // Sync/reload before reveal so stale iframe content (e.g. full period) is not flashed.
+                    let switchReloaded = false;
                     if (hasCustomRefPoint(currentMapParams)) {
-                        reloadDatasetIframe(index, 'switch-dataset-ref', 'refSwitch');
+                        switchReloaded = reloadDatasetIframe(index, 'switch-dataset-ref', 'refSwitch');
                         scheduleRefRecoveryWatchdogs(index, 'switch-dataset-ref');
                     } else {
-                        syncDatasetIframeOnSwitch(index);
+                        switchReloaded = syncDatasetIframeOnSwitch(index);
+                    }
+
+                    const revealSelectedPanel = () => {
+                        if (selectedPanel) {
+                            selectedPanel.style.visibility = 'visible';
+                            selectedPanel.style.zIndex = '10';
+                            selectedPanel.style.pointerEvents = 'auto';
+                            selectedPanel.classList.add('active');
+                        }
+                    };
+                    if (switchReloaded && visibleIframe) {
+                        visibleIframe.addEventListener('load', revealSelectedPanel, { once: true });
+                    } else {
+                        revealSelectedPanel();
                     }
                     
                     // Send contour state to the newly visible iframe so it matches currentMapParams
@@ -2446,6 +2660,9 @@
                                 const keyChanged = newKey !== prevKey;
                                 const needWarm = paramsNeedBackgroundWarm(prevParams, merged);
                                 const pointChanged = getPointKey(prevParams) !== getPointKey(merged);
+                                const datesChanged = prevParams.startDate !== merged.startDate ||
+                                    prevParams.endDate !== merged.endDate;
+                                const periodWarmDefaultRef = datesChanged && !hasCustomRefPoint(merged);
                                 const inSwitchSuppress = Date.now() < datasetSwitchSuppressUntil;
                                 if (!backgroundsWarmed || keyChanged) {
                                     currentMapParams = { ...merged };
@@ -2453,23 +2670,44 @@
                                     const inTC = (typeof timeControlsActive !== 'undefined' && timeControlsActive);
                                     updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, inTC,
                                         inTC && typeof periods !== 'undefined' ? periods : undefined);
-                                    let shouldWarm = needWarm && (!inSwitchSuppress || pointChanged)
-                                        && (!allBackgroundsSynced(currentMapParams, quickSenderIndex) || pointChanged);
-                                    if (shouldWarm && !pointChanged && backgroundsPreloadInProgress()) {
+                                    const periodWarmNeeded = periodWarmDefaultRef &&
+                                        backgroundsPeriodWarmNeeded(currentMapParams, quickSenderIndex);
+                                    let shouldWarm = needWarm && (!inSwitchSuppress || pointChanged || periodWarmDefaultRef)
+                                        && (pointChanged || periodWarmNeeded ||
+                                            (!periodWarmDefaultRef && !allBackgroundsSynced(currentMapParams, quickSenderIndex)));
+                                    if (shouldWarm && !pointChanged && !periodWarmDefaultRef &&
+                                        backgroundsPreloadInProgress()) {
                                         console.log('[overlay] warmAll SKIP  reason=active-postMessage:preload-in-progress');
                                         shouldWarm = false;
                                     }
+                                    // #region agent log
+                                    if (datesChanged) {
+                                        logPeriodPrewarm('overlay.html:active-postMessage','period change warm decision',{
+                                            senderIndex:quickSenderIndex,label:iframeLabelForLog(quickSenderIndex),
+                                            datesChanged,periodWarmDefaultRef,pointChanged,needWarm,shouldWarm,
+                                            hasCustomRef:hasCustomRefPoint(merged),
+                                            prevStart:prevParams.startDate,prevEnd:prevParams.endDate,
+                                            newStart:merged.startDate,newEnd:merged.endDate,
+                                            allSynced:allBackgroundsSynced(currentMapParams,quickSenderIndex),
+                                            preloadInProgress:backgroundsPreloadInProgress()
+                                        },'H1,H6');
+                                    }
+                                    // #endregion
                                     if (shouldWarm) {
-                                        const warmReason = pointChanged ? 'active-postMessage:point' : 'active-postMessage';
                                         if (pointChanged) {
                                             flushWarmAll(
                                                 quickSenderIndex, merged.lat, merged.lon, merged.zoom,
-                                                currentMapParams, warmReason
+                                                currentMapParams, 'active-postMessage:point'
+                                            );
+                                        } else if (periodWarmDefaultRef) {
+                                            schedulePeriodBackgroundWarm(
+                                                quickSenderIndex, merged.lat, merged.lon, merged.zoom,
+                                                currentMapParams, 'active-postMessage'
                                             );
                                         } else {
                                             scheduleWarmAll(
                                                 quickSenderIndex, merged.lat, merged.lon, merged.zoom,
-                                                currentMapParams, warmReason
+                                                currentMapParams, 'active-postMessage'
                                             );
                                         }
                                     } else if (needWarm) {
@@ -2686,7 +2924,13 @@
                         if (senderIndex >= 0) {
                             iframeSynced.set(senderIndex, newSyncKey);
                         }
-                        if (datesChanged && senderIndex >= 0) {
+                        if (datesChanged && senderIndex >= 0 && senderIndex === activeDatasetIdx &&
+                            !hasCustomRefPoint(currentMapParams) &&
+                            (typeof timeControlsActive === 'undefined' || !timeControlsActive) &&
+                            backgroundsPeriodWarmNeeded(currentMapParams, senderIndex)) {
+                            flushPeriodBackgroundWarm(
+                                senderIndex, lat, lon, zoom, currentMapParams, 'url-update-debounced'
+                            );
                         }
                         if (senderIndex >= 0 && pendingDateSyncByIndex.has(senderIndex)) {
                             const pendingRefSync = pendingDateSyncByIndex.get(senderIndex);

@@ -246,10 +246,11 @@ Sends another `insarmaps-set-dates` when overlay rejects a widen. **Over-aggress
 
 When the **active** iframe changes pan/zoom/scales/dates (not contour-only):
 
-1. Debounce 1500ms (`SYNC_DEBOUNCE_MS`).
-2. Update `currentMapParams` (dates through `resolveDatesFromIframeUpdate`).
-3. Reload **all other** dataset iframes with new URL.
-4. Active iframe is **never** reloaded.
+1. **Immediate path** (`active-postMessage`): for **default ref** period-only changes, `schedulePeriodBackgroundWarm()` reloads background dataset iframes after 150ms (`PERIOD_WARM_DEBOUNCE_MS`). Period warm uses reason suffix `:period` so it bypasses preload-in-progress skips (unlike ordinary pan/zoom warm).
+2. **Debounced path** (1500ms `SYNC_DEBOUNCE_MS`): backup `flushPeriodBackgroundWarm()` if backgrounds are still not synced after the slider settles.
+3. Update `currentMapParams` (dates through `resolveDatesFromIframeUpdate`).
+4. On dataset switch without custom ref, `syncDatasetIframeOnSwitch()` skips reload when backgrounds are already synced — switch is show/hide only.
+5. Active iframe is **never** reloaded for period changes (default ref).
 
 **Contour-only:** postMessage `insarmaps-set-contour` to all iframes — no reload.
 
@@ -437,6 +438,7 @@ See original §8 behaviour: pure UI toggle for registering start/end dates from 
 | `resolveDatesFromIframeUpdate()` | Accept/reject date changes from iframes |
 | `captureUserNarrowedDateRange()` | Store user's narrowed period |
 | `scheduleNarrowedDateSync()` / `tryApplyNarrowedDatesToIframe()` | Phase-2 date postMessage |
+| `schedulePeriodBackgroundWarm()` / `flushPeriodBackgroundWarm()` | Default-ref period pre-warm of background datasets |
 | `maybeStartDateSyncAfterRef()` | Start dates after `insarmaps-ref-applied` |
 | `shouldReassertAfterDateReject()` | Guard against reassert feedback loops |
 | `beginSwitchTracking()` / `logSwitchOutcomePart()` | Debug switch tables |
