@@ -1,6 +1,6 @@
 # overlay.html Architecture Documentation
 
-**Last updated:** 2026-06-07 (post custom-ref + narrowed-period dataset-switch fixes)
+**Last updated:** 2026-06-07 (default-ref narrowed-period seamless switch; custom-ref fixes retained)
 
 ## Overview
 
@@ -107,8 +107,9 @@ overlay.html#/start/0.7480/-77.9687/9.8000?startDataset=S1_desc_...&minScale=-3&
 ### Sync keys
 
 ```javascript
-getSyncKey(params)   // view + display + dates + point + ref + colorscale
-getPointKey(params)  // pointLat/Lon + refPointLat/Lon only
+getSyncKey(params)      // view + display + dates + point + ref + colorscale
+getViewSyncKey(params)  // same as getSyncKey but without startDate/endDate
+getPointKey(params)     // pointLat/Lon + refPointLat/Lon only
 ```
 
 ---
@@ -227,6 +228,7 @@ For each incoming date update, returns an **action**:
 | `rejected-widen-kept-user` | Iframe tried to widen; kept `userNarrowedDateRange` |
 | `rejected-dataset-full-kept-user` | Iframe reported full dataset span during refSwitch load |
 | `rejected-log-template-kept-user` | Iframe echoed insarmaps.log template dates |
+| `rejected-iframe-drift-kept-slider-narrow` | Default ref only: insarmaps acquisition snap on `active-postMessage`; kept `userNarrowedDateRange` from slider |
 | `accepted-active` | Normal active iframe date change |
 | `ignored-background` | Background iframe widen ignored |
 
@@ -242,19 +244,50 @@ Sends another `insarmaps-set-dates` when overlay rejects a widen. **Over-aggress
 
 ---
 
-## 8. Active-iframe changes (postMessage debounce)
+## 8. Default-ref narrowed period — warm, drift pin, and seamless switch
+
+### Problem (2026 debug)
+
+With **default ref** and a slider-narrowed period, Desc→Asc switch showed: narrowed period → full period flash → reload → narrowed period. After several toggles it became seamless.
+
+**Root causes:**
+
+1. **Acquisition snap drift** — After the user stops dragging, insarmaps keeps posting slightly different `startDate`/`endDate` (nearest SAR acquisitions). Overlay `currentMapParams` drifted ~10 days from what background pre-warm had loaded.
+2. **URL date mismatch** — Active Desc iframe often has **no** `startDate`/`endDate` in `iframe.src` after slider use (dates live in insarmaps internal state only). `syncDatasetIframeOnSwitch` compared sync keys but not URL dates, or skipped reload while content was stale.
+3. **Cross-dataset calendar dates** — The same calendar range does not mean the same URL dates on Desc vs Asc; insarmaps snaps per dataset inside `applyInsarDateRangeFromYyyymmdd()`.
+
+### Three-layer fix (default ref only)
+
+| Layer | Mechanism | Purpose |
+|-------|-----------|---------|
+| **Pin intent** | `rejected-iframe-drift-kept-slider-narrow` in `resolveDatesFromIframeUpdate()` | After slider capture (`periodSelectionSource === 'slider'`), reject acquisition snap on `active-postMessage`; keep `userNarrowedDateRange` |
+| **Pre-warm** | `schedulePeriodBackgroundWarm()` / `flushPeriodBackgroundWarm()` | Reload **background** iframes with `mapParamsForPeriodSync()` (uses pinned `userNarrowedDateRange`). Reason suffix `:period` bypasses preload-in-progress skips. `iframeSynced` committed on **onload**, not on `setIframeSrc` start |
+| **Switch** | `syncDatasetIframeOnSwitch()` set-dates fast path | If view params match (`getViewSyncKey`) and period is narrowed: `insarmaps-set-dates` postMessage instead of full reload. Insarmaps snaps per dataset without iframe flash |
+
+**Custom ref is unchanged** — still `refSwitch` reload → wait `insarmaps-ref-applied` → `insarmaps-set-dates`. Drift pin and set-dates fast path are gated on `!hasCustomRefPoint()`.
+
+### Active-iframe postMessage flow
 
 When the **active** iframe changes pan/zoom/scales/dates (not contour-only):
 
-1. **Immediate path** (`active-postMessage`): for **default ref** period-only changes, `schedulePeriodBackgroundWarm()` reloads background dataset iframes after 150ms (`PERIOD_WARM_DEBOUNCE_MS`). Period warm uses reason suffix `:period` so it bypasses preload-in-progress skips (unlike ordinary pan/zoom warm).
-2. **Debounced path** (1500ms `SYNC_DEBOUNCE_MS`): backup `flushPeriodBackgroundWarm()` if backgrounds are still not synced after the slider settles.
-3. Update `currentMapParams` (dates through `resolveDatesFromIframeUpdate`).
-4. On dataset switch without custom ref, `syncDatasetIframeOnSwitch()` skips reload when backgrounds are already synced — switch is show/hide only.
-5. Active iframe is **never** reloaded for period changes (default ref).
+1. **Immediate path** (`active-postMessage`): default-ref period changes → `schedulePeriodBackgroundWarm()` after 150ms (`PERIOD_WARM_DEBOUNCE_MS`).
+2. **Debounced path** (1500ms `SYNC_DEBOUNCE_MS`): `flushPeriodBackgroundWarm()` if `backgroundsPeriodWarmNeeded()` (checks sync keys, URL dates, in-flight loads).
+3. Update `currentMapParams` (dates through `resolveDatesFromIframeUpdate()`).
+4. Active iframe is **never** reloaded for period-only changes (default ref).
 
 **Contour-only:** postMessage `insarmaps-set-contour` to all iframes — no reload.
 
-**Cooldown:** Non-active iframe messages ignored for 3s after a sync (`SYNC_COOLDOWN_MS`) to prevent feedback loops. Active iframe bypasses cooldown.
+**Cooldown:** Non-active iframe messages ignored for 3s after a sync (`SYNC_COOLDOWN_MS`). Active iframe bypasses cooldown.
+
+### Key helpers
+
+| Function | Role |
+|----------|------|
+| `mapParamsForPeriodSync()` | Overlay `currentMapParams` with pinned `userNarrowedDateRange` dates |
+| `backgroundsPeriodWarmNeeded()` | True if any background has wrong sync key, wrong URL dates, or warm in-flight |
+| `iframeDatesMatchExpected()` | Compare `iframe.src` query dates to expected YYYYMMDD |
+| `applyDatesToIframeOnSwitch()` | postMessage `insarmaps-set-dates` on dataset switch (default ref fast path) |
+| `maybeCatchupWarmAfterLoad()` | After background onload, schedule period catch-up warm if still stale |
 
 ---
 
@@ -268,7 +301,8 @@ When switching Desc ↔ Asc ↔ Horz ↔ Vert, these should persist:
 | minScale / maxScale | In reload URL | Usually OK |
 | **Custom ref** (`refPointLat`/`refPointLon`) | `refSwitch` URL + insarmaps ref recolor | Marker shows but **data not re-referenced** if dates/colorscale race ref |
 | **Time-series point** (`pointLat`/`pointLon`) | In reload URL | Lost if `mapParamsForIframeLoad` strips point |
-| **Narrowed period** | Phase 2 `insarmaps-set-dates` postMessage | Lost if dates in refSwitch URL; lost if cross-origin slider access attempted |
+| **Narrowed period (custom ref)** | Phase 2 `insarmaps-set-dates` postMessage after ref | Lost if dates in refSwitch URL; lost if cross-origin slider access attempted |
+| **Narrowed period (default ref)** | Pre-warm backgrounds + set-dates on switch | Drift if acquisition snap overwrites slider intent; flash if full URL reload used when only dates differ |
 | pixelSize | In reload URL (refSwitch keeps it) | Lost if stripped in `dateAfterRef` |
 | contours | URL on reload + `insarmaps-set-contour` on switch | Timing: hidden iframe may miss contour message |
 | colorscale | Stripped on cross-dataset when custom ref | Intentional — `colorscale=velocity` races ref recolor on mintpy |
@@ -329,6 +363,19 @@ These bugs were found during 2026 debugging (mintpy/qChiles, testChiles, testMia
 
 **Fix:** `hasPartialCustomRef()` — do not warm until both coords present.
 
+### 10.6 Default-ref narrowed period not seamless on switch
+
+**Symptom:** First Desc→Asc after narrowing shows full period, reload flicker, or wrong dates; improves after repeated toggles.
+
+**Causes:**
+
+1. Background warm used dates that drifted after slider stopped (insarmaps acquisition snap).
+2. `iframeSynced` set before iframe onload → false "already synced".
+3. Switch compared sync keys only; `iframe.src` often missing date query params on active dataset.
+4. Full iframe reload shows insarmaps full-span load before dates apply.
+
+**Fix pattern (default ref only):** Pin slider intent → pre-warm with `mapParamsForPeriodSync()` → on switch use `insarmaps-set-dates` when view matches (§8). Does **not** apply to custom-ref switch path.
+
 ---
 
 ## 11. Insarmaps companion requirements
@@ -384,6 +431,7 @@ Build one row per completed switch from `switch attempt` + `switch outcome` pair
 | Scenario | Custom ref | Narrowed period | Typical result after fixes |
 |----------|------------|-----------------|---------------------------|
 | Reload, no ref, slider on Desc+Asc | No | Any | ✓ both datasets |
+| No ref, narrow slider, wait, Desc↔Asc switch | No | Yes | ✓ seamless (§8 set-dates path) |
 | Ref on Desc, switch to Asc | Yes | No | ✓ ref transfers |
 | Ref on Desc, narrow slider, switch to Asc | Yes | Yes | ✓ ref + period (post-fix32) |
 | Full mission period | Yes | No (full) | ✓ sarvey may use dateAfterRef URL phase |
@@ -406,7 +454,7 @@ Changing ref in the visible period iframe does not re-reference other period ifr
 
 ## 14. Period Selection Mode (+/−)
 
-See original §8 behaviour: pure UI toggle for registering start/end dates from chart dot clicks. No reload on enter/exit. `insarmaps-timeseries-date` postMessage feeds the Start/End inputs.
+Pure UI toggle for registering start/end dates from chart dot clicks. No reload on enter/exit. `insarmaps-timeseries-date` postMessage feeds the Start/End inputs. Sets `periodSelectionSource` to `'chart-dot'` (distinct from slider-driven period in §8).
 
 ---
 
@@ -416,7 +464,8 @@ See original §8 behaviour: pure UI toggle for registering start/end dates from 
 |-------------|------------------|-----------------|
 | Pan/zoom/scales/background/opacity/slider | Debounced sync → reload **other** datasets | Others only |
 | Contour toggle | `insarmaps-set-contour` to **all** | None |
-| Dataset switch, **no custom ref** | Show/hide; reload target if stale | Target if stale |
+| Dataset switch, **no custom ref**, narrowed period | Show/hide; set-dates if view matches, else reload | Target only if view stale |
+| Dataset switch, **no custom ref**, full period | Show/hide; reload target if stale | Target if stale |
 | Dataset switch, **custom ref** | `refSwitch` reload → wait ref → `set-dates` postMessage | Target always |
 | Point/ref click | Warm background iframes with new URL | Backgrounds |
 | Time Controls period step | Show/hide period panel | None |
@@ -433,16 +482,20 @@ See original §8 behaviour: pure UI toggle for registering start/end dates from 
 | `mapParamsForIframeLoad()` | Strip params per load kind (refSwitch critical) |
 | `selectDataset()` | Dataset switch orchestration |
 | `reloadDatasetIframe()` | Force iframe reload with reason + loadKind |
-| `syncDatasetIframeOnSwitch()` | Conditional reload when no custom ref |
+| `syncDatasetIframeOnSwitch()` | Default ref: skip reload, set-dates fast path, or full reload |
 | `scheduleWarmAll()` / `warmAllBackgroundIframes()` | Background preload |
 | `resolveDatesFromIframeUpdate()` | Accept/reject date changes from iframes |
 | `captureUserNarrowedDateRange()` | Store user's narrowed period |
-| `scheduleNarrowedDateSync()` / `tryApplyNarrowedDatesToIframe()` | Phase-2 date postMessage |
+| `mapParamsForPeriodSync()` | Merge pinned `userNarrowedDateRange` into params for warm/switch |
+| `backgroundsPeriodWarmNeeded()` | Whether backgrounds need period re-warm |
+| `applyDatesToIframeOnSwitch()` | Default-ref switch: postMessage dates without reload |
+| `scheduleNarrowedDateSync()` / `tryApplyNarrowedDatesToIframe()` | Custom-ref phase-2 date postMessage |
 | `schedulePeriodBackgroundWarm()` / `flushPeriodBackgroundWarm()` | Default-ref period pre-warm of background datasets |
+| `maybeCatchupWarmAfterLoad()` | Period catch-up warm after background iframe onload |
 | `maybeStartDateSyncAfterRef()` | Start dates after `insarmaps-ref-applied` |
 | `shouldReassertAfterDateReject()` | Guard against reassert feedback loops |
 | `beginSwitchTracking()` / `logSwitchOutcomePart()` | Debug switch tables |
-| `getSyncKey()` / `getPointKey()` | Staleness detection |
+| `getSyncKey()` / `getViewSyncKey()` / `getPointKey()` | Staleness detection |
 
 ---
 
