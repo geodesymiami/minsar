@@ -2068,6 +2068,42 @@
             };
         }
 
+        // Dates for set-dates after ref ack (includes full mission span — needed to finish deferred recolor).
+        function datesForRefRecolorSync() {
+            const narrowed = effectiveNarrowedDatesForSync();
+            if (narrowed) return narrowed;
+            if (currentMapParams.startDate && currentMapParams.endDate) {
+                return {
+                    startDate: currentMapParams.startDate,
+                    endDate: currentMapParams.endDate
+                };
+            }
+            if (baselineMissionDateRange) {
+                return {
+                    startDate: formatDate(baselineMissionDateRange.firstDate),
+                    endDate: formatDate(baselineMissionDateRange.lastDate)
+                };
+            }
+            return null;
+        }
+
+        function completeRefRecolorOnIframe(index) {
+            const iframe = document.getElementById(`iframe${index}`);
+            if (!iframe || !iframe.contentWindow) return false;
+            try {
+                iframe.contentWindow.postMessage({ type: 'insarmaps-complete-ref-recolor' }, '*');
+                // #region agent log
+                dbgLog('overlay.html:completeRefRecolorOnIframe', 'sent complete-ref-recolor', {
+                    index, label: iframeLabelForLog(index),
+                    datesForSync: datesForRefRecolorSync()
+                }, 'G');
+                // #endregion
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+
         // Stable narrowed dates for period warm + dataset switch (prefer userNarrowedDateRange).
         function mapParamsForPeriodSync(mapParams) {
             const narrowed = effectiveNarrowedDatesForSync();
@@ -2144,24 +2180,32 @@
             if (!shouldAcceptRefAppliedForDateSync(index)) {
                 return;
             }
-            const dates = effectiveNarrowedDatesForSync();
+            markRefAppliedForDateSync(index);
+            cancelRefRecoveryTimers(index);
+            refAutoRetryCountByIndex.delete(index);
+            updateRefStatusIndicator('', false);
+            completeRefRecolorOnIframe(index);
+            const dates = datesForRefRecolorSync();
+            // #region agent log
+            dbgLog('overlay.html:maybeStartDateSyncAfterRef', 'ref ack follow-up', {
+                index, label: iframeLabelForLog(index), dates, hasCustomRef: hasCustomRefPoint(currentMapParams)
+            }, 'G');
+            // #endregion
             if (!dates) return;
             if (!pendingDateSyncByIndex.has(index)) {
                 pendingDateSyncByIndex.set(index, {
                     startDate: dates.startDate,
                     endDate: dates.endDate,
-                    awaitRef: false
+                    awaitRef: false,
+                    forRefComplete: true
                 });
             } else {
                 const pending = pendingDateSyncByIndex.get(index);
                 pending.startDate = dates.startDate;
                 pending.endDate = dates.endDate;
                 pending.awaitRef = false;
+                pending.forRefComplete = true;
             }
-            markRefAppliedForDateSync(index);
-            cancelRefRecoveryTimers(index);
-            refAutoRetryCountByIndex.delete(index);
-            updateRefStatusIndicator('', false);
             tryApplyNarrowedDatesToIframe(index);
         }
 
@@ -2182,7 +2226,7 @@
                 clearPendingDateSync(index);
                 return false;
             }
-            if (baselineMissionDateRange &&
+            if (!pending.forRefComplete && baselineMissionDateRange &&
                 formatDate(baselineMissionDateRange.firstDate) === startDate &&
                 formatDate(baselineMissionDateRange.lastDate) === endDate) {
                 clearPendingDateSync(index);
@@ -3405,6 +3449,9 @@
                                 refPointLon: event.data.refPointLon
                             });
                             maybeStartDateSyncAfterRef(refIndex);
+                        } else if (refIndex >= 0 && refIndex === activeDatasetIdx) {
+                            // User picked ref on active iframe outside switch tracking — still finish recolor.
+                            completeRefRecolorOnIframe(refIndex);
                         } else if (refIndex >= 0 && activeSwitchTracking && activeSwitchTracking.to === refIndex) {
                             logSwitchOutcomePart(refIndex, 'ref', false, {
                                 reason: 'coords-mismatch',
