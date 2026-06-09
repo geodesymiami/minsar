@@ -276,16 +276,72 @@
         }
         .container {
             width: 100%;
-            height: calc(100vh - 135px);
+            height: calc(100vh - 135px - min(38vh, 280px));
+            min-height: 280px;
             max-width: 100%;
             position: relative;
-            margin-bottom: 30px;
+            margin-bottom: 8px;
         }
         .page-footer {
             margin: 30px 15px;
             font-family: Arial, sans-serif;
             text-align: center;
             line-height: 1.6;
+        }
+        .switch-debug-panel {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 2000;
+            margin: 0;
+            padding: 8px 12px 10px;
+            max-height: min(38vh, 280px);
+            overflow-y: auto;
+            background: #1e1e1e;
+            color: #e0e0e0;
+            border-top: 3px solid #4a90e2;
+            box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.35);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 11px;
+            line-height: 1.35;
+        }
+        .switch-debug-panel h3 {
+            margin: 0 0 8px 0;
+            font-size: 12px;
+            font-weight: bold;
+            color: #9cdcfe;
+        }
+        .switch-debug-panel .switch-debug-meta {
+            margin-bottom: 8px;
+            color: #ce9178;
+        }
+        .switch-debug-panel table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 10px;
+        }
+        .switch-debug-panel th,
+        .switch-debug-panel td {
+            border: 1px solid #444;
+            padding: 3px 6px;
+            text-align: left;
+            vertical-align: top;
+        }
+        .switch-debug-panel th {
+            background: #2d2d2d;
+            color: #dcdcaa;
+            white-space: nowrap;
+        }
+        .switch-debug-panel td.ok { color: #4ec9b0; }
+        .switch-debug-panel td.bad { color: #f48771; font-weight: bold; }
+        .switch-debug-panel td.na { color: #808080; }
+        .switch-debug-panel td.pending { color: #dcdcaa; }
+        .switch-debug-history td { font-size: 10px; }
+        .switch-debug-panel .legend {
+            font-size: 10px;
+            color: #808080;
+            margin-top: 4px;
         }
         .panel {
             background-color: white;
@@ -394,6 +450,13 @@
         </div>
     </div>
     <div class="container" id="container"></div>
+    <div id="switch-debug-panel" class="switch-debug-panel" aria-live="polite">
+        <h3>Switch parameter debug</h3>
+        <div class="switch-debug-meta" id="switch-debug-meta">No dataset switch yet.</div>
+        <div id="switch-debug-latest"></div>
+        <div id="switch-debug-history-wrap"></div>
+        <div class="legend">Expected = parent intent · Sent = postMessage/reload URL · Received = raw child postMessage · UI 0.4s/1.5s = actual insarmaps slider/toggle (not parent state)</div>
+    </div>
 
     <script>
         // ===== CONFIGURATION (EDIT THIS LINE TO SWITCH BETWEEN FORMATS) =====
@@ -586,6 +649,79 @@
             }
         }
 
+        function effectiveContour(mapParams) {
+            return normalizeContourValue(mapParams?.contour) || INSARMAP_URL_DEFAULTS.contours;
+        }
+
+        function effectivePixelSize(mapParams) {
+            if (mapParams?.pixelSize == null || mapParams.pixelSize === '') return null;
+            return formatUrlNumber(mapParams.pixelSize);
+        }
+
+        function iframePixelSizeMatchExpected(iframeSrc, mapParams) {
+            if (!iframeSrc) return false;
+            const expected = effectivePixelSize(mapParams);
+            try {
+                const u = new URL(iframeSrc, window.location.href);
+                const urlPs = u.searchParams.get('pixelSize');
+                if (expected == null) return urlPs == null;
+                if (urlPs == null) return false;
+                return formatUrlNumber(urlPs) === expected;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function preserveOverlayDisplayParamsDuringSwitch(merged, authoritative) {
+            if (Date.now() >= datasetSwitchSuppressUntil && !switchOpInFlight) {
+                return merged;
+            }
+            const preserved = {
+                ...merged,
+                contour: effectiveContour(authoritative),
+                pixelSize: (authoritative.pixelSize != null && authoritative.pixelSize !== '')
+                    ? authoritative.pixelSize : merged.pixelSize
+            };
+            // #region agent log
+            if (effectiveContour(merged) !== effectiveContour(preserved) ||
+                merged.pixelSize !== preserved.pixelSize) {
+                dbgDisplayLog('overlay.html:preserveDisplay', 'preserved contour/pixelSize during switch', {
+                    suppressUntil: datasetSwitchSuppressUntil,
+                    switchOpInFlight,
+                    rawContour: effectiveContour(merged),
+                    rawPixelSize: merged.pixelSize,
+                    preservedContour: effectiveContour(preserved),
+                    preservedPixelSize: preserved.pixelSize,
+                    authoritativeContour: effectiveContour(authoritative),
+                    authoritativePixelSize: authoritative.pixelSize
+                }, 'B');
+            }
+            // #endregion
+            return preserved;
+        }
+
+        function contourFromInsarmapsMessage(params, eventData, baseParams) {
+            const raw = params.get('contours') ?? params.get('contour') ??
+                (eventData && eventData.contours != null ? eventData.contours : null) ??
+                baseParams?.contour;
+            return normalizeContourValue(raw) || INSARMAP_URL_DEFAULTS.contours;
+        }
+
+        function iframeContourMatchExpected(iframeSrc, mapParams) {
+            if (!iframeSrc) return false;
+            try {
+                const u = new URL(iframeSrc, window.location.href);
+                const expected = effectiveContour(mapParams);
+                const urlRaw = u.searchParams.get('contours') || u.searchParams.get('contour');
+                // Overlay iframe URLs always carry contours explicitly (like background when changed).
+                if (urlRaw == null) return false;
+                const urlNorm = normalizeContourValue(urlRaw) || INSARMAP_URL_DEFAULTS.contours;
+                return urlNorm === expected;
+            } catch (e) {
+                return false;
+            }
+        }
+
         // Insarmaps manual mode omits autoColorScale from URL (minScale/maxScale only). Do not
         // fall back to overlay state when the param is absent — infer from min/max instead.
         function autoColorScaleParamFromInsarmapsUrl(urlParams) {
@@ -663,7 +799,8 @@
                 (options.includeColorscale || colorscale !== INSARMAP_URL_DEFAULTS.colorscale)) {
                 params.set('colorscale', colorscale);
             }
-            if (mapParams.pixelSize && numUrlValueDiffers(mapParams.pixelSize, INSARMAP_URL_DEFAULTS.pixelSize)) {
+            if (mapParams.pixelSize &&
+                (options.includePixelSize || numUrlValueDiffers(mapParams.pixelSize, INSARMAP_URL_DEFAULTS.pixelSize))) {
                 params.set('pixelSize', formatUrlNumber(mapParams.pixelSize));
             }
             if (mapParams.opacity && numUrlValueDiffers(mapParams.opacity, INSARMAP_URL_DEFAULTS.opacity)) {
@@ -672,8 +809,9 @@
             if (mapParams.background && mapParams.background !== INSARMAP_URL_DEFAULTS.background) {
                 params.set('background', mapParams.background);
             }
-            const normalizedContour = normalizeContourValue(mapParams.contour);
-            if (normalizedContour && normalizedContour !== INSARMAP_URL_DEFAULTS.contours) {
+            const normalizedContour = effectiveContour(mapParams);
+            if (!hasCustomRef && normalizedContour &&
+                (options.includeContours || normalizedContour !== INSARMAP_URL_DEFAULTS.contours)) {
                 params.set('contours', normalizedContour);
             }
 
@@ -699,7 +837,11 @@
         // Uses hash-based URL format for shareability: overlay.html#/start/lat/lon/zoom?params
         // Optional: timeControlsActive (bool), periodsArray (array of {startDate,endDate})
         // When periodsArray is not provided but current URL has timeControls and periods, preserve them (e.g. before TC open)
-        function updateOverlayUrl(viewCodeOrDataset, mapParams, currentDataset, timeControlsActive, periodsArray) {
+        let overlayUrlPending = null;
+        let overlayUrlTimer = null;
+        const OVERLAY_URL_DEBOUNCE_MS = 400;
+
+        function applyOverlayUrlNow(viewCodeOrDataset, mapParams, currentDataset, timeControlsActive, periodsArray) {
             const params = new URLSearchParams();
             appendCanonicalInsarmapsQueryParams(params, mapParams, {
                 startDataset: USE_FULL_DATASET_IN_URL && currentDataset ? currentDataset : null,
@@ -728,9 +870,52 @@
             }
             const newHash = `#${hashUrl}`;
             if (window.location.hash !== newHash) {
-                window.history.replaceState({}, '', newHash);
+                try {
+                    window.history.replaceState({}, '', newHash);
+                } catch (e) {
+                    console.warn('[overlay] replaceState skipped (browser rate limit):', e.message);
+                }
             }
             refreshIndividualUrlsFooter();
+        }
+
+        function updateOverlayUrl(viewCodeOrDataset, mapParams, currentDataset, timeControlsActive, periodsArray, options) {
+            options = options || {};
+            overlayUrlPending = {
+                viewCodeOrDataset, mapParams, currentDataset, timeControlsActive, periodsArray
+            };
+            if (options.immediate) {
+                if (overlayUrlTimer) {
+                    clearTimeout(overlayUrlTimer);
+                    overlayUrlTimer = null;
+                }
+                const p = overlayUrlPending;
+                overlayUrlPending = null;
+                applyOverlayUrlNow(p.viewCodeOrDataset, p.mapParams, p.currentDataset,
+                    p.timeControlsActive, p.periodsArray);
+                return;
+            }
+            if (overlayUrlTimer) clearTimeout(overlayUrlTimer);
+            overlayUrlTimer = setTimeout(() => {
+                overlayUrlTimer = null;
+                if (!overlayUrlPending) return;
+                const p = overlayUrlPending;
+                overlayUrlPending = null;
+                applyOverlayUrlNow(p.viewCodeOrDataset, p.mapParams, p.currentDataset,
+                    p.timeControlsActive, p.periodsArray);
+            }, OVERLAY_URL_DEBOUNCE_MS);
+        }
+
+        function flushOverlayUrlUpdate() {
+            if (!overlayUrlPending) return;
+            updateOverlayUrl(
+                overlayUrlPending.viewCodeOrDataset,
+                overlayUrlPending.mapParams,
+                overlayUrlPending.currentDataset,
+                overlayUrlPending.timeControlsActive,
+                overlayUrlPending.periodsArray,
+                { immediate: true }
+            );
         }
 
         // Build insarmaps URL with given parameters
@@ -744,7 +929,9 @@
                 flyToDatasetCenter: 'false',
                 omitPointSelection: urlOptions.omitPointSelection,
                 narrowedDates: narrowedDatesForUrl(mapParams),
-                includeColorscale: !shareable
+                includeColorscale: !shareable,
+                includeContours: !shareable,
+                includePixelSize: !shareable
             });
             // shareable links (footer) omit _t; iframes use cache-busting unless stableCache is set.
             if (!shareable) {
@@ -866,6 +1053,13 @@
         let currentViewCode = 'desc';
         let currentDataset = null;  // Current active dataset name
         let currentMapParams = {};
+        // User-set display params for cross-dataset sync (survives pixelSize drag messages that carry contours=false).
+        let overlayUserDisplay = {
+            contour: null,
+            pixelSize: null,
+            background: null,
+            opacity: null
+        };
         let urlsList = [];
         
         // Sync control - defined early so it's available everywhere
@@ -912,6 +1106,8 @@
         let activeSwitchTracking = null;  // { from, to, switchPath, userNarrowedAtSwitch, hasCustomRef, refOk, datesOk }
         const lastReportedDatesByIndex = new Map();  // index -> { startDate, endDate, datesNarrowed? }
         let switchOpInFlight = false;
+        let selectDatasetFn = null;
+        let performDatasetSwitchFn = null;
         let pendingSelectIndex = null;
         let switchOpFinishTimer = null;
         let switchOpStartedAt = 0;
@@ -920,6 +1116,417 @@
         const lastKnownRefByIndex = new Map();  // index -> { refPointLat, refPointLon }
 
         // #region agent log
+        function initOverlayUserDisplayFrom(mapParams) {
+            overlayUserDisplay = {
+                contour: effectiveContour(mapParams),
+                pixelSize: mapParams.pixelSize ?? null,
+                background: mapParams.background ?? null,
+                opacity: mapParams.opacity ?? null
+            };
+        }
+
+        function mapParamsWithOverlayUserDisplay(mapParams) {
+            const p = { ...mapParams };
+            if (overlayUserDisplay.contour != null) p.contour = overlayUserDisplay.contour;
+            if (overlayUserDisplay.pixelSize != null && overlayUserDisplay.pixelSize !== '') {
+                p.pixelSize = overlayUserDisplay.pixelSize;
+            }
+            if (overlayUserDisplay.background != null) p.background = overlayUserDisplay.background;
+            if (overlayUserDisplay.opacity != null) p.opacity = overlayUserDisplay.opacity;
+            return p;
+        }
+
+        function recordOverlayUserDisplayFromMerge(prevParams, merged) {
+            // Child iframes post MintPy defaults after reload during switch; do not overwrite user intent.
+            if (Date.now() < datasetSwitchSuppressUntil || switchOpInFlight) {
+                return;
+            }
+            const contourChanged = effectiveContour(prevParams) !== effectiveContour(merged);
+            const pixelSizeChanged = prevParams.pixelSize !== merged.pixelSize;
+            const backgroundChanged = prevParams.background !== merged.background;
+            const opacityChanged = prevParams.opacity !== merged.opacity;
+            const updates = {};
+            // Pixel-size slider postMessages embed contours=false; ignore that spurious off when contour was on.
+            if (contourChanged) {
+                const newContour = effectiveContour(merged);
+                const spuriousOff = pixelSizeChanged && newContour === 'false' &&
+                    overlayUserDisplay.contour === 'true';
+                if (!spuriousOff) {
+                    overlayUserDisplay.contour = newContour;
+                    updates.contour = overlayUserDisplay.contour;
+                }
+            }
+            if (pixelSizeChanged && merged.pixelSize != null) {
+                overlayUserDisplay.pixelSize = merged.pixelSize;
+                updates.pixelSize = overlayUserDisplay.pixelSize;
+            }
+            if (backgroundChanged && merged.background != null) {
+                overlayUserDisplay.background = merged.background;
+                updates.background = overlayUserDisplay.background;
+            }
+            if (opacityChanged && merged.opacity != null) {
+                overlayUserDisplay.opacity = merged.opacity;
+                updates.opacity = overlayUserDisplay.opacity;
+            }
+            // #region agent log
+            if (Object.keys(updates).length > 0) {
+                dbgDisplayLog('overlay.html:overlayUserDisplay', 'user display recorded', {
+                    updates, overlayUserDisplay: { ...overlayUserDisplay }
+                }, 'F');
+            }
+            // #endregion
+        }
+
+        const OVERLAY_DEBUG_BUILD = 'b4a2c9-display-v9';
+        const SWITCH_DEBUG_MAX_HISTORY = 8;
+        const MAX_DISPLAY_REAPPLY = 3;
+        let switchDebugHistory = [];
+        let switchDebugActive = null;
+        let switchDebugFinalizeTimers = [];
+        let displayReapplyCountByIndex = new Map();
+
+        function switchDebugFmtCoord(lat, lon) {
+            if (lat == null || lon == null || lat === '' || lon === '') return '—';
+            const a = parseFloat(lat);
+            const b = parseFloat(lon);
+            if (isNaN(a) || isNaN(b)) return '—';
+            return a.toFixed(4) + ',' + b.toFixed(4);
+        }
+
+        function switchDebugSnapFromIframeQuery(index, state) {
+            const iframe = document.getElementById(`iframe${index}`);
+            const snap = switchDebugParamsFromMapAndUrl(null, iframe && iframe.src, null);
+            if (state) {
+                if (state.pixelSize != null && !isNaN(parseFloat(state.pixelSize))) {
+                    snap.pixelSize = switchDebugFmtVal(state.pixelSize);
+                }
+                if (state.contours != null) {
+                    snap.contours = switchDebugFmtVal(state.contours);
+                }
+                if (state.pointLat != null || state.pointLon != null) {
+                    snap.point = switchDebugFmtCoord(state.pointLat, state.pointLon);
+                }
+                if (state.refPointLat != null || state.refPointLon != null) {
+                    snap.refPoint = switchDebugFmtCoord(state.refPointLat, state.refPointLon);
+                }
+                if (state.startDate && state.endDate) {
+                    snap.dates = state.startDate + '–' + state.endDate;
+                }
+                if (state.chartsVisible != null) {
+                    snap.charts = switchDebugFmtVal(state.chartsVisible);
+                }
+            }
+            return snap;
+        }
+
+        function displayParamsMismatchExpected(rawMerged) {
+            const expected = mapParamsWithOverlayUserDisplay(currentMapParams);
+            const psMismatch = expected.pixelSize != null && rawMerged.pixelSize != null &&
+                formatUrlNumber(rawMerged.pixelSize) !== formatUrlNumber(expected.pixelSize);
+            const contourMismatch = effectiveContour(rawMerged) !== effectiveContour(expected);
+            return psMismatch || contourMismatch;
+        }
+
+        function maybeReapplyDisplayParamsToActiveIframe(senderIndex, rawMerged) {
+            if (!(Date.now() < datasetSwitchSuppressUntil || switchOpInFlight)) return;
+            if (senderIndex !== activeDatasetIdx) return;
+            if (!displayParamsMismatchExpected(rawMerged)) return;
+            const count = displayReapplyCountByIndex.get(senderIndex) || 0;
+            if (count >= MAX_DISPLAY_REAPPLY) return;
+            displayReapplyCountByIndex.set(senderIndex, count + 1);
+            broadcastContourAndPixelSizeToIframe(senderIndex);
+            setTimeout(() => broadcastContourAndPixelSizeToIframe(senderIndex), 700);
+            // #region agent log
+            dbgDisplayLog('overlay.html:reapplyDisplay', 're-postMessage after child default', {
+                senderIndex, label: iframeLabelForLog(senderIndex),
+                attempt: count + 1,
+                rawPixelSize: rawMerged.pixelSize,
+                rawContour: effectiveContour(rawMerged),
+                expectedPixelSize: mapParamsWithOverlayUserDisplay(currentMapParams).pixelSize,
+                expectedContour: effectiveContour(mapParamsWithOverlayUserDisplay(currentMapParams))
+            }, 'H');
+            // #endregion
+        }
+
+        function switchDebugFmtVal(v) {
+            if (v === true || v === 'true' || v === 'on' || v === 1) return 'true';
+            if (v === false || v === 'false' || v === 'off' || v === 0) return 'false';
+            if (v == null || v === '') return '—';
+            return String(v);
+        }
+
+        function switchDebugParamsFromMapAndUrl(mapParams, urlStr, chartsVisible) {
+            const urlP = urlDisplayParamsFromSrc(urlStr || '');
+            let pointLat = mapParams && mapParams.pointLat;
+            let pointLon = mapParams && mapParams.pointLon;
+            let refLat = mapParams && mapParams.refPointLat;
+            let refLon = mapParams && mapParams.refPointLon;
+            if (urlStr) {
+                const parsed = parseInsarmapsUrlParams(urlStr);
+                if (parsed) {
+                    if (parsed.pointLat != null) pointLat = parsed.pointLat;
+                    if (parsed.pointLon != null) pointLon = parsed.pointLon;
+                    if (parsed.refPointLat != null) refLat = parsed.refPointLat;
+                    if (parsed.refPointLon != null) refLon = parsed.refPointLon;
+                }
+            }
+            const dates = (mapParams && mapParams.startDate && mapParams.endDate)
+                ? (mapParams.startDate + '–' + mapParams.endDate) : '—';
+            return {
+                contours: switchDebugFmtVal(mapParams ? effectiveContour(mapParams) : urlP.contours),
+                pixelSize: switchDebugFmtVal(mapParams && mapParams.pixelSize != null
+                    ? mapParams.pixelSize : urlP.pixelSize),
+                background: switchDebugFmtVal(mapParams && mapParams.background != null
+                    ? mapParams.background : urlP.background),
+                opacity: switchDebugFmtVal(mapParams && mapParams.opacity != null
+                    ? mapParams.opacity : urlP.opacity),
+                point: switchDebugFmtCoord(pointLat, pointLon),
+                refPoint: switchDebugFmtCoord(refLat, refLon),
+                charts: chartsVisible == null ? '—' : switchDebugFmtVal(chartsVisible),
+                dates: dates
+            };
+        }
+
+        function switchDebugSentLabel(sentPost, urlBuilt) {
+            const parts = [];
+            if (sentPost) {
+                parts.push('PM c=' + switchDebugFmtVal(sentPost.contour) +
+                    ' ps=' + switchDebugFmtVal(sentPost.pixelSize));
+            }
+            if (urlBuilt) {
+                parts.push('URL c=' + urlBuilt.contours + ' ps=' + urlBuilt.pixelSize);
+            }
+            return parts.length ? parts.join(' · ') : '—';
+        }
+
+        function switchDebugMatch(expected, actual) {
+            if (expected === '—' || expected == null) return 'na';
+            if (actual == null || actual === '—' || actual === '?') return 'pending';
+            if (String(expected) === String(actual)) return 'ok';
+            if (expected.includes(',') && actual.includes(',')) {
+                const e = expected.split(',');
+                const a = actual.split(',');
+                if (e.length === 2 && a.length === 2 &&
+                    Math.abs(parseFloat(e[0]) - parseFloat(a[0])) < 0.0002 &&
+                    Math.abs(parseFloat(e[1]) - parseFloat(a[1])) < 0.0002) {
+                    return 'ok';
+                }
+            }
+            return 'bad';
+        }
+
+        function switchDebugCellClass(kind) {
+            if (kind === 'ok') return 'ok';
+            if (kind === 'bad') return 'bad';
+            if (kind === 'pending') return 'pending';
+            return 'na';
+        }
+
+        function flushIncompleteSwitchDebugRow() {
+            if (!switchDebugActive) return;
+            switchDebugActive.incomplete = true;
+            switchDebugHistory.unshift(switchDebugActive);
+            if (switchDebugHistory.length > SWITCH_DEBUG_MAX_HISTORY) {
+                switchDebugHistory.length = SWITCH_DEBUG_MAX_HISTORY;
+            }
+            switchDebugActive = null;
+        }
+
+        function beginSwitchDebugRow(fromIdx, toIdx, fromState, switchPath, switchReloaded, targetUrlBefore) {
+            flushIncompleteSwitchDebugRow();
+            switchDebugFinalizeTimers.forEach((t) => clearTimeout(t));
+            switchDebugFinalizeTimers = [];
+            const expectedParams = mapParamsWithOverlayUserDisplay(currentMapParams);
+            let expectedCharts = '—';
+            if (fromState && fromState.chartsVisible != null) {
+                expectedCharts = switchDebugFmtVal(fromState.chartsVisible);
+            } else if (hasPointSelection(expectedParams)) {
+                expectedCharts = '?';
+            }
+            switchDebugActive = {
+                ts: new Date().toLocaleTimeString(),
+                fromIdx, toIdx,
+                fromLabel: iframeLabelForLog(fromIdx),
+                toLabel: iframeLabelForLog(toIdx),
+                path: switchPath || '—',
+                reloaded: !!switchReloaded,
+                expected: switchDebugParamsFromMapAndUrl(expectedParams, null, expectedCharts),
+                urlAtSwitch: switchDebugParamsFromMapAndUrl(null, targetUrlBefore || '', null),
+                urlBuilt: null,
+                sentPost: null,
+                receivedLatest: null,
+                receivedCount: 0,
+                final: null,
+                finalLate: null
+            };
+            renderSwitchDebugPanel();
+        }
+
+        function recordSwitchDebugReloadUrl(url) {
+            if (!switchDebugActive || !url) return;
+            switchDebugActive.urlBuilt = switchDebugParamsFromMapAndUrl(null, url, null);
+            renderSwitchDebugPanel();
+        }
+
+        function recordSwitchDebugSentPost(contourOn, pixelSize, onlyIndex) {
+            if (!switchDebugActive || onlyIndex !== switchDebugActive.toIdx) return;
+            switchDebugActive.sentPost = { contour: contourOn, pixelSize: pixelSize };
+            renderSwitchDebugPanel();
+        }
+
+        function recordSwitchDebugReceived(senderIndex, rawMerged, eventData) {
+            if (!switchDebugActive || senderIndex !== switchDebugActive.toIdx || !rawMerged) return;
+            const charts = eventData && eventData.chartsVisible != null
+                ? eventData.chartsVisible : null;
+            switchDebugActive.receivedLatest = switchDebugParamsFromMapAndUrl(rawMerged, eventData && eventData.url, charts);
+            switchDebugActive.receivedCount += 1;
+            renderSwitchDebugPanel();
+        }
+
+        function scheduleSwitchDebugFinalize(index) {
+            if (!switchDebugActive || switchDebugActive.toIdx !== index) return;
+            switchDebugFinalizeTimers.forEach((t) => clearTimeout(t));
+            switchDebugFinalizeTimers = [];
+            switchDebugFinalizeTimers.push(setTimeout(() => finalizeSwitchDebugQuery(index, 'final'), 400));
+            switchDebugFinalizeTimers.push(setTimeout(() => finalizeSwitchDebugQuery(index, 'finalLate', true), 1500));
+        }
+
+        function finalizeSwitchDebugQuery(index, field, archive) {
+            if (!switchDebugActive || switchDebugActive.toIdx !== index) return;
+            queryActiveIframeSwitchState(index, (state) => {
+                if (!switchDebugActive || switchDebugActive.toIdx !== index) return;
+                switchDebugActive[field] = switchDebugSnapFromIframeQuery(index, state);
+                if (archive) {
+                    switchDebugHistory.unshift(switchDebugActive);
+                    if (switchDebugHistory.length > SWITCH_DEBUG_MAX_HISTORY) {
+                        switchDebugHistory.length = SWITCH_DEBUG_MAX_HISTORY;
+                    }
+                    switchDebugActive = null;
+                }
+                renderSwitchDebugPanel();
+            });
+        }
+
+        function renderSwitchDebugPanel() {
+            const metaEl = document.getElementById('switch-debug-meta');
+            const latestEl = document.getElementById('switch-debug-latest');
+            const histWrap = document.getElementById('switch-debug-history-wrap');
+            const panel = document.getElementById('switch-debug-panel');
+            if (!metaEl || !latestEl || !histWrap || !panel) return;
+            const h3 = panel.querySelector('h3');
+            if (h3) h3.textContent = 'Switch parameter debug (' + OVERLAY_DEBUG_BUILD + ')';
+            const row = switchDebugActive;
+            if (!row && switchDebugHistory.length === 0) {
+                metaEl.textContent = 'Waiting for first dataset switch — change dataset in the dropdown above.';
+                latestEl.innerHTML = '<table><thead><tr><th>Parameter</th><th>Expected</th><th>Sent</th>' +
+                    '<th>URL@switch</th><th>Received</th><th>UI 0.4s</th><th>UI 1.5s</th><th>✓</th></tr></thead>' +
+                    '<tbody><tr><td colspan="8" class="pending">Switch datasets to populate this table.</td></tr></tbody></table>';
+                histWrap.innerHTML = '';
+                return;
+            }
+            const displayRow = row || switchDebugHistory[0];
+            if (row) {
+                metaEl.textContent = 'Latest (in progress): ' + row.fromLabel + ' → ' + row.toLabel +
+                    ' | path=' + row.path + (row.reloaded ? ' (reload)' : '') +
+                    ' | ' + row.ts + ' | received msgs=' + row.receivedCount;
+            } else {
+                metaEl.textContent = 'Latest completed: ' + displayRow.fromLabel + ' → ' + displayRow.toLabel +
+                    ' | path=' + displayRow.path + ' | ' + displayRow.ts;
+            }
+            const paramDefs = [
+                { key: 'contours', label: 'contours' },
+                { key: 'pixelSize', label: 'pixelSize' },
+                { key: 'background', label: 'background' },
+                { key: 'opacity', label: 'opacity' },
+                { key: 'point', label: 'point (lat,lon)' },
+                { key: 'refPoint', label: 'ref point' },
+                { key: 'charts', label: 'timeseries chart' },
+                { key: 'dates', label: 'date range' }
+            ];
+            const sentStr = switchDebugSentLabel(displayRow.sentPost, displayRow.urlBuilt);
+            const compareSource = displayRow.finalLate || displayRow.final || displayRow.receivedLatest;
+            let html = '<table><thead><tr>' +
+                '<th>Parameter</th><th>Expected</th><th>Sent</th><th>URL@switch</th>' +
+                '<th>Received</th><th>UI 0.4s</th><th>UI 1.5s</th><th>✓</th></tr></thead><tbody>';
+            paramDefs.forEach((def) => {
+                const exp = displayRow.expected[def.key];
+                const urlSw = displayRow.urlAtSwitch[def.key];
+                const rec = displayRow.receivedLatest ? displayRow.receivedLatest[def.key] : '—';
+                const fin = displayRow.final ? displayRow.final[def.key] : '—';
+                const finL = displayRow.finalLate ? displayRow.finalLate[def.key] : '—';
+                const sentCell = (def.key === 'contours' || def.key === 'pixelSize')
+                    ? sentStr : (displayRow.urlBuilt ? displayRow.urlBuilt[def.key] : '—');
+                const match = switchDebugMatch(exp, compareSource ? compareSource[def.key] : null);
+                html += '<tr><td>' + def.label + '</td>' +
+                    '<td>' + exp + '</td>' +
+                    '<td>' + sentCell + '</td>' +
+                    '<td>' + urlSw + '</td>' +
+                    '<td>' + rec + '</td>' +
+                    '<td class="' + switchDebugCellClass(switchDebugMatch(exp, fin)) + '">' + fin + '</td>' +
+                    '<td class="' + switchDebugCellClass(switchDebugMatch(exp, finL)) + '">' + finL + '</td>' +
+                    '<td class="' + switchDebugCellClass(match) + '">' +
+                    (match === 'ok' ? '✓' : (match === 'bad' ? '✗' : (match === 'pending' ? '…' : '—'))) +
+                    '</td></tr>';
+            });
+            html += '</tbody></table>';
+            latestEl.innerHTML = html;
+            if (switchDebugHistory.length > 0) {
+                let hhtml = '<table class="switch-debug-history"><thead><tr>' +
+                    '<th>When</th><th>Switch</th><th>Path</th><th>contour</th><th>pixelSize</th>' +
+                    '<th>point</th><th>ref</th><th>chart</th><th>OK</th></tr></thead><tbody>';
+                switchDebugHistory.forEach((h) => {
+                    const cmp = h.finalLate || h.final || h.receivedLatest || {};
+                    const keys = ['contours', 'pixelSize', 'point', 'refPoint', 'charts'];
+                    let okCount = 0;
+                    let checkCount = 0;
+                    keys.forEach((k) => {
+                        const m = switchDebugMatch(h.expected[k], cmp[k]);
+                        if (m === 'ok') okCount++;
+                        if (m === 'ok' || m === 'bad') checkCount++;
+                    });
+                    const mark = checkCount === 0 ? '…' : (okCount === checkCount ? '✓' : okCount + '/' + checkCount);
+                    hhtml += '<tr><td>' + h.ts + '</td><td>' + h.fromLabel + '→' + h.toLabel + '</td><td>' + h.path +
+                        '</td><td>' + (cmp.contours || '—') + '</td><td>' + (cmp.pixelSize || '—') + '</td>' +
+                        '<td>' + (cmp.point || '—') + '</td><td>' + (cmp.refPoint || '—') + '</td>' +
+                        '<td>' + (cmp.charts || '—') + '</td><td class="' +
+                        (mark === '✓' ? 'ok' : (mark === '…' ? 'pending' : 'bad')) + '">' + mark + '</td></tr>';
+                });
+                hhtml += '</tbody></table>';
+                histWrap.innerHTML = '<h3 style="font-size:11px;margin:8px 0 4px;color:#9cdcfe;">Recent switches</h3>' + hhtml;
+            } else {
+                histWrap.innerHTML = '';
+            }
+        }
+        function dbgDisplayLog(location, message, data, hypothesisId) {
+            const entry = {
+                sessionId: 'b4a2c9', location, message, data,
+                timestamp: Date.now(), hypothesisId
+            };
+            if (!window.__overlayDisplayDebugLog) window.__overlayDisplayDebugLog = [];
+            window.__overlayDisplayDebugLog.push(entry);
+            if (window.__overlayDisplayDebugLog.length > 80) window.__overlayDisplayDebugLog.shift();
+            fetch('http://localhost:7463/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b4a2c9' },
+                body: JSON.stringify(entry)
+            }).catch(() => {});
+        }
+
+        function urlDisplayParamsFromSrc(src) {
+            if (!src) return {};
+            try {
+                const u = new URL(src, window.location.href);
+                return {
+                    contours: u.searchParams.get('contours') || u.searchParams.get('contour'),
+                    pixelSize: u.searchParams.get('pixelSize'),
+                    background: u.searchParams.get('background'),
+                    opacity: u.searchParams.get('opacity')
+                };
+            } catch (e) {
+                return {};
+            }
+        }
+
         function dbgSwitchLog(location, message, data, hypothesisId) {
             fetch('http://localhost:7463/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0', {
                 method: 'POST',
@@ -959,11 +1566,15 @@
                 activeSwitchTracking,
                 datasetSwitchSuppressUntil,
                 suppressRemainingMs: Math.max(0, datasetSwitchSuppressUntil - Date.now()),
+                build: OVERLAY_DEBUG_BUILD,
+                overlayUserDisplay: { ...overlayUserDisplay },
+                displayDebugLog: (window.__overlayDisplayDebugLog || []).slice(-20),
                 panelStates
             };
         }
 
         window.__overlayDebugState = overlayDebugSnapshot;
+        window.__overlayDisplayDebugLog = window.__overlayDisplayDebugLog || [];
 
         setInterval(() => {
             const snap = overlayDebugSnapshot();
@@ -1108,14 +1719,16 @@
             // #endregion
             switchOpInFlight = false;
             switchOpStartedAt = 0;
+            flushOverlayUrlUpdate();
             ensureChartsOpenOnIframe(activeDatasetIdx);
+            scheduleSwitchDebugFinalize(activeDatasetIdx);
             if (pendingSelectIndex !== null && pendingSelectIndex !== activeDatasetIdx) {
                 const next = pendingSelectIndex;
                 pendingSelectIndex = null;
                 // #region agent log
                 dbgSwitchLog('overlay.html:finishSwitchOp', 'processing queued select', { next }, 'D');
                 // #endregion
-                selectDataset(next);
+                if (selectDatasetFn) selectDatasetFn(next);
             } else {
                 pendingSelectIndex = null;
             }
@@ -1212,8 +1825,10 @@
                     refPointLat: event.data.refPointLat,
                     refPointLon: event.data.refPointLon,
                     hasCustomRef: !!event.data.hasCustomRef,
-                    chartsVisible: event.data.chartsVisible,
                     refAppliedInternal: !!event.data.refAppliedInternal,
+                    chartsVisible: event.data.chartsVisible,
+                    pixelSize: event.data.pixelSize,
+                    contours: event.data.contours,
                     source: 'insarmaps-query'
                 });
             };
@@ -1976,6 +2591,12 @@
                 if (!iframeColorscaleMatchExpected(iframe?.src, syncParams)) {
                     return true;
                 }
+                if (!iframeContourMatchExpected(iframe?.src, syncParams)) {
+                    return true;
+                }
+                if (!iframePixelSizeMatchExpected(iframe?.src, syncParams)) {
+                    return true;
+                }
             }
             return false;
         }
@@ -2191,7 +2812,53 @@
         }
 
         function paramsForDatasetSwitch(index) {
-            return mapParamsForIframeLoad(mapParamsForPeriodSync(currentMapParams), 'crossDataset');
+            return mapParamsForIframeLoad(
+                mapParamsForPeriodSync(mapParamsWithOverlayUserDisplay(currentMapParams)),
+                'crossDataset'
+            );
+        }
+
+        // Whether target iframe already matches overlay state (no reload / postMessage needed on switch).
+        function getDatasetIframeSyncStatus(index) {
+            const iframe = document.getElementById(`iframe${index}`);
+            const iframeParams = paramsForDatasetSwitch(index);
+            const syncKey = getSyncKey(iframeParams);
+            const storedSyncKey = iframeSynced.get(index);
+            const srcDatesMatch = iframeDatesMatchExpected(
+                iframe?.src, iframeParams.startDate, iframeParams.endDate
+            );
+            const scaleMatch = iframeScaleParamsMatchExpected(iframe?.src, iframeParams);
+            const colorscaleMatch = iframeColorscaleMatchExpected(iframe?.src, iframeParams);
+            const contourMatch = iframeContourMatchExpected(iframe?.src, iframeParams);
+            const pixelSizeMatch = iframePixelSizeMatchExpected(iframe?.src, iframeParams);
+            const inFlight = iframeWarmInFlight.has(index);
+            const metadataSynced = storedSyncKey === syncKey && !!iframe?.src;
+            const fullySynced = metadataSynced && srcDatesMatch && scaleMatch &&
+                colorscaleMatch && contourMatch && pixelSizeMatch && !inFlight;
+            return {
+                iframeParams, syncKey, storedSyncKey, srcDatesMatch, scaleMatch, colorscaleMatch,
+                contourMatch, pixelSizeMatch, metadataSynced, fullySynced, inFlight
+            };
+        }
+
+        function cachedSwitchStateForIndex(index) {
+            const reported = lastReportedDatesByIndex.get(index);
+            const fromUrl = snapshotPointRefOnIframe(index);
+            if (!reported?.startDate && !fromUrl) return null;
+            return {
+                startDate: reported?.startDate ?? null,
+                endDate: reported?.endDate ?? null,
+                datesNarrowed: !!(reported && reported.datesNarrowed),
+                pointLat: fromUrl?.pointLat ?? null,
+                pointLon: fromUrl?.pointLon ?? null,
+                refPointLat: fromUrl?.refPointLat ?? null,
+                refPointLon: fromUrl?.refPointLon ?? null,
+                hasCustomRef: !!(fromUrl?.refPointLat && fromUrl?.refPointLon) ||
+                    (index >= 0 && lastKnownRefByIndex.has(index)),
+                chartsVisible: null,
+                refAppliedInternal: !!(fromUrl?.refPointLat && fromUrl?.refPointLon),
+                source: 'cached'
+            };
         }
 
         // On dataset switch, reload if iframe URL does not match full current state (incl. startDate/endDate).
@@ -2203,27 +2870,21 @@
                 ensureDatasetIframeLoaded(index, 'switch-load');
                 return { reloaded: false, path: 'switch-load' };
             }
-            const iframeParams = paramsForDatasetSwitch(index);
-            const syncKey = getSyncKey(iframeParams);
-            const storedSyncKey = iframeSynced.get(index);
-            const srcDatesMatch = iframeDatesMatchExpected(
-                iframe.src, iframeParams.startDate, iframeParams.endDate
-            );
-            const scaleMatch = iframeScaleParamsMatchExpected(iframe.src, iframeParams);
-            const colorscaleMatch = iframeColorscaleMatchExpected(iframe.src, iframeParams);
-            const inFlight = iframeWarmInFlight.has(index);
-            const willSkip = storedSyncKey === syncKey && !!iframe.src && srcDatesMatch &&
-                scaleMatch && colorscaleMatch && !inFlight;
+            const status = getDatasetIframeSyncStatus(index);
+            const iframeParams = status.iframeParams;
+            const syncKey = status.syncKey;
+            const willSkip = status.fullySynced;
             const narrowed = effectiveNarrowedDatesForSync();
             let expectedDates = null;
             let storedDates = null;
             try { expectedDates = JSON.parse(syncKey); } catch (e) {}
-            try { storedDates = storedSyncKey ? JSON.parse(storedSyncKey) : null; } catch (e) {}
+            try { storedDates = status.storedSyncKey ? JSON.parse(status.storedSyncKey) : null; } catch (e) {}
             const expectedViewKey = getViewSyncKey(iframeParams);
             const storedViewKey = storedDates ? getViewSyncKey(storedDates) : null;
             const viewMatch = !storedViewKey || storedViewKey === expectedViewKey;
             const useSetDatesPath = !hasCustomRefPoint(currentMapParams) && narrowed && !!iframe.src &&
-                viewMatch && scaleMatch && colorscaleMatch;
+                viewMatch && status.scaleMatch && status.colorscaleMatch && status.contourMatch &&
+                status.pixelSizeMatch;
             // Default ref + narrowed period: always postMessage set-dates (per-dataset snap), even when
             // sync key matches — background iframe may be "synced" at calendar dates but still show full span.
             if (useSetDatesPath) {
@@ -2235,6 +2896,20 @@
             }
             if (willSkip) {
                 console.log(`[overlay] dataset switch SKIP reload ${iframeLabelForLog(index)}  (iframe already synced)`);
+                // #region agent log
+                dbgDisplayLog('overlay.html:syncDatasetIframeOnSwitch', 'skip-synced path', {
+                    index, label: iframeLabelForLog(index),
+                    parentContour: effectiveContour(currentMapParams),
+                    parentPixelSize: currentMapParams.pixelSize,
+                    iframeUrlParams: urlDisplayParamsFromSrc(iframe?.src),
+                    status: {
+                        contourMatch: status.contourMatch,
+                        pixelSizeMatch: status.pixelSizeMatch,
+                        fullySynced: status.fullySynced,
+                        metadataSynced: status.metadataSynced
+                    }
+                }, 'A');
+                // #endregion
                 if (!pendingDateSyncByIndex.has(index)) {
                     const iframeDates = snapshotPeriodOnIframe(index);
                     const ok = !narrowed || !!(iframeDates && periodRangesMatch(narrowed, iframeDates));
@@ -2243,6 +2918,19 @@
                 return { reloaded: false, path: 'skip-synced' };
             }
             const reloaded = reloadDatasetIframe(index, 'switch-dataset', 'crossDataset');
+            // #region agent log
+            dbgDisplayLog('overlay.html:syncDatasetIframeOnSwitch', 'reload path', {
+                index, label: iframeLabelForLog(index), reloaded,
+                parentContour: effectiveContour(currentMapParams),
+                parentPixelSize: currentMapParams.pixelSize,
+                iframeUrlParams: urlDisplayParamsFromSrc(iframe?.src),
+                status: {
+                    contourMatch: status.contourMatch,
+                    pixelSizeMatch: status.pixelSizeMatch,
+                    fullySynced: status.fullySynced
+                }
+            }, 'A');
+            // #endregion
             return { reloaded: reloaded, path: 'crossDataset-reload' };
         }
 
@@ -2339,7 +3027,7 @@
                 pixelSize: params.pixelSize,
                 background: params.background,
                 opacity: params.opacity,
-                contour: params.contour,
+                contour: effectiveContour(params),
                 colorscale: effectiveColorscale(params),
                 refPointLat: params.refPointLat,
                 refPointLon: params.refPointLon,
@@ -2358,7 +3046,7 @@
                 pixelSize: params.pixelSize,
                 background: params.background,
                 opacity: params.opacity,
-                contour: normalizeContourValue(params.contour),
+                contour: effectiveContour(params),
                 colorscale: effectiveColorscale(params),
                 refPointLat: params.refPointLat,
                 refPointLon: params.refPointLon,
@@ -2557,7 +3245,7 @@
                 return false;
             }
             iframeWarmInFlight.delete(index);
-            const syncParams = mapParamsForPeriodSync(currentMapParams);
+            const syncParams = mapParamsForPeriodSync(mapParamsWithOverlayUserDisplay(currentMapParams));
             const effRef = effectiveRefCoords();
             if (effRef) {
                 syncParams.refPointLat = effRef.refPointLat;
@@ -2576,6 +3264,7 @@
                 to: canonicalInsarmapsUrl(newUrl)
             });
             iframe.src = newUrl;
+            recordSwitchDebugReloadUrl(newUrl);
             iframeWarmInFlight.set(index, syncKey);
             updateLoadingIndicator();
             iframe.onload = () => {
@@ -2711,7 +3400,39 @@
             });
         }
 
-        function broadcastMapDisplayStateAfterSwitch(activeIndex, switchReloaded) {
+        function broadcastContourAndPixelSizeToIframe(onlyIndex) {
+            const params = mapParamsWithOverlayUserDisplay(currentMapParams);
+            const contourOn = effectiveContour(params) === 'true';
+            const pixelSizeRaw = params.pixelSize;
+            const pixelSize = pixelSizeRaw != null && pixelSizeRaw !== ''
+                ? parseFloat(pixelSizeRaw) : null;
+            iframeDatasets.forEach((_, index) => {
+                if (onlyIndex !== undefined && onlyIndex >= 0 && index !== onlyIndex) return;
+                const iframe = document.getElementById(`iframe${index}`);
+                if (!iframe || !iframe.contentWindow) return;
+                try {
+                    iframe.contentWindow.postMessage({
+                        type: 'insarmaps-set-contour', value: contourOn
+                    }, '*');
+                    if (pixelSize != null && !isNaN(pixelSize)) {
+                        iframe.contentWindow.postMessage({
+                            type: 'insarmaps-set-pixelSize', value: pixelSize
+                        }, '*');
+                    }
+                } catch (e) {}
+            });
+            // #region agent log
+            dbgDisplayLog('overlay.html:broadcastDisplay', 'postMessage contour/pixelSize to iframe', {
+                onlyIndex, contourOn, pixelSize, overlayUserDisplay: { ...overlayUserDisplay }
+            }, 'G');
+            // #endregion
+            recordSwitchDebugSentPost(contourOn, pixelSize, onlyIndex);
+        }
+
+        function broadcastMapDisplayStateAfterSwitch(activeIndex, switchReloaded, options) {
+            options = options || {};
+            if (options.skipBroadcast) return;
+            const pushDisplayToActive = () => broadcastContourAndPixelSizeToIframe(activeIndex);
             if (switchReloaded) {
                 iframeDatasets.forEach((_, index) => {
                     if (index !== activeIndex) {
@@ -2724,11 +3445,13 @@
                     iframe.addEventListener('load', () => {
                         broadcastAutoColorScaleToIframes(activeIndex);
                         broadcastColorscaleToIframes(activeIndex);
+                        pushDisplayToActive();
                     }, { once: true });
                 }
             } else {
                 broadcastAutoColorScaleToIframes();
                 broadcastColorscaleToIframes();
+                pushDisplayToActive();
             }
         }
 
@@ -2738,14 +3461,8 @@
             const [, lat, lon, zoom] = pathMatch;
             const queryStart = urlPath.indexOf('?');
             const params = queryStart >= 0 ? new URLSearchParams(urlPath.substring(queryStart)) : new URLSearchParams();
-            const getContourValue = () => {
-                if (params.has('contour')) return params.get('contour');
-                if (params.has('contours')) return params.get('contours');
-                if (eventData && eventData.contour !== undefined) return String(eventData.contour);
-                if (eventData && eventData.contours !== undefined) return String(eventData.contours);
-                return baseParams.contour;
-            };
-            const contourValue = normalizeContourValue(getContourValue());
+            const getContourValue = () => contourFromInsarmapsMessage(params, eventData, baseParams);
+            const contourValue = getContourValue();
             const rawMinScale = params.get('minScale') ?? baseParams.minScale;
             const rawMaxScale = params.get('maxScale') ?? baseParams.maxScale;
             const scaleState = resolveAutoColorScaleState(
@@ -2776,7 +3493,10 @@
             const isPointWarm = String(warmReason || '').includes('point');
             const isScaleWarm = String(warmReason || '').includes('scale');
             const isColorscaleWarm = String(warmReason || '').includes('colorscale');
-            const isUrgentWarm = isPointWarm || isScaleWarm || isColorscaleWarm || isPeriodWarmReason(warmReason);
+            const isContourWarm = String(warmReason || '').includes('contour');
+            const isPixelSizeWarm = String(warmReason || '').includes('pixelSize');
+            const isUrgentWarm = isPointWarm || isScaleWarm || isColorscaleWarm || isContourWarm ||
+                isPixelSizeWarm || isPeriodWarmReason(warmReason);
             if (!isUrgentWarm && Date.now() < datasetSwitchSuppressUntil) {
                 console.log(`[overlay] warmAll SKIP  reason=${warmReason || 'warm-background'}:switch-suppress`);
                 return;
@@ -2788,6 +3508,7 @@
             if (isPeriodWarmReason(warmReason)) {
                 mapParams = mapParamsForPeriodSync(mapParams);
             }
+            mapParams = mapParamsWithOverlayUserDisplay(mapParams);
             const syncKey = getSyncKey(mapParams);
             const pointKey = getPointKey(mapParams);
             const reason = warmReason || 'warm-background';
@@ -2811,7 +3532,9 @@
                 if (iframeSynced.get(index) === syncKey && iframePointSynced.get(index) === pointKey) {
                     const iframe = document.getElementById(`iframe${index}`);
                     if (iframe && iframeScaleParamsMatchExpected(iframe.src, iframeParams) &&
-                        iframeColorscaleMatchExpected(iframe.src, iframeParams)) {
+                        iframeColorscaleMatchExpected(iframe.src, iframeParams) &&
+                        iframeContourMatchExpected(iframe.src, iframeParams) &&
+                        iframePixelSizeMatchExpected(iframe.src, iframeParams)) {
                         console.log(`[overlay] iframe SKIP  ${label}  reason=${reason}:already-synced`);
                         skipped++;
                         return;
@@ -2834,6 +3557,16 @@
                 const newUrl = buildInsarmapsUrl(
                     baseUrl, originalDataset, lat, lon, zoom, iframeParams, `ds${index}`, false, false
                 );
+                // #region agent log
+                if (isContourWarm || isPixelSizeWarm || reason.includes('contour') || reason.includes('pixelSize')) {
+                    dbgDisplayLog('overlay.html:warmAll', 'warm reload URL display params', {
+                        index, label, reason,
+                        builtUrlParams: urlDisplayParamsFromSrc(newUrl),
+                        mapParamsContour: effectiveContour(iframeParams),
+                        mapParamsPixelSize: iframeParams.pixelSize
+                    }, 'C');
+                }
+                // #endregion
                 const loadedSyncKey = getSyncKey(iframeParams);
                 const loadedPointKey = getPointKey(iframeParams);
                 if (setIframeSrc(iframe, newUrl, { label, reason })) {
@@ -2862,7 +3595,9 @@
                     skipped++;
                     if (iframeDatesMatchExpected(iframe.src, iframeParams.startDate, iframeParams.endDate) &&
                         iframeScaleParamsMatchExpected(iframe.src, iframeParams) &&
-                        iframeColorscaleMatchExpected(iframe.src, iframeParams)) {
+                        iframeColorscaleMatchExpected(iframe.src, iframeParams) &&
+                        iframeContourMatchExpected(iframe.src, iframeParams) &&
+                        iframePixelSizeMatchExpected(iframe.src, iframeParams)) {
                         iframeSynced.set(index, loadedSyncKey);
                         iframePointSynced.set(index, loadedPointKey);
                     }
@@ -3045,6 +3780,17 @@
                     pointLat: initialParams.pointLat ?? firstLogDefaults?.pointLat ?? null,
                     pointLon: initialParams.pointLon ?? firstLogDefaults?.pointLon ?? null
                 };
+                // #region agent log
+                dbgDisplayLog('overlay.html:init', 'overlay loaded', {
+                    build: OVERLAY_DEBUG_BUILD,
+                    contour: effectiveContour(currentMapParams),
+                    pixelSize: currentMapParams.pixelSize,
+                    background: currentMapParams.background,
+                    opacity: currentMapParams.opacity
+                }, 'D');
+                // #endregion
+                renderSwitchDebugPanel();
+                initOverlayUserDisplayFrom(currentMapParams);
                 seedBaselineFromInsarmapsUrls(urlsFileOrder);
                 if (currentMapParams.startDate && currentMapParams.endDate) {
                     captureUserNarrowedDateRange(
@@ -3199,11 +3945,11 @@
                 // Frame selector change handler
                 frameSelect.addEventListener('change', (e) => {
                     const selectedIndex = parseInt(e.target.value);
-                    selectDataset(selectedIndex);
+                    if (selectDatasetFn) selectDatasetFn(selectedIndex);
                 });
                 
                 // Function to select a dataset
-                function selectDataset(index) {
+                selectDatasetFn = function selectDataset(index) {
                     if (index === activeDatasetIdx) return;
                     if (switchOpInFlight) {
                         pendingSelectIndex = index;
@@ -3231,19 +3977,73 @@
                     }
                     cancelPendingWarm();
                     const previousIdx = activeDatasetIdx;
-                    queryActiveIframeSwitchState(previousIdx, (fromState) => {
-                        if (fromState && fromState.startDate && fromState.endDate) {
-                            capturePeriodBeforeSwitch(previousIdx, {
-                                startDate: fromState.startDate,
-                                endDate: fromState.endDate,
-                                datesNarrowed: fromState.datesNarrowed
-                            });
+                    const targetWarmStatus = getDatasetIframeSyncStatus(index);
+                    // #region agent log
+                    const targetIframe = document.getElementById(`iframe${index}`);
+                    dbgDisplayLog('overlay.html:selectDataset', 'pre-switch display state', {
+                        build: OVERLAY_DEBUG_BUILD,
+                        from: previousIdx, to: index,
+                        parentContour: effectiveContour(currentMapParams),
+                        parentPixelSize: currentMapParams.pixelSize,
+                        overlayUserDisplay: { ...overlayUserDisplay },
+                        parentBackground: currentMapParams.background,
+                        parentOpacity: currentMapParams.opacity,
+                        targetIframeUrlParams: urlDisplayParamsFromSrc(targetIframe?.src),
+                        targetStatus: {
+                            contourMatch: targetWarmStatus.contourMatch,
+                            pixelSizeMatch: targetWarmStatus.pixelSizeMatch,
+                            fullySynced: targetWarmStatus.fullySynced
                         }
-                        performDatasetSwitch(previousIdx, index, fromState);
-                    });
-                }
+                    }, 'A');
+                    // #endregion
+                    const runSwitch = (fromState) => {
+                        // #region agent log
+                        dbgDisplayLog('overlay.html:runSwitch', 'runSwitch invoked', {
+                            fromStateSource: fromState && fromState.source,
+                            hasPerformFn: !!performDatasetSwitchFn
+                        }, 'G');
+                        // #endregion
+                        try {
+                            if (fromState && fromState.startDate && fromState.endDate) {
+                                capturePeriodBeforeSwitch(previousIdx, {
+                                    startDate: fromState.startDate,
+                                    endDate: fromState.endDate,
+                                    datesNarrowed: fromState.datesNarrowed
+                                });
+                            }
+                            if (!performDatasetSwitchFn) {
+                                throw new Error('performDatasetSwitchFn not initialized');
+                            }
+                            performDatasetSwitchFn(previousIdx, index, fromState, targetWarmStatus);
+                        } catch (e) {
+                            // #region agent log
+                            dbgDisplayLog('overlay.html:runSwitch', 'switch failed', {
+                                error: String(e), stack: e && e.stack
+                            }, 'G');
+                            // #endregion
+                            switchOpInFlight = false;
+                            switchOpStartedAt = 0;
+                            pendingSelectIndex = null;
+                        }
+                    };
+                    if (targetWarmStatus.fullySynced && !hasCustomRefPoint(currentMapParams)) {
+                        runSwitch(cachedSwitchStateForIndex(previousIdx) || {});
+                        return;
+                    }
+                    queryActiveIframeSwitchState(previousIdx, runSwitch);
+                };
 
-                function performDatasetSwitch(previousIdx, index, fromState) {
+                performDatasetSwitchFn = function performDatasetSwitch(previousIdx, index, fromState, targetWarmStatus) {
+                    currentMapParams = mapParamsWithOverlayUserDisplay(currentMapParams);
+                    targetWarmStatus = getDatasetIframeSyncStatus(index);
+                    // #region agent log
+                    dbgDisplayLog('overlay.html:performDatasetSwitch', 'switch using overlayUserDisplay', {
+                        overlayUserDisplay: { ...overlayUserDisplay },
+                        parentContour: effectiveContour(currentMapParams),
+                        parentPixelSize: currentMapParams.pixelSize
+                    }, 'F');
+                    // #endregion
+                    const warmedFastPath = targetWarmStatus.fullySynced && !hasCustomRefPoint(currentMapParams);
                     syncRefFromSwitchState(fromState, previousIdx);
                     applyEffectiveRefToMapParams();
                     if (userNarrowedDateRange) {
@@ -3263,6 +4063,9 @@
                     const label = iframeLabels.get(index);
                     currentViewCode = viewCodes[label] || label.toLowerCase();
                     currentDataset = iframeDatasets.get(index);
+                    
+                    const targetUrlBeforeSwitch = document.getElementById(`iframe${index}`)?.src || '';
+                    displayReapplyCountByIndex.delete(index);
                     
                     // Check if time controls are active (defined later, use typeof check)
                     const isTimeControlsActive = (typeof timeControlsActive !== 'undefined' && timeControlsActive);
@@ -3305,6 +4108,8 @@
                         switchReloaded = syncResult.reloaded;
                     }
                     beginSwitchTracking(previousIdx, index, { fromState, switchPath });
+                    beginSwitchDebugRow(previousIdx, index, fromState, switchPath, switchReloaded,
+                        targetUrlBeforeSwitch);
 
                     const revealSelectedPanel = () => {
                         pendingRevealIndex = null;
@@ -3342,19 +4147,30 @@
                     }, 'E');
                     // #endregion
                     
-                    // Send contour state to the newly visible iframe so it matches currentMapParams
-                    const contourOn = (currentMapParams.contour === 'true' || currentMapParams.contour === 'on');
-                    if (visibleIframe && visibleIframe.contentWindow) {
-                        try {
-                            visibleIframe.contentWindow.postMessage({ type: 'insarmaps-set-contour', value: contourOn }, '*');
-                        } catch (e) {}
+                    const skipDisplayBroadcast = warmedFastPath && switchPath === 'skip-synced';
+                    if (!skipDisplayBroadcast) {
+                        broadcastMapDisplayStateAfterSwitch(index, switchReloaded);
+                    } else {
+                        console.log(`[overlay] dataset switch FAST ${iframeLabelForLog(index)}  (warmed; contour/pixelSize postMessage only)`);
+                        broadcastContourAndPixelSizeToIframe(index);
                     }
-                    broadcastMapDisplayStateAfterSwitch(index, switchReloaded);
                     ensureChartsOpenOnIframe(index);
 
-                    updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, false);
+                    if (warmedFastPath && switchPath === 'skip-synced') {
+                        overlayUrlPending = {
+                            viewCodeOrDataset: currentViewCode,
+                            mapParams: currentMapParams,
+                            currentDataset: currentDataset,
+                            timeControlsActive: false,
+                            periodsArray: undefined
+                        };
+                    } else {
+                        updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, false);
+                    }
                     updatePeriodHeader();
-                    if (pendingDateSyncByIndex.has(index)) {
+                    if (warmedFastPath && switchPath === 'skip-synced') {
+                        scheduleSwitchOpFinish(0);
+                    } else if (pendingDateSyncByIndex.has(index)) {
                         scheduleSwitchOpFinish(900);
                     } else {
                         scheduleSwitchOpFinish(250);
@@ -3367,7 +4183,8 @@
                 const urlHasTC = currentUrl.timeControls === 'true';
                 const urlPeriods = parsePeriodsFromUrl(currentUrl.periods);
                 const preserveTC = urlHasTC && urlPeriods && urlPeriods.length > 0;
-                updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, preserveTC, preserveTC ? urlPeriods : undefined);
+                updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, preserveTC,
+                    preserveTC ? urlPeriods : undefined, { immediate: true });
                 
                 // ===== IFRAME SYNCHRONIZATION =====
                 const SYNC_DEBOUNCE_MS = 1500;
@@ -3512,6 +4329,8 @@
                                 event.data.url, event.data, currentMapParams
                             );
                             if (merged) {
+                                recordSwitchDebugReceived(quickSenderIndex, merged, event.data);
+                                maybeReapplyDisplayParamsToActiveIframe(quickSenderIndex, merged);
                                 const dateResolved = resolveDatesFromIframeUpdate(
                                     quickSenderIndex, merged.startDate, merged.endDate, 'active-postMessage'
                                 );
@@ -3530,6 +4349,8 @@
                                     prevScale.minScale !== mergedScale.minScale ||
                                     prevScale.maxScale !== mergedScale.maxScale;
                                 const colorscaleChanged = effectiveColorscale(prevParams) !== effectiveColorscale(merged);
+                                const contourChanged = effectiveContour(prevParams) !== effectiveContour(merged);
+                                const pixelSizeChanged = prevParams.pixelSize !== merged.pixelSize;
                                 const datesChanged = prevParams.startDate !== merged.startDate ||
                                     prevParams.endDate !== merged.endDate;
                                 const periodWarmDefaultRef = datesChanged && !hasCustomRefPoint(merged);
@@ -3538,7 +4359,25 @@
                                     if (quickSenderIndex >= 0 && merged.refPointLat && merged.refPointLon) {
                                         recordKnownRefCoords(quickSenderIndex, merged.refPointLat, merged.refPointLon, 'url-update');
                                     }
-                                    currentMapParams = { ...merged };
+                                    recordOverlayUserDisplayFromMerge(prevParams, merged);
+                                    const mergedForState = preserveOverlayDisplayParamsDuringSwitch(
+                                        mapParamsWithOverlayUserDisplay(merged), prevParams
+                                    );
+                                    // #region agent log
+                                    dbgDisplayLog('overlay.html:active-postMessage', 'display merge', {
+                                        sender: iframeLabelForLog(quickSenderIndex),
+                                        inSwitchSuppress,
+                                        switchOpInFlight,
+                                        rawContour: effectiveContour(merged),
+                                        rawPixelSize: merged.pixelSize,
+                                        finalContour: effectiveContour(mergedForState),
+                                        finalPixelSize: mergedForState.pixelSize,
+                                        prevContour: effectiveContour(prevParams),
+                                        prevPixelSize: prevParams.pixelSize,
+                                        msgUrl: (event.data.url || '').slice(0, 200)
+                                    }, 'B');
+                                    // #endregion
+                                    currentMapParams = { ...mergedForState };
                                     if (typeof updateAddPeriodButton === 'function') updateAddPeriodButton();
                                     const inTC = (typeof timeControlsActive !== 'undefined' && timeControlsActive);
                                     updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, inTC,
@@ -3564,11 +4403,14 @@
                                                 quickSenderIndex, merged.lat, merged.lon, merged.zoom,
                                                 currentMapParams, 'active-postMessage'
                                             );
-                                        } else if (scaleChanged || colorscaleChanged) {
+                                        } else if (scaleChanged || colorscaleChanged || contourChanged || pixelSizeChanged) {
                                             flushWarmAll(
                                                 quickSenderIndex, merged.lat, merged.lon, merged.zoom,
                                                 currentMapParams,
-                                                scaleChanged ? 'active-postMessage:scale' : 'active-postMessage:colorscale'
+                                                scaleChanged ? 'active-postMessage:scale'
+                                                    : (colorscaleChanged ? 'active-postMessage:colorscale'
+                                                        : (contourChanged ? 'active-postMessage:contour'
+                                                            : 'active-postMessage:pixelSize'))
                                             );
                                         } else {
                                             scheduleWarmAll(
@@ -3641,22 +4483,8 @@
                         
                         const [, lat, lon, zoom] = pathMatch;
                         
-                        // Get contour value - insarmaps sends contour=on or contour=off; we normalize to true/false
-                        // (params already parsed above)
-                        const getContourValue = () => {
-                            // First check URL params (primary source)
-                            if (params.has('contour')) return params.get('contour');
-                            // Check alternate names just in case
-                            if (params.has('contours')) return params.get('contours');
-                            // Then check event.data properties
-                            if (event.data.contour !== undefined) return String(event.data.contour);
-                            if (event.data.contours !== undefined) return String(event.data.contours);
-                            // Fall back to current value
-                            return currentMapParams.contour;
-                        };
-                        const rawContourValue = getContourValue();
-                        const contourValue = normalizeContourValue(rawContourValue);
-                        console.log('Contour value detected:', rawContourValue, '-> normalized:', contourValue);
+                        const contourValue = contourFromInsarmapsMessage(params, event.data, currentMapParams);
+                        console.log('Contour value detected:', contourValue);
                         
                         const colorscaleValue = params.get('colorscale') ||
                             currentMapParams.colorscale || INSARMAP_URL_DEFAULTS.colorscale;
@@ -3704,7 +4532,7 @@
                         const pixelSize = params.get('pixelSize') ?? currentMapParams.pixelSize;
                         const background = params.get('background') ?? currentMapParams.background;
                         const opacity = params.get('opacity') ?? currentMapParams.opacity;
-                        const incomingParams = {
+                        let incomingParams = {
                             lat, lon, zoom,
                             autoColorScale: mergedScaleState.autoColorScale,
                             minScale: mergedScaleState.minScale,
@@ -3716,6 +4544,29 @@
                             refPointLat, refPointLon,
                             pointLat, pointLon
                         };
+                        if (senderIndex === activeDatasetIdx) {
+                            recordOverlayUserDisplayFromMerge(currentMapParams, incomingParams);
+                            incomingParams = preserveOverlayDisplayParamsDuringSwitch(
+                                mapParamsWithOverlayUserDisplay(incomingParams), currentMapParams
+                            );
+                        }
+                        // #region agent log
+                        if (senderIndex === activeDatasetIdx &&
+                            (contourValue !== prevContourNorm || pixelSize !== currentMapParams.pixelSize)) {
+                            dbgDisplayLog('overlay.html:url-update-debounced', 'debounced display change', {
+                                sender: iframeLabelForLog(senderIndex),
+                                rawContour: contourValue,
+                                rawPixelSize: pixelSize,
+                                finalContour: effectiveContour(incomingParams),
+                                finalPixelSize: incomingParams.pixelSize,
+                                prevContour: prevContourNorm,
+                                prevPixelSize: currentMapParams.pixelSize,
+                                msgUrlHasContours: /[?&]contours=/.test(newUrlPath || ''),
+                                msgUrlHasPixelSize: /[?&]pixelSize=/.test(newUrlPath || ''),
+                                inSwitchSuppress: Date.now() < datasetSwitchSuppressUntil
+                            }, 'E');
+                        }
+                        // #endregion
                         const syncKey = getSyncKey(incomingParams);
                         
                         if (syncKey === lastSyncedKey) return;
@@ -3742,18 +4593,7 @@
                         const prevEndDate = currentMapParams.endDate;
                         
                         // Update current map params (use resolved values so state is consistent)
-                        currentMapParams = {
-                            lat, lon, zoom,
-                            autoColorScale: mergedScaleState.autoColorScale,
-                            minScale: mergedScaleState.minScale,
-                            maxScale: mergedScaleState.maxScale,
-                            startDate, endDate,
-                            pixelSize, background, opacity,
-                            contour: contourValue,
-                            colorscale: colorscaleValue,
-                            refPointLat, refPointLon,
-                            pointLat, pointLon
-                        };
+                        currentMapParams = { ...incomingParams };
 
                         if (typeof updateAddPeriodButton === 'function') updateAddPeriodButton();
                         
@@ -4337,7 +5177,7 @@
                         panel.style.pointerEvents = 'auto';
                         panel.classList.add('active');
                         // Send contour state to the newly visible period iframe so it matches currentMapParams
-                        const contourOn = (currentMapParams.contour === 'true' || currentMapParams.contour === 'on');
+                        const contourOn = effectiveContour(currentMapParams) === 'true';
                         const periodIframe = panel.querySelector('iframe');
                         if (periodIframe && periodIframe.contentWindow) {
                             try {
