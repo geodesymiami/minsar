@@ -2303,24 +2303,31 @@
             return missionSpan > 0 && currentSpan / missionSpan >= 0.85;
         }
 
-        function shouldCaptureAsUserNarrow(senderIndex, startDate, endDate) {
+        function shouldCaptureAsUserNarrow(senderIndex, startDate, endDate, source) {
             if (!startDate || !endDate) return false;
             if (isLogTemplateDateRange(startDate, endDate)) return false;
             if (senderIndex >= 0 && isDatasetFullDateRangeForIndex(senderIndex, startDate, endDate)) return false;
             if (senderIndex >= 0 && isNearDatasetOrMissionFullSpan(senderIndex, startDate, endDate)) return false;
-            if (userNarrowedDateRange && isWiderOrEqualDateRange(startDate, endDate, userNarrowedDateRange)) return false;
+            // A user-selected period can be changed to a wider (but still narrowed) range; allow this only
+            // for explicit user-driven paths.
+            const explicitUserSource = source === 'slider' || source === 'chart-dot';
+            if (!explicitUserSource &&
+                userNarrowedDateRange &&
+                isWiderOrEqualDateRange(startDate, endDate, userNarrowedDateRange)) return false;
             return isNarrowedDateRange(startDate, endDate);
         }
 
         function beginSwitchTracking(fromIdx, toIdx, debugExtra) {
             debugExtra = debugExtra || {};
             const periodAtSwitch = effectivePeriodAtSwitch(fromIdx);
+            const latestUserPeriod = userNarrowedDateRange ? { ...userNarrowedDateRange } : null;
             const fromState = debugExtra.fromState;
             const hasRef = hasActiveCustomRef(fromState);
             activeSwitchTracking = {
                 from: fromIdx,
                 to: toIdx,
-                userNarrowedAtSwitch: periodAtSwitch ? { ...periodAtSwitch } : null,
+                // Same fix pattern as colorscale: the latest explicit user state is authoritative.
+                userNarrowedAtSwitch: latestUserPeriod || (periodAtSwitch ? { ...periodAtSwitch } : null),
                 hasCustomRef: hasRef,
                 switchPath: debugExtra.switchPath || null,
                 refOk: hasRef ? null : true,
@@ -2672,7 +2679,16 @@
             if (Date.now() < datasetSwitchSuppressUntil && userNarrowedDateRange) {
                 return false;
             }
-            if (!shouldCaptureAsUserNarrow(idx, startDate, endDate)) {
+            if (!shouldCaptureAsUserNarrow(idx, startDate, endDate, source)) {
+                // #region agent log
+                __odt_hook('dbgDisplayLog', 'overlay.html:captureUserNarrowedDateRange', 'period capture rejected', {
+                    senderIndex: idx,
+                    source: source || null,
+                    startDate,
+                    endDate,
+                    existing: userNarrowedDateRange ? { ...userNarrowedDateRange } : null
+                }, 'P');
+                // #endregion
                 if (userNarrowedDateRange && isWiderOrEqualDateRange(startDate, endDate, userNarrowedDateRange)) {
                 }
                 return false;
@@ -2697,7 +2713,7 @@
             });
 
             if (senderIndex >= 0 && senderIndex !== activeDatasetIdx) {
-                if (shouldCaptureAsUserNarrow(senderIndex, rawStartDate, rawEndDate)) {
+                if (shouldCaptureAsUserNarrow(senderIndex, rawStartDate, rawEndDate, 'background-narrow')) {
                     captureUserNarrowedDateRange(rawStartDate, rawEndDate, senderIndex, 'background-narrow');
                     resolved.startDate = userNarrowedDateRange.startDate;
                     resolved.endDate = userNarrowedDateRange.endDate;
@@ -2713,6 +2729,7 @@
             }
 
             if (senderIndex === activeDatasetIdx) {
+                const userDrivenPath = (path === 'url-update-debounced' || path === 'active-postMessage');
                 if (Date.now() < datasetSwitchSuppressUntil && userNarrowedDateRange) {
                     resolved.startDate = userNarrowedDateRange.startDate;
                     resolved.endDate = userNarrowedDateRange.endDate;
@@ -2729,7 +2746,8 @@
                     return resolved;
                 }
                 // Keep calendar intent: ignore per-dataset acquisition snap (allow user narrowing further).
-                if (!hasCustomRefPoint(currentMapParams) && userNarrowedDateRange &&
+                if (!userDrivenPath &&
+                    !hasCustomRefPoint(currentMapParams) && userNarrowedDateRange &&
                     (rawStartDate !== userNarrowedDateRange.startDate ||
                         rawEndDate !== userNarrowedDateRange.endDate) &&
                     !isStrictCalendarNarrowing(rawStartDate, rawEndDate, userNarrowedDateRange) &&
@@ -2739,7 +2757,28 @@
                     resolved.action = 'rejected-acquisition-snap-kept-user';
                     return resolved;
                 }
-                const periodSource = path === 'url-update-debounced' ? 'slider' : 'iframe-sync';
+                if (userDrivenPath) {
+                    __odt_hook('dbgDisplayLog', 'overlay.html:resolveDatesFromIframeUpdate', 'user-driven path bypassed acquisition-snap reject', {
+                        path,
+                        rawStartDate,
+                        rawEndDate,
+                        existingUserPeriod: userNarrowedDateRange ? { ...userNarrowedDateRange } : null
+                    }, 'T');
+                }
+                // Same pattern as colorscale fix: treat active iframe date updates as user-intent,
+                // so newer user-selected periods can replace earlier ones (including widened ranges).
+                const periodSource = userDrivenPath
+                    ? 'slider'
+                    : 'iframe-sync';
+                // #region agent log
+                __odt_hook('dbgDisplayLog', 'overlay.html:resolveDatesFromIframeUpdate', 'period source selected', {
+                    path,
+                    periodSource,
+                    rawStartDate,
+                    rawEndDate,
+                    existingUserPeriod: userNarrowedDateRange ? { ...userNarrowedDateRange } : null
+                }, 'R');
+                // #endregion
                 if (captureUserNarrowedDateRange(rawStartDate, rawEndDate, senderIndex, periodSource)) {
                     resolved.startDate = rawStartDate;
                     resolved.endDate = rawEndDate;
@@ -2751,6 +2790,17 @@
                     resolved.startDate = kept.startDate;
                     resolved.endDate = kept.endDate;
                     resolved.action = 'rejected-widen-kept-user';
+                    // #region agent log
+                    __odt_hook('dbgDisplayLog', 'overlay.html:resolveDatesFromIframeUpdate', 'rejected widened period, kept prior period', {
+                        senderIndex,
+                        path,
+                        rawStartDate,
+                        rawEndDate,
+                        keptStartDate: kept.startDate,
+                        keptEndDate: kept.endDate,
+                        userNarrowedDateRange: userNarrowedDateRange ? { ...userNarrowedDateRange } : null
+                    }, 'Q');
+                    // #endregion
                     return resolved;
                 }
                 if (isNearDatasetOrMissionFullSpan(senderIndex, rawStartDate, rawEndDate)) {
@@ -3190,7 +3240,7 @@
         }
 
         // On dataset switch, reload if iframe URL does not match full current state (incl. startDate/endDate).
-        function syncDatasetIframeOnSwitch(index) {
+        function syncDatasetIframeOnSwitch(index, fromState) {
             const dataset = iframeDatasets.get(index);
             const iframe = document.getElementById(`iframe${index}`);
             if (!iframe || !dataset) return { reloaded: false, path: 'no-iframe' };
@@ -3203,6 +3253,10 @@
             const syncKey = status.syncKey;
             const willSkip = status.fullySynced;
             const narrowed = effectiveNarrowedDatesForSync();
+            const fromStateDates = (fromState && fromState.startDate && fromState.endDate)
+                ? { startDate: fromState.startDate, endDate: fromState.endDate }
+                : null;
+            const switchDates = fromStateDates || narrowed;
             let expectedDates = null;
             let storedDates = null;
             try { expectedDates = JSON.parse(syncKey); } catch (e) {}
@@ -3210,15 +3264,22 @@
             const expectedViewKey = getViewSyncKey(iframeParams);
             const storedViewKey = storedDates ? getViewSyncKey(storedDates) : null;
             const viewMatch = !storedViewKey || storedViewKey === expectedViewKey;
-            const useSetDatesPath = !hasCustomRefPoint(currentMapParams) && narrowed && !!iframe.src &&
+            const useSetDatesPath = !hasCustomRefPoint(currentMapParams) && switchDates && !!iframe.src &&
                 viewMatch && status.scaleMatch && status.colorscaleMatch && status.contourMatch &&
                 status.pixelSizeMatch;
             // Default ref + narrowed period: always postMessage set-dates (per-dataset snap), even when
             // sync key matches — background iframe may be "synced" at calendar dates but still show full span.
             if (useSetDatesPath) {
-                applyDatesToIframeOnSwitch(index, narrowed.startDate, narrowed.endDate);
+                applyDatesToIframeOnSwitch(index, switchDates.startDate, switchDates.endDate);
                 iframeSynced.set(index, syncKey);
                 iframePointSynced.set(index, getPointKey(iframeParams));
+                __odt_hook('dbgDisplayLog', 'overlay.html:syncDatasetIframeOnSwitch', 'set-dates target chosen', {
+                    index,
+                    switchDates,
+                    fromStateDates,
+                    narrowed,
+                    source: fromStateDates ? 'fromState' : 'narrowed'
+                }, 'U');
                 console.log(`[overlay] dataset switch SET-DATES ${iframeLabelForLog(index)}  (${willSkip ? 'skip-reload' : 'no-reload'})`);
                 return { reloaded: false, path: 'set-dates' };
             }
@@ -3241,7 +3302,7 @@
                 // #endregion
                 if (!pendingDateSyncByIndex.has(index)) {
                     const iframeDates = snapshotPeriodOnIframe(index);
-                    const ok = !narrowed || !!(iframeDates && periodRangesMatch(narrowed, iframeDates));
+                    const ok = !switchDates || !!(iframeDates && periodRangesMatch(switchDates, iframeDates));
                     logSwitchOutcomePart(index, 'dates', ok, iframeDates || {});
                 }
                 return { reloaded: false, path: 'skip-synced' };
@@ -4451,7 +4512,7 @@
                         switchReloaded = reloadDatasetIframe(index, 'switch-dataset-ref', switchPath);
                         scheduleRefRecoveryWatchdogs(index, 'switch-dataset-ref');
                     } else {
-                        const syncResult = syncDatasetIframeOnSwitch(index);
+                        const syncResult = syncDatasetIframeOnSwitch(index, fromState);
                         switchPath = syncResult.path;
                         switchReloaded = syncResult.reloaded;
                     }
@@ -4465,6 +4526,16 @@
                         }
                     }
                     beginSwitchTracking(previousIdx, index, { fromState, switchPath });
+                    // Force latest selected period onto switch params before expected/state comparison.
+                    if (activeSwitchTracking && activeSwitchTracking.userNarrowedAtSwitch) {
+                        currentMapParams.startDate = activeSwitchTracking.userNarrowedAtSwitch.startDate;
+                        currentMapParams.endDate = activeSwitchTracking.userNarrowedAtSwitch.endDate;
+                        __odt_hook('dbgDisplayLog', 'overlay.html:performDatasetSwitch', 'applied tracked period to currentMapParams', {
+                            switchPath,
+                            startDate: currentMapParams.startDate,
+                            endDate: currentMapParams.endDate
+                        }, 'S');
+                    }
                     __odt_hook('beginSwitchDebugRow', previousIdx, index, fromState, switchPath, switchReloaded,
                         targetUrlBeforeSwitch);
 
@@ -4715,6 +4786,15 @@
                                 const dateResolved = resolveDatesFromIframeUpdate(
                                     quickSenderIndex, merged.startDate, merged.endDate, 'active-postMessage'
                                 );
+                                    console.warn('[overlay date resolve]', {
+                                        sender: iframeLabelForLog(quickSenderIndex),
+                                        rawStartDate: merged.startDate,
+                                        rawEndDate: merged.endDate,
+                                        resolvedStartDate: dateResolved.startDate,
+                                        resolvedEndDate: dateResolved.endDate,
+                                        action: dateResolved.action,
+                                        userNarrowedDateRange: userNarrowedDateRange ? { ...userNarrowedDateRange } : null
+                                    });
                                 logDateResolve(quickSenderIndex, merged.startDate, merged.endDate, dateResolved, 'active-postMessage');
                                 merged.startDate = dateResolved.startDate;
                                 merged.endDate = dateResolved.endDate;
