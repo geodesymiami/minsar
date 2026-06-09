@@ -1,0 +1,56 @@
+        .switch-debug-panel {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 2000;
+            margin: 0;
+            padding: 8px 12px 10px;
+            max-height: min(48vh, 720px);
+            min-height: 36vh;
+            overflow-y: auto;
+            background: #1e1e1e;
+            color: #e0e0e0;
+            border-top: 3px solid #4a90e2;
+            box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.35);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 11px;
+            line-height: 1.35;
+        }
+        .switch-debug-panel h3 {
+            margin: 0 0 8px 0;
+            font-size: 12px;
+            font-weight: bold;
+            color: #9cdcfe;
+        }
+        .switch-debug-panel .switch-debug-meta {
+            margin-bottom: 8px;
+            color: #ce9178;
+        }
+        .switch-debug-panel table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 10px;
+        }
+        .switch-debug-panel th,
+        .switch-debug-panel td {
+            border: 1px solid #444;
+            padding: 3px 6px;
+            text-align: left;
+            vertical-align: top;
+        }
+        .switch-debug-panel th {
+            background: #2d2d2d;
+            color: #dcdcaa;
+            white-space: nowrap;
+        }
+        .switch-debug-panel td.ok { color: #4ec9b0; }
+        .switch-debug-panel td.bad { color: #f48771; font-weight: bold; }
+        .switch-debug-panel td.na { color: #808080; }
+        .switch-debug-panel td.pending { color: #dcdcaa; }
+        .switch-debug-history td { font-size: 10px; }
+        .switch-debug-panel .legend {
+            font-size: 10px;
+            color: #808080;
+            margin-top: 4px;
+        }

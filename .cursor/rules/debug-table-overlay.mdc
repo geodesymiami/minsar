@@ -1,0 +1,33 @@
+---
+description: Append or remove the switch-parameter debug table in minsar/html/overlay.html
+globs:
+  - minsar/html/overlay.html
+  - minsar/html/debug_table_overlay/**
+---
+
+# Overlay debug table
+
+When the user says **append debug table to overlay** (or similar):
+
+1. Run:
+   ```bash
+   python3 minsar/html/debug_table_overlay/apply_debug_table.py append minsar/html/overlay.html
+   ```
+2. Confirm with `status`; remind user to hard-refresh after deploy.
+
+When the user says **remove debug table from overlay** (or similar):
+
+1. Run:
+   ```bash
+   python3 minsar/html/debug_table_overlay/apply_debug_table.py remove minsar/html/overlay.html
+   ```
+
+To update overlay after editing fragment files in `minsar/html/debug_table_overlay/`:
+
+```bash
+python3 minsar/html/debug_table_overlay/apply_debug_table.py sync minsar/html/overlay.html
+```
+
+Read `minsar/html/debug_table_overlay/README.md` for file layout and deploy notes.
+
+Do **not** duplicate debug table code in `overlay.html` by hand—edit fragments and run `sync` or `append`.

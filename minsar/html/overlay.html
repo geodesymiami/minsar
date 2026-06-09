@@ -282,12 +282,7 @@
             position: relative;
             margin-bottom: 8px;
         }
-        .page-footer {
-            margin: 30px 15px;
-            font-family: Arial, sans-serif;
-            text-align: center;
-            line-height: 1.6;
-        }
+<!-- debug-table-overlay:BEGIN:css -->
         .switch-debug-panel {
             position: fixed;
             left: 0;
@@ -296,7 +291,8 @@
             z-index: 2000;
             margin: 0;
             padding: 8px 12px 10px;
-            max-height: min(38vh, 280px);
+            max-height: min(48vh, 720px);
+            min-height: 36vh;
             overflow-y: auto;
             background: #1e1e1e;
             color: #e0e0e0;
@@ -342,6 +338,13 @@
             font-size: 10px;
             color: #808080;
             margin-top: 4px;
+        }
+<!-- debug-table-overlay:END:css -->
+        .page-footer {
+            margin: 30px 15px;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            line-height: 1.6;
         }
         .panel {
             background-color: white;
@@ -450,9 +453,15 @@
         </div>
     </div>
     <div class="container" id="container"></div>
+<!-- debug-table-overlay:BEGIN:html -->
     <div id="switch-debug-panel" class="switch-debug-panel" aria-live="polite">
         <h3>Switch parameter debug</h3>
         <div class="switch-debug-meta" id="switch-debug-meta">No dataset switch yet.</div>
+        <div id="switch-debug-latest"></div>
+        <div id="switch-debug-history-wrap"></div>
+        <div class="legend">Expected = parent intent · Sent = postMessage/reload URL · Received = raw child postMessage · UI 0.4s/1.5s = actual insarmaps slider/toggle (not parent state)</div>
+    </div>
+<!-- debug-table-overlay:END:html -->
         <div id="switch-debug-latest"></div>
         <div id="switch-debug-history-wrap"></div>
         <div class="legend">Expected = parent intent · Sent = postMessage/reload URL · Received = raw child postMessage · UI 0.4s/1.5s = actual insarmaps slider/toggle (not parent state)</div>
@@ -672,6 +681,27 @@
             }
         }
 
+        function iframePointMatchExpected(iframeSrc, mapParams) {
+            if (!hasPointSelection(mapParams)) {
+                return true;
+            }
+            if (!iframeSrc) return false;
+            try {
+                const u = new URL(iframeSrc, window.location.href);
+                const urlLat = u.searchParams.get('pointLat');
+                const urlLon = u.searchParams.get('pointLon');
+                if (urlLat == null || urlLon == null) return false;
+                return getPointKey({
+                    pointLat: urlLat,
+                    pointLon: urlLon,
+                    refPointLat: u.searchParams.get('refPointLat'),
+                    refPointLon: u.searchParams.get('refPointLon')
+                }) === getPointKey(mapParams);
+            } catch (e) {
+                return false;
+            }
+        }
+
         function preserveOverlayDisplayParamsDuringSwitch(merged, authoritative) {
             if (Date.now() >= datasetSwitchSuppressUntil && !switchOpInFlight) {
                 return merged;
@@ -680,20 +710,29 @@
                 ...merged,
                 contour: effectiveContour(authoritative),
                 pixelSize: (authoritative.pixelSize != null && authoritative.pixelSize !== '')
-                    ? authoritative.pixelSize : merged.pixelSize
+                    ? authoritative.pixelSize : merged.pixelSize,
+                autoColorScale: scaleStateFromMapParams(authoritative).autoColorScale,
+                minScale: scaleStateFromMapParams(authoritative).minScale,
+                maxScale: scaleStateFromMapParams(authoritative).maxScale,
+                colorscale: effectiveColorscale(authoritative)
             };
             // #region agent log
             if (effectiveContour(merged) !== effectiveContour(preserved) ||
-                merged.pixelSize !== preserved.pixelSize) {
-                dbgDisplayLog('overlay.html:preserveDisplay', 'preserved contour/pixelSize during switch', {
+                merged.pixelSize !== preserved.pixelSize ||
+                scaleStateFromMapParams(merged).minScale !== scaleStateFromMapParams(preserved).minScale ||
+                scaleStateFromMapParams(merged).maxScale !== scaleStateFromMapParams(preserved).maxScale ||
+                effectiveColorscale(merged) !== effectiveColorscale(preserved)) {
+                __odt_hook('dbgDisplayLog', 'overlay.html:preserveDisplay', 'preserved display params during switch', {
                     suppressUntil: datasetSwitchSuppressUntil,
                     switchOpInFlight,
                     rawContour: effectiveContour(merged),
                     rawPixelSize: merged.pixelSize,
+                    rawScale: scaleStateFromMapParams(merged),
                     preservedContour: effectiveContour(preserved),
                     preservedPixelSize: preserved.pixelSize,
-                    authoritativeContour: effectiveContour(authoritative),
-                    authoritativePixelSize: authoritative.pixelSize
+                    preservedScale: scaleStateFromMapParams(preserved),
+                    preservedColorscale: effectiveColorscale(preserved),
+                    authoritativeScale: scaleStateFromMapParams(authoritative)
                 }, 'B');
             }
             // #endregion
@@ -767,10 +806,10 @@
                     params.set('autoColorScale', scaleState.autoColorScale);
                 }
             } else {
-                if (scaleState.minScale && numUrlValueDiffers(scaleState.minScale, INSARMAP_URL_DEFAULTS.minScale)) {
+                if (scaleState.minScale != null && scaleState.minScale !== '') {
                     params.set('minScale', formatUrlNumber(scaleState.minScale));
                 }
-                if (scaleState.maxScale && numUrlValueDiffers(scaleState.maxScale, INSARMAP_URL_DEFAULTS.maxScale)) {
+                if (scaleState.maxScale != null && scaleState.maxScale !== '') {
                     params.set('maxScale', formatUrlNumber(scaleState.maxScale));
                 }
             }
@@ -1058,7 +1097,11 @@
             contour: null,
             pixelSize: null,
             background: null,
-            opacity: null
+            opacity: null,
+            autoColorScale: null,
+            minScale: null,
+            maxScale: null,
+            colorscale: null
         };
         let urlsList = [];
         
@@ -1114,14 +1157,91 @@
         let pendingRevealIndex = null;
         let pendingRevealSince = 0;
         const lastKnownRefByIndex = new Map();  // index -> { refPointLat, refPointLon }
+        const lastKnownPointByIndex = new Map();  // index -> { pointLat, pointLon }
 
-        // #region agent log
+        function __odt_hook(name, ...args) {
+            const hooks = window.__overlayDebugHooks;
+            if (hooks && typeof hooks[name] === 'function') {
+                hooks[name](...args);
+            }
+        }
+
+        const MAX_DISPLAY_REAPPLY = 3;
+        let displayReapplyCountByIndex = new Map();
+
+        function urlDisplayParamsFromSrc(src) {
+            if (!src) return {};
+            try {
+                const u = new URL(src, window.location.href);
+                return {
+                    contours: u.searchParams.get('contours') || u.searchParams.get('contour'),
+                    pixelSize: u.searchParams.get('pixelSize'),
+                    background: u.searchParams.get('background'),
+                    opacity: u.searchParams.get('opacity'),
+                    autoColorScale: u.searchParams.get('autoColorScale'),
+                    minScale: u.searchParams.get('minScale'),
+                    maxScale: u.searchParams.get('maxScale'),
+                    colorscale: u.searchParams.get('colorscale')
+                };
+            } catch (e) {
+                return {};
+            }
+        }
+
+        function displayParamsMismatchExpected(rawMerged) {
+            const expected = mapParamsWithOverlayUserDisplay(currentMapParams);
+            const psMismatch = expected.pixelSize != null && rawMerged.pixelSize != null &&
+                formatUrlNumber(rawMerged.pixelSize) !== formatUrlNumber(expected.pixelSize);
+            const contourMismatch = effectiveContour(rawMerged) !== effectiveContour(expected);
+            const expScale = scaleStateFromMapParams(expected);
+            const rawScale = scaleStateFromMapParams(rawMerged);
+            const scaleMismatch = expScale.autoColorScale !== rawScale.autoColorScale ||
+                (expScale.autoColorScale === 'false' && (
+                    formatUrlNumber(expScale.minScale) !== formatUrlNumber(rawScale.minScale) ||
+                    formatUrlNumber(expScale.maxScale) !== formatUrlNumber(rawScale.maxScale)
+                ));
+            const colorscaleMismatch = effectiveColorscale(rawMerged) !== effectiveColorscale(expected);
+            return psMismatch || contourMismatch || scaleMismatch || colorscaleMismatch;
+        }
+
+        function reapplyDisplayParamsToIframe(index) {
+            broadcastContourAndPixelSizeToIframe(index);
+            broadcastAutoColorScaleToIframes(index);
+            broadcastColorscaleToIframes(index);
+        }
+
+        function maybeReapplyDisplayParamsToActiveIframe(senderIndex, rawMerged) {
+            if (!(Date.now() < datasetSwitchSuppressUntil || switchOpInFlight)) return;
+            if (senderIndex !== activeDatasetIdx) return;
+            if (!displayParamsMismatchExpected(rawMerged)) return;
+            const count = displayReapplyCountByIndex.get(senderIndex) || 0;
+            if (count >= MAX_DISPLAY_REAPPLY) return;
+            displayReapplyCountByIndex.set(senderIndex, count + 1);
+            reapplyDisplayParamsToIframe(senderIndex);
+            setTimeout(() => reapplyDisplayParamsToIframe(senderIndex), 700);
+            __odt_hook('dbgDisplayLog', 'overlay.html:reapplyDisplay', 're-postMessage after child default', {
+                senderIndex, label: iframeLabelForLog(senderIndex),
+                attempt: count + 1,
+                rawPixelSize: rawMerged.pixelSize,
+                rawContour: effectiveContour(rawMerged),
+                rawScale: scaleStateFromMapParams(rawMerged),
+                expectedPixelSize: mapParamsWithOverlayUserDisplay(currentMapParams).pixelSize,
+                expectedContour: effectiveContour(mapParamsWithOverlayUserDisplay(currentMapParams)),
+                expectedScale: scaleStateFromMapParams(mapParamsWithOverlayUserDisplay(currentMapParams))
+            }, 'H');
+        }
+
         function initOverlayUserDisplayFrom(mapParams) {
+            const scaleState = scaleStateFromMapParams(mapParams);
             overlayUserDisplay = {
                 contour: effectiveContour(mapParams),
                 pixelSize: mapParams.pixelSize ?? null,
                 background: mapParams.background ?? null,
-                opacity: mapParams.opacity ?? null
+                opacity: mapParams.opacity ?? null,
+                autoColorScale: scaleState.autoColorScale,
+                minScale: scaleState.minScale,
+                maxScale: scaleState.maxScale,
+                colorscale: effectiveColorscale(mapParams)
             };
         }
 
@@ -1133,6 +1253,10 @@
             }
             if (overlayUserDisplay.background != null) p.background = overlayUserDisplay.background;
             if (overlayUserDisplay.opacity != null) p.opacity = overlayUserDisplay.opacity;
+            if (overlayUserDisplay.autoColorScale != null) p.autoColorScale = overlayUserDisplay.autoColorScale;
+            if (overlayUserDisplay.minScale != null) p.minScale = overlayUserDisplay.minScale;
+            if (overlayUserDisplay.maxScale != null) p.maxScale = overlayUserDisplay.maxScale;
+            if (overlayUserDisplay.colorscale != null) p.colorscale = overlayUserDisplay.colorscale;
             return p;
         }
 
@@ -1145,6 +1269,11 @@
             const pixelSizeChanged = prevParams.pixelSize !== merged.pixelSize;
             const backgroundChanged = prevParams.background !== merged.background;
             const opacityChanged = prevParams.opacity !== merged.opacity;
+            const prevScale = scaleStateFromMapParams(prevParams);
+            const mergedScale = scaleStateFromMapParams(merged);
+            const scaleChanged = prevScale.autoColorScale !== mergedScale.autoColorScale ||
+                prevScale.minScale !== mergedScale.minScale || prevScale.maxScale !== mergedScale.maxScale;
+            const colorscaleChanged = effectiveColorscale(prevParams) !== effectiveColorscale(merged);
             const updates = {};
             // Pixel-size slider postMessages embed contours=false; ignore that spurious off when contour was on.
             if (contourChanged) {
@@ -1168,22 +1297,35 @@
                 overlayUserDisplay.opacity = merged.opacity;
                 updates.opacity = overlayUserDisplay.opacity;
             }
+            if (scaleChanged) {
+                overlayUserDisplay.autoColorScale = mergedScale.autoColorScale;
+                overlayUserDisplay.minScale = mergedScale.minScale;
+                overlayUserDisplay.maxScale = mergedScale.maxScale;
+                updates.autoColorScale = overlayUserDisplay.autoColorScale;
+                updates.minScale = overlayUserDisplay.minScale;
+                updates.maxScale = overlayUserDisplay.maxScale;
+            }
+            if (colorscaleChanged && merged.colorscale != null) {
+                overlayUserDisplay.colorscale = effectiveColorscale(merged);
+                updates.colorscale = overlayUserDisplay.colorscale;
+            }
             // #region agent log
             if (Object.keys(updates).length > 0) {
-                dbgDisplayLog('overlay.html:overlayUserDisplay', 'user display recorded', {
+                __odt_hook('dbgDisplayLog', 'overlay.html:overlayUserDisplay', 'user display recorded', {
                     updates, overlayUserDisplay: { ...overlayUserDisplay }
                 }, 'F');
             }
             // #endregion
         }
 
-        const OVERLAY_DEBUG_BUILD = 'b4a2c9-display-v9';
+        // User-picked ref coords (first manual selection); used for all refSwitch URLs — not per-dataset snaps.
+
+/* debug-table-overlay:BEGIN:inline-js */
+        const OVERLAY_DEBUG_BUILD = 'b4a2c9-display-v18';
         const SWITCH_DEBUG_MAX_HISTORY = 8;
-        const MAX_DISPLAY_REAPPLY = 3;
         let switchDebugHistory = [];
         let switchDebugActive = null;
         let switchDebugFinalizeTimers = [];
-        let displayReapplyCountByIndex = new Map();
 
         function switchDebugFmtCoord(lat, lon) {
             if (lat == null || lon == null || lat === '' || lon === '') return '—';
@@ -1203,6 +1345,18 @@
                 if (state.contours != null) {
                     snap.contours = switchDebugFmtVal(state.contours);
                 }
+                if (state.colorscale != null) {
+                    snap.colorscale = switchDebugFmtVal(state.colorscale);
+                }
+                if (state.autoColorScale != null) {
+                    snap.autoColorScale = switchDebugFmtVal(state.autoColorScale);
+                    if (switchDebugFmtVal(state.autoColorScale) === 'true') {
+                        snap.scaleRange = '—';
+                    }
+                }
+                if (state.minScale != null || state.maxScale != null) {
+                    snap.scaleRange = switchDebugFmtScaleRange(state.minScale, state.maxScale);
+                }
                 if (state.pointLat != null || state.pointLon != null) {
                     snap.point = switchDebugFmtCoord(state.pointLat, state.pointLon);
                 }
@@ -1219,40 +1373,75 @@
             return snap;
         }
 
-        function displayParamsMismatchExpected(rawMerged) {
-            const expected = mapParamsWithOverlayUserDisplay(currentMapParams);
-            const psMismatch = expected.pixelSize != null && rawMerged.pixelSize != null &&
-                formatUrlNumber(rawMerged.pixelSize) !== formatUrlNumber(expected.pixelSize);
-            const contourMismatch = effectiveContour(rawMerged) !== effectiveContour(expected);
-            return psMismatch || contourMismatch;
-        }
-
-        function maybeReapplyDisplayParamsToActiveIframe(senderIndex, rawMerged) {
-            if (!(Date.now() < datasetSwitchSuppressUntil || switchOpInFlight)) return;
-            if (senderIndex !== activeDatasetIdx) return;
-            if (!displayParamsMismatchExpected(rawMerged)) return;
-            const count = displayReapplyCountByIndex.get(senderIndex) || 0;
-            if (count >= MAX_DISPLAY_REAPPLY) return;
-            displayReapplyCountByIndex.set(senderIndex, count + 1);
-            broadcastContourAndPixelSizeToIframe(senderIndex);
-            setTimeout(() => broadcastContourAndPixelSizeToIframe(senderIndex), 700);
-            // #region agent log
-            dbgDisplayLog('overlay.html:reapplyDisplay', 're-postMessage after child default', {
-                senderIndex, label: iframeLabelForLog(senderIndex),
-                attempt: count + 1,
-                rawPixelSize: rawMerged.pixelSize,
-                rawContour: effectiveContour(rawMerged),
-                expectedPixelSize: mapParamsWithOverlayUserDisplay(currentMapParams).pixelSize,
-                expectedContour: effectiveContour(mapParamsWithOverlayUserDisplay(currentMapParams))
-            }, 'H');
-            // #endregion
-        }
-
         function switchDebugFmtVal(v) {
             if (v === true || v === 'true' || v === 'on' || v === 1) return 'true';
             if (v === false || v === 'false' || v === 'off' || v === 0) return 'false';
             if (v == null || v === '') return '—';
+            if (typeof v === 'string') {
+                const s = v.trim();
+                if (s.toLowerCase() === 'true') return 'true';
+                if (s.toLowerCase() === 'false') return 'false';
+                return s;
+            }
             return String(v);
+        }
+
+        function switchDebugFmtScale(val) {
+            if (val == null || val === '') return '—';
+            const n = formatUrlNumber(val);
+            return n === '' ? '—' : n;
+        }
+
+        function switchDebugFmtScaleRange(minVal, maxVal) {
+            if (minVal == null || maxVal == null || minVal === '' || maxVal === '') return '—';
+            const a = formatUrlNumber(minVal);
+            const b = formatUrlNumber(maxVal);
+            if (a === '' || b === '') return '—';
+            return a + ',' + b;
+        }
+
+        function switchDebugScaleFields(mapParams, urlStr) {
+            const scale = mapParams ? scaleStateFromMapParams(mapParams) : null;
+            let minScale = scale && scale.autoColorScale === 'false' ? scale.minScale : null;
+            let maxScale = scale && scale.autoColorScale === 'false' ? scale.maxScale : null;
+            if (urlStr) {
+                const parsed = parseInsarmapsUrlParams(urlStr);
+                if (parsed) {
+                    const autoFromUrl = switchDebugFmtAutoScale(null, urlStr, {
+                        autoColorScale: parsed.autoColorScale
+                    });
+                    if (autoFromUrl === 'true') {
+                        minScale = null;
+                        maxScale = null;
+                    } else {
+                        if (parsed.minScale != null) minScale = parsed.minScale;
+                        if (parsed.maxScale != null) maxScale = parsed.maxScale;
+                    }
+                }
+            } else if (scale && scale.autoColorScale === 'true') {
+                minScale = null;
+                maxScale = null;
+            }
+            return switchDebugFmtScaleRange(minScale, maxScale);
+        }
+
+        function switchDebugFmtAutoScale(mapParams, urlStr, urlP) {
+            if (mapParams && mapParams.autoColorScale != null && mapParams.autoColorScale !== '') {
+                return switchDebugFmtVal(mapParams.autoColorScale);
+            }
+            if (urlP && urlP.autoColorScale != null && urlP.autoColorScale !== '') {
+                return switchDebugFmtVal(urlP.autoColorScale);
+            }
+            if (urlStr) {
+                try {
+                    const u = new URL(urlStr, window.location.href);
+                    if (u.searchParams.get('minScale') != null && u.searchParams.get('maxScale') != null &&
+                        u.searchParams.get('autoColorScale') == null) {
+                        return 'false';
+                    }
+                } catch (e) {}
+            }
+            return '—';
         }
 
         function switchDebugParamsFromMapAndUrl(mapParams, urlStr, chartsVisible) {
@@ -1261,6 +1450,7 @@
             let pointLon = mapParams && mapParams.pointLon;
             let refLat = mapParams && mapParams.refPointLat;
             let refLon = mapParams && mapParams.refPointLon;
+            let colorscale = mapParams ? effectiveColorscale(mapParams) : null;
             if (urlStr) {
                 const parsed = parseInsarmapsUrlParams(urlStr);
                 if (parsed) {
@@ -1268,10 +1458,18 @@
                     if (parsed.pointLon != null) pointLon = parsed.pointLon;
                     if (parsed.refPointLat != null) refLat = parsed.refPointLat;
                     if (parsed.refPointLon != null) refLon = parsed.refPointLon;
+                    if (parsed.colorscale != null) colorscale = parsed.colorscale;
                 }
+            }
+            if (!colorscale && urlP.colorscale) {
+                colorscale = urlP.colorscale;
+            }
+            if (!colorscale) {
+                colorscale = INSARMAP_URL_DEFAULTS.colorscale;
             }
             const dates = (mapParams && mapParams.startDate && mapParams.endDate)
                 ? (mapParams.startDate + '–' + mapParams.endDate) : '—';
+            const scaleRange = switchDebugScaleFields(mapParams, urlStr);
             return {
                 contours: switchDebugFmtVal(mapParams ? effectiveContour(mapParams) : urlP.contours),
                 pixelSize: switchDebugFmtVal(mapParams && mapParams.pixelSize != null
@@ -1280,6 +1478,9 @@
                     ? mapParams.background : urlP.background),
                 opacity: switchDebugFmtVal(mapParams && mapParams.opacity != null
                     ? mapParams.opacity : urlP.opacity),
+                colorscale: switchDebugFmtVal(colorscale),
+                autoColorScale: switchDebugFmtAutoScale(mapParams, urlStr, urlP),
+                scaleRange: scaleRange,
                 point: switchDebugFmtCoord(pointLat, pointLon),
                 refPoint: switchDebugFmtCoord(refLat, refLon),
                 charts: chartsVisible == null ? '—' : switchDebugFmtVal(chartsVisible),
@@ -1300,19 +1501,60 @@
         }
 
         function switchDebugMatch(expected, actual) {
-            if (expected === '—' || expected == null) return 'na';
-            if (actual == null || actual === '—' || actual === '?') return 'pending';
-            if (String(expected) === String(actual)) return 'ok';
-            if (expected.includes(',') && actual.includes(',')) {
-                const e = expected.split(',');
-                const a = actual.split(',');
-                if (e.length === 2 && a.length === 2 &&
-                    Math.abs(parseFloat(e[0]) - parseFloat(a[0])) < 0.0002 &&
-                    Math.abs(parseFloat(e[1]) - parseFloat(a[1])) < 0.0002) {
-                    return 'ok';
+            const expNorm = switchDebugFmtVal(expected);
+            const actNorm = switchDebugFmtVal(actual);
+            if (expNorm === '—') return 'na';
+            if (actNorm === '—') return 'pending';
+            // Wildcard when leaving iframe state was not queried (fast-path cache).
+            if (expNorm === '?' && actNorm === 'true') return 'ok';
+            if (expNorm === actNorm) return 'ok';
+            const expNum = parseFloat(expNorm);
+            const actNum = parseFloat(actNorm);
+            if (!isNaN(expNum) && !isNaN(actNum) && formatUrlNumber(expNum) === formatUrlNumber(actNum)) {
+                return 'ok';
+            }
+            if (expNorm.includes(',') && actNorm.includes(',')) {
+                const e = expNorm.split(',');
+                const a = actNorm.split(',');
+                if (e.length === 2 && a.length === 2) {
+                    if (formatUrlNumber(e[0]) === formatUrlNumber(a[0]) &&
+                            formatUrlNumber(e[1]) === formatUrlNumber(a[1])) {
+                        return 'ok';
+                    }
+                    if (Math.abs(parseFloat(e[0]) - parseFloat(a[0])) < 0.001 &&
+                            Math.abs(parseFloat(e[1]) - parseFloat(a[1])) < 0.001) {
+                        return 'ok';
+                    }
                 }
             }
             return 'bad';
+        }
+
+        function switchDebugBestActual(displayRow, defKey) {
+            const sources = [displayRow.finalLate, displayRow.final, displayRow.receivedLatest];
+            for (let i = 0; i < sources.length; i++) {
+                const snap = sources[i];
+                if (!snap) continue;
+                const v = snap[defKey];
+                if (v != null && v !== '—' && v !== '') return v;
+            }
+            return null;
+        }
+
+        // chartsVisible can be false while Highcharts is on screen (#charts minimized / no map layer).
+        function switchDebugChartsMatch(expectedCharts, actualCharts, expectedPoint, actualPoint) {
+            const base = switchDebugMatch(expectedCharts, actualCharts);
+            if (base === 'ok' || base === 'na' || base === 'pending') return base;
+            const expPt = expectedPoint == null ? '—' : String(expectedPoint);
+            const actPt = actualPoint == null ? '—' : String(actualPoint);
+            const expCharts = switchDebugFmtVal(expectedCharts);
+            if ((expCharts === 'true' || expCharts === '?') &&
+                    switchDebugFmtVal(actualCharts) === 'false' &&
+                    expPt !== '—' && actPt !== '—' &&
+                    switchDebugMatch(expPt, actPt) === 'ok') {
+                return 'ok';
+            }
+            return base;
         }
 
         function switchDebugCellClass(kind) {
@@ -1337,11 +1579,28 @@
             switchDebugFinalizeTimers.forEach((t) => clearTimeout(t));
             switchDebugFinalizeTimers = [];
             const expectedParams = mapParamsWithOverlayUserDisplay(currentMapParams);
+            if (fromState && fromState.pointLat && fromState.pointLon) {
+                expectedParams.pointLat = String(fromState.pointLat);
+                expectedParams.pointLon = String(fromState.pointLon);
+            } else if (hasPointSelection(expectedParams)) {
+                // already in currentMapParams from syncPointFromSwitchState
+            } else if (fromIdx >= 0) {
+                const cached = lastKnownPointByIndex.get(fromIdx);
+                if (cached && cached.pointLat && cached.pointLon) {
+                    expectedParams.pointLat = cached.pointLat;
+                    expectedParams.pointLon = cached.pointLon;
+                }
+            }
             let expectedCharts = '—';
             if (fromState && fromState.chartsVisible != null) {
                 expectedCharts = switchDebugFmtVal(fromState.chartsVisible);
             } else if (hasPointSelection(expectedParams)) {
-                expectedCharts = '?';
+                expectedCharts = 'true';
+            } else if (fromState && fromState.chartsVisible) {
+                expectedCharts = 'true';
+            }
+            if (expectedCharts === '—' && hasPointSelection(expectedParams)) {
+                expectedCharts = 'true';
             }
             switchDebugActive = {
                 ts: new Date().toLocaleTimeString(),
@@ -1376,8 +1635,11 @@
 
         function recordSwitchDebugReceived(senderIndex, rawMerged, eventData) {
             if (!switchDebugActive || senderIndex !== switchDebugActive.toIdx || !rawMerged) return;
-            const charts = eventData && eventData.chartsVisible != null
+            let charts = eventData && eventData.chartsVisible != null
                 ? eventData.chartsVisible : null;
+            if (charts == null && rawMerged.pointLat && rawMerged.pointLon) {
+                charts = true;
+            }
             switchDebugActive.receivedLatest = switchDebugParamsFromMapAndUrl(rawMerged, eventData && eventData.url, charts);
             switchDebugActive.receivedCount += 1;
             renderSwitchDebugPanel();
@@ -1438,13 +1700,15 @@
                 { key: 'pixelSize', label: 'pixelSize' },
                 { key: 'background', label: 'background' },
                 { key: 'opacity', label: 'opacity' },
+                { key: 'autoColorScale', label: 'autoColorScale' },
+                { key: 'colorscale', label: 'colorscale' },
+                { key: 'scaleRange', label: 'minScale,maxScale' },
                 { key: 'point', label: 'point (lat,lon)' },
                 { key: 'refPoint', label: 'ref point' },
                 { key: 'charts', label: 'timeseries chart' },
                 { key: 'dates', label: 'date range' }
             ];
             const sentStr = switchDebugSentLabel(displayRow.sentPost, displayRow.urlBuilt);
-            const compareSource = displayRow.finalLate || displayRow.final || displayRow.receivedLatest;
             let html = '<table><thead><tr>' +
                 '<th>Parameter</th><th>Expected</th><th>Sent</th><th>URL@switch</th>' +
                 '<th>Received</th><th>UI 0.4s</th><th>UI 1.5s</th><th>✓</th></tr></thead><tbody>';
@@ -1455,15 +1719,33 @@
                 const fin = displayRow.final ? displayRow.final[def.key] : '—';
                 const finL = displayRow.finalLate ? displayRow.finalLate[def.key] : '—';
                 const sentCell = (def.key === 'contours' || def.key === 'pixelSize')
-                    ? sentStr : (displayRow.urlBuilt ? displayRow.urlBuilt[def.key] : '—');
-                const match = switchDebugMatch(exp, compareSource ? compareSource[def.key] : null);
+                    ? sentStr
+                    : ((def.key === 'autoColorScale' && displayRow.urlBuilt)
+                        ? displayRow.urlBuilt.autoColorScale
+                        : (displayRow.urlBuilt ? displayRow.urlBuilt[def.key] : '—'));
+                const bestActual = switchDebugBestActual(displayRow, def.key);
+                const matchFn = def.key === 'charts' ? switchDebugChartsMatch : switchDebugMatch;
+                const expPoint = displayRow.expected.point;
+                const actPoint = switchDebugBestActual(displayRow, 'point');
+                const ptFin = (displayRow.final && displayRow.final.point !== '—')
+                    ? displayRow.final.point : actPoint;
+                const ptFinL = (displayRow.finalLate && displayRow.finalLate.point !== '—')
+                    ? displayRow.finalLate.point : actPoint;
+                const match = def.key === 'charts'
+                    ? matchFn(exp, bestActual, expPoint, actPoint)
+                    : matchFn(exp, bestActual);
+                const cellMatchFn = def.key === 'charts' ? switchDebugChartsMatch : switchDebugMatch;
                 html += '<tr><td>' + def.label + '</td>' +
                     '<td>' + exp + '</td>' +
                     '<td>' + sentCell + '</td>' +
                     '<td>' + urlSw + '</td>' +
                     '<td>' + rec + '</td>' +
-                    '<td class="' + switchDebugCellClass(switchDebugMatch(exp, fin)) + '">' + fin + '</td>' +
-                    '<td class="' + switchDebugCellClass(switchDebugMatch(exp, finL)) + '">' + finL + '</td>' +
+                    '<td class="' + switchDebugCellClass(
+                        def.key === 'charts' ? cellMatchFn(exp, fin, expPoint, ptFin) :
+                            cellMatchFn(exp, fin)) + '">' + fin + '</td>' +
+                    '<td class="' + switchDebugCellClass(
+                        def.key === 'charts' ? cellMatchFn(exp, finL, expPoint, ptFinL) :
+                            cellMatchFn(exp, finL)) + '">' + finL + '</td>' +
                     '<td class="' + switchDebugCellClass(match) + '">' +
                     (match === 'ok' ? '✓' : (match === 'bad' ? '✗' : (match === 'pending' ? '…' : '—'))) +
                     '</td></tr>';
@@ -1480,7 +1762,10 @@
                     let okCount = 0;
                     let checkCount = 0;
                     keys.forEach((k) => {
-                        const m = switchDebugMatch(h.expected[k], cmp[k]);
+                        const m = k === 'charts'
+                            ? switchDebugChartsMatch(h.expected[k], switchDebugBestActual(h, k),
+                                h.expected.point, switchDebugBestActual(h, 'point'))
+                            : switchDebugMatch(h.expected[k], switchDebugBestActual(h, k));
                         if (m === 'ok') okCount++;
                         if (m === 'ok' || m === 'bad') checkCount++;
                     });
@@ -1510,21 +1795,6 @@
                 headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b4a2c9' },
                 body: JSON.stringify(entry)
             }).catch(() => {});
-        }
-
-        function urlDisplayParamsFromSrc(src) {
-            if (!src) return {};
-            try {
-                const u = new URL(src, window.location.href);
-                return {
-                    contours: u.searchParams.get('contours') || u.searchParams.get('contour'),
-                    pixelSize: u.searchParams.get('pixelSize'),
-                    background: u.searchParams.get('background'),
-                    opacity: u.searchParams.get('opacity')
-                };
-            } catch (e) {
-                return {};
-            }
         }
 
         function dbgSwitchLog(location, message, data, hypothesisId) {
@@ -1573,6 +1843,15 @@
             };
         }
 
+        window.__overlayDebugHooks = {
+            dbgDisplayLog,
+            dbgSwitchLog,
+            beginSwitchDebugRow,
+            recordSwitchDebugReloadUrl,
+            recordSwitchDebugSentPost,
+            recordSwitchDebugReceived,
+            scheduleSwitchDebugFinalize
+        };
         window.__overlayDebugState = overlayDebugSnapshot;
         window.__overlayDisplayDebugLog = window.__overlayDisplayDebugLog || [];
 
@@ -1588,8 +1867,7 @@
                 dbgSwitchLog('overlay.html:stuck-watchdog', 'multiple iframes warm in flight', snap, 'C');
             }
         }, 5000);
-        // #endregion
-        // User-picked ref coords (first manual selection); used for all refSwitch URLs — not per-dataset snaps.
+/* debug-table-overlay:END:inline-js */
         let canonicalUserRefCoords = null;  // { refPointLat, refPointLon } or null
 
 
@@ -1597,6 +1875,12 @@
             if (index < 0 || lat == null || lon == null || lat === '' || lon === '') return;
             const entry = { refPointLat: String(lat), refPointLon: String(lon), source: source || '' };
             lastKnownRefByIndex.set(index, entry);
+        }
+
+        function recordKnownPointCoords(index, lat, lon, source) {
+            if (index < 0 || lat == null || lon == null || lat === '' || lon === '') return;
+            const entry = { pointLat: String(lat), pointLon: String(lon), source: source || '' };
+            lastKnownPointByIndex.set(index, entry);
         }
 
         function applyRefToMapParams(lat, lon) {
@@ -1710,7 +1994,7 @@
                 switchOpFinishTimer = null;
             }
             // #region agent log
-            dbgSwitchLog('overlay.html:finishSwitchOp', 'switch op finished', {
+            __odt_hook('dbgSwitchLog', 'overlay.html:finishSwitchOp', 'switch op finished', {
                 wasInFlight: switchOpInFlight,
                 pendingSelectIndex,
                 activeDatasetIdx,
@@ -1721,12 +2005,12 @@
             switchOpStartedAt = 0;
             flushOverlayUrlUpdate();
             ensureChartsOpenOnIframe(activeDatasetIdx);
-            scheduleSwitchDebugFinalize(activeDatasetIdx);
+            __odt_hook('scheduleSwitchDebugFinalize', activeDatasetIdx);
             if (pendingSelectIndex !== null && pendingSelectIndex !== activeDatasetIdx) {
                 const next = pendingSelectIndex;
                 pendingSelectIndex = null;
                 // #region agent log
-                dbgSwitchLog('overlay.html:finishSwitchOp', 'processing queued select', { next }, 'D');
+                __odt_hook('dbgSwitchLog', 'overlay.html:finishSwitchOp', 'processing queued select', { next }, 'D');
                 // #endregion
                 if (selectDatasetFn) selectDatasetFn(next);
             } else {
@@ -1741,7 +2025,10 @@
 
         function ensureChartsOpenOnIframe(index) {
             const iframe = document.getElementById(`iframe${index}`);
-            if (!iframe || !iframe.contentWindow || !hasPointSelection(currentMapParams)) return;
+            if (!iframe || !iframe.contentWindow) return;
+            const keepCharts = hasPointSelection(currentMapParams) ||
+                (index >= 0 && lastKnownPointByIndex.has(index));
+            if (!keepCharts) return;
             try {
                 iframe.contentWindow.postMessage({ type: 'insarmaps-keep-charts-open' }, '*');
             } catch (e) {}
@@ -1776,6 +2063,37 @@
             return false;
         }
 
+        function syncPointFromSwitchState(fromState, fromIdx) {
+            let lat = fromState && fromState.pointLat;
+            let lon = fromState && fromState.pointLon;
+            if ((!lat || !lon) && fromIdx >= 0) {
+                const cached = lastKnownPointByIndex.get(fromIdx);
+                if (cached) {
+                    lat = cached.pointLat;
+                    lon = cached.pointLon;
+                }
+            }
+            if (lat && lon) {
+                currentMapParams.pointLat = String(lat);
+                currentMapParams.pointLon = String(lon);
+                if (fromIdx >= 0) recordKnownPointCoords(fromIdx, lat, lon, fromState && fromState.source);
+                return true;
+            }
+            if (fromIdx >= 0 && hasPointSelection(currentMapParams)) {
+                return true;
+            }
+            if (fromIdx >= 0) {
+                const snap = snapshotPointRefOnIframe(fromIdx);
+                if (snap && snap.pointLat && snap.pointLon) {
+                    currentMapParams.pointLat = String(snap.pointLat);
+                    currentMapParams.pointLon = String(snap.pointLon);
+                    recordKnownPointCoords(fromIdx, snap.pointLat, snap.pointLon, 'iframe-url');
+                    return true;
+                }
+            }
+            return hasPointSelection(currentMapParams);
+        }
+
         function hasActiveCustomRef(fromState) {
             if (hasCustomRefPoint(currentMapParams)) return true;
             if (!fromState) return false;
@@ -1786,13 +2104,14 @@
             const iframe = document.getElementById(`iframe${index}`);
             const urlFallback = () => {
                 const fromUrl = snapshotPointRefOnIframe(index);
+                const cachedPoint = index >= 0 ? lastKnownPointByIndex.get(index) : null;
                 const dates = lastReportedDatesByIndex.get(index) || null;
                 return {
                     startDate: dates && dates.startDate,
                     endDate: dates && dates.endDate,
                     datesNarrowed: dates && dates.datesNarrowed,
-                    pointLat: fromUrl && fromUrl.pointLat,
-                    pointLon: fromUrl && fromUrl.pointLon,
+                    pointLat: (fromUrl && fromUrl.pointLat) || (cachedPoint && cachedPoint.pointLat) || null,
+                    pointLon: (fromUrl && fromUrl.pointLon) || (cachedPoint && cachedPoint.pointLon) || null,
                     refPointLat: fromUrl && fromUrl.refPointLat,
                     refPointLon: fromUrl && fromUrl.refPointLon,
                     hasCustomRef: !!(fromUrl && fromUrl.refPointLat && fromUrl.refPointLon) ||
@@ -1829,8 +2148,15 @@
                     chartsVisible: event.data.chartsVisible,
                     pixelSize: event.data.pixelSize,
                     contours: event.data.contours,
+                    colorscale: event.data.colorscale,
+                    autoColorScale: event.data.autoColorScale,
+                    minScale: event.data.minScale,
+                    maxScale: event.data.maxScale,
                     source: 'insarmaps-query'
                 });
+                if (index >= 0 && event.data.pointLat && event.data.pointLon) {
+                    recordKnownPointCoords(index, event.data.pointLat, event.data.pointLon, 'insarmaps-query');
+                }
             };
             const timeoutId = setTimeout(() => {
                 const fb = urlFallback();
@@ -2831,26 +3157,28 @@
             const colorscaleMatch = iframeColorscaleMatchExpected(iframe?.src, iframeParams);
             const contourMatch = iframeContourMatchExpected(iframe?.src, iframeParams);
             const pixelSizeMatch = iframePixelSizeMatchExpected(iframe?.src, iframeParams);
+            const pointMatch = iframePointMatchExpected(iframe?.src, iframeParams);
             const inFlight = iframeWarmInFlight.has(index);
             const metadataSynced = storedSyncKey === syncKey && !!iframe?.src;
             const fullySynced = metadataSynced && srcDatesMatch && scaleMatch &&
-                colorscaleMatch && contourMatch && pixelSizeMatch && !inFlight;
+                colorscaleMatch && contourMatch && pixelSizeMatch && pointMatch && !inFlight;
             return {
                 iframeParams, syncKey, storedSyncKey, srcDatesMatch, scaleMatch, colorscaleMatch,
-                contourMatch, pixelSizeMatch, metadataSynced, fullySynced, inFlight
+                contourMatch, pixelSizeMatch, pointMatch, metadataSynced, fullySynced, inFlight
             };
         }
 
         function cachedSwitchStateForIndex(index) {
             const reported = lastReportedDatesByIndex.get(index);
             const fromUrl = snapshotPointRefOnIframe(index);
-            if (!reported?.startDate && !fromUrl) return null;
+            const cachedPoint = index >= 0 ? lastKnownPointByIndex.get(index) : null;
+            if (!reported?.startDate && !fromUrl && !cachedPoint) return null;
             return {
                 startDate: reported?.startDate ?? null,
                 endDate: reported?.endDate ?? null,
                 datesNarrowed: !!(reported && reported.datesNarrowed),
-                pointLat: fromUrl?.pointLat ?? null,
-                pointLon: fromUrl?.pointLon ?? null,
+                pointLat: fromUrl?.pointLat ?? cachedPoint?.pointLat ?? null,
+                pointLon: fromUrl?.pointLon ?? cachedPoint?.pointLon ?? null,
                 refPointLat: fromUrl?.refPointLat ?? null,
                 refPointLon: fromUrl?.refPointLon ?? null,
                 hasCustomRef: !!(fromUrl?.refPointLat && fromUrl?.refPointLon) ||
@@ -2897,7 +3225,7 @@
             if (willSkip) {
                 console.log(`[overlay] dataset switch SKIP reload ${iframeLabelForLog(index)}  (iframe already synced)`);
                 // #region agent log
-                dbgDisplayLog('overlay.html:syncDatasetIframeOnSwitch', 'skip-synced path', {
+                __odt_hook('dbgDisplayLog', 'overlay.html:syncDatasetIframeOnSwitch', 'skip-synced path', {
                     index, label: iframeLabelForLog(index),
                     parentContour: effectiveContour(currentMapParams),
                     parentPixelSize: currentMapParams.pixelSize,
@@ -2905,6 +3233,7 @@
                     status: {
                         contourMatch: status.contourMatch,
                         pixelSizeMatch: status.pixelSizeMatch,
+                        pointMatch: status.pointMatch,
                         fullySynced: status.fullySynced,
                         metadataSynced: status.metadataSynced
                     }
@@ -2919,7 +3248,7 @@
             }
             const reloaded = reloadDatasetIframe(index, 'switch-dataset', 'crossDataset');
             // #region agent log
-            dbgDisplayLog('overlay.html:syncDatasetIframeOnSwitch', 'reload path', {
+            __odt_hook('dbgDisplayLog', 'overlay.html:syncDatasetIframeOnSwitch', 'reload path', {
                 index, label: iframeLabelForLog(index), reloaded,
                 parentContour: effectiveContour(currentMapParams),
                 parentPixelSize: currentMapParams.pixelSize,
@@ -3264,7 +3593,7 @@
                 to: canonicalInsarmapsUrl(newUrl)
             });
             iframe.src = newUrl;
-            recordSwitchDebugReloadUrl(newUrl);
+            __odt_hook('recordSwitchDebugReloadUrl', newUrl);
             iframeWarmInFlight.set(index, syncKey);
             updateLoadingIndicator();
             iframe.onload = () => {
@@ -3312,21 +3641,22 @@
 
         // Apply current point to one iframe if tracking says it is stale (used on dataset switch).
         function syncPointToIframeIfStale(index, reason) {
-            if (!hasPointSelection(currentMapParams)) return;
+            if (!hasPointSelection(currentMapParams)) return false;
             if (iframeWarmInFlight.has(index)) {
                 console.log(`[overlay] switch-point-sync SKIP ${iframeLabelForLog(index)}  reason=preload-in-flight`);
-                return;
+                return false;
             }
             const pointKey = getPointKey(currentMapParams);
             const forceReloadOnSwitch = reason === 'switch-point-sync' &&
                 currentMapParams.refPointLat != null && currentMapParams.refPointLon != null;
-            if (!forceReloadOnSwitch && iframePointSynced.get(index) === pointKey) {
-                return;
+            if (!forceReloadOnSwitch && iframePointSynced.get(index) === pointKey &&
+                iframePointMatchExpected(document.getElementById(`iframe${index}`)?.src, currentMapParams)) {
+                return false;
             }
             const dataset = iframeDatasets.get(index);
             const iframe = document.getElementById(`iframe${index}`);
             if (!iframe || !dataset || !currentMapParams.lat || !currentMapParams.lon || !currentMapParams.zoom) {
-                return;
+                return false;
             }
             const syncKey = getSyncKey(currentMapParams);
             const iframeParams = (forceReloadOnSwitch && hasCustomRefPoint(currentMapParams))
@@ -3365,6 +3695,7 @@
             }
             iframeSynced.set(index, syncKey);
             iframePointSynced.set(index, pointKey);
+            return reloaded;
         }
 
         function broadcastAutoColorScaleToIframes(onlyIndex) {
@@ -3422,11 +3753,11 @@
                 } catch (e) {}
             });
             // #region agent log
-            dbgDisplayLog('overlay.html:broadcastDisplay', 'postMessage contour/pixelSize to iframe', {
+            __odt_hook('dbgDisplayLog', 'overlay.html:broadcastDisplay', 'postMessage contour/pixelSize to iframe', {
                 onlyIndex, contourOn, pixelSize, overlayUserDisplay: { ...overlayUserDisplay }
             }, 'G');
             // #endregion
-            recordSwitchDebugSentPost(contourOn, pixelSize, onlyIndex);
+            __odt_hook('recordSwitchDebugSentPost', contourOn, pixelSize, onlyIndex);
         }
 
         function broadcastMapDisplayStateAfterSwitch(activeIndex, switchReloaded, options) {
@@ -3480,10 +3811,10 @@
                 opacity: params.get('opacity') ?? baseParams.opacity,
                 contour: contourValue,
                 colorscale: params.get('colorscale') || baseParams.colorscale || INSARMAP_URL_DEFAULTS.colorscale,
-                refPointLat: params.get('refPointLat') ?? baseParams.refPointLat ?? null,
-                refPointLon: params.get('refPointLon') ?? baseParams.refPointLon ?? null,
-                pointLat: params.get('pointLat') ?? baseParams.pointLat ?? null,
-                pointLon: params.get('pointLon') ?? baseParams.pointLon ?? null
+                refPointLat: params.get('refPointLat') ?? (eventData && eventData.refPointLat) ?? baseParams.refPointLat ?? null,
+                refPointLon: params.get('refPointLon') ?? (eventData && eventData.refPointLon) ?? baseParams.refPointLon ?? null,
+                pointLat: params.get('pointLat') ?? (eventData && eventData.pointLat) ?? baseParams.pointLat ?? null,
+                pointLon: params.get('pointLon') ?? (eventData && eventData.pointLon) ?? baseParams.pointLon ?? null
             };
         }
 
@@ -3559,7 +3890,7 @@
                 );
                 // #region agent log
                 if (isContourWarm || isPixelSizeWarm || reason.includes('contour') || reason.includes('pixelSize')) {
-                    dbgDisplayLog('overlay.html:warmAll', 'warm reload URL display params', {
+                    __odt_hook('dbgDisplayLog', 'overlay.html:warmAll', 'warm reload URL display params', {
                         index, label, reason,
                         builtUrlParams: urlDisplayParamsFromSrc(newUrl),
                         mapParamsContour: effectiveContour(iframeParams),
@@ -3781,7 +4112,7 @@
                     pointLon: initialParams.pointLon ?? firstLogDefaults?.pointLon ?? null
                 };
                 // #region agent log
-                dbgDisplayLog('overlay.html:init', 'overlay loaded', {
+                __odt_hook('dbgDisplayLog', 'overlay.html:init', 'overlay loaded', {
                     build: OVERLAY_DEBUG_BUILD,
                     contour: effectiveContour(currentMapParams),
                     pixelSize: currentMapParams.pixelSize,
@@ -3954,7 +4285,7 @@
                     if (switchOpInFlight) {
                         pendingSelectIndex = index;
                         // #region agent log
-                        dbgSwitchLog('overlay.html:selectDataset', 'queued (switch in flight)', {
+                        __odt_hook('dbgSwitchLog', 'overlay.html:selectDataset', 'queued (switch in flight)', {
                             requested: index, label: iframeLabelForLog(index),
                             activeDatasetIdx, pendingSelectIndex: index,
                             switchOpAgeMs: switchOpStartedAt ? Date.now() - switchOpStartedAt : 0
@@ -3965,7 +4296,7 @@
                     switchOpInFlight = true;
                     switchOpStartedAt = Date.now();
                     // #region agent log
-                    dbgSwitchLog('overlay.html:selectDataset', 'switch started', {
+                    __odt_hook('dbgSwitchLog', 'overlay.html:selectDataset', 'switch started', {
                         from: activeDatasetIdx, to: index,
                         fromLabel: iframeLabelForLog(activeDatasetIdx),
                         toLabel: iframeLabelForLog(index)
@@ -3980,7 +4311,7 @@
                     const targetWarmStatus = getDatasetIframeSyncStatus(index);
                     // #region agent log
                     const targetIframe = document.getElementById(`iframe${index}`);
-                    dbgDisplayLog('overlay.html:selectDataset', 'pre-switch display state', {
+                    __odt_hook('dbgDisplayLog', 'overlay.html:selectDataset', 'pre-switch display state', {
                         build: OVERLAY_DEBUG_BUILD,
                         from: previousIdx, to: index,
                         parentContour: effectiveContour(currentMapParams),
@@ -3998,7 +4329,7 @@
                     // #endregion
                     const runSwitch = (fromState) => {
                         // #region agent log
-                        dbgDisplayLog('overlay.html:runSwitch', 'runSwitch invoked', {
+                        __odt_hook('dbgDisplayLog', 'overlay.html:runSwitch', 'runSwitch invoked', {
                             fromStateSource: fromState && fromState.source,
                             hasPerformFn: !!performDatasetSwitchFn
                         }, 'G');
@@ -4017,7 +4348,7 @@
                             performDatasetSwitchFn(previousIdx, index, fromState, targetWarmStatus);
                         } catch (e) {
                             // #region agent log
-                            dbgDisplayLog('overlay.html:runSwitch', 'switch failed', {
+                            __odt_hook('dbgDisplayLog', 'overlay.html:runSwitch', 'switch failed', {
                                 error: String(e), stack: e && e.stack
                             }, 'G');
                             // #endregion
@@ -4027,25 +4358,42 @@
                         }
                     };
                     if (targetWarmStatus.fullySynced && !hasCustomRefPoint(currentMapParams)) {
-                        runSwitch(cachedSwitchStateForIndex(previousIdx) || {});
-                        return;
+                        const cached = cachedSwitchStateForIndex(previousIdx);
+                        if (cached && (hasPointSelection(currentMapParams) || cached.pointLat)) {
+                            runSwitch(cached);
+                            return;
+                        }
                     }
                     queryActiveIframeSwitchState(previousIdx, runSwitch);
                 };
 
                 performDatasetSwitchFn = function performDatasetSwitch(previousIdx, index, fromState, targetWarmStatus) {
                     currentMapParams = mapParamsWithOverlayUserDisplay(currentMapParams);
-                    targetWarmStatus = getDatasetIframeSyncStatus(index);
                     // #region agent log
-                    dbgDisplayLog('overlay.html:performDatasetSwitch', 'switch using overlayUserDisplay', {
+                    __odt_hook('dbgDisplayLog', 'overlay.html:performDatasetSwitch', 'switch using overlayUserDisplay', {
                         overlayUserDisplay: { ...overlayUserDisplay },
                         parentContour: effectiveContour(currentMapParams),
                         parentPixelSize: currentMapParams.pixelSize
                     }, 'F');
                     // #endregion
-                    const warmedFastPath = targetWarmStatus.fullySynced && !hasCustomRefPoint(currentMapParams);
                     syncRefFromSwitchState(fromState, previousIdx);
+                    syncPointFromSwitchState(fromState, previousIdx);
                     applyEffectiveRefToMapParams();
+                    targetWarmStatus = getDatasetIframeSyncStatus(index);
+                    const warmedFastPath = targetWarmStatus.fullySynced && !hasCustomRefPoint(currentMapParams);
+                    // #region agent log
+                    __odt_hook('dbgDisplayLog', 'overlay.html:performDatasetSwitch', 'point state at switch', {
+                        from: iframeLabelForLog(previousIdx),
+                        to: iframeLabelForLog(index),
+                        pointLat: currentMapParams.pointLat,
+                        pointLon: currentMapParams.pointLon,
+                        fromStatePoint: fromState && fromState.pointLat ? {
+                            lat: fromState.pointLat, lon: fromState.pointLon
+                        } : null,
+                        targetPointMatch: targetWarmStatus.pointMatch,
+                        targetFullySynced: targetWarmStatus.fullySynced
+                    }, 'I');
+                    // #endregion
                     if (userNarrowedDateRange) {
                         currentMapParams.startDate = userNarrowedDateRange.startDate;
                         currentMapParams.endDate = userNarrowedDateRange.endDate;
@@ -4107,15 +4455,24 @@
                         switchPath = syncResult.path;
                         switchReloaded = syncResult.reloaded;
                     }
+                    if (!refSwitchActive && hasPointSelection(currentMapParams)) {
+                        const pointResynced = syncPointToIframeIfStale(index, 'switch-point-sync');
+                        if (pointResynced) {
+                            switchReloaded = true;
+                            if (switchPath === 'skip-synced') {
+                                switchPath = 'point-resync-reload';
+                            }
+                        }
+                    }
                     beginSwitchTracking(previousIdx, index, { fromState, switchPath });
-                    beginSwitchDebugRow(previousIdx, index, fromState, switchPath, switchReloaded,
+                    __odt_hook('beginSwitchDebugRow', previousIdx, index, fromState, switchPath, switchReloaded,
                         targetUrlBeforeSwitch);
 
                     const revealSelectedPanel = () => {
                         pendingRevealIndex = null;
                         pendingRevealSince = 0;
                         // #region agent log
-                        dbgSwitchLog('overlay.html:revealSelectedPanel', 'panel revealed', {
+                        __odt_hook('dbgSwitchLog', 'overlay.html:revealSelectedPanel', 'panel revealed', {
                             index, label: iframeLabelForLog(index)
                         }, 'B');
                         // #endregion
@@ -4125,12 +4482,13 @@
                             selectedPanel.style.pointerEvents = 'auto';
                             selectedPanel.classList.add('active');
                         }
+                        ensureChartsOpenOnIframe(index);
                     };
                     if (switchReloaded && visibleIframe && !refSwitchActive) {
                         pendingRevealIndex = index;
                         pendingRevealSince = Date.now();
                         // #region agent log
-                        dbgSwitchLog('overlay.html:performDatasetSwitch', 'waiting for iframe load to reveal', {
+                        __odt_hook('dbgSwitchLog', 'overlay.html:performDatasetSwitch', 'waiting for iframe load to reveal', {
                             index, switchPath, switchReloaded
                         }, 'B');
                         // #endregion
@@ -4140,7 +4498,7 @@
                     }
 
                     // #region agent log
-                    dbgSwitchLog('overlay.html:performDatasetSwitch', 'switch path complete', {
+                    __odt_hook('dbgSwitchLog', 'overlay.html:performDatasetSwitch', 'switch path complete', {
                         previousIdx, index, switchPath, switchReloaded, refSwitchActive,
                         pendingDateSync: pendingDateSyncByIndex.has(index),
                         warmInFlight: iframeWarmInFlight.has(index)
@@ -4151,8 +4509,8 @@
                     if (!skipDisplayBroadcast) {
                         broadcastMapDisplayStateAfterSwitch(index, switchReloaded);
                     } else {
-                        console.log(`[overlay] dataset switch FAST ${iframeLabelForLog(index)}  (warmed; contour/pixelSize postMessage only)`);
-                        broadcastContourAndPixelSizeToIframe(index);
+                        console.log(`[overlay] dataset switch FAST ${iframeLabelForLog(index)}  (warmed; display postMessage)`);
+                        reapplyDisplayParamsToIframe(index);
                     }
                     ensureChartsOpenOnIframe(index);
 
@@ -4275,6 +4633,11 @@
                         }
                         return;
                     }
+                    if (event.data.type === 'insarmaps-debug-log' && event.data.payload) {
+                        __odt_hook('dbgDisplayLog', event.data.payload.location, event.data.payload.message,
+                            event.data.payload.data, event.data.payload.hypothesisId || 'A');
+                        return;
+                    }
                     if (event.data.type !== 'insarmaps-url-update') return;
 
                     const msgFirstDate = event.data.firstDate || event.data.first_date;
@@ -4329,7 +4692,25 @@
                                 event.data.url, event.data, currentMapParams
                             );
                             if (merged) {
-                                recordSwitchDebugReceived(quickSenderIndex, merged, event.data);
+                                console.warn('[overlay merge from iframe]', {
+                                    sender: iframeLabelForLog(quickSenderIndex),
+                                    eventColorscale: event.data.colorscale || null,
+                                    mergedColorscale: merged.colorscale,
+                                    prevColorscale: currentMapParams.colorscale,
+                                    msgUrl: event.data.url
+                                });
+                                if (merged.pointLat != null && merged.pointLon != null) {
+                                    recordKnownPointCoords(quickSenderIndex, merged.pointLat, merged.pointLon, 'active-postMessage');
+                                    // #region agent log
+                                    __odt_hook('dbgDisplayLog', 'overlay.html:point-received', 'point coords eager', {
+                                        sender: iframeLabelForLog(quickSenderIndex),
+                                        pointLat: merged.pointLat,
+                                        pointLon: merged.pointLon,
+                                        fromMessage: !!(event.data.pointLat)
+                                    }, 'I');
+                                    // #endregion
+                                }
+                                __odt_hook('recordSwitchDebugReceived', quickSenderIndex, merged, event.data);
                                 maybeReapplyDisplayParamsToActiveIframe(quickSenderIndex, merged);
                                 const dateResolved = resolveDatesFromIframeUpdate(
                                     quickSenderIndex, merged.startDate, merged.endDate, 'active-postMessage'
@@ -4361,10 +4742,11 @@
                                     }
                                     recordOverlayUserDisplayFromMerge(prevParams, merged);
                                     const mergedForState = preserveOverlayDisplayParamsDuringSwitch(
-                                        mapParamsWithOverlayUserDisplay(merged), prevParams
+                                        mapParamsWithOverlayUserDisplay(merged),
+                                        mapParamsWithOverlayUserDisplay(prevParams)
                                     );
                                     // #region agent log
-                                    dbgDisplayLog('overlay.html:active-postMessage', 'display merge', {
+                                    __odt_hook('dbgDisplayLog', 'overlay.html:active-postMessage', 'display merge', {
                                         sender: iframeLabelForLog(quickSenderIndex),
                                         inSwitchSuppress,
                                         switchOpInFlight,
@@ -4488,10 +4870,10 @@
                         
                         const colorscaleValue = params.get('colorscale') ||
                             currentMapParams.colorscale || INSARMAP_URL_DEFAULTS.colorscale;
-                        const refPointLat = params.get('refPointLat') ?? currentMapParams.refPointLat ?? null;
-                        const refPointLon = params.get('refPointLon') ?? currentMapParams.refPointLon ?? null;
-                        const pointLat = params.get('pointLat') ?? currentMapParams.pointLat ?? null;
-                        const pointLon = params.get('pointLon') ?? currentMapParams.pointLon ?? null;
+                        const refPointLat = params.get('refPointLat') ?? event.data.refPointLat ?? currentMapParams.refPointLat ?? null;
+                        const refPointLon = params.get('refPointLon') ?? event.data.refPointLon ?? currentMapParams.refPointLon ?? null;
+                        const pointLat = params.get('pointLat') ?? event.data.pointLat ?? currentMapParams.pointLat ?? null;
+                        const pointLon = params.get('pointLon') ?? event.data.pointLon ?? currentMapParams.pointLon ?? null;
                         const prevPointKey = getPointKey(currentMapParams);
                         const newPointKey = getPointKey({ pointLat, pointLon, refPointLat, refPointLon });
                         // Resolve params from URL with fallback to currentMapParams so contour-only messages
@@ -4504,6 +4886,17 @@
                                 senderIndex = i;
                                 break;
                             }
+                        }
+                        if (pointLat != null && pointLon != null && senderIndex >= 0) {
+                            recordKnownPointCoords(senderIndex, pointLat, pointLon, 'url-update');
+                            // #region agent log
+                            __odt_hook('dbgDisplayLog', 'overlay.html:point-received', 'point coords from iframe', {
+                                sender: iframeLabelForLog(senderIndex),
+                                pointLat, pointLon,
+                                fromUrl: params.has('pointLat'),
+                                fromMessage: event.data.pointLat != null
+                            }, 'I');
+                            // #endregion
                         }
                         let senderPeriodIndex = -1;
                         if ((typeof periodPanels !== 'undefined' && periodPanels && periodPanels.size > 0)) {
@@ -4547,13 +4940,14 @@
                         if (senderIndex === activeDatasetIdx) {
                             recordOverlayUserDisplayFromMerge(currentMapParams, incomingParams);
                             incomingParams = preserveOverlayDisplayParamsDuringSwitch(
-                                mapParamsWithOverlayUserDisplay(incomingParams), currentMapParams
+                                mapParamsWithOverlayUserDisplay(incomingParams),
+                                mapParamsWithOverlayUserDisplay(currentMapParams)
                             );
                         }
                         // #region agent log
                         if (senderIndex === activeDatasetIdx &&
                             (contourValue !== prevContourNorm || pixelSize !== currentMapParams.pixelSize)) {
-                            dbgDisplayLog('overlay.html:url-update-debounced', 'debounced display change', {
+                            __odt_hook('dbgDisplayLog', 'overlay.html:url-update-debounced', 'debounced display change', {
                                 sender: iframeLabelForLog(senderIndex),
                                 rawContour: contourValue,
                                 rawPixelSize: pixelSize,
