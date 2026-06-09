@@ -1,6 +1,6 @@
 # overlay.html Architecture Documentation
 
-**Last updated:** 2026-06-07 (autoColorScale sync; default-ref period switch)
+**Last updated:** 2026-06-09 (debug table workflow + width tweak)
 
 ## Overview
 
@@ -86,6 +86,44 @@ Hash-based (preferred):
 ```
 overlay.html#/start/0.7480/-77.9687/9.8000?startDataset=S1_desc_...&minScale=-3&maxScale=3&startDate=...&endDate=...
 ```
+
+---
+
+## Debug Table Workflow
+
+`overlay.html` has an optional inlined switch-debug table maintained from fragment files:
+
+- `minsar/html/debug_table_overlay/debug_table_overlay.css`
+- `minsar/html/debug_table_overlay/debug_table_overlay.html`
+- `minsar/html/debug_table_overlay/debug_table_overlay.inline.js`
+- `minsar/html/debug_table_overlay/apply_debug_table.py`
+
+### AI command (recommended)
+
+Use this exact prompt:
+
+> **append debug table to overlay**  
+> Update `minsar/html/debug_table_overlay/{debug_table_overlay.css,debug_table_overlay.html,debug_table_overlay.inline.js}` as needed, then run:  
+> `python3 minsar/html/debug_table_overlay/apply_debug_table.py sync minsar/html/overlay.html`  
+> Finally deploy `minsar/html/overlay.html`.
+
+### Commands
+
+```bash
+# Insert debug regions
+python3 minsar/html/debug_table_overlay/apply_debug_table.py append minsar/html/overlay.html
+
+# Sync fragment edits into overlay
+python3 minsar/html/debug_table_overlay/apply_debug_table.py sync minsar/html/overlay.html
+
+# Remove debug regions
+python3 minsar/html/debug_table_overlay/apply_debug_table.py remove minsar/html/overlay.html
+```
+
+### Example screenshot
+
+Latest debug-table example (from this debugging session):  
+`/home/exouser/.cursor/projects/home-exouser-code-minsar/assets/image-64d6932d-0f66-400f-8484-447981064b5c.png`
 
 ---
 

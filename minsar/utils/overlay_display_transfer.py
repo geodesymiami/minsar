@@ -61,6 +61,9 @@ def url_display_params_from_src(src: str) -> dict:
             "pixelSize": first("pixelSize"),
             "background": first("background"),
             "opacity": first("opacity"),
+            "colorscale": first("colorscale"),
+            "startDate": first("startDate"),
+            "endDate": first("endDate"),
             "autoColorScale": first("autoColorScale"),
             "pointLat": first("pointLat"),
             "pointLon": first("pointLon"),
@@ -98,6 +101,9 @@ def embed_display_params_for_warm_url(map_params: dict) -> dict:
     contour = effective_contour(map_params)
     if contour:
         out["contours"] = contour
+    colorscale = map_params.get("colorscale")
+    if colorscale:
+        out["colorscale"] = str(colorscale)
     bg = map_params.get("background")
     if bg and bg != INSARMAP_URL_DEFAULTS["background"]:
         out["background"] = bg
@@ -109,6 +115,21 @@ def embed_display_params_for_warm_url(map_params: dict) -> dict:
     elif ac is not None and str(ac) != INSARMAP_URL_DEFAULTS["autoColorScale"]:
         out["autoColorScale"] = str(ac)
     return out
+
+
+def resolve_switch_dates(user_period: dict | None, from_state: dict | None, narrowed: dict | None) -> dict | None:
+    """Choose switch dates with latest-user intent precedence.
+
+    Mirrors overlay dataset-switch behavior after regressions:
+    latest explicit user period must win over stale fromState/narrowed fallbacks.
+    """
+    if user_period and user_period.get("startDate") and user_period.get("endDate"):
+        return {"startDate": user_period["startDate"], "endDate": user_period["endDate"]}
+    if from_state and from_state.get("startDate") and from_state.get("endDate"):
+        return {"startDate": from_state["startDate"], "endDate": from_state["endDate"]}
+    if narrowed and narrowed.get("startDate") and narrowed.get("endDate"):
+        return {"startDate": narrowed["startDate"], "endDate": narrowed["endDate"]}
+    return None
 
 
 def display_params_mismatch(

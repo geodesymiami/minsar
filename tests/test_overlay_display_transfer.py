@@ -17,6 +17,7 @@ from minsar.utils.overlay_display_transfer import (
     switch_debug_match,
     switch_debug_fmt_val,
     url_display_params_from_src,
+    resolve_switch_dates,
 )
 
 
@@ -88,6 +89,24 @@ class TestWarmUrlEmbedding(unittest.TestCase):
         self.assertEqual(q["autoColorScale"], "false")
         self.assertEqual(q["minScale"], "-1.5")
         self.assertEqual(q["maxScale"], "1.5")
+
+    def test_warm_url_includes_explicit_velocity_colorscale(self):
+        """Regression: omitting default velocity can leak stale displacement on switch."""
+        q = embed_display_params_for_warm_url({"colorscale": "velocity"})
+        self.assertEqual(q["colorscale"], "velocity")
+
+    def test_warm_url_includes_dates_for_selected_period(self):
+        q = embed_display_params_for_warm_url({
+            "startDate": "20210417",
+            "endDate": "20260509",
+            "colorscale": "velocity",
+        })
+        # Date embedding for warm URL is handled by overlay, but parser helper must support dates.
+        src = "/start/0/0/1?startDate=20210417&endDate=20260509&colorscale=velocity"
+        parsed = url_display_params_from_src(src)
+        self.assertEqual(parsed["startDate"], "20210417")
+        self.assertEqual(parsed["endDate"], "20260509")
+        self.assertEqual(parsed["colorscale"], "velocity")
 
 
 class TestDisplayParamsMismatch(unittest.TestCase):
@@ -206,6 +225,29 @@ class TestSwitchDebugMatch(unittest.TestCase):
         exp = format_debug_coord(0.8121, -77.9252)
         act = format_debug_coord(0.8000, -77.9000)
         self.assertEqual(switch_debug_charts_match("true", "false", exp, act), "bad")
+
+
+class TestSwitchStatePrecedence(unittest.TestCase):
+    def test_colorscale_velocity_explicit_state_beats_stale_displacement(self):
+        """Regression: after displacement->velocity, switch must keep velocity."""
+        parsed = url_display_params_from_src("/start/0/0/1?colorscale=velocity")
+        self.assertEqual(parsed["colorscale"], "velocity")
+        q = embed_display_params_for_warm_url({"colorscale": "velocity"})
+        self.assertEqual(q["colorscale"], "velocity")
+
+    def test_latest_user_period_beats_older_from_state_on_switch(self):
+        """Regression: period 2 selection must win over cached period 1 on dataset switch."""
+        user_period = {"startDate": "20210809", "endDate": "20250502"}  # period 2
+        from_state = {"startDate": "20141027", "endDate": "20180720"}   # period 1
+        narrowed = {"startDate": "20141106", "endDate": "20181022"}     # stale target snap
+        chosen = resolve_switch_dates(user_period, from_state, narrowed)
+        self.assertEqual(chosen, user_period)
+
+    def test_switch_uses_from_state_when_no_user_period(self):
+        from_state = {"startDate": "20141027", "endDate": "20180720"}
+        narrowed = {"startDate": "20141106", "endDate": "20181022"}
+        chosen = resolve_switch_dates(None, from_state, narrowed)
+        self.assertEqual(chosen, from_state)
 
 
 if __name__ == "__main__":

@@ -80,6 +80,13 @@ To remove:
 python3 minsar/html/debug_table_overlay/apply_debug_table.py remove minsar/html/overlay.html
 ```
 
+Reusable prompt (exact wording):
+
+> **append debug table to overlay**
+> Update `minsar/html/debug_table_overlay/{debug_table_overlay.css,debug_table_overlay.html,debug_table_overlay.inline.js}` as needed, then run:
+> `python3 minsar/html/debug_table_overlay/apply_debug_table.py sync minsar/html/overlay.html`
+> Finally deploy `minsar/html/overlay.html`.
+
 ## Editing the debug table
 
 1. Edit `debug_table_overlay.css`, `.html`, or `.inline.js` in this directory.
