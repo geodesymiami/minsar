@@ -199,7 +199,7 @@ Done: Asc has custom ref + narrowed period
 |------|---------|---------------------|
 | `insarmaps-set-contour` | `{ value: true/false }` — no reload | `mainPage.js` |
 | `insarmaps-set-dates` | `{ startDate, endDate }` YYYYMMDD — cross-origin date apply | `mainPage.js` → `GraphsController.applyInsarDateRangeFromYyyymmdd()` |
-| `insarmaps-set-auto-color-scale` | `{ mode: 'true'\|'false', minScale?, maxScale? }` — URL `autoColorScale=true\|false`; `true`=data min/max centered on 0, `false`=manual (+ `minScale`/`maxScale`) | `mainMap.setAutoColorScaleMode()` / `disableAutoColorScaleWithLimits()` |
+| `insarmaps-set-auto-color-scale` | `{ mode: 'true'\|'false', minScale?, maxScale? }` — URL `autoColorScale=true` when auto on; manual mode uses only `minScale`/`maxScale` (no `autoColorScale=false`) | `mainMap.setAutoColorScaleMode()` / `disableAutoColorScaleWithLimits()` |
 
 **No `insarmaps-set-point` or `insarmaps-set-ref`** — point and ref must go in the **iframe URL** on reload.
 
@@ -395,21 +395,75 @@ Deploy overlay to **data server**; deploy insarmaps JS to **insarmaps server** (
 
 ---
 
-## 12. Debugging — switch-result table
+## 12. Debugging — switch-result table and session instrumentation
 
-Switch-result tables were built from debug instrumentation (since removed). The tracking hooks (`beginSwitchTracking`, `logSwitchOutcomePart`) remain in code but no longer emit logs. To re-enable debugging, add fetch/post to a log ingest endpoint at these locations. Key log messages for building switch-result tables:
+### 12.1 On-page switch debug panel (removed 2026-06)
 
-| Log `message` | Source | Use |
-|---------------|--------|-----|
-| `switch attempt` | `beginSwitchTracking` | Start of switch: from/to, `userNarrowedAtSwitch`, `hasCustomRef` |
-| `switch outcome` | `logSwitchOutcome` | End: `outcome`, `refOk`, `datesOk`, `elapsedMs` |
-| `ref applied postMessage received` | ref-applied handler | Ref phase success |
-| `postMessage set-dates sent` | `tryApplyNarrowedDatesToIframe` | Date phase started |
-| `postMessage date sync applied` | `onDateSyncApplied` | Date phase ack |
-| `date resolve` | `logDateResolve` | Widen rejects, `willReassert` |
-| `user slider drag` | `GraphsController.js` | Confirms slider not fighting overlay |
+A collapsible table (`#switch-debug-panel`) at the bottom of the page was used during Horz/Vert ref debugging. It was **removed** after verification; switch logic still uses internal `activeSwitchTracking` / `beginSwitchTracking` / `logSwitchOutcomePart` (no UI).
 
-### Switch-result table format
+To restore the panel, recover from git history or re-add HTML/CSS plus `switchDebugRows`, `renderSwitchDebugTable`, and related functions documented in §12.2 log sites (table columns matched those log fields).
+
+### 12.2 Removed session instrumentation (2026-06, session `b4a2c9`)
+
+During Horz/Vert ref debugging, temporary **NDJSON logging** was added to `overlay.html` and removed after verification. The on-page table (§12.1) stayed.
+
+**Mechanism**
+
+- Function `dbgLog(location, message, data, hypothesisId)` in `overlay.html`.
+- Each call: `fetch()` POST to a local debug ingest URL (Cursor debug mode), with headers `Content-Type: application/json`, `X-Debug-Session-Id: b4a2c9`.
+- Payload fields: `sessionId`, `location`, `message`, `data`, `hypothesisId`, `timestamp`, `runId: 'ref-switch'`.
+- Log file (workspace): `.cursor/debug-b4a2c9.log` — one JSON object per line (NDJSON).
+- Each log block was wrapped in `// #region agent log` … `// #endregion` for editor folding.
+
+**Instrumentation sites** (all removed; re-add at these functions if needed):
+
+| `location` | `message` | `hypothesisId` | Purpose |
+|------------|-----------|----------------|---------|
+| `overlay.html:syncRefFromSwitchState` | `using canonical user ref` / `synced ref` / `ref sync failed` | A | Ref coords carried across switch |
+| `overlay.html:switchDebugOnAttempt` | `switch attempt` | A,B | Switch start: period, ref, mapParams |
+| `overlay.html:switchDebugOnOutcome` | `switch outcome` | A,C | `refOk`, `datesOk`, outcome |
+| `overlay.html:switchDebugSnapshotAfterState` | `switch after snapshot` | A,D | Post-switch iframe state: ref, chart |
+| `overlay.html:performDatasetSwitch` | `switch decision` / `refSwitch reload` | A,B | Reload URL and load kind |
+| `overlay.html:reloadDatasetIframe` | `refSwitch url params` / `refSwitch onload` / `pointAfterRef url params` | B,H,I | URL params per load phase |
+| `overlay.html:insarmaps-ref-applied` | `stored ref` / `pointAfterRef ref ack — date sync` | A,C,J | Ref postMessage handling |
+| `overlay.html:insarmaps-ref-failed` | `ref apply failed` | — | Ref retry path |
+| `overlay.html:completeRefRecolorOnIframe` | `sent complete-ref-recolor` | G | Map recolor postMessage |
+| `overlay.html:maybeStartDateSyncAfterRef` | `ref ack follow-up` | G | Phase-2 date sync after ref |
+| `overlay.html:scheduleNarrowedDateSync` | `ref-await watchdog — still pending ref` | B | 6 s ref-await watchdog |
+| `overlay.html:captureUserNarrowedDateRange` | `pinned user period` | H | User narrowed period source |
+| `overlay.html:logDateResolve` | `date resolve` | H | Widen reject / capture / suppress during switch |
+| `overlay.html:applyDatesToIframeOnSwitch` | `set-dates on switch` | — | Default-ref set-dates path |
+| `overlay.html:applyPointAfterRefSwitch` | `horz/vert point reload` | I | Start pointAfterRef phase |
+| `overlay.html:completePointAfterRefPhase` | `horz/vert point restore done` | J | End pointAfterRef; chart + date follow-up |
+
+**Hypothesis tags used in analysis**
+
+| Id | Topic |
+|----|--------|
+| A | Ref coords / canonical ref / switch tracking |
+| B | Ref-await, iframe onload, date defer |
+| C | `insarmaps-ref-applied` acceptance |
+| D | After-state snapshot (ref/chart mismatch) |
+| G | Recolor + date sync after ref ack |
+| H | Narrowed period / date resolve / URL dates |
+| I | Horz/Vert `pointAfterRef` reload |
+| J | `pointAfterRef` completion + date sync |
+
+**What the logs proved (Horz/Vert, 2026-06)**
+
+1. **Point-before-ref on cold Vert/Horz tiles** — insarmaps `applyStartingDatasetPointSelections` ran point first when both were in the URL; ref often never finished. Fix: `refSwitchNoPoint` (ref-only first load) + `pointAfterRef` second load; insarmaps overlay mode applies **ref before point** when both present (`mainMap.js`).
+2. **Dates in `pointAfterRef` URL race recolor** — same as refSwitch; dates belong in postMessage after ref ack, not in the point-reload URL.
+3. **Debug table “Chart: no” with visible chart** — detection/timing bug, not missing chart (§12.1).
+4. **`insarmaps-ref-applied` ≠ map re-referenced** — marker can show while `_deferRefRecolorUntilSetDates` waits for `insarmaps-set-dates` (§19.2).
+
+### 12.3 Re-enabling session logs
+
+1. Restore `dbgLog()` and wrap calls at the sites in §12.2 (or use Cursor debug-mode ingest template). Optionally restore `#switch-debug-panel` from git (§12.1).
+2. Clear `.cursor/debug-<sessionId>.log` before each reproduction run.
+3. Pair `switch attempt` rows with `switch outcome` and `switch after snapshot` by `data.id`.
+4. Do **not** conflate optional NDJSON session logs with the removed on-page panel — both were debug-only (§12.1–§12.2).
+
+### 12.4 Switch-result table from logs (legacy format)
 
 Build one row per completed switch from `switch attempt` + `switch outcome` pairs:
 
@@ -427,7 +481,7 @@ Build one row per completed switch from `switch attempt` + `switch outcome` pair
 - **Dates** — `datesOk`; verify with `insarmaps-set-dates-applied` matching pending range
 - **Outcome** — `outcome` field: `success`, `ref-failed`, `dates-failed`, `ref-and-dates-failed`
 
-### Example outcomes from test sessions (2026-06)
+### 12.5 Example outcomes from test sessions (2026-06)
 
 | Scenario | Custom ref | Narrowed period | Typical result after fixes |
 |----------|------------|-----------------|---------------------------|
@@ -435,6 +489,7 @@ Build one row per completed switch from `switch attempt` + `switch outcome` pair
 | No ref, narrow slider, wait, Desc↔Asc switch | No | Yes | ✓ seamless (§8 set-dates path) |
 | Ref on Desc, switch to Asc | Yes | No | ✓ ref transfers |
 | Ref on Desc, narrow slider, switch to Asc | Yes | Yes | ✓ ref + period (post-fix32) |
+| Switch to Vert/Horz with ref + point | Yes | Any | ✓ refSwitchNoPoint → dates → pointAfterRef (§19.7) |
 | Full mission period | Yes | No (full) | ✓ sarvey may use dateAfterRef URL phase |
 
 ---
@@ -560,6 +615,19 @@ refSwitch reload
 
 If step 3 never happens, phase 2 is blocked (`pending.awaitRef === true`) or date sync returns `waitingForRef: true` and fails with `no-ack`.
 
+**Horizontal / Vertical (three phases, 2026-06):** Cold Vert/Horz tiles often fail when point and ref are both in the first URL (insarmaps applies point before ref). Overlay uses:
+
+```
+refSwitchNoPoint reload (ref only, no dates in URL)
+    → insarmaps-ref-applied
+    → insarmaps-set-dates
+    → pointAfterRef reload (point + ref, no dates in URL)
+    → insarmaps-ref-applied (overlay: ref-before-point in iframe mode)
+    → maybeStartDateSyncAfterRef + ensureChartsOpenOnIframe
+```
+
+Asc/Desc continue to use single `refSwitch` (point + ref in one URL).
+
 **Waiting helps when ref is slow; waiting does not help when ref is stuck.** Session logs showed a Vert switch where the user waited **31 s** but `insarmaps-ref-applied` never arrived — only `url point applied`, not `url ref applied`.
 
 ### 19.4 User-facing messages (`#ref-status-indicator`)
@@ -624,6 +692,8 @@ Banner clears when `insarmaps-ref-applied` is accepted and `clearRefRecoveryStat
 | post-fix28 | `no-ack` keeps pending while ref expected; reassert awaits ref | Fixed premature date failure; watchdog can still fire |
 | post-fix29 | 8 s / 15 s watchdogs, user banner, `insarmaps-ref-failed`, 1 auto-retry | User visibility; helps slow ref; **stuck ref still fails** after 1 retry |
 | post-fix32 | Stop reassert fighting slider; `datesChanged` guard | Slider fixed after ref+switch; ref stuck unchanged |
+| 2026-06 Horz/Vert | Three-phase switch: `refSwitchNoPoint` → set-dates → `pointAfterRef`; insarmaps ref-before-point in overlay iframe | Ref + chart on cold Vert/Horz; see §12.2 |
+| 2026-06 chart debug | `chartsVisible` via `pointClicked` / `chartExists` in `insarmaps-query-switch-state` | Debug table Chart column matches UI |
 
 ### 19.8 What a rewrite should do differently
 
@@ -643,18 +713,33 @@ Problems in the current design that a clean implementation could address:
 
 ### 19.9 Debug log lines for ref-wait problems
 
+**On-page table:** removed (§12.1). Internal switch tracking: `activeSwitchTracking`, `logSwitchOutcomePart`.
+
+**Removed NDJSON session logs (2026-06):** see §12.2 for full `dbgLog` site list. High-signal `message` values:
+
 | Log `message` | Interpretation |
 |---------------|----------------|
-| `url ref retries exhausted` | No tile at ref coords — stuck or hidden iframe |
-| `url ref wait exhausted` | Click worked but displacements never became non-default |
-| `posting insarmaps-ref-failed` | Insarmaps giving up; overlay should retry |
-| `ignored background ref-applied` | Correct — prevented wrong-iframe date sync |
-| `date sync deferred awaiting ref` | Dates held; user banner may show |
-| `ref slow advisory shown` | 8 s passed without ref-applied |
-| `ref stuck auto retry` | 15 s watchdog fired refSwitch reload |
-| `ref recovery exhausted` | Auto-retry used up; user must switch away and back |
+| `switch attempt` | Switch started; check `switchPath`, `refAtSwitch`, period |
+| `switch outcome` | `refOk` / `datesOk` / `outcome` |
+| `switch after snapshot` | Iframe state after switch; `chartsAfter`, `refAfter` |
+| `refSwitch reload` | Force reload URL and `loadKind` |
+| `horz/vert point reload` | `pointAfterRef` phase started |
+| `horz/vert point restore done` | `pointAfterRef` ref ack + date sync |
+| `pointAfterRef ref ack — date sync` | Ref applied on point reload; triggers `maybeStartDateSyncAfterRef` |
+| `sent complete-ref-recolor` | `insarmaps-complete-ref-recolor` posted |
+| `ref ack follow-up` | Phase-2 dates after ref |
+| `date resolve` | `resolved: rejected-switch-suppress-kept-user` during switch suppress |
+| `ref apply failed` | `insarmaps-ref-failed` received |
+| `ref-await watchdog — still pending ref` | 6 s passed, ref still not ack'd |
+
+**Insarmaps console / behaviour (not overlay dbgLog):**
+
+| Signal | Interpretation |
+|--------|----------------|
+| `insarmaps-ref-failed` reason `url-ref-retries-exhausted` | No tile at ref coords — stuck or hidden iframe |
+| `url-ref-wait-exhausted` | Click worked but displacements never became non-default |
 | `waitingForRef: true` (insarmaps) | set-dates arrived too early |
-| `switch outcome` + `ref-failed` | Switch table Ref column = ✗ |
+| `switch outcome` + `ref-failed` | Switch table Ref column = lost |
 
 ---
 
@@ -671,7 +756,7 @@ If rebuilding from scratch with a new implementation:
 7. **Strip template params** in `expandDatasetNameLine` for name-only log lines.
 8. **Do not call iframe internals** — design for cross-origin from day one.
 9. **Insarmaps must post `insarmaps-ref-applied` and handle `insarmaps-set-dates`** — contract, not optional.
-10. **Add switch-result logging** from the start (`switch attempt` / `switch outcome` with refOk + datesOk).
+10. **Add switch-result logging** from the start — optional NDJSON `dbgLog` (§12.2); on-page panel was debug-only and has been removed (§12.1).
 11. **Read §19 before designing ref sync** — synthetic URL click + wait is the main fragility; plan explicit ref API or visible-only apply.
 
 ---
