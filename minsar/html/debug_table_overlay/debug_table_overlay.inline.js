@@ -467,22 +467,10 @@
             if (!window.__overlayDisplayDebugLog) window.__overlayDisplayDebugLog = [];
             window.__overlayDisplayDebugLog.push(entry);
             if (window.__overlayDisplayDebugLog.length > 80) window.__overlayDisplayDebugLog.shift();
-            fetch('http://localhost:7463/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b4a2c9' },
-                body: JSON.stringify(entry)
-            }).catch(() => {});
         }
 
         function dbgSwitchLog(location, message, data, hypothesisId) {
-            fetch('http://localhost:7463/ingest/05c79beb-92f2-481d-8fb7-9dcc2fbd4ad0', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b4a2c9' },
-                body: JSON.stringify({
-                    sessionId: 'b4a2c9', location, message, data,
-                    timestamp: Date.now(), hypothesisId
-                })
-            }).catch(() => {});
+            // Local debug table only; no external telemetry.
         }
 
         function overlayDebugSnapshot() {

@@ -99,4 +99,4 @@ Panel title shows `Switch parameter debug (OVERLAY_DEBUG_BUILD)`. Current: see `
 
 ## Agent logging
 
-When debug is appended, `dbgDisplayLog` / `dbgSwitchLog` POST to the Cursor debug ingest URL (session `b4a2c9`). Disable or change in `debug_table_overlay.inline.js` if not debugging.
+When debug is appended, `dbgDisplayLog` / `dbgSwitchLog` append to the in-page debug table only (no external network calls).

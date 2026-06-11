@@ -2263,10 +2263,19 @@
             if (!mapParams) return out;
             const fullStart = baselineMissionDateRange ? formatDate(baselineMissionDateRange.firstDate) : null;
             const fullEnd = baselineMissionDateRange ? formatDate(baselineMissionDateRange.lastDate) : null;
-            if (mapParams.startDate && fullStart && mapParams.startDate !== fullStart) {
+            const hasStart = !!mapParams.startDate;
+            const hasEnd = !!mapParams.endDate;
+            if (!hasStart || !hasEnd) return out;
+
+            // Keep date params as a pair: insarmaps applies period reliably when both are present.
+            const noBaselineYet = !fullStart || !fullEnd;
+            const isExactMissionFullRange =
+                !noBaselineYet &&
+                mapParams.startDate === fullStart &&
+                mapParams.endDate === fullEnd;
+
+            if (noBaselineYet || !isExactMissionFullRange) {
                 out.startDate = mapParams.startDate;
-            }
-            if (mapParams.endDate && fullEnd && mapParams.endDate !== fullEnd) {
                 out.endDate = mapParams.endDate;
             }
             return out;
