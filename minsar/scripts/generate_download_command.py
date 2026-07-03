@@ -13,6 +13,23 @@ from minsar.utils import process_utilities as putils
 pathObj = PathFind()
 inps = None
 
+
+def _quote_ssaraopt_arg(arg: str) -> str:
+    """Format --key=value for shell/cmd files; quote values with spaces or parentheses."""
+    if not arg.startswith('--') or '=' not in arg:
+        return arg
+    key, value = arg.split('=', 1)
+    value = value.strip().strip("'\"")
+    if re.search(r'[\s()]', value):
+        value = value.replace('"', '\\"')
+        return f'{key}="{value}"'
+    return f'{key}={value}'
+
+
+def _join_cmd(args: list[str]) -> str:
+    return ' '.join(_quote_ssaraopt_arg(a) for a in args)
+
+
 ##############################################################################
 EXAMPLE = """example:
     generate_download_command.py $TE/GalapagosSenDT128.template
@@ -108,19 +125,19 @@ def generate_download_command(template,inps):
         base_ssaraopt.append(f"--parallel={_v('parallel') or '6'}")
         with open('download_ssara_bash.cmd', 'w') as f:
             for name in collection_names:
-                opt = base_ssaraopt + [f"--collectionName='{name}'"]
-                f.write(' '.join(['ssara_federated_query.bash'] + opt) + '\n')
+                opt = base_ssaraopt + [f'--collectionName="{name}"']
+                f.write(_join_cmd(['ssara_federated_query.bash'] + opt) + '\n')
         with open('download_ssara_python.cmd', 'w') as f:
             for name in collection_names:
-                opt = base_ssaraopt + [f"--collectionName='{name}'"]
-                f.write(' '.join(['ssara_federated_query.py'] + opt + ['--maxResults=20000', '--asfResponseTimeout=300', '--kml', '--print', '--download']) + '\n')
+                opt = base_ssaraopt + [f'--collectionName="{name}"']
+                f.write(_join_cmd(['ssara_federated_query.py'] + opt + ['--maxResults=20000', '--asfResponseTimeout=300', '--kml', '--print', '--download']) + '\n')
     else:
         ssara_slc_download_cmd_bash = ['ssara_federated_query.bash'] + ssaraopt
         ssara_slc_download_cmd_python = ['ssara_federated_query.py'] + ssaraopt + ['--maxResults=20000', '--asfResponseTimeout=300', '--kml', '--print', '--download']
         with open('download_ssara_bash.cmd', 'w') as f:
-            f.write(' '.join(ssara_slc_download_cmd_bash) + '\n')
+            f.write(_join_cmd(ssara_slc_download_cmd_bash) + '\n')
         with open('download_ssara_python.cmd', 'w') as f:
-            f.write(' '.join(ssara_slc_download_cmd_python) + '\n')
+            f.write(_join_cmd(ssara_slc_download_cmd_python) + '\n')
 
     # create download_slc.sh (slc method)
     asf_slc_download_cmd = ['asf_search_args.py', '--processingLevel=SLC'] + ssaraopt + ['--dir=SLC', '--print', '--download']
@@ -129,9 +146,9 @@ def generate_download_command(template,inps):
     with open('download_slc.sh', 'w') as f:
         asf_slc_download_cmd = [arg for arg in asf_slc_download_cmd if arg != '--print']
         f.write(f"#!/usr/bin/env bash\n")
-        f.write(' '.join(['asf_download.sh'] + asf_slc_download_cmd[1:]) + '\n')
+        f.write(_join_cmd(['asf_download.sh'] + asf_slc_download_cmd[1:]) + '\n')
         f.write(f"check_download.py $PWD/SLC --delete\n")
-        f.write(' '.join(['asf_download.sh'] + asf_slc_download_cmd[1:]) + '\n')
+        f.write(_join_cmd(['asf_download.sh'] + asf_slc_download_cmd[1:]) + '\n')
     #with open('download_slc.cmd', 'w') as f:
     #    f.write(' '.join(asf_slc_download_cmd) + '\n')
 
@@ -147,9 +164,9 @@ def generate_download_command(template,inps):
         f.write(f"#!/usr/bin/env bash\n")
         f.write(f"mkdir -p SLC\n")
         f.write(f"set -e\n")
-        f.write(' '.join(['asf_download.sh'] + asf_burst_download_opts + ['--print', '>SLC/asf_burst_listing.txt']) + '\n')
-        f.write(' '.join(['asf_download.sh'] + asf_burst_download_opts + ['--download', '2>burst2safe_download1.e']) + '\n')
-        f.write(' '.join(['asf_download.sh'] + asf_burst_download_opts + ['--download', '2>burst2safe_download2.e']) + '\n')
+        f.write(_join_cmd(['asf_download.sh'] + asf_burst_download_opts + ['--print', '>SLC/asf_burst_listing.txt']) + '\n')
+        f.write(_join_cmd(['asf_download.sh'] + asf_burst_download_opts + ['--download', '2>burst2safe_download1.e']) + '\n')
+        f.write(_join_cmd(['asf_download.sh'] + asf_burst_download_opts + ['--download', '2>burst2safe_download2.e']) + '\n')
 
     # create pack_bursts.sh (burst2safe jobfile, run_workflow, check, rerun timeouts)
     with open('pack_bursts.sh', 'w') as f:

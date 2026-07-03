@@ -546,7 +546,8 @@ fi
 
 if [[ $platform_str =~ COSMO-SKYMED|TERRASAR-X|ENVISAT ]]; then
     download_dir="$WORK_DIR/SLC_ORIG"
-    [[ $download_method == *burst2safe* ]] && download_method="ssara-bash"
+    [[ $download_method == *burst2safe* ]] && download_method="ssara-bash"   # FA July 2026   Not sure why this was there. 
+    download_method="ssara-bash"
 else
     # Sentinel-1
     download_dir="$WORK_DIR/SLC"

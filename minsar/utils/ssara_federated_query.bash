@@ -48,6 +48,7 @@ done
 ############################################################
 rm -f ssara_listing.txt
 cmd="ssara_federated_query.py $cmd $asfResponseTimeout_opt --kml --print > ssara_listing.txt 2> ssara.e"
+cmd="ssara_federated_query.py $cmd $asfResponseTimeout_opt --kml --download  2> ssara.e"
 
 # Try for 2 days if error 502 occurs
 elapsed=0
@@ -139,33 +140,35 @@ echo "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 runs=1
 new_timeout=$timeout
 elapsed=0
-exit_code=1    # set exit_code to 1 so that it does not think it was already successful
-while [[ "$exit_code" -ne 0 ]] && [[ "$elapsed" -lt "$duration" ]]; do
-    rm -f wget.e
-    echo "Run $runs of wget downloads using xargs. elapsed, wait_time, duration, timeout:  $elapsed, $wait_time, $duration, $new_timeout"
-    ######################## Actual data download command using wget  ######################################################
-    echo "Downloading using command: echo $URLs | xargs -n 1 -P $parallel timeout $new_timeout wget --continue --user $user --password $passwd --quiet" | tee -a log
-    echo ${urls[@]} | xargs -n 1 -P $parallel timeout $new_timeout wget --continue --user $user --password $passwd --quiet 2>> wget.e
-    exit_code=$?
-    if [[ $exit_code -ne 0 ]]; then 
-       new_timeout=$(echo "$timeout * 5" | bc)
-       echo "$(date +"%Y%m%d:%H-%m") * Something went wrong. Exit code was ${exit_code}. Trying again with $new_timeout second timeout" | tee -a log
-    fi
+#exit_code=1    # set exit_code to 1 so that it does not think it was already successful
+#while [[ "$exit_code" -ne 0 ]] && [[ "$elapsed" -lt "$duration" ]]; do
+#    rm -f wget.e
+#    echo "QQ0 Run $runs of wget downloads using xargs. elapsed, wait_time, duration, timeout:  $elapsed, $wait_time, $duration, $new_timeout"
+#    ######################## Actual data download command using wget  ######################################################
+#    #echo "QQ1 Downloading using command: printf '%s\n' ${urls[@]} | xargs -n 1 -P \"$parallel\" timeout \"$new_timeout\" wget --continue --user \"$user\" --password \"$passwd\" --quiet" | tee -a log
+#    #printf '%s\n' "${urls[@]}" | xargs -n 1 -P "$parallel" timeout "$new_timeout" wget --continue --user "$user" --password "$passwd" --quiet 2>>wget.e
+#    echo "QQ1 Downloading using command: echo $URLs | xargs -n 1 -P $parallel timeout $new_timeout wget --continue --user $user --password $passwd --quiet" | tee -a log
+#    echo "${urls[@]} | xargs -n 1 -P $parallel timeout $new_timeout wget --continue --user $user --password $passwd --quiet" 2>> wget.e
+#    exit_code=$?
+#    if [[ $exit_code -ne 0 ]]; then 
+#       new_timeout=$(echo "$timeout * 5" | bc)
+#       echo "$(date +"%Y%m%d:%H-%m") * Something went wrong. Exit code was ${exit_code}. Trying again with $new_timeout second timeout" | tee -a log
+#    fi
+#
+#    echo "$(date +"%Y%m%d:%H-%m") check_download: `check_download.py $PWD --delete`"  | tee -a log
+#    granules_num=$(ls *.{zip,tar.gz} 2> /dev/null | wc -l)
+#    echo "$(date +"%Y%m%d:%H-%m") * Downloaded scenes after check_download: $granules_num" | tee -a log
+#
+#    runs=$((runs+1))
+#    elapsed=$((elapsed + $wait_time)) # Increment the elapsed time
+#    sleep 1
+#done
 
-    echo "$(date +"%Y%m%d:%H-%m") check_download: `check_download.py $PWD --delete`"  | tee -a log
-    granules_num=$(ls *.{zip,tar.gz} 2> /dev/null | wc -l)
-    echo "$(date +"%Y%m%d:%H-%m") * Downloaded scenes after check_download: $granules_num" | tee -a log
-
-    runs=$((runs+1))
-    elapsed=$((elapsed + $wait_time)) # Increment the elapsed time
-    sleep 1
-done
-
-if [[ $granules_num -ge $num_urls ]]; then
-   echo "Download was successful, downloaded scenes: $granules_num" | tee -a log
-   exit 0;
-else
-  echo "ERROR: Only $granules_num of $num_urls scenes downloaded."  | tee -a log
-  exit 1;
-fi
+#if [[ $granules_num -ge $num_urls ]]; then
+#   echo "Download was successful, downloaded scenes: $granules_num" | tee -a log
+#   exit 0;
+#else
+#  echo "ERROR: Only $granules_num of $num_urls scenes downloaded."  | tee -a log
+#  exit 1;
+#fi
 
