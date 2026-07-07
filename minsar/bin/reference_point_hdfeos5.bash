@@ -14,6 +14,8 @@ echo "sourcing ${SCRIPT_DIR}/../lib/utils.sh ..."
 source ${SCRIPT_DIR}/../lib/utils.sh
 echo "sourcing ${SCRIPT_DIR}/../lib/common_helpers.sh ..."
 source ${SCRIPT_DIR}/../lib/common_helpers.sh
+echo "sourcing ${SCRIPT_DIR}/../lib/horzvert_timeseries_utils.sh ..."
+source ${SCRIPT_DIR}/../lib/horzvert_timeseries_utils.sh
 
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     helptext="
@@ -162,7 +164,7 @@ echo "####################################"
 echo "Step 1: Extracting HDFEOS5 component"
 
 EXTRACT_CMD="extract_hdfeos5.py \"$INPUT_FILE\" --all"
-echo "Running: $EXTRACT_CMD"
+hv_announce_command "$INPUT_DIR" "$EXTRACT_CMD"
 eval $EXTRACT_CMD
 
 # Determine coordinate system by checking for geo_ prefix
@@ -190,12 +192,12 @@ fi
 
 
 echo "Step 2: Changing reference point"
-cd $INPUT_DIR
-echo "Running: $REF_CMD"
+cd "$INPUT_DIR"
+hv_announce_command "$INPUT_DIR" "$REF_CMD"
 eval $REF_CMD
 
 echo "Step 3: Reconstructing HDFEOS5 file"
-echo "Running: $SAVE_CMD"
+hv_announce_command "$INPUT_DIR" "$SAVE_CMD"
 # Capture save_hdfeos5.py stdout so we can report the actual filename it wrote.
 # save_hdfeos5.py constructs the output name from metadata + --update + --suffix (no --subset),
 # which often differs from the input basename (e.g. corner-suffix segments are dropped).

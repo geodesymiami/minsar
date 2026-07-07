@@ -198,6 +198,36 @@ test_hv_promote_long_with_older_short_sibling_keeps_long() {
     print_test_end "hv_promote long keeps when short older"
 }
 
+test_hv_scratchdir_display_path_under_scratch() {
+    print_test_start "hv_scratchdir_display_path" "Paths under SCRATCHDIR show \$SCRATCHDIR/ prefix."
+    local tmp out
+    tmp=$(mktemp -d)
+    export SCRATCHDIR="$tmp/scratch"
+    mkdir -p "$SCRATCHDIR/NisyrosSenA29/miaplpy_201410_202606/network_delaunay_4"
+    out=$(hv_scratchdir_display_path "$SCRATCHDIR/NisyrosSenA29/miaplpy_201410_202606/network_delaunay_4")
+    assert_equals '$SCRATCHDIR/NisyrosSenA29/miaplpy_201410_202606/network_delaunay_4/' "$out" "SCRATCHDIR-relative display"
+    unset SCRATCHDIR
+    rm -rf "$tmp"
+    print_test_end "hv_scratchdir_display_path"
+}
+
+test_hv_announce_command_logs_to_dir() {
+    print_test_start "hv_announce_command logging" "Announces In/Running and appends to directory log."
+    local tmp logfile out
+    tmp=$(mktemp -d)
+    export SCRATCHDIR="$tmp/scratch"
+    mkdir -p "$SCRATCHDIR/proj/subdir"
+    out=$(hv_announce_command "$SCRATCHDIR/proj/subdir" 'extract_hdfeos5.py "foo.he5" --all' 2>&1)
+    assert_contains "$out" 'In $SCRATCHDIR/proj/subdir/' "Stdout shows In line"
+    assert_contains "$out" 'Running: extract_hdfeos5.py "foo.he5" --all' "Stdout shows Running line"
+    logfile="$SCRATCHDIR/proj/subdir/log"
+    assert_file_exists "$logfile" "Directory log created"
+    assert_contains "$(cat "$logfile")" 'extract_hdfeos5.py "foo.he5" --all' "Command logged in directory log"
+    unset SCRATCHDIR
+    rm -rf "$tmp"
+    print_test_end "hv_announce_command logging"
+}
+
 test_horzvert_script_syntax_and_los_ingest_no_ref_lalo() {
     print_test_start "horzvert_timeseries.bash wiring" "bash -n passes; LOS ingest does not use --ref-lalo."
     local content _n
@@ -209,6 +239,7 @@ test_horzvert_script_syntax_and_los_ingest_no_ref_lalo() {
     assert_contains "$content" "Step 0d: Unify short-name vs corner-suffix HE5" "Documents HE5 rename step"
     assert_contains "$content" "hv_promote_short_he5_to_corner_filename" "Uses MintPy/MiaplPy HE5 rename helper"
     assert_contains "$content" "reference_point_hdfeos5.bash" "Calls reference_point_hdfeos5.bash"
+    assert_contains "$content" "hv_announce_command" "Uses hv_announce_command before subprocesses"
     assert_not_contains "$content" 'ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE1" --ref-lalo' "LOS ingest file1 without --ref-lalo"
     assert_not_contains "$content" 'ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE2" --ref-lalo' "LOS ingest file2 without --ref-lalo"
     print_test_end "horzvert_timeseries.bash wiring"
@@ -228,6 +259,8 @@ test_hv_promote_long_with_older_short_sibling_keeps_long
 test_hv_promote_mintpy_short_to_corner_name
 test_hv_promote_mintpy_long_with_newer_short_sibling
 test_hv_promote_mintpy_double_placeholder_short_to_corner
+test_hv_scratchdir_display_path_under_scratch
+test_hv_announce_command_logs_to_dir
 test_horzvert_script_syntax_and_los_ingest_no_ref_lalo
 
 print_summary

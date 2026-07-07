@@ -310,9 +310,9 @@ Examples:
   Output: data_files.txt, *vert*.he5, *horz*.he5, maskTempCoh.h5, image_pairs.txt.
   Other: overlay.html, index.html (copy of overlay), matrix.html, insarmaps.log, urls.log, download_commands.txt. Overwritten/recreated; no backups.
   Logging: run_workflow-style lines (YYYYMMDD:HH-MM + ...) go to each input dataset mother log for the
-  full horzvert invocation and horzvert_timeseries.py. Each geocode.py line goes only to the project log
-  for that .he5 path (e.g. SantoriniSenA29/log vs SantoriniSenD109/log), using the file path, its
-  directory, or PWD when the project dir is on the path. CWD ./log unchanged.
+  full horzvert invocation. Each subprocess prints \"In \$SCRATCHDIR/.../\" (when under SCRATCHDIR) then
+  \"Running: ...\" and appends that line to the log file in the directory where the command runs
+  (e.g. .../network_delaunay_4/log for geocode/reference on an HE5 in that folder). CWD ./log unchanged.
     "
     printf "$helptext"
     exit 0
@@ -560,9 +560,10 @@ _hv_ref_paths=("$_hv_rf1")
 [[ "$_hv_rf1" != "$_hv_rf2" ]] && _hv_ref_paths+=("$_hv_rf2")
 for _hv_los in "${_hv_ref_paths[@]}"; do
     echo ""
-    echo "Re-referencing: $_hv_los"
-    _hv_ts="$(date +"%Y%m%d:%H-%M")"
-    append_hv_to_project_logs "${_hv_ts} + bash $(printf '%q' "$REF_PT_SCRIPT") $(printf '%q' "$_hv_los") --ref-lalo $(printf '%q' "$REF_LAT") $(printf '%q' "$REF_LON")"
+    _hv_los_dir=$(dirname "$_hv_los")
+    _hv_ref_cmd="bash $(printf '%q' "$REF_PT_SCRIPT") $(printf '%q' "$_hv_los") --ref-lalo $(printf '%q' "$REF_LAT") $(printf '%q' "$REF_LON")"
+    hv_announce_command "$_hv_los_dir" "$_hv_ref_cmd"
+    append_hv_to_project_logs "$(date +"%Y%m%d:%H-%M") + ${_hv_ref_cmd}"
     bash "$REF_PT_SCRIPT" "$_hv_los" --ref-lalo "$REF_LAT" "$REF_LON"
 done
 
@@ -664,10 +665,9 @@ geocode_if_needed() {
         return
     fi
 
-    echo ""
-    echo "Geocoding: $file"
-    echo "Running: geocode.py \"$file\" $GEOCODE_LALO_ARGS"
-    append_hv_geocode_log_for_file "$file" "$(date +"%Y%m%d:%H-%M") + geocode.py \"$file\" $GEOCODE_LALO_ARGS"
+    _hv_geo_cmd="geocode.py \"$file\" $GEOCODE_LALO_ARGS"
+    hv_announce_command "$file_dir" "$_hv_geo_cmd"
+    append_hv_geocode_log_for_file "$file" "$(date +"%Y%m%d:%H-%M") + ${_hv_geo_cmd}"
     geocode.py "$file" $GEOCODE_LALO_ARGS
 
     if [[ ! -f "$geo_out" ]]; then
@@ -725,9 +725,8 @@ CMD="horzvert_timeseries.py \"$FILE1_ABS\" \"$FILE2_ABS\""
 [[ -n "$stop_date" ]] && CMD="$CMD --end-date $stop_date"
 [[ -n "$period" ]] && CMD="$CMD --period $period"
 
-echo ""
-echo "Full horzvert_timeseries.py command (for verification):"
-echo "$CMD"
+_hv_hvz_dir="$ORIGINAL_DIR/$HORZVERT_DIR"
+hv_announce_command "$_hv_hvz_dir" "$CMD"
 append_hv_to_project_logs "$(date +"%Y%m%d:%H-%M") + ${CMD}"
 echo ""
 eval $CMD
@@ -764,13 +763,15 @@ echo "Step 4: Ingest into insarmaps"
 
 echo ""
 echo "##############################################"
-echo "ingest_insarmaps.bash $VERT_FILE"
+_hv_ingest_vert_cmd="ingest_insarmaps.bash $VERT_FILE"
+hv_announce_command "$ORIGINAL_DIR/$HORZVERT_DIR" "$_hv_ingest_vert_cmd"
 ingest_insarmaps.bash "$VERT_FILE"
 echo "$ORIGINAL_DIR/$HORZVERT_DIR/$VERT_FILE" >> $DATA_FILES_TXT
 
 echo ""
 echo "##############################################"
-echo "ingest_insarmaps.bash $HORZ_FILE"
+_hv_ingest_horz_cmd="ingest_insarmaps.bash $HORZ_FILE"
+hv_announce_command "$ORIGINAL_DIR/$HORZVERT_DIR" "$_hv_ingest_horz_cmd"
 ingest_insarmaps.bash "$HORZ_FILE"
 echo "$ORIGINAL_DIR/$HORZVERT_DIR/$HORZ_FILE" >> $DATA_FILES_TXT
 
@@ -804,10 +805,14 @@ if [[ $ingest_los_flag == "1" ]]; then
     # LOS files were re-referenced in Step 0c; ingest without --ref-lalo (hdfeos5_2json uses this .he5).
     ingest_dataset_opt1=$(get_ingest_dataset_opt "$ORIGINAL_RESOLVED_FILE1")
     if [[ -n "$ingest_dataset_opt1" ]]; then
-        echo "ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE1 --dataset $ingest_dataset_opt1"
+        _hv_ingest_los1_cmd="ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE1 --dataset $ingest_dataset_opt1"
+    else
+        _hv_ingest_los1_cmd="ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE1"
+    fi
+    hv_announce_command "$(dirname "$ORIGINAL_RESOLVED_FILE1")" "$_hv_ingest_los1_cmd"
+    if [[ -n "$ingest_dataset_opt1" ]]; then
         ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE1" --dataset "$ingest_dataset_opt1"
     else
-        echo "ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE1"
         ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE1"
     fi
     echo "$ORIGINAL_RESOLVED_FILE1" >> $DATA_FILES_TXT
@@ -816,10 +821,14 @@ if [[ $ingest_los_flag == "1" ]]; then
     echo "##############################################"
     ingest_dataset_opt2=$(get_ingest_dataset_opt "$ORIGINAL_RESOLVED_FILE2")
     if [[ -n "$ingest_dataset_opt2" ]]; then
-        echo "ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE2 --dataset $ingest_dataset_opt2"
+        _hv_ingest_los2_cmd="ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE2 --dataset $ingest_dataset_opt2"
+    else
+        _hv_ingest_los2_cmd="ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE2"
+    fi
+    hv_announce_command "$(dirname "$ORIGINAL_RESOLVED_FILE2")" "$_hv_ingest_los2_cmd"
+    if [[ -n "$ingest_dataset_opt2" ]]; then
         ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE2" --dataset "$ingest_dataset_opt2"
     else
-        echo "ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE2"
         ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE2"
     fi
     echo "$ORIGINAL_RESOLVED_FILE2" >> $DATA_FILES_TXT

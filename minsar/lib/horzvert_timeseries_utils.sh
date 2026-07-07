@@ -1,9 +1,54 @@
 # horzvert_timeseries_utils.sh
-# Sourced by minsar/bin/horzvert_timeseries.bash (not executed standalone).
+# Sourced by minsar/bin/horzvert_timeseries.bash and reference_point_hdfeos5.bash.
 #
 # Map a resolved geo_*.he5 path to its sibling radar-coded S1*.he5 when present.
 # Horzvert must re-reference and geocode from radar LOS; geo-only inputs without
 # a sibling are rejected.
+
+# User-facing path: $SCRATCHDIR/relative/... when under SCRATCHDIR, else absolute.
+hv_scratchdir_display_path() {
+    local path="$1"
+    local abs_dir scratch_abs rel
+
+    [[ -z "$path" ]] && return 0
+    abs_dir=$(realpath "$path" 2>/dev/null || echo "$path")
+    abs_dir="${abs_dir%/}/"
+
+    if [[ -n "${SCRATCHDIR:-}" ]]; then
+        scratch_abs=$(realpath "$SCRATCHDIR" 2>/dev/null || (cd "$SCRATCHDIR" && pwd))
+        scratch_abs="${scratch_abs%/}/"
+        if [[ "$abs_dir" == "$scratch_abs"* ]]; then
+            rel="${abs_dir#$scratch_abs}"
+            printf '$SCRATCHDIR/%s' "$rel"
+            return 0
+        fi
+    fi
+    printf '%s' "$abs_dir"
+}
+
+# Append one run_workflow-style line to log in the given directory.
+hv_append_dir_log() {
+    local dir="$1"
+    local line="$2"
+    local abs_dir
+
+    [[ -z "$line" || -z "$dir" ]] && return 0
+    abs_dir=$(realpath "$dir" 2>/dev/null || echo "$dir")
+    [[ -d "$abs_dir" ]] && echo "$line" >> "${abs_dir}/log"
+}
+
+# Print "In $SCRATCHDIR/..." then "Running: ..." and log to that directory's log.
+hv_announce_command() {
+    local work_dir="$1"
+    local cmd_line="$2"
+    local ts
+
+    [[ -z "$work_dir" || -z "$cmd_line" ]] && return 0
+    ts=$(date +"%Y%m%d:%H-%M")
+    echo "In $(hv_scratchdir_display_path "$work_dir")"
+    echo "Running: $cmd_line"
+    hv_append_dir_log "$work_dir" "${ts} + ${cmd_line}"
+}
 
 hv_he5_radar_los_path() {
     local f="$1"
