@@ -1,6 +1,6 @@
 # overlay.html Architecture Documentation
 
-**Last updated:** 2026-06-09 (debug table workflow + width tweak)
+**Last updated:** 2026-07-02 (background pre-warm replaced by single reconciler; see §8)
 
 ## Overview
 
@@ -136,18 +136,24 @@ Latest debug-table example (from this debugging session):
 | `periodSelectionSource` | How period was set: `'slider'`, `'chart-dot'`, `'iframe-sync'`, or null |
 | `baselineMissionDateRange` | Mission-wide first/last date (union of all datasets); used to detect "full period" vs narrowed |
 | `datasetDateRanges` | Per-dataset `first_date`/`last_date` from insarmaps postMessages |
-| `iframeSynced` / `iframePointSynced` | Per-iframe sync keys — skip reload if URL already matches |
-| `iframeWarmInFlight` | Background preload in progress |
+| `iframeLoadInFlight` | index → `{ url, at }` — canonical URL of an in-flight iframe load (cleared on onload; entries older than `BG_LOAD_STUCK_MS` treated as dead) |
+| `iframeLiveUrl` | index → last URL the iframe posted via `insarmaps-url-update` (absolute). `iframe.src` freezes at load time while the user interacts inside the iframe; staleness checks use `iframeEffectiveUrl()` = live URL ?? src. Cleared on reload; bare early-life URLs (no `startDataset`) are never recorded. `canonicalInsarmapsUrl()` normalizes insarmaps URL conventions (`autoColorScale=true` explicit, `minScale`/`maxScale` omitted at defaults, number formatting) so live URLs compare equal to overlay-built URLs |
+| `bgAppliedDates` | index → `{ startDate, endDate }` last applied to that iframe via `insarmaps-set-dates` (cleared on any reload of that iframe) |
 | `pendingDateSyncByIndex` | Awaiting `insarmaps-set-dates-applied` ack for narrowed dates |
 | `refAppliedForDateSyncByIndex` | Custom ref confirmed on iframe; gates date postMessage |
 | `activeSwitchTracking` | Per-switch debug outcome: refOk, datesOk (see §12) |
 
-### Sync keys
+### Staleness detection (no sync keys)
+
+There is no sync-key bookkeeping anymore. `iframe.src` is the source of truth for what a
+background iframe shows (the reconciler is the only writer), plus `bgAppliedDates` for dates
+applied via postMessage:
 
 ```javascript
-getSyncKey(params)      // view + display + dates + point + ref + colorscale
-getViewSyncKey(params)  // same as getSyncKey but without startDate/endDate
-getPointKey(params)     // pointLat/Lon + refPointLat/Lon only
+insarmapsUrlsEquivalent(a, b)               // canonical compare (sorted params, _t stripped, contour normalized)
+insarmapsUrlsEquivalentIgnoringDates(a, b)  // same but ignoring startDate/endDate (set-dates fast path)
+getSyncKey(params)                          // still used for lastSyncedKey message dedup only
+getPointKey(params)                         // pointLat/Lon + refPointLat/Lon only
 ```
 
 ---
@@ -157,10 +163,17 @@ getPointKey(params)     // pointLat/Lon + refPointLat/Lon only
 1. Fetch `insarmaps.log` (10s timeout; error → redirect back).
 2. Parse, sort, seed `baselineMissionDateRange` from template URLs.
 3. Create one `.panel` + iframe per dataset; only **active** iframe gets `src` immediately.
-4. On active `onload` → `scheduleWarmAll()` preloads background iframes.
+4. On active `onload` → `scheduleBackgroundSync(..., { immediate: true })` preloads all background iframes in parallel.
 5. Loading overlay hidden on first `insarmaps-url-update` or 15s timeout.
 
-Background iframes use `visibility: visible` + `z-index: -1` so they load without blocking the active view.
+Background iframes (dataset panels and TC period panels) are **occluded, never hidden**:
+`visibility: visible` + `z-index: -1` + `pointer-events: none`, stacked under the opaque active
+panel (`sendPanelToBack()`). Browsers render-throttle `visibility:hidden` cross-origin iframes
+(no `requestAnimationFrame` → Mapbox never fires `render` → tile loading and the
+`onceRendered`-based point/ref machinery stall until shown). Occluded-visible iframes keep
+rendering and finish loads/ref/point application in the background. During a switch that waits
+for a target load, the **previous** panel stays on top (pointer-events off) until
+`revealSelectedPanel()` swaps them (20s fallback reveal).
 
 ---
 
@@ -169,8 +182,11 @@ Background iframes use `visibility: visible` + `z-index: -1` so they load withou
 `selectDataset(index)`:
 
 1. Show/hide panels (instant).
-2. **If custom ref** (`hasCustomRefPoint`): `reloadDatasetIframe(index, 'switch-dataset-ref', 'refSwitch')` — **always force reload**.
-3. **Else**: `syncDatasetIframeOnSwitch(index)` — reload only if sync key stale.
+2. **If custom ref** (`hasCustomRefPoint`): first try the **`ref-warm-fast`** path — if the
+   target background already confirmed this ref (`backgroundRefWarmQualified`, §8), just
+   reveal + `insarmaps-set-dates`, no reload. Otherwise
+   `reloadDatasetIframe(index, 'switch-dataset-ref', 'refSwitch')` — force reload (two-phase).
+3. **Else**: `syncDatasetIframeOnSwitch(index)` — skip / set-dates / await-preload / reload (§8 table).
 4. postMessage `insarmaps-set-contour` to newly visible iframe.
 5. `beginSwitchTracking(from, to)` for debug logging.
 
@@ -238,8 +254,10 @@ Done: Asc has custom ref + narrowed period
 | `insarmaps-set-contour` | `{ value: true/false }` — no reload | `mainPage.js` |
 | `insarmaps-set-dates` | `{ startDate, endDate }` YYYYMMDD — cross-origin date apply | `mainPage.js` → `GraphsController.applyInsarDateRangeFromYyyymmdd()` |
 | `insarmaps-set-auto-color-scale` | `{ mode: 'true'\|'false', minScale?, maxScale? }` — URL `autoColorScale=true` when auto on; manual mode uses only `minScale`/`maxScale` (no `autoColorScale=false`) | `mainMap.setAutoColorScaleMode()` / `disableAutoColorScaleWithLimits()` |
+| `insarmaps-set-point` (2026-07) | `{ pointLat, pointLon }` — apply time-series point on the loaded map, no reload. Ack: `insarmaps-set-point-applied` `{ ok, reason }` (`not-ready` → overlay retries; no ack → overlay marks server unsupported and falls back to URL reloads) | `mainPage.js` → `mainMap.applyOverlayPointSelection(lat, lon, false)` |
+| `insarmaps-set-ref` (2026-07) | `{ refPointLat, refPointLon }` — apply custom ref on the loaded map (warm tiles, so more reliable than load-time URL ref). Receipt: `insarmaps-set-ref-received`; outcome via existing `insarmaps-ref-applied` / `insarmaps-ref-failed`. No receipt within 20s → overlay falls back to a URL reload | `mainPage.js` → `mainMap.applyOverlayPointSelection(lat, lon, true)` |
 
-**No `insarmaps-set-point` or `insarmaps-set-ref`** — point and ref must go in the **iframe URL** on reload.
+Point and ref also still load via the **iframe URL** (initial warm loads and all fallbacks).
 
 ---
 
@@ -283,7 +301,80 @@ Sends another `insarmaps-set-dates` when overlay rejects a widen. **Over-aggress
 
 ---
 
-## 8. Default-ref narrowed period — warm, drift pin, and seamless switch
+## 8. Background iframe sync — the reconciler (2026-07 rewrite)
+
+All pre-warm scheduling (`scheduleWarmAll`, `warmAllBackgroundIframes`, period warms,
+catch-up warms, urgent-warm reason strings, `iframeSynced`/`iframePointSynced` sync keys)
+was **removed** and replaced by a single reconciler:
+
+```
+any change to currentMapParams
+        │
+        ▼
+scheduleBackgroundSync(reason)          // one timer, 250ms debounce
+        │
+        ▼
+reconcileBackgroundIframes(reason)      // idempotent
+   for each non-active dataset iframe:
+     desiredUrl = buildInsarmapsUrl(desiredBackgroundParams())
+     1. in-flight load already = desiredUrl        → leave it
+     2. in-flight load stale                       → restart with desiredUrl
+     3. view/display differ (URL compare ignoring
+        dates+point+ref, and colorscale/contours
+        under custom ref)                          → reload with desiredUrl
+     4. otherwise, three postMessage channels:
+        ref   — set-ref → wait insarmaps-ref-applied → complete recolor + dates
+                (completeBackgroundRefWarm); tracked in bgRefAppliedByIndex
+        point — set-point (ack insarmaps-set-point-applied); tracked in bgAppliedPoint
+        dates — set-dates (narrow AND widen-to-full); tracked in bgAppliedDates
+   each onload → reconcile again (chases state changed during the load)
+```
+
+Channel ordering invariant: while a ref is pending on an iframe, no dates/point messages are
+sent to it (`insarmaps-set-dates` before ref breaks the recolor — §19). All three channels
+degrade gracefully to URL reloads on servers without the 2026-07 insarmaps handlers.
+
+Key properties:
+
+- **Never drops a change.** The old code skipped warms while a preload was in flight and
+  relied on catch-up warms; the reconciler restarts stale in-flight loads and re-runs on
+  every onload, so backgrounds always converge to the latest state.
+- **Date-only changes never reload.** Slider/period changes propagate to backgrounds via
+  `insarmaps-set-dates` postMessage (insarmaps snaps per dataset). `bgAppliedDates` records
+  what was sent so the reconciler and switch path know dates are already applied.
+- **Deferrals instead of skips.** During `switchOpInFlight` the reconciler reschedules
+  itself (`BG_SYNC_RETRY_AFTER_SWITCH_MS`) instead of dropping the work; during Time
+  Controls it stays off (TC owns the period iframes; `restoreToBaselineState` reconciles
+  on exit).
+- **Custom ref**: backgrounds converge to the ref via `insarmaps-set-ref` (or refSwitch-kind
+  URL loads on first load / fallback). When a background posts `insarmaps-ref-applied`, the
+  overlay finishes the deferred recolor + period on it (`completeBackgroundRefWarm`) and
+  records it in `bgRefAppliedByIndex`. A dataset switch to a qualified target
+  (`backgroundRefWarmQualified`: ref ack coords match, view matches, point applied) skips
+  the refSwitch force reload entirely — path `ref-warm-fast`, instant reveal + set-dates.
+  Unqualified targets use the classic two-phase refSwitch reload (§5/§19).
+- `desiredBackgroundParams()` = `mapParamsForPeriodSync(mapParamsWithOverlayUserDisplay(currentMapParams))`
+  + canonical user ref coords + `mapParamsForIframeLoad(refSwitch|crossDataset)`.
+
+### Dataset switch (default ref) — `syncDatasetIframeOnSwitch`
+
+| Target state | Action | Path |
+|---|---|---|
+| Preload with current params in flight | reveal when it loads (+ set-dates after load) | `await-preload` |
+| View matches (URL ignoring selections+dates), ref state OK, dates applied | nothing — instant show/hide | `skip-synced` |
+| View + ref OK, dates differ | `insarmaps-set-dates` postMessage | `set-dates` |
+| Anything else (view/display changed, or stale custom ref) | full reload | `crossDataset-reload` |
+
+Point and ref are judged via **channel state** (`bgAppliedPoint`/`bgRefAppliedByIndex` with
+`coordsClose` tolerance), never via URL strings — set-point/set-ref coords get snapped per
+dataset, so URL string equality would mark every postMessage-synced iframe stale. A stale
+point alone never forces a reload at switch: `syncPointToIframeIfStale` re-sends set-point
+right after the sync decision.
+
+Because the reconciler keeps backgrounds current continuously, the common case is
+`skip-synced` (instant) or `set-dates` (no reload flash).
+
+## 8b. Default-ref narrowed period — drift pin and set-dates (history)
 
 ### Problem (2026 debug)
 
@@ -295,26 +386,23 @@ With **default ref** and a slider-narrowed period, Desc→Asc switch showed: nar
 2. **URL date mismatch** — Active Desc iframe often has **no** `startDate`/`endDate` in `iframe.src` after slider use (dates live in insarmaps internal state only). `syncDatasetIframeOnSwitch` compared sync keys but not URL dates, or skipped reload while content was stale.
 3. **Cross-dataset calendar dates** — The same calendar range does not mean the same URL dates on Desc vs Asc; insarmaps snaps per dataset inside `applyInsarDateRangeFromYyyymmdd()`.
 
-### Three-layer fix (default ref only)
+### Current mechanism (post 2026-07 rewrite)
 
 | Layer | Mechanism | Purpose |
 |-------|-----------|---------|
-| **Pin intent** | `rejected-iframe-drift-kept-slider-narrow` in `resolveDatesFromIframeUpdate()` | After slider capture (`periodSelectionSource === 'slider'`), reject acquisition snap on `active-postMessage`; keep `userNarrowedDateRange` |
-| **Pre-warm** | `schedulePeriodBackgroundWarm()` / `flushPeriodBackgroundWarm()` | Reload **background** iframes with `mapParamsForPeriodSync()` (uses pinned `userNarrowedDateRange`). Reason suffix `:period` bypasses preload-in-progress skips. `iframeSynced` committed on **onload**, not on `setIframeSrc` start |
-| **Switch** | `syncDatasetIframeOnSwitch()` set-dates fast path | If view params match (`getViewSyncKey`) and period is narrowed: `insarmaps-set-dates` postMessage instead of full reload — **including when sync-key skip would apply** (calendar URL dates ≠ per-dataset snapped display). Insarmaps snaps per dataset without iframe flash |
+| **Pin intent** | `rejected-acquisition-snap-kept-user` in `resolveDatesFromIframeUpdate()` | After slider capture (`periodSelectionSource === 'slider'`), reject acquisition snap on non-user paths; keep `userNarrowedDateRange` |
+| **Background sync** | reconciler (§8) | Date-only diffs propagate to backgrounds via `insarmaps-set-dates` postMessage; anything else reloads with `mapParamsForPeriodSync()` dates in the URL |
+| **Switch** | `syncDatasetIframeOnSwitch()` (§8 table) | `skip-synced` when `bgAppliedDates` already matches; else set-dates postMessage; else reload |
 
 **Custom ref is unchanged** — still `refSwitch` reload → wait `insarmaps-ref-applied` → `insarmaps-set-dates`. Drift pin and set-dates fast path are gated on `!hasCustomRefPoint()`.
 
 ### Active-iframe postMessage flow
 
-When the **active** iframe changes pan/zoom/scales/dates (not contour-only):
+When the **active** iframe changes pan/zoom/scales/dates:
 
-1. **Immediate path** (`active-postMessage`): default-ref period changes → `schedulePeriodBackgroundWarm()` after 150ms (`PERIOD_WARM_DEBOUNCE_MS`). Updates `currentMapParams` when `datesChanged` even if `backgroundsWarmed && !keyChanged` (period-only slider moves after initial warm).
-2. **Debounced path** (1500ms `SYNC_DEBOUNCE_MS`): `flushPeriodBackgroundWarm()` if `backgroundsPeriodWarmNeeded()` (checks sync keys, URL dates, in-flight loads).
-3. Update `currentMapParams` (dates through `resolveDatesFromIframeUpdate()`).
-4. Active iframe is **never** reloaded for period-only changes (default ref).
-
-**Contour-only:** postMessage `insarmaps-set-contour` to all iframes — no reload.
+1. **Immediate path** (`active-postMessage`): merge params (dates through `resolveDatesFromIframeUpdate()`, display through `recordOverlayUserDisplayFromMerge()`/`preserveOverlayDisplayParamsDuringSwitch()`), update `currentMapParams` + overlay URL, then `scheduleBackgroundSync()` (250ms).
+2. **Debounced path** (1500ms `SYNC_DEBOUNCE_MS`): full processing (dataset date ranges, TC period iframes) plus a safety-net `scheduleBackgroundSync()` — idempotent when already in sync.
+3. Active iframe is **never** reloaded for period-only changes (default ref).
 
 **Cooldown:** Non-active iframe messages ignored for 3s after a sync (`SYNC_COOLDOWN_MS`). Active iframe bypasses cooldown.
 
@@ -323,10 +411,9 @@ When the **active** iframe changes pan/zoom/scales/dates (not contour-only):
 | Function | Role |
 |----------|------|
 | `mapParamsForPeriodSync()` | Overlay `currentMapParams` with pinned `userNarrowedDateRange` dates |
-| `backgroundsPeriodWarmNeeded()` | True if any background has wrong sync key, wrong URL dates, or warm in-flight |
-| `iframeDatesMatchExpected()` | Compare `iframe.src` query dates to expected YYYYMMDD |
-| `applyDatesToIframeOnSwitch()` | postMessage `insarmaps-set-dates` on dataset switch (default ref fast path) |
-| `maybeCatchupWarmAfterLoad()` | After background onload, schedule period catch-up warm if still stale |
+| `desiredBackgroundParams()` | Params every background iframe converges to (§8) |
+| `applyDatesToIframeOnSwitch()` | postMessage `insarmaps-set-dates` (switch fast path and background date sync) |
+| `bgLoadInFlightEntry()` | Live in-flight load entry for an iframe (dead entries auto-cleared) |
 
 ---
 
@@ -428,6 +515,8 @@ Overlay alone is insufficient for custom ref + narrowed dates. Insarmaps must pr
 | `applyInsarDateRangeFromYyyymmdd()` | `GraphsController.js` | Slider + chart navigator sync; `_programmaticDateSync` flag to avoid feedback loops. |
 | Deferred ref until tiles loaded | `mainMap.js` | `applyStartingDatasetPointSelections` (waits for `queryRenderedFeatures` before synthetic click). |
 | `insarmaps-ref-failed` postMessage | `mainMap.js` | When URL ref apply exhausts retries. |
+| `applyOverlayPointSelection(lat, lon, isRef, cb)` (2026-07) | `mainMap.js` | Synthetic click on the loaded map for `insarmaps-set-point` / `insarmaps-set-ref`. |
+| `insarmaps-set-point` / `insarmaps-set-ref` handlers (2026-07) | `mainPage.js` | Point/ref sync without reload; acks `insarmaps-set-point-applied` / `insarmaps-set-ref-received`. |
 
 Deploy overlay to **data server**; deploy insarmaps JS to **insarmaps server** (different hosts).
 
@@ -556,12 +645,13 @@ Pure UI toggle for registering start/end dates from chart dot clicks. No reload 
 
 | User action | Overlay response | Iframes reloaded? |
 |-------------|------------------|-----------------|
-| Pan/zoom/scales/background/opacity/slider | Debounced sync → reload **other** datasets | Others only |
-| Contour toggle | `insarmaps-set-contour` to **all** | None |
-| Dataset switch, **no custom ref**, narrowed period | Show/hide; set-dates if view matches, else reload | Target only if view stale |
-| Dataset switch, **no custom ref**, full period | Show/hide; reload target if stale | Target if stale |
-| Dataset switch, **custom ref** | `refSwitch` reload → wait ref → `set-dates` postMessage | Target always |
-| Point/ref click | Warm background iframes with new URL | Backgrounds |
+| Pan/zoom/scales/background/opacity/contour/pixelSize | reconciler (250ms) → reload **other** datasets | Others only |
+| Period slider / chart period change (default ref) | reconciler → `insarmaps-set-dates` postMessage to others | None |
+| Dataset switch, **no custom ref** | Show/hide; §8 table (`skip-synced` / `set-dates` / `await-preload` / reload) | Target only if stale |
+| Dataset switch, **custom ref**, target ref-warmed | `ref-warm-fast`: reveal + `set-dates` postMessage | None |
+| Dataset switch, **custom ref**, target not warmed | `refSwitch` reload → wait ref → `set-dates` postMessage | Target |
+| Point click | reconciler → `insarmaps-set-point` postMessage to others | None (reload only as fallback) |
+| Ref set/moved | reconciler → `insarmaps-set-ref` → ref-applied → recolor+dates on backgrounds | None (reload only as fallback) |
 | Time Controls period step | Show/hide period panel | None |
 
 ---
@@ -576,20 +666,19 @@ Pure UI toggle for registering start/end dates from chart dot clicks. No reload 
 | `mapParamsForIframeLoad()` | Strip params per load kind (refSwitch critical) |
 | `selectDataset()` | Dataset switch orchestration |
 | `reloadDatasetIframe()` | Force iframe reload with reason + loadKind |
-| `syncDatasetIframeOnSwitch()` | Default ref: skip reload, set-dates fast path, or full reload |
-| `scheduleWarmAll()` / `warmAllBackgroundIframes()` | Background preload |
+| `syncDatasetIframeOnSwitch()` | Default ref: skip / set-dates / await-preload / reload (§8 table) |
+| `scheduleBackgroundSync()` / `reconcileBackgroundIframes()` | Background sync reconciler (§8) |
+| `loadBackgroundIframe()` | One background load towards the desired URL; onload re-reconciles |
+| `desiredBackgroundParams()` | Params backgrounds converge to |
 | `resolveDatesFromIframeUpdate()` | Accept/reject date changes from iframes |
 | `captureUserNarrowedDateRange()` | Store user's narrowed period |
-| `mapParamsForPeriodSync()` | Merge pinned `userNarrowedDateRange` into params for warm/switch |
-| `backgroundsPeriodWarmNeeded()` | Whether backgrounds need period re-warm |
-| `applyDatesToIframeOnSwitch()` | Default-ref switch: postMessage dates without reload |
+| `mapParamsForPeriodSync()` | Merge pinned `userNarrowedDateRange` into params for sync/switch |
+| `applyDatesToIframeOnSwitch()` | postMessage dates without reload (switch + background date sync) |
 | `scheduleNarrowedDateSync()` / `tryApplyNarrowedDatesToIframe()` | Custom-ref phase-2 date postMessage |
-| `schedulePeriodBackgroundWarm()` / `flushPeriodBackgroundWarm()` | Default-ref period pre-warm of background datasets |
-| `maybeCatchupWarmAfterLoad()` | Period catch-up warm after background iframe onload |
 | `maybeStartDateSyncAfterRef()` | Start dates after `insarmaps-ref-applied` |
 | `shouldReassertAfterDateReject()` | Guard against reassert feedback loops |
 | `beginSwitchTracking()` / `logSwitchOutcomePart()` | Debug switch tables |
-| `getSyncKey()` / `getViewSyncKey()` / `getPointKey()` | Staleness detection |
+| `insarmapsUrlsEquivalent()` / `insarmapsUrlsEquivalentIgnoringDates()` | Staleness detection (canonical URL compare) |
 
 ---
 
@@ -737,7 +826,7 @@ Banner clears when `insarmaps-ref-applied` is accepted and `clearRefRecoveryStat
 
 Problems in the current design that a clean implementation could address:
 
-1. **Synthetic click is the wrong abstraction** — Simulate click only because insarmaps has no `insarmaps-set-ref` API. A rewrite should add an explicit server-side or API-level "re-reference dataset to lat/lon" that does not depend on `queryRenderedFeatures` on a hidden iframe.
+1. **Synthetic click is the wrong abstraction** — Simulate click only because insarmaps has no `insarmaps-set-ref` API. A rewrite should add an explicit server-side or API-level "re-reference dataset to lat/lon" that does not depend on `queryRenderedFeatures` on a hidden iframe. *(2026-07: partially addressed — `insarmaps-set-ref` now applies the ref via synthetic click on already-loaded (warm) tiles, avoiding the cold-load failure mode; a true server-side re-reference API remains future work.)*
 
 2. **`insarmaps-ref-applied` semantics are ambiguous** — Today it means "click path finished", not "map tiles re-referenced". Split into `ref-displacements-ready` and `ref-map-recolored`, or block ref-applied until `refreshDatasetWithNewReferencePoint` confirms.
 
@@ -785,7 +874,7 @@ Problems in the current design that a clean implementation could address:
 
 If rebuilding from scratch with a new implementation:
 
-1. **One iframe per dataset**, background preload after active load.
+1. **One iframe per dataset**; a single reconciler keeps backgrounds converged to `currentMapParams` (§8) — no per-reason warm scheduling.
 2. **Single `currentMapParams` object** plus explicit `userNarrowedDateRange` for narrowed-period semantics.
 3. **Two sync channels:** URL reload for bulk state; postMessage for contour + dates-after-ref only.
 4. **Custom ref switch = two phases:** ref URL without dates → wait `insarmaps-ref-applied` → `insarmaps-set-dates`.
