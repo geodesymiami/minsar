@@ -133,11 +133,14 @@ class OutControl:
         stdout_files = glob.glob(self.run_file + '*.o')
         dir_name = os.path.dirname(stdout_files[0])
         out_folder = dir_name + '/stdout_' + os.path.basename(self.run_file)
-        if not os.path.isdir(out_folder):
-            os.mkdir(out_folder)
-        else:
-            shutil.rmtree(out_folder)
-            os.mkdir(out_folder)
+        if os.path.lexists(out_folder):
+            if os.path.islink(out_folder):
+                os.unlink(out_folder)
+            elif os.path.isdir(out_folder):
+                shutil.rmtree(out_folder)
+            else:
+                os.remove(out_folder)
+        os.makedirs(out_folder, exist_ok=True)
 
         for item in stdout_files:
             shutil.move(item, out_folder)

@@ -1006,11 +1006,14 @@ def move_out_job_files_to_stdout(run_file):
 
     dir_name = os.path.dirname(run_file)
     out_folder = dir_name + '/stdout_' + os.path.basename(run_file)
-    if not os.path.exists(out_folder):
-        os.makedirs(out_folder, exist_ok=True)
-    else:
-        shutil.rmtree(out_folder)
-        os.makedirs(out_folder, exist_ok=True)
+    if os.path.lexists(out_folder):
+        if os.path.islink(out_folder):
+            os.unlink(out_folder)
+        elif os.path.isdir(out_folder):
+            shutil.rmtree(out_folder)
+        else:
+            os.remove(out_folder)
+    os.makedirs(out_folder, exist_ok=True)
 
     if len(stdout_files) >= 1:           #changed 9/2020. was 2 but unclear why
         for item in stdout_files:
