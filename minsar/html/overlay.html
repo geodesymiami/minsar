@@ -560,8 +560,12 @@
             return normalizeContourValue(mapParams?.contour) || INSARMAP_URL_DEFAULTS.contours;
         }
 
-        function preserveOverlayDisplayParamsDuringSwitch(merged, authoritative) {
-            if (Date.now() >= datasetSwitchSuppressUntil && !switchOpInFlight) {
+        // Display params from an untrusted post are boot defaults (a fresh document still
+        // applying its URL params and our broadcasts), not state: keep the overlay's
+        // authoritative values. Trust is per post — the child marks `settled` once its
+        // dataset boot completes — not a time window.
+        function preserveDisplayParamsFromUntrustedPost(merged, authoritative, trustedDisplayPost) {
+            if (trustedDisplayPost) {
                 return merged;
             }
             const preserved = {
@@ -580,9 +584,7 @@
                 scaleStateFromMapParams(merged).minScale !== scaleStateFromMapParams(preserved).minScale ||
                 scaleStateFromMapParams(merged).maxScale !== scaleStateFromMapParams(preserved).maxScale ||
                 effectiveColorscale(merged) !== effectiveColorscale(preserved)) {
-                __odt_hook('dbgDisplayLog', 'overlay.html:preserveDisplay', 'preserved display params during switch', {
-                    suppressUntil: datasetSwitchSuppressUntil,
-                    switchOpInFlight,
+                __odt_hook('dbgDisplayLog', 'overlay.html:preserveDisplay', 'preserved display params from unsettled post', {
                     rawContour: effectiveContour(merged),
                     rawPixelSize: merged.pixelSize,
                     rawScale: scaleStateFromMapParams(merged),
@@ -887,6 +889,13 @@
                     u.searchParams.delete('contour');
                     u.searchParams.delete('contours');
                 }
+                // Color scale is postMessage-synced: per-dataset flavors (permissible rounding,
+                // displacement-mode yearsDiff scaling) must not mark iframes stale.
+                if (options && options.ignoreScale) {
+                    u.searchParams.delete('minScale');
+                    u.searchParams.delete('maxScale');
+                    u.searchParams.delete('autoColorScale');
+                }
                 const contourRaw = u.searchParams.get('contour') || u.searchParams.get('contours');
                 u.searchParams.delete('contour');
                 u.searchParams.delete('contours');
@@ -929,11 +938,15 @@
                 canonicalInsarmapsUrl(urlB, { ignoreDates: true });
         }
 
-        // Same view/display; dates, point, and ref may differ (postMessage sync candidates).
-        // Under custom ref, colorscale/contours are also ignored (stripped from those URLs).
+        // Same view/display; dates, point, ref, and color scale may differ (postMessage sync
+        // candidates). Under custom ref, colorscale/contours are also ignored (stripped URLs).
         function insarmapsUrlsEquivalentIgnoringSelections(urlA, urlB, ignoreColorscaleContours) {
             if (!urlA || !urlB) return false;
-            const opts = { ignoreSelections: true, ignoreColorscaleContours: !!ignoreColorscaleContours };
+            const opts = {
+                ignoreSelections: true,
+                ignoreScale: true,
+                ignoreColorscaleContours: !!ignoreColorscaleContours
+            };
             return canonicalInsarmapsUrl(urlA, opts) === canonicalInsarmapsUrl(urlB, opts);
         }
 
@@ -1000,7 +1013,6 @@
         const SYNC_COOLDOWN_MS = 3000;
         let syncTimeout = null;
         let lastSyncedKey = '';
-        let datasetSwitchSuppressUntil = 0; // block cross-iframe reloads briefly after dataset switch
         // Background iframe sync: one reconciler chases currentMapParams (reconcileBackgroundIframes).
         // iframe.src is the source of truth for what a background iframe shows; iframeLoadInFlight
         // covers the window between setting src and onload. No sync-key bookkeeping.
@@ -1024,6 +1036,9 @@
         const bgRefFailedAt = new Map();      // index -> { at, refPointLat, refPointLon } last background insarmaps-ref-failed
         const setPointAckTimerByIndex = new Map(); // index -> fallback timer while set-point support unknown
         const setPointAttemptsByIndex = new Map(); // index -> { key: 'lat,lon', count } failed sends
+        // Color scale syncs via insarmaps-set-auto-color-scale postMessage (child no-ops when
+        // unchanged); scale params are ignored in URL staleness compares like dates/point/ref.
+        const bgAppliedScale = new Map();     // index -> { autoColorScale, minScale, maxScale } last sent
         const SET_POINT_MAX_ATTEMPTS = 3;     // then fall back to a URL reload for that iframe
         let setPointSupport = 'unknown';      // 'unknown' | 'yes' | 'no' — probed by the first set-point ack
         // Generous: a busy (recoloring) iframe acks late; only a server without the handler
@@ -1120,8 +1135,11 @@
             broadcastColorscaleToIframes(index);
         }
 
-        function maybeReapplyDisplayParamsToActiveIframe(senderIndex, rawMerged) {
-            if (!(Date.now() < datasetSwitchSuppressUntil || switchOpInFlight)) return;
+        // Heal a booting active iframe that posted defaults: re-broadcast the overlay's
+        // display state to it. Only untrusted (unsettled) posts qualify — a settled post
+        // showing different display params is real state, handled by the merge paths.
+        function maybeReapplyDisplayParamsToActiveIframe(senderIndex, rawMerged, trustedDisplayPost) {
+            if (trustedDisplayPost) return;
             if (senderIndex !== activeDatasetIdx) return;
             if (!displayParamsMismatchExpected(rawMerged)) return;
             const count = displayReapplyCountByIndex.get(senderIndex) || 0;
@@ -1170,9 +1188,9 @@
             return p;
         }
 
-        function recordOverlayUserDisplayFromMerge(prevParams, merged) {
-            // Child iframes post MintPy defaults after reload during switch; do not overwrite user intent.
-            if (Date.now() < datasetSwitchSuppressUntil || switchOpInFlight) {
+        function recordOverlayUserDisplayFromMerge(prevParams, merged, trustedDisplayPost) {
+            // Booting iframes post MintPy defaults; never record an unsettled post as user intent.
+            if (!trustedDisplayPost) {
                 return;
             }
             const contourChanged = effectiveContour(prevParams) !== effectiveContour(merged);
@@ -2072,9 +2090,11 @@
             return false;
         }
 
-        function captureUserNarrowedDateRange(startDate, endDate, senderIndex, source) {
+        function captureUserNarrowedDateRange(startDate, endDate, senderIndex, source, postSettled) {
             const idx = senderIndex ?? activeDatasetIdx;
-            if (Date.now() < datasetSwitchSuppressUntil && userNarrowedDateRange) {
+            // Dates in an unsettled post are boot noise (full range before URL dates apply);
+            // they must not replace an existing user narrow. Non-message callers omit the flag.
+            if (postSettled === false && userNarrowedDateRange) {
                 return false;
             }
             if (!shouldCaptureAsUserNarrow(idx, startDate, endDate, source)) {
@@ -2097,7 +2117,7 @@
             return true;
         }
 
-        function resolveDatesFromIframeUpdate(senderIndex, rawStartDate, rawEndDate, path) {
+        function resolveDatesFromIframeUpdate(senderIndex, rawStartDate, rawEndDate, path, postSettled) {
             const resolved = {
                 startDate: rawStartDate ?? currentMapParams.startDate,
                 endDate: rawEndDate ?? currentMapParams.endDate,
@@ -2112,7 +2132,7 @@
 
             if (senderIndex >= 0 && senderIndex !== activeDatasetIdx) {
                 if (shouldCaptureAsUserNarrow(senderIndex, rawStartDate, rawEndDate, 'background-narrow')) {
-                    captureUserNarrowedDateRange(rawStartDate, rawEndDate, senderIndex, 'background-narrow');
+                    captureUserNarrowedDateRange(rawStartDate, rawEndDate, senderIndex, 'background-narrow', postSettled);
                     resolved.startDate = userNarrowedDateRange.startDate;
                     resolved.endDate = userNarrowedDateRange.endDate;
                     resolved.action = 'accepted-background-narrow';
@@ -2128,10 +2148,10 @@
 
             if (senderIndex === activeDatasetIdx) {
                 const userDrivenPath = (path === 'url-update-debounced' || path === 'active-postMessage');
-                if (Date.now() < datasetSwitchSuppressUntil && userNarrowedDateRange) {
+                if (postSettled === false && userNarrowedDateRange) {
                     resolved.startDate = userNarrowedDateRange.startDate;
                     resolved.endDate = userNarrowedDateRange.endDate;
-                    resolved.action = 'rejected-switch-suppress-kept-user';
+                    resolved.action = 'rejected-unsettled-kept-user';
                     return resolved;
                 }
                 if (isDatasetFullDateRangeForIndex(senderIndex, rawStartDate, rawEndDate) ||
@@ -2177,7 +2197,7 @@
                     existingUserPeriod: userNarrowedDateRange ? { ...userNarrowedDateRange } : null
                 }, 'R');
                 // #endregion
-                if (captureUserNarrowedDateRange(rawStartDate, rawEndDate, senderIndex, periodSource)) {
+                if (captureUserNarrowedDateRange(rawStartDate, rawEndDate, senderIndex, periodSource, postSettled)) {
                     resolved.startDate = rawStartDate;
                     resolved.endDate = rawEndDate;
                     resolved.action = 'captured-user-narrow';
@@ -2867,12 +2887,43 @@
                 Math.abs(parseFloat(aLon) - parseFloat(bLon)) < 1.2e-4;
         }
 
+        // Insarmaps snaps manual limits to "permissible" rounded values and, in displacement
+        // coloring, rescales them by each dataset's time span — the same visual scale echoes
+        // back as slightly different numbers. 2% relative tolerance absorbs those flavors.
+        function scaleValuesClose(a, b) {
+            const fa = parseFloat(a), fb = parseFloat(b);
+            if (isNaN(fa) || isNaN(fb)) return String(a ?? '') === String(b ?? '');
+            return Math.abs(fa - fb) <= Math.max(Math.abs(fa), Math.abs(fb)) * 0.02 + 1e-9;
+        }
+
+        function scaleStatesClose(a, b) {
+            if (!a || !b) return false;
+            if (a.autoColorScale !== b.autoColorScale) return false;
+            if (a.autoColorScale === 'true') return true;
+            return scaleValuesClose(a.minScale, b.minScale) && scaleValuesClose(a.maxScale, b.maxScale);
+        }
+
+        function scaleStateFromUrl(url) {
+            if (!url) return null;
+            try {
+                const u = new URL(url, window.location.href);
+                return resolveAutoColorScaleState(
+                    u.searchParams.get('minScale'), u.searchParams.get('maxScale'),
+                    autoColorScaleParamFromInsarmapsUrl(u.searchParams)
+                );
+            } catch (e) {
+                return null;
+            }
+        }
+
         // Any iframe reload invalidates everything applied to it via postMessage,
         // and its last live URL (the fresh document will post a new one).
         function noteIframeReloadStarted(index) {
             iframeLiveUrl.delete(index);
             bgAppliedDates.delete(index);
             bgAppliedPoint.delete(index);
+            bgAppliedScale.delete(index);
+            displayReapplyCountByIndex.delete(index); // fresh document, fresh reapply budget
             setPointAttemptsByIndex.delete(index);
             bgRefAppliedByIndex.delete(index);
             bgRefPendingByIndex.delete(index);
@@ -2951,6 +3002,30 @@
             }
             console.log(`[overlay] iframe SET-REF ${iframeLabelForLog(index)}`, { refLat, refLon });
             bgRefPendingByIndex.set(index, { at: Date.now(), received: false });
+            return true;
+        }
+
+        // Fire-and-forget (child no-ops when the scale already matches): unlike set-point there
+        // is no ack, but every dataset switch re-broadcasts scale before reveal, so a message
+        // lost to a still-booting iframe self-heals at the next switch.
+        function sendSetScaleToIframe(index, scaleState) {
+            const iframe = document.getElementById(`iframe${index}`);
+            if (!iframe || !iframe.contentWindow) return false;
+            const msg = { type: 'insarmaps-set-auto-color-scale', mode: scaleState.autoColorScale };
+            if (scaleState.autoColorScale === 'false') {
+                msg.minScale = scaleState.minScale;
+                msg.maxScale = scaleState.maxScale;
+            }
+            try {
+                iframe.contentWindow.postMessage(msg, '*');
+            } catch (e) {
+                return false;
+            }
+            bgAppliedScale.set(index, {
+                autoColorScale: scaleState.autoColorScale,
+                minScale: scaleState.minScale,
+                maxScale: scaleState.maxScale
+            });
             return true;
         }
 
@@ -3200,6 +3275,16 @@
                     // Point deselected: insarmaps has no unselect API — reload for cleanliness.
                     loadBackgroundIframe(index, desiredUrl, `${reason}:point-cleared`);
                     return;
+                }
+                // ── Scale channel. minScale/maxScale/autoColorScale are ignored by the URL
+                // compare above (per-dataset flavors: permissible-value rounding, displacement
+                // mode scaling by time span); a set-auto-color-scale repaint syncs them instead.
+                const wantScale = scaleStateFromMapParams(desired);
+                const haveScale = bgAppliedScale.get(index) || scaleStateFromUrl(effUrl);
+                if (!haveScale || !scaleStatesClose(haveScale, wantScale)) {
+                    console.log(`[overlay] iframe SET-SCALE ${iframeLabelForLog(index)}  reason=${reason}`, wantScale);
+                    sendSetScaleToIframe(index, wantScale);
+                    // fall through: dates can sync alongside the scale
                 }
                 // ── Dates channel. Under custom ref the URL carries no dates (refSwitch kind);
                 // the target period is what phase-2 of a switch would apply.
@@ -3952,7 +4037,6 @@
                         currentMapParams.startDate = userNarrowedDateRange.startDate;
                         currentMapParams.endDate = userNarrowedDateRange.endDate;
                     }
-                    datasetSwitchSuppressUntil = Date.now() + SYNC_COOLDOWN_MS;
                     console.log(`[overlay] dataset SWITCH  ${iframeLabelForLog(previousIdx)} → ${iframeLabelForLog(index)}  (show/hide; point sync if stale)`);
                     clearRefAppliedForDateSync(index);
                     pointAfterRefInFlightByIndex.clear();
@@ -3967,8 +4051,7 @@
                     currentDataset = iframeDatasets.get(index);
                     
                     const targetUrlBeforeSwitch = document.getElementById(`iframe${index}`)?.src || '';
-                    displayReapplyCountByIndex.delete(index);
-                    
+
                     // Check if time controls are active (defined later, use typeof check)
                     const isTimeControlsActive = (typeof timeControlsActive !== 'undefined' && timeControlsActive);
                     
@@ -4339,6 +4422,14 @@
                     }
                     if (event.data.type !== 'insarmaps-url-update') return;
 
+                    // Per-post trust (no time windows): the child marks posts settled:false
+                    // while its document is still booting (dataset loading, URL params being
+                    // applied) — display/date values in those posts are boot defaults. A
+                    // user-made display change (userDisplayChange) is real intent even
+                    // mid-boot. Posts from older insarmaps without the marker are trusted.
+                    const postSettled = event.data.settled !== false;
+                    const trustedDisplayPost = postSettled || event.data.userDisplayChange === true;
+
                     const msgFirstDate = event.data.firstDate || event.data.first_date;
                     const msgLastDate = event.data.lastDate || event.data.last_date;
                     if (msgFirstDate && msgLastDate) {
@@ -4398,9 +4489,9 @@
                                 if (merged.pointLat != null && merged.pointLon != null) {
                                     recordKnownPointCoords(quickSenderIndex, merged.pointLat, merged.pointLon, 'active-postMessage');
                                 }
-                                maybeReapplyDisplayParamsToActiveIframe(quickSenderIndex, merged);
+                                maybeReapplyDisplayParamsToActiveIframe(quickSenderIndex, merged, trustedDisplayPost);
                                 const dateResolved = resolveDatesFromIframeUpdate(
-                                    quickSenderIndex, merged.startDate, merged.endDate, 'active-postMessage'
+                                    quickSenderIndex, merged.startDate, merged.endDate, 'active-postMessage', postSettled
                                 );
                                 logDateResolve(quickSenderIndex, merged.startDate, merged.endDate, dateResolved, 'active-postMessage');
                                 merged.startDate = dateResolved.startDate;
@@ -4421,6 +4512,18 @@
                                     merged.refPointLat = currentMapParams.refPointLat;
                                     merged.refPointLon = currentMapParams.refPointLon;
                                 }
+                                // And the scale echo (permissible rounding / displacement-mode
+                                // per-dataset flavors): same scale keeps our values.
+                                const curScaleEcho = scaleStateFromMapParams(currentMapParams);
+                                if (scaleStatesClose(scaleStateFromMapParams(merged), curScaleEcho)) {
+                                    merged.autoColorScale = curScaleEcho.autoColorScale;
+                                    merged.minScale = curScaleEcho.minScale;
+                                    merged.maxScale = curScaleEcho.maxScale;
+                                } else {
+                                    console.log('[overlay] color scale CHANGED (active-postMessage)', {
+                                        from: curScaleEcho, to: scaleStateFromMapParams(merged)
+                                    });
+                                }
                                 if (getPointKey({ pointLat: merged.pointLat, pointLon: merged.pointLon }) !==
                                     getPointKey({ pointLat: currentMapParams.pointLat, pointLon: currentMapParams.pointLon })) {
                                     console.log('[overlay] point selection CHANGED (active-postMessage)', {
@@ -4439,10 +4542,11 @@
                                     if (merged.refPointLat && merged.refPointLon) {
                                         recordKnownRefCoords(quickSenderIndex, merged.refPointLat, merged.refPointLon, 'url-update');
                                     }
-                                    recordOverlayUserDisplayFromMerge(prevParams, merged);
-                                    const mergedForState = preserveOverlayDisplayParamsDuringSwitch(
+                                    recordOverlayUserDisplayFromMerge(prevParams, merged, trustedDisplayPost);
+                                    const mergedForState = preserveDisplayParamsFromUntrustedPost(
                                         mapParamsWithOverlayUserDisplay(merged),
-                                        mapParamsWithOverlayUserDisplay(prevParams)
+                                        mapParamsWithOverlayUserDisplay(prevParams),
+                                        trustedDisplayPost
                                     );
                                     currentMapParams = { ...mergedForState };
                                     // The active iframe genuinely shows these dates/point; keep the
@@ -4459,6 +4563,7 @@
                                             pointLon: currentMapParams.pointLon
                                         });
                                     }
+                                    bgAppliedScale.set(quickSenderIndex, scaleStateFromMapParams(currentMapParams));
                                     if (typeof updateAddPeriodButton === 'function') updateAddPeriodButton();
                                     const inTC = (typeof timeControlsActive !== 'undefined' && timeControlsActive);
                                     updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, inTC,
@@ -4604,12 +4709,27 @@
                         const mergedScaleState = resolveAutoColorScaleState(
                             minScale, maxScale, autoColorScaleParamFromInsarmapsUrl(params)
                         );
+                        // Only the ACTIVE iframe may change the color scale, and its echoes come
+                        // back in per-dataset flavors (permissible rounding, displacement-mode
+                        // scaling): within tolerance keep our state (see eager path).
+                        let pinnedScaleState = mergedScaleState;
+                        {
+                            const curScale = scaleStateFromMapParams(currentMapParams);
+                            if (!senderIsActive || scaleStatesClose(mergedScaleState, curScale)) {
+                                pinnedScaleState = curScale;
+                            } else {
+                                console.log('[overlay] color scale CHANGED (url-update-debounced)', {
+                                    from: curScale, to: mergedScaleState,
+                                    sender: senderIndex >= 0 ? iframeLabelForLog(senderIndex) : 'unknown'
+                                });
+                            }
+                        }
                         const rawStartDate = event.data.startDate ?? params.get('startDate') ?? currentMapParams.startDate;
                         const rawEndDate = event.data.endDate ?? params.get('endDate') ?? currentMapParams.endDate;
                         if (senderIndex >= 0) {
                             recordInsarmapsReportedDates(senderIndex, event.data, newUrlPath);
                         }
-                        const dateResolved = resolveDatesFromIframeUpdate(senderIndex, rawStartDate, rawEndDate, 'url-update-debounced');
+                        const dateResolved = resolveDatesFromIframeUpdate(senderIndex, rawStartDate, rawEndDate, 'url-update-debounced', postSettled);
                         logDateResolve(senderIndex, rawStartDate, rawEndDate, dateResolved, 'url-update-debounced');
                         const startDate = dateResolved.startDate;
                         const endDate = dateResolved.endDate;
@@ -4619,9 +4739,9 @@
                         const prevContourNorm = normalizeContourValue(currentMapParams.contour);
                         let incomingParams = {
                             lat, lon, zoom,
-                            autoColorScale: mergedScaleState.autoColorScale,
-                            minScale: mergedScaleState.minScale,
-                            maxScale: mergedScaleState.maxScale,
+                            autoColorScale: pinnedScaleState.autoColorScale,
+                            minScale: pinnedScaleState.minScale,
+                            maxScale: pinnedScaleState.maxScale,
                             startDate, endDate,
                             pixelSize, background, opacity,
                             contour: contourValue,
@@ -4630,10 +4750,11 @@
                             pointLat, pointLon
                         };
                         if (senderIndex === activeDatasetIdx) {
-                            recordOverlayUserDisplayFromMerge(currentMapParams, incomingParams);
-                            incomingParams = preserveOverlayDisplayParamsDuringSwitch(
+                            recordOverlayUserDisplayFromMerge(currentMapParams, incomingParams, trustedDisplayPost);
+                            incomingParams = preserveDisplayParamsFromUntrustedPost(
                                 mapParamsWithOverlayUserDisplay(incomingParams),
-                                mapParamsWithOverlayUserDisplay(currentMapParams)
+                                mapParamsWithOverlayUserDisplay(currentMapParams),
+                                trustedDisplayPost
                             );
                         }
                         // #region agent log
@@ -4649,7 +4770,7 @@
                                 prevPixelSize: currentMapParams.pixelSize,
                                 msgUrlHasContours: /[?&]contours=/.test(newUrlPath || ''),
                                 msgUrlHasPixelSize: /[?&]pixelSize=/.test(newUrlPath || ''),
-                                inSwitchSuppress: Date.now() < datasetSwitchSuppressUntil
+                                postSettled: postSettled
                             }, 'E');
                         }
                         // #endregion
@@ -4664,9 +4785,9 @@
                             lat !== currentMapParams.lat ||
                             lon !== currentMapParams.lon ||
                             zoom !== currentMapParams.zoom ||
-                            mergedScaleState.autoColorScale !== (currentMapParams.autoColorScale ?? 'true') ||
-                            mergedScaleState.minScale !== currentMapParams.minScale ||
-                            mergedScaleState.maxScale !== currentMapParams.maxScale ||
+                            pinnedScaleState.autoColorScale !== (currentMapParams.autoColorScale ?? 'true') ||
+                            pinnedScaleState.minScale !== currentMapParams.minScale ||
+                            pinnedScaleState.maxScale !== currentMapParams.maxScale ||
                             contourValue !== prevContourNorm ||
                             colorscaleValue !== currentMapParams.colorscale ||
                             pixelSize !== currentMapParams.pixelSize ||
@@ -4735,6 +4856,7 @@
                                     pointLon: currentMapParams.pointLon
                                 });
                             }
+                            bgAppliedScale.set(senderIndex, scaleStateFromMapParams(currentMapParams));
                             scheduleBackgroundSync('url-update-debounced');
                         }
                         if (senderIndex >= 0 && pendingDateSyncByIndex.has(senderIndex)) {

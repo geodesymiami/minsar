@@ -139,6 +139,7 @@ Latest debug-table example (from this debugging session):
 | `iframeLoadInFlight` | index → `{ url, at }` — canonical URL of an in-flight iframe load (cleared on onload; entries older than `BG_LOAD_STUCK_MS` treated as dead) |
 | `iframeLiveUrl` | index → last URL the iframe posted via `insarmaps-url-update` (absolute). `iframe.src` freezes at load time while the user interacts inside the iframe; staleness checks use `iframeEffectiveUrl()` = live URL ?? src. Cleared on reload; bare early-life URLs (no `startDataset`) are never recorded. `canonicalInsarmapsUrl()` normalizes insarmaps URL conventions (`autoColorScale=true` explicit, `minScale`/`maxScale` omitted at defaults, number formatting) so live URLs compare equal to overlay-built URLs |
 | `bgAppliedDates` | index → `{ startDate, endDate }` last applied to that iframe via `insarmaps-set-dates` (cleared on any reload of that iframe) |
+| `bgAppliedScale` | index → `{ autoColorScale, minScale, maxScale }` last sent via `insarmaps-set-auto-color-scale` (cleared on reload). Scale params are ignored in URL staleness compares; changes propagate as a repaint postMessage, never a reload |
 | `pendingDateSyncByIndex` | Awaiting `insarmaps-set-dates-applied` ack for narrowed dates |
 | `refAppliedForDateSyncByIndex` | Custom ref confirmed on iframe; gates date postMessage |
 | `activeSwitchTracking` | Per-switch debug outcome: refOk, datesOk (see §12) |
@@ -320,19 +321,31 @@ reconcileBackgroundIframes(reason)      // idempotent
      1. in-flight load already = desiredUrl        → leave it
      2. in-flight load stale                       → restart with desiredUrl
      3. view/display differ (URL compare ignoring
-        dates+point+ref, and colorscale/contours
-        under custom ref)                          → reload with desiredUrl
-     4. otherwise, three postMessage channels:
+        dates+point+ref+minScale/maxScale/autoColorScale,
+        and colorscale/contours under custom ref)  → reload with desiredUrl
+     4. otherwise, four postMessage channels:
         ref   — set-ref → wait insarmaps-ref-applied → complete recolor + dates
                 (completeBackgroundRefWarm); tracked in bgRefAppliedByIndex
         point — set-point (ack insarmaps-set-point-applied); tracked in bgAppliedPoint
+        scale — set-auto-color-scale (fire-and-forget; child no-ops when unchanged);
+                tracked in bgAppliedScale; scaleStatesClose (2% relative) absorbs
+                per-dataset flavors (permissible rounding, displacement yearsDiff)
         dates — set-dates (narrow AND widen-to-full); tracked in bgAppliedDates
    each onload → reconcile again (chases state changed during the load)
 ```
 
-Channel ordering invariant: while a ref is pending on an iframe, no dates/point messages are
-sent to it (`insarmaps-set-dates` before ref breaks the recolor — §19). All three channels
-degrade gracefully to URL reloads on servers without the 2026-07 insarmaps handlers.
+Channel ordering invariant: while a ref is pending on an iframe, no scale/dates/point
+messages are sent to it (`insarmaps-set-dates` before ref breaks the recolor — §19).
+Ref/point/dates degrade gracefully to URL reloads on servers without the 2026-07 insarmaps
+handlers; scale has no ack, but every dataset switch re-broadcasts it
+(`broadcastMapDisplayStateAfterSwitch`), so a lost send self-heals at the next switch.
+
+Scale echoes are pinned like point/ref/date echoes: insarmaps snaps manual limits to
+"permissible" rounded values and displacement coloring rescales them by each dataset's time
+span, so the same visual scale posts back as different numbers per dataset. Both merge paths
+keep the overlay's values when the incoming scale is `scaleStatesClose`, and only the ACTIVE
+iframe may change the scale at all — without this, every dataset switch re-asserted the new
+active's scale flavor and reloaded all backgrounds, every switch.
 
 Key properties:
 
@@ -400,11 +413,21 @@ With **default ref** and a slider-narrowed period, Desc→Asc switch showed: nar
 
 When the **active** iframe changes pan/zoom/scales/dates:
 
-1. **Immediate path** (`active-postMessage`): merge params (dates through `resolveDatesFromIframeUpdate()`, display through `recordOverlayUserDisplayFromMerge()`/`preserveOverlayDisplayParamsDuringSwitch()`), update `currentMapParams` + overlay URL, then `scheduleBackgroundSync()` (250ms).
+1. **Immediate path** (`active-postMessage`): merge params (dates through `resolveDatesFromIframeUpdate()`, display through `recordOverlayUserDisplayFromMerge()`/`preserveDisplayParamsFromUntrustedPost()`), update `currentMapParams` + overlay URL, then `scheduleBackgroundSync()` (250ms).
 2. **Debounced path** (1500ms `SYNC_DEBOUNCE_MS`): full processing (dataset date ranges, TC period iframes) plus a safety-net `scheduleBackgroundSync()` — idempotent when already in sync.
 3. Active iframe is **never** reloaded for period-only changes (default ref).
 
 **Cooldown:** Non-active iframe messages ignored for 3s after a sync (`SYNC_COOLDOWN_MS`). Active iframe bypasses cooldown.
+
+**Per-post trust (settled handshake — replaced the 3s switch-suppress window):** every
+`insarmaps-url-update` carries `settled` — `false` while the child document is still booting
+(dataset loading, starting URL params being applied; latch set in `loadDatasetFromFeature`'s
+completion, reset when a new dataset load starts). Display params (`recordOverlayUserDisplayFromMerge`,
+`preserveDisplayParamsFromUntrustedPost`, `maybeReapplyDisplayParamsToActiveIframe`) and dates
+(`resolveDatesFromIframeUpdate`, `captureUserNarrowedDateRange`) from unsettled posts are
+treated as boot defaults, never as user intent — per post, no clocks. `userDisplayChange: true`
+(set on genuine user scale interactions) marks a post trusted for display params even mid-boot.
+Posts without the marker (older insarmaps) are treated as settled.
 
 ### Key helpers
 
@@ -855,7 +878,7 @@ Problems in the current design that a clean implementation could address:
 | `pointAfterRef ref ack — date sync` | Ref applied on point reload; triggers `maybeStartDateSyncAfterRef` |
 | `sent complete-ref-recolor` | `insarmaps-complete-ref-recolor` posted |
 | `ref ack follow-up` | Phase-2 dates after ref |
-| `date resolve` | `resolved: rejected-switch-suppress-kept-user` during switch suppress |
+| `date resolve` | `resolved: rejected-unsettled-kept-user` — dates from a still-booting iframe kept out of user narrow |
 | `ref apply failed` | `insarmaps-ref-failed` received |
 | `ref-await watchdog — still pending ref` | 6 s passed, ref still not ack'd |
 
