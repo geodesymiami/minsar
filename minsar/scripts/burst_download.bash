@@ -305,6 +305,22 @@ if [[ ${#skipped_dates[@]} -gt 0 ]]; then
     echo "After filtering: $(wc -l < "$run_file" | tr -d ' \n') burst2stack commands remaining (skipped ${#skipped_dates[@]} date(s) that already have complete SAFEs: ${skipped_dates[*]})."
 fi
 
+# 4c. Write vertex.txt with ASF Vertex URL for the first date to download
+first_burst2stack_line=$(head -1 "$run_file")
+first_date=$(echo "$first_burst2stack_line" | sed -E 's/.*--start-date ([0-9]{4}-[0-9]{2}-[0-9]{2}) .*/\1/')
+if [[ "$first_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    UTILS_DIR="$(cd "$SCRIPT_DIR/../utils" && pwd)"
+    first_end_date=$(python3 -c "
+from datetime import datetime, timedelta
+d = datetime.strptime('$first_date', '%Y-%m-%d')
+print((d + timedelta(days=1)).strftime('%Y-%m-%d'))
+")
+    "$UTILS_DIR/burst2stack2vertex.bash" burst2stack \
+        --rel-orbit "$rel_orbit" --start-date "$first_date" --end-date "$first_end_date" \
+        --extent $extent | tee "$slc_dir/vertex.txt"
+    echo "Wrote $slc_dir/vertex.txt (ASF Vertex URL for first download date $first_date)."
+fi
+
 # 5. Compute parallelism
 num_parallel=$(( parallel / max_bursts ))
 [[ $num_parallel -lt 1 ]] && num_parallel=1

@@ -74,6 +74,6 @@ while true; do
 done
 
 # removing files https://github.com/isce-framework/isce2/issues/956#issuecomment-3062201116
-rm -f SLC/*20250429*
-rm -f SLC/*20250430*
-rm -f SLC/*20250501*
+rm -rf SLC/*20250429*
+rm -rf SLC/*20250430*
+rm -rf SLC/*20250501*
