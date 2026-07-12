@@ -140,6 +140,7 @@ Latest debug-table example (from this debugging session):
 | `iframeLiveUrl` | index → last URL the iframe posted via `insarmaps-url-update` (absolute). `iframe.src` freezes at load time while the user interacts inside the iframe; staleness checks use `iframeEffectiveUrl()` = live URL ?? src. Cleared on reload; bare early-life URLs (no `startDataset`) are never recorded. `canonicalInsarmapsUrl()` normalizes insarmaps URL conventions (`autoColorScale=true` explicit, `minScale`/`maxScale` omitted at defaults, number formatting) so live URLs compare equal to overlay-built URLs |
 | `bgAppliedDates` | index → `{ startDate, endDate }` last applied to that iframe via `insarmaps-set-dates` (cleared on any reload of that iframe) |
 | `bgAppliedScale` | index → `{ autoColorScale, minScale, maxScale }` last sent via `insarmaps-set-auto-color-scale` (cleared on reload). Scale params are ignored in URL staleness compares; changes propagate as a repaint postMessage, never a reload |
+| `bgAppliedDisplay` | index → `{ pixelSize, opacity, contour, background }` last sent via `insarmaps-set-pixelSize`/`-opacity`/`-contour`/`-background` (cleared on reload). Same rule as scale: ignored in URL compares, synced by in-page postMessages |
 | `pendingDateSyncByIndex` | Awaiting `insarmaps-set-dates-applied` ack for narrowed dates |
 | `refAppliedForDateSyncByIndex` | Custom ref confirmed on iframe; gates date postMessage |
 | `activeSwitchTracking` | Per-switch debug outcome: refOk, datesOk (see §12) |
@@ -255,6 +256,8 @@ Done: Asc has custom ref + narrowed period
 | `insarmaps-set-contour` | `{ value: true/false }` — no reload | `mainPage.js` |
 | `insarmaps-set-dates` | `{ startDate, endDate }` YYYYMMDD — cross-origin date apply | `mainPage.js` → `GraphsController.applyInsarDateRangeFromYyyymmdd()` |
 | `insarmaps-set-auto-color-scale` | `{ mode: 'true'\|'false', minScale?, maxScale? }` — URL `autoColorScale=true` when auto on; manual mode uses only `minScale`/`maxScale` (no `autoColorScale=false`) | `mainMap.setAutoColorScaleMode()` / `disableAutoColorScaleWithLimits()` |
+| `insarmaps-set-opacity` (2026-07) | `{ value }` 0-100 (URL/slider scale) — paint-property opacity update on all insar layers, no reload; no-op when unchanged | `mainPage.js` → `opacitySlideFunction(null, { value })` |
+| `insarmaps-set-background` (2026-07) | `{ value: 'streets'\|'satellite'\|'hillshade' }` — in-page basemap swap, insar layers carried over; no-op when unchanged | `mainPage.js` → `switchLayer({ target: { id } })` |
 | `insarmaps-set-point` (2026-07) | `{ pointLat, pointLon }` — apply time-series point on the loaded map, no reload. Ack: `insarmaps-set-point-applied` `{ ok, reason }` (`not-ready` → overlay retries; no ack → overlay marks server unsupported and falls back to URL reloads) | `mainPage.js` → `mainMap.applyOverlayPointSelection(lat, lon, false)` |
 | `insarmaps-set-ref` (2026-07) | `{ refPointLat, refPointLon }` — apply custom ref on the loaded map (warm tiles, so more reliable than load-time URL ref). Receipt: `insarmaps-set-ref-received`; outcome via existing `insarmaps-ref-applied` / `insarmaps-ref-failed`. No receipt within 20s → overlay falls back to a URL reload | `mainPage.js` → `mainMap.applyOverlayPointSelection(lat, lon, true)` |
 
@@ -321,24 +324,31 @@ reconcileBackgroundIframes(reason)      // idempotent
      1. in-flight load already = desiredUrl        → leave it
      2. in-flight load stale                       → restart with desiredUrl
      3. view/display differ (URL compare ignoring
-        dates+point+ref+minScale/maxScale/autoColorScale,
-        and colorscale/contours under custom ref)  → reload with desiredUrl
-     4. otherwise, four postMessage channels:
-        ref   — set-ref → wait insarmaps-ref-applied → complete recolor + dates
-                (completeBackgroundRefWarm); tracked in bgRefAppliedByIndex
-        point — set-point (ack insarmaps-set-point-applied); tracked in bgAppliedPoint
-        scale — set-auto-color-scale (fire-and-forget; child no-ops when unchanged);
-                tracked in bgAppliedScale; scaleStatesClose (2% relative) absorbs
-                per-dataset flavors (permissible rounding, displacement yearsDiff)
-        dates — set-dates (narrow AND widen-to-full); tracked in bgAppliedDates
+        dates+point+ref+minScale/maxScale/autoColorScale
+        +pixelSize+opacity, and colorscale/contours
+        under custom ref)                          → reload with desiredUrl
+     4. otherwise, five postMessage channels:
+        ref     — set-ref → wait insarmaps-ref-applied → complete recolor + dates
+                  (completeBackgroundRefWarm); tracked in bgRefAppliedByIndex
+        point   — set-point (ack insarmaps-set-point-applied); tracked in bgAppliedPoint
+        scale   — set-auto-color-scale (fire-and-forget; child no-ops when unchanged);
+                  tracked in bgAppliedScale; scaleStatesClose (2% relative) absorbs
+                  per-dataset flavors (permissible rounding, displacement yearsDiff)
+        display — set-pixelSize + set-opacity + set-contour + set-background
+                  (fire-and-forget in-page updates; child no-ops when unchanged);
+                  tracked in bgAppliedDisplay; absent URL params compare as
+                  INSARMAP defaults; background swaps the basemap style in-page
+                  (setBaseMapLayer carries insar layers over)
+        dates   — set-dates (narrow AND widen-to-full); tracked in bgAppliedDates
    each onload → reconcile again (chases state changed during the load)
 ```
 
-Channel ordering invariant: while a ref is pending on an iframe, no scale/dates/point
-messages are sent to it (`insarmaps-set-dates` before ref breaks the recolor — §19).
+Channel ordering invariant: while a ref is pending on an iframe, no scale/display/dates/
+point messages are sent to it (`insarmaps-set-dates` before ref breaks the recolor — §19).
 Ref/point/dates degrade gracefully to URL reloads on servers without the 2026-07 insarmaps
-handlers; scale has no ack, but every dataset switch re-broadcasts it
-(`broadcastMapDisplayStateAfterSwitch`), so a lost send self-heals at the next switch.
+handlers; scale and display have no acks, but dataset switches re-broadcast them
+(`broadcastMapDisplayStateAfterSwitch` / `broadcastDisplayChannelToIframe`), so a lost
+send self-heals at the next switch.
 
 Scale echoes are pinned like point/ref/date echoes: insarmaps snaps manual limits to
 "permissible" rounded values and displacement coloring rescales them by each dataset's time
@@ -453,7 +463,7 @@ When switching Desc ↔ Asc ↔ Horz ↔ Vert, these should persist:
 | **Narrowed period (custom ref)** | Phase 2 `insarmaps-set-dates` postMessage after ref | Lost if dates in refSwitch URL; lost if cross-origin slider access attempted |
 | **Narrowed period (default ref)** | Pre-warm backgrounds + set-dates on switch | Drift if acquisition snap overwrites slider intent; flash if full URL reload used when only dates differ |
 | pixelSize | In reload URL (refSwitch keeps it) | Lost if stripped in `dateAfterRef` |
-| contours | URL on reload + `insarmaps-set-contour` on switch | Timing: hidden iframe may miss contour message |
+| contours | display channel (`insarmaps-set-contour` via reconciler + switch re-broadcast) | Timing: hidden iframe may miss contour message (self-heals at switch) |
 | colorscale | Stripped on cross-dataset when custom ref | Intentional — `colorscale=velocity` races ref recolor on mintpy |
 
 ---

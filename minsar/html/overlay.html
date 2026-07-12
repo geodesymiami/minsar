@@ -882,12 +882,10 @@
                     u.searchParams.delete('refPointLat');
                     u.searchParams.delete('refPointLon');
                 }
-                // Custom-ref iframe URLs strip colorscale/contours (they race the ref recolor on
-                // load); those channels are postMessage-synced, so ignore them when comparing.
-                if (options && options.ignoreColorscaleContours) {
+                // Custom-ref iframe URLs strip colorscale (it races the ref recolor on
+                // load); that channel is postMessage-synced, so ignore it when comparing.
+                if (options && options.ignoreColorscale) {
                     u.searchParams.delete('colorscale');
-                    u.searchParams.delete('contour');
-                    u.searchParams.delete('contours');
                 }
                 // Color scale is postMessage-synced: per-dataset flavors (permissible rounding,
                 // displacement-mode yearsDiff scaling) must not mark iframes stale.
@@ -895,6 +893,15 @@
                     u.searchParams.delete('minScale');
                     u.searchParams.delete('maxScale');
                     u.searchParams.delete('autoColorScale');
+                }
+                // Display channel params are postMessage-synced (set-pixelSize/set-opacity/
+                // set-contour/set-background): never a reload reason.
+                if (options && options.ignoreDisplayChannel) {
+                    u.searchParams.delete('pixelSize');
+                    u.searchParams.delete('opacity');
+                    u.searchParams.delete('contour');
+                    u.searchParams.delete('contours');
+                    u.searchParams.delete('background');
                 }
                 const contourRaw = u.searchParams.get('contour') || u.searchParams.get('contours');
                 u.searchParams.delete('contour');
@@ -938,14 +945,16 @@
                 canonicalInsarmapsUrl(urlB, { ignoreDates: true });
         }
 
-        // Same view/display; dates, point, ref, and color scale may differ (postMessage sync
-        // candidates). Under custom ref, colorscale/contours are also ignored (stripped URLs).
-        function insarmapsUrlsEquivalentIgnoringSelections(urlA, urlB, ignoreColorscaleContours) {
+        // Same view; dates, point, ref, color scale, and the display channel (pixelSize/
+        // opacity/contour/background) may differ — all postMessage-synced. Under custom
+        // ref, colorscale is also ignored (stripped from those URLs).
+        function insarmapsUrlsEquivalentIgnoringSelections(urlA, urlB, ignoreColorscale) {
             if (!urlA || !urlB) return false;
             const opts = {
                 ignoreSelections: true,
                 ignoreScale: true,
-                ignoreColorscaleContours: !!ignoreColorscaleContours
+                ignoreDisplayChannel: true,
+                ignoreColorscale: !!ignoreColorscale
             };
             return canonicalInsarmapsUrl(urlA, opts) === canonicalInsarmapsUrl(urlB, opts);
         }
@@ -1039,6 +1048,9 @@
         // Color scale syncs via insarmaps-set-auto-color-scale postMessage (child no-ops when
         // unchanged); scale params are ignored in URL staleness compares like dates/point/ref.
         const bgAppliedScale = new Map();     // index -> { autoColorScale, minScale, maxScale } last sent
+        // Display channel (pixelSize/opacity/contour/background): in-page postMessage
+        // updates, never a reload.
+        const bgAppliedDisplay = new Map();   // index -> displayChannelState last sent
         const SET_POINT_MAX_ATTEMPTS = 3;     // then fall back to a URL reload for that iframe
         let setPointSupport = 'unknown';      // 'unknown' | 'yes' | 'no' — probed by the first set-point ack
         // Generous: a busy (recoloring) iframe acks late; only a server without the handler
@@ -1130,7 +1142,7 @@
         }
 
         function reapplyDisplayParamsToIframe(index) {
-            broadcastContourAndPixelSizeToIframe(index);
+            broadcastDisplayChannelToIframe(index);
             broadcastAutoColorScaleToIframes(index);
             broadcastColorscaleToIframes(index);
         }
@@ -2916,6 +2928,38 @@
             }
         }
 
+        // Values resolve to defaults when absent (URLs omit default values), so a URL
+        // without them compares equal to explicit defaults.
+        function displayChannelState(pixelSize, opacity, contour, background) {
+            return {
+                pixelSize: formatUrlNumber((pixelSize != null && pixelSize !== '')
+                    ? pixelSize : INSARMAP_URL_DEFAULTS.pixelSize),
+                opacity: formatUrlNumber((opacity != null && opacity !== '')
+                    ? opacity : INSARMAP_URL_DEFAULTS.opacity),
+                contour: normalizeContourValue(contour) || INSARMAP_URL_DEFAULTS.contours,
+                background: (background != null && background !== '')
+                    ? String(background) : INSARMAP_URL_DEFAULTS.background
+            };
+        }
+
+        function displayChannelStatesEqual(a, b) {
+            return !!(a && b && a.pixelSize === b.pixelSize && a.opacity === b.opacity &&
+                a.contour === b.contour && a.background === b.background);
+        }
+
+        function displayChannelStateFromUrl(url) {
+            if (!url) return null;
+            try {
+                const u = new URL(url, window.location.href);
+                return displayChannelState(
+                    u.searchParams.get('pixelSize'), u.searchParams.get('opacity'),
+                    u.searchParams.get('contours') ?? u.searchParams.get('contour'),
+                    u.searchParams.get('background'));
+            } catch (e) {
+                return null;
+            }
+        }
+
         // Any iframe reload invalidates everything applied to it via postMessage,
         // and its last live URL (the fresh document will post a new one).
         function noteIframeReloadStarted(index) {
@@ -2923,6 +2967,7 @@
             bgAppliedDates.delete(index);
             bgAppliedPoint.delete(index);
             bgAppliedScale.delete(index);
+            bgAppliedDisplay.delete(index);
             displayReapplyCountByIndex.delete(index); // fresh document, fresh reapply budget
             setPointAttemptsByIndex.delete(index);
             bgRefAppliedByIndex.delete(index);
@@ -3029,6 +3074,35 @@
             return true;
         }
 
+        // Fire-and-forget like scale: child no-ops when unchanged, and switch broadcasts
+        // re-send display params, so a message lost to a booting iframe self-heals.
+        function sendDisplayChannelToIframe(index, state) {
+            const iframe = document.getElementById(`iframe${index}`);
+            if (!iframe || !iframe.contentWindow) return false;
+            const pixelSize = parseFloat(state.pixelSize);
+            const opacity = parseFloat(state.opacity);
+            try {
+                if (!isNaN(pixelSize)) {
+                    iframe.contentWindow.postMessage({ type: 'insarmaps-set-pixelSize', value: pixelSize }, '*');
+                }
+                if (!isNaN(opacity)) {
+                    iframe.contentWindow.postMessage({ type: 'insarmaps-set-opacity', value: opacity }, '*');
+                }
+                iframe.contentWindow.postMessage({
+                    type: 'insarmaps-set-contour', value: state.contour === 'true'
+                }, '*');
+                if (state.background) {
+                    iframe.contentWindow.postMessage({
+                        type: 'insarmaps-set-background', value: state.background
+                    }, '*');
+                }
+            } catch (e) {
+                return false;
+            }
+            bgAppliedDisplay.set(index, { ...state });
+            return true;
+        }
+
         // Point effectively on the iframe: last set-point postMessage wins over the load URL.
         function pointAppliedOnIframe(index, params) {
             if (!(params && params.pointLat && params.pointLon)) return true;
@@ -3085,7 +3159,7 @@
                 desiredBackgroundParams(), `ds${index}`, false, false
             );
             if (!insarmapsUrlsEquivalentIgnoringSelections(iframeEffectiveUrl(index), desiredUrl, true)) {
-                return notQualified(`view-mismatch (have ${canonicalInsarmapsUrl(iframeEffectiveUrl(index), { ignoreSelections: true, ignoreColorscaleContours: true })} want ${canonicalInsarmapsUrl(desiredUrl, { ignoreSelections: true, ignoreColorscaleContours: true })})`);
+                return notQualified(`view-mismatch (have ${canonicalInsarmapsUrl(iframeEffectiveUrl(index), { ignoreSelections: true, ignoreDisplayChannel: true, ignoreColorscale: true })} want ${canonicalInsarmapsUrl(desiredUrl, { ignoreSelections: true, ignoreDisplayChannel: true, ignoreColorscale: true })})`);
             }
             if (hasTimeSeriesPoint(currentMapParams) &&
                 !pointAppliedOnIframe(index, currentMapParams)) {
@@ -3285,6 +3359,16 @@
                     console.log(`[overlay] iframe SET-SCALE ${iframeLabelForLog(index)}  reason=${reason}`, wantScale);
                     sendSetScaleToIframe(index, wantScale);
                     // fall through: dates can sync alongside the scale
+                }
+                // ── Display channel (pixelSize/opacity/contour/background): in-page updates,
+                // ignored by the URL compare above — postMessages sync them, never a reload.
+                const wantDisplay = displayChannelState(
+                    desired.pixelSize, desired.opacity, effectiveContour(desired), desired.background);
+                const haveDisplay = bgAppliedDisplay.get(index) || displayChannelStateFromUrl(effUrl);
+                if (!displayChannelStatesEqual(haveDisplay, wantDisplay)) {
+                    console.log(`[overlay] iframe SET-DISPLAY ${iframeLabelForLog(index)}  reason=${reason}`, wantDisplay);
+                    sendDisplayChannelToIframe(index, wantDisplay);
+                    // fall through: dates can sync alongside
                 }
                 // ── Dates channel. Under custom ref the URL carries no dates (refSwitch kind);
                 // the target period is what phase-2 of a switch would apply.
@@ -3508,39 +3592,26 @@
             });
         }
 
-        function broadcastContourAndPixelSizeToIframe(onlyIndex) {
+        function broadcastDisplayChannelToIframe(onlyIndex) {
             const params = mapParamsWithOverlayUserDisplay(currentMapParams);
-            const contourOn = effectiveContour(params) === 'true';
-            const pixelSizeRaw = params.pixelSize;
-            const pixelSize = pixelSizeRaw != null && pixelSizeRaw !== ''
-                ? parseFloat(pixelSizeRaw) : null;
+            const state = displayChannelState(
+                params.pixelSize, params.opacity, effectiveContour(params), params.background);
             iframeDatasets.forEach((_, index) => {
                 if (onlyIndex !== undefined && onlyIndex >= 0 && index !== onlyIndex) return;
-                const iframe = document.getElementById(`iframe${index}`);
-                if (!iframe || !iframe.contentWindow) return;
-                try {
-                    iframe.contentWindow.postMessage({
-                        type: 'insarmaps-set-contour', value: contourOn
-                    }, '*');
-                    if (pixelSize != null && !isNaN(pixelSize)) {
-                        iframe.contentWindow.postMessage({
-                            type: 'insarmaps-set-pixelSize', value: pixelSize
-                        }, '*');
-                    }
-                } catch (e) {}
+                sendDisplayChannelToIframe(index, state);
             });
             // #region agent log
-            __odt_hook('dbgDisplayLog', 'overlay.html:broadcastDisplay', 'postMessage contour/pixelSize to iframe', {
-                onlyIndex, contourOn, pixelSize, overlayUserDisplay: { ...overlayUserDisplay }
+            __odt_hook('dbgDisplayLog', 'overlay.html:broadcastDisplay', 'postMessage display channel to iframe', {
+                onlyIndex, state, overlayUserDisplay: { ...overlayUserDisplay }
             }, 'G');
             // #endregion
-            __odt_hook('recordSwitchDebugSentPost', contourOn, pixelSize, onlyIndex);
+            __odt_hook('recordSwitchDebugSentPost', state.contour === 'true', parseFloat(state.pixelSize), onlyIndex);
         }
 
         function broadcastMapDisplayStateAfterSwitch(activeIndex, switchReloaded, options) {
             options = options || {};
             if (options.skipBroadcast) return;
-            const pushDisplayToActive = () => broadcastContourAndPixelSizeToIframe(activeIndex);
+            const pushDisplayToActive = () => broadcastDisplayChannelToIframe(activeIndex);
             if (switchReloaded) {
                 iframeDatasets.forEach((_, index) => {
                     if (index !== activeIndex) {
