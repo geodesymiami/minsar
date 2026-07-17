@@ -778,19 +778,22 @@ fi
 ########################
 if [[ $mintpy_flag == "1" ]]; then
 
+    mintpy_dir_name=$(get_mintpy_dir_name)
+
     if [[ $skip_mintpy_flag != "1" ]]; then
-        # run MintPy
+        # regenerate jobfile with dated mintpy dir name, then run MintPy
+        run_command "create_mintpy_jobfile.py $template_file $mintpy_dir_name"
         run_command "run_workflow.bash --dostep mintpy"
     fi
 
     # summarize profiling logs
     if [[ $PROFILE_FLAG == "True" ]]; then
-        run_command "summarize_resource_usage.py $template_file SLC run_files --outdir mintpy/pic"
+        run_command "summarize_resource_usage.py $template_file SLC run_files --outdir ${mintpy_dir_name}/pic"
     fi
 
     ## insarmaps
     if [[ $insarmaps_flag == "1" ]]; then
-        run_command "create_ingest_insarmaps_jobfile.py mintpy --dataset geo --quiet-summary"
+        run_command "create_ingest_insarmaps_jobfile.py $mintpy_dir_name --dataset geo --quiet-summary"
 
         ingest_insarmaps_jobfile=$(ls -t ingest_insar*job | head -n 1)
         run_command "run_workflow.bash --jobfile $PWD/$ingest_insarmaps_jobfile"
@@ -798,7 +801,7 @@ if [[ $mintpy_flag == "1" ]]; then
 
     # upload mintpy directory
     if [[ $upload_flag == "1" ]]; then
-        run_command "upload_data_products.py mintpy ${template[minsar.upload_option]} --quiet-summary"
+        run_command "upload_data_products.py $mintpy_dir_name ${template[minsar.upload_option]} --quiet-summary"
     fi
 
 fi

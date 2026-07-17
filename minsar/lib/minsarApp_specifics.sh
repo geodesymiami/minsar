@@ -431,6 +431,37 @@ unset IFS
 echo $miaplpy_dir_name
 }
 ###########################################
+function get_mintpy_dir_name() {
+# assign mintpyDir.addition  lalo, date, name, or 'mintpy' for 'auto'
+date_str=$(get_date_str)
+if [ -z ${template[minsar.mintpyDir.addition]} ] || [ ${template[minsar.mintpyDir.addition]} == "auto" ]; then
+   mintpy_dir_name="mintpy"
+elif [ ${template[minsar.mintpyDir.addition]} == "date" ]; then
+   mintpy_dir_name=mintpy_${date_str}
+elif [ ${template[minsar.mintpyDir.addition]} == "lalo" ]; then
+   if [ ! -z ${template[mintpy.subset.lalo]} ]; then
+       subset_lalo="${template[mintpy.subset.lalo]}"
+   elif [ ! -z ${template[miaplpy.subset.lalo]} ]; then
+       subset_lalo="${template[miaplpy.subset.lalo]}"
+   else
+       echo "ERROR: No subset.lalo given -- Exiting"
+   fi
+   IFS=',' ; read -a lalo_array <<< "$subset_lalo"
+   IFS=':' ; read -a lat_array <<< "${lalo_array[0]}"
+   IFS=':' ; read -a lon_array <<< "${lalo_array[1]}"
+   lat_min=${lat_array[0]}
+   lat_max=${lat_array[1]}
+   lon_min=${lon_array[0]}
+   lon_max=${lon_array[1]}
+   lalo_str=$(printf "%.2f_%.2f_%.2f_%.2f\n" "$lat_min" "$lat_max" "$lon_min" "$lon_max")
+   mintpy_dir_name="mintpy_${lalo_str}_$date_str"
+else
+   mintpy_dir_name=mintpy_"${template[minsar.mintpyDir.addition]}"_${date_str}
+fi
+unset IFS
+echo $mintpy_dir_name
+}
+###########################################
 function get_network_type {
 # get single_reference or delaunay_4 ect. from template file
 network_type=${template[miaplpy.interferograms.networkType]}

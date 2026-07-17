@@ -41,6 +41,7 @@ mintpy.save.hdfEos5.subset        = yes   #[yes / no], auto for no, put subset r
 mintpy.save.kmz                   = yes   #[yes / no], auto for yes, save geocoded velocity to Google Earth KMZ file
 ####################
 minsar.miaplpyDir.addition         = date  #[name / lalo / no] auto for no (miaply_$name_startDate_endDate))
+minsar.mintpyDir.addition          = auto  #[name / date / lalo / auto] auto for mintpy (mintpy_$name_startDate_endDate)
 miaplpy.subset.lalo                = {lat1}:{lat2},{miaLon1}:{miaLon2}  #[S:N,W:E / no], auto for no
 miaplpy.load.startDate             = auto # 20200101
 miaplpy.load.endDate               = auto
