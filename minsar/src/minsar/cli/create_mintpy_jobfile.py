@@ -49,9 +49,9 @@ def main(iargs=None):
     message_rsmas.log(inps.work_dir, os.path.basename(__file__) + ' ' + ' '.join(input_arguments))
  
     command = []
-    command.append( "check_timeseries_file.bash --dir mintpy")
+    command.append( f"check_timeseries_file.bash --dir {inps.processing_dir}" )
     command.append( f"smallbaselineApp.py {inps.custom_template_file} --dir {inps.processing_dir}" )
-    command.append( "create_html.py mintpy/pic" )
+    command.append( f"create_html.py {inps.processing_dir}/pic" )
 
     # Join the list into a string with linefeeds
     final_command =[ '\n'.join(command) ]
