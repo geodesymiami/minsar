@@ -51,6 +51,8 @@ minsar.insarmaps_dataset             = DS
 
 mintpy.networkInversion.minTempCoh   = 0.6     # auto for 0.5
 miaplpy.timeseries.minTempCoh        = 0.6     # auto for 0.5
+######################################################
+minsar.mintpyDir.addition            = date  #[name / date / lalo / auto] auto for mintpy (mintpy_$name_startDate_endDate)
 minsar.insarmaps_flag                = True
 minsar.upload_flag                   = True
 minsar.insarmaps_dataset             = DS
