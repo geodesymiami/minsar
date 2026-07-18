@@ -598,18 +598,20 @@ fi
 ########################
 if [[ $mintpy_flag == "1" ]]; then
 
+    mintpy_dir_name=$(get_mintpy_dir_name)
+
     # MintPy
-    generate_mintpy_script $template_file mintpy
+    generate_mintpy_script $template_file $mintpy_dir_name
     #run_command "run_workflow.bash $template_file --append --dostep mintpy"
 
     ## insarmaps
     if [[ $insarmaps_flag == "1" ]]; then
-        generate_insarmaps_script $template_file mintpy geo
+        generate_insarmaps_script $template_file $mintpy_dir_name geo
     fi
     
     # upload  
     if [[ $upload_flag == "1" ]]; then
-        generate_upload_script mintpy ${template[minsar.upload_option]}
+        generate_upload_script $mintpy_dir_name ${template[minsar.upload_option]}
     fi
 fi
 
