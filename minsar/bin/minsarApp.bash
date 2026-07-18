@@ -57,6 +57,7 @@ helptext="                                                                      
    --sleep SECS           sleep seconds before running                           \n\
    --chunks               process in form of multiple chunks.                    \n\
    --clean-start          rm -rf \$SCRATCHDIR/<project> then recreate work dir   \n\
+   --queue NAME           SLURM queue (sets QUEUENAME. Default:  QUEUENAME from env)\n\
                                                                                  \n\
 For sarvey:                                                                      \n\
    --miaplpy-stop 1      to only run step 1 (load_slc_geometry.py) of miaplpy    \n\
@@ -253,6 +254,11 @@ do
             miaplpy_flag=1
             shift
             ;;
+        --queue)
+            export QUEUENAME="$2"
+            shift
+            shift
+            ;;
         --miaplpy-start)
             miaplpy_flag=1
             miaplpy_start_cli_flag=1
@@ -354,6 +360,9 @@ do
 esac
 done
 set -- "${POSITIONAL[@]}" # restore positional parameters
+
+# Refresh after possible --queue (QUEUENAME may have changed in the parse loop)
+srun_cmd="srun -n1 -N1 -A $JOBSHEDULER_PROJECTNAME -p $QUEUENAME  -t 00:25:00 "
 
 if [[ ${#POSITIONAL[@]} -gt 1 ]]; then
     if [[ "$2" == -* ]]; then
