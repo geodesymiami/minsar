@@ -84,13 +84,15 @@ minsarApp.bash
 | insarmaps | `--dostep insarmaps` | insarmaps.job | Web upload |
 | miaplpy | `--start miaplpy` | miaplpy/run_files/*.job | PS/DS analysis |
 
+MiaplPy step 10 (`run_10_save_hdfeos5_radar_0.job`) is built by `create_save_hdfeos5_jobfile.py` and runs `save_miaplpy_hdfeos5.bash` (parallel HE5 export/geocode), then `plot_mintpy_summary_pngs.py` only if `mintpy.plot = no` in `smallbaselineApp.cfg`.
+
 ### Key Directories
 
 | Path | Purpose |
 |------|---------|
 | `minsar/bin/` | Entry point scripts |
 | `minsar/lib/` | Shared bash libraries |
-| `minsar/scripts/` | Python helper scripts |
+| `minsar/scripts/` | Helper scripts (`save_miaplpy_hdfeos5.bash`, `plot_mintpy_summary_pngs.py`, jobfile creators, …) |
 | `minsar/defaults/` | Configuration files |
 | `samples/` | Template examples |
 | `tests/` | Test suite |

@@ -35,6 +35,7 @@ TEST_SUITES=(
     "test_submit_jobs.bash"
     "test_sbatch_conditional.bash"
     "test_horzvert_timeseries.bash"
+    "test_save_miaplpy_hdfeos5_bash.bash"
     # "test_minsarApp_options.bash"  # temporarily disabled for pre-push
 )
 
