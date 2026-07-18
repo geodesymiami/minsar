@@ -193,18 +193,7 @@ def main(iargs=None):
         for item in run_file_list:
             job_obj.write_batch_jobs(batch_file=item)
 
-        if inps.template['processingMethod'] == 'smallbaseline':
-            job_name = 'smallbaseline_wrapper'
-            job_file_name = job_name
-            command = ['smallbaselineApp.py', inps.custom_template_file, '--dir', 'mintpy;']
-
-            # pre_command = ["""[[ $(ls mintpy/time* | wc -l) -eq 1 ]] && rm mintpy/time*"""]
-            pre_command = ["check_timeseries_file.bash --dir mintpy;"]
-            post_command = ["create_html.py  mintpy/pic;"]
-            command = pre_command + command + post_command
-
-            job_obj.submit_script(job_name, job_file_name, command, writeOnly='True')
-        else:
+        if inps.template['processingMethod'] != 'smallbaseline':
             job_name = 'miaplpy_wrapper'
             job_file_name = job_name
             command = ['miaplpyApp.py', inps.custom_template_file, '--dir', 'miaplpy']
