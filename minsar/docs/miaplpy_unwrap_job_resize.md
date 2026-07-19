@@ -20,29 +20,25 @@ If `nodes_needed > MAX_NODES_PJ` (16 on `skx-dev`), create multiple `run_05_miap
 
 Queue limits and memory come from `minsar/defaults/queues.cfg`.
 
-## Phase 2 recipe (manual; wire into minsarApp later)
+## Automation in `minsarApp.bash`
 
-`slcStack.h5` exists after load_data (step 1). Resize then, then continue from step 2:
+When `--miaplpy` starts at step 1, `minsarApp.bash` runs:
+
+1. `run_workflow.bash … --start 1 --stop 1` (load_data → `inputs/slcStack.h5`)
+2. `resize_miaplpy_unwrap_jobfiles.py <miaplpy_dir>`
+3. `run_workflow.bash … --start 2 --stop <miaplpy_stop>` (skipped if `--miaplpy-stop 1`)
+
+If `--miaplpy-start` is greater than 1, the resize step is skipped (resume path).
+
+## Manual recipe (same sequence)
 
 ```bash
-# 1) Jobfiles + load_data only
 run_workflow.bash $TE/<site>.template --dir <miaplpy_dir> --start 1 --stop 1
-#    equivalent names: --start load_data --stop load_data
-
-# 2) Resize unwrap packing
 resize_miaplpy_unwrap_jobfiles.py <miaplpy_dir>
-#    example: resize_miaplpy_unwrap_jobfiles.py miaplpy_202001_202412
-
-# 3) Continue from phase linking (step 2)
 run_workflow.bash $TE/<site>.template --dir <miaplpy_dir> --start 2
-#    or: --start phase_linking
 ```
 
-### Later automation checklist
-
-1. After miaplpy step 1 succeeds in `minsarApp.bash` / `run_workflow.bash`, call `resize_miaplpy_unwrap_jobfiles.py "$miaplpy_dir"`.
-2. Then submit steps 2… as today.
-3. Keep `--dry-run` for debugging; keep `--no-scale-node-number` to only lower PPN without raising nodes.
+Use `--dry-run` for debugging; `--no-scale-node-number` to only lower PPN without raising nodes.
 
 ## CLI
 

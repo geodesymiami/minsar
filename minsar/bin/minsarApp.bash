@@ -837,8 +837,16 @@ if [[ $miaplpy_flag == "1" ]]; then
        run_command "create_jobfile_to_generate_miaplpy_jobfiles.py $template_file $miaplpy_dir_name"
        run_command "run_workflow.bash $template_file --jobfile $PWD/create_miaplpy_jobfiles.job"
 
-       # run miaplpy jobfiles
-       run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start $miaplpy_startstep --stop $miaplpy_stopstep"
+       # Run miaplpy jobfiles. After step 1 (load_data), resize run_05 unwrap packing from slcStack.h5, then continue from step 2.
+       if [[ "$miaplpy_startstep" == "1" ]]; then
+           run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 1 --stop 1"
+           run_command "resize_miaplpy_unwrap_jobfiles.py $miaplpy_dir_name"
+           if [[ "$miaplpy_stopstep" != "1" ]]; then
+               run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 2 --stop $miaplpy_stopstep"
+           fi
+       else
+           run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start $miaplpy_startstep --stop $miaplpy_stopstep"
+       fi
     fi
 
     # add missing ORBIT_DIRECTION / relative_orbit to inputs H5 (for saarvey / upload)
