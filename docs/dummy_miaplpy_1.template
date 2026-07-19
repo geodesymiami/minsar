@@ -16,6 +16,7 @@ topsStack.coregistration           = NESD  # [NESD geometry], auto for NESD
 mintpy.load.autoPath               = yes
 mintpy.compute.cluster             = local #[local / slurm / pbs / lsf / none], auto for none, cluster type
 mintpy.compute.numWorker           = 48 #[int > 1 / all], auto for 4 (local) or 40 (non-local), num of workers
+mintpy.plot                        = no  #[yes / no], auto for yes; create_template may set yes if ssaraopt span <= 365 days
 mintpy.plot.maxMemory              = auto  #[float], auto for 4, max memory used by one call of view.py for plotting.
 mintpy.networkInversion.parallel   = yes  #[yes / no], auto for no, parallel processing using dask
 mintpy.save.hdfEos5                = yes   #[yes / update / no], auto for no, save timeseries to UNAVCO InSAR Archive format

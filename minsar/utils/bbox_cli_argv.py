@@ -172,7 +172,7 @@ CREATE_TEMPLATE_ARGV_KW = {
         "--coregistration",
     ),
     "consume_two": (),
-    "flags": ("--last-year", "--geometry"),
+    "flags": ("--last-year", "--geometry", "--mintpy-plot", "--mintpy-no-plot"),
 }
 
 GET_SAR_COVERAGE_ARGV_KW = {
