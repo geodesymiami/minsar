@@ -293,8 +293,12 @@ Examples:
       --start-date YYYYMMDD           Start date of limited period
       --end-date YYYYMMDD             End date of limited period
       --period YYYYMMDD:YYYYMMDD      Period of the search
+      --force                         Recompute horz/vert products even when cached outputs are up to date
+      --clean                         Remove cached *vert*/*horz*.he5 and .hvparams before running
       --no-ingest-los                 Skip ingesting both re-referenced radar LOS .he5 files (default: ingest-los is enabled)
       --no-insarmaps                  Skip running ingest_insarmaps.bash (default: insarmaps ingestion is enabled)
+      --num-workers N                 Passed to ingest_insarmaps.bash (hdfeos5_2json_mbtiles workers; default: 1)
+      --mbtiles-num-workers N         Passed to ingest_insarmaps.bash (json_mbtiles2insarmaps workers; default: 6)
       --debug                         Enable debug mode (set -x)
 
   Re-reference: Both resolved radar LOS .he5 files are updated in place to --ref-lalo via
@@ -308,6 +312,9 @@ Examples:
   If a geo_S1*.he5 is selected and the sibling radar file is newer, geocode is re-run from radar.
 
   Output: data_files.txt, *vert*.he5, *horz*.he5, maskTempCoh.h5, image_pairs.txt.
+  Caching: When both *vert*/*horz*.he5 are newer than geocoded inputs and processing options match
+  (.hvparams sidecar), re-reference, geocode, and horzvert_timeseries.py are skipped unless --force.
+  Use --clean to delete cached horz/vert products and sidecars, then regenerate.
   Other: overlay.html, index.html (copy of overlay), matrix.html, insarmaps.log, urls.log, download_commands.txt. Overwritten/recreated; no backups.
   Logging: run_workflow-style lines (YYYYMMDD:HH-MM + ...) go to each input dataset mother log for the
   full horzvert invocation. Each subprocess prints \"In \$SCRATCHDIR/.../\" (when under SCRATCHDIR) then
@@ -329,6 +336,8 @@ echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $*" | tee -a "$LOG_FILE"
 
 # Initialize option parsing variables (lowercase)
 debug_flag=0
+force_flag=0
+clean_flag=0
 ingest_los_flag=1
 ingest_insarmaps_flag=1
 positional=()
@@ -346,6 +355,8 @@ intervals=""
 start_date=""
 stop_date=""
 period=""
+num_workers=1
+mbtiles_num_workers=6
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]
@@ -412,6 +423,14 @@ do
             period="$2"
             shift 2
             ;;
+        --force)
+            force_flag=1
+            shift
+            ;;
+        --clean)
+            clean_flag=1
+            shift
+            ;;
         --no-ingest-los)
             ingest_los_flag=0
             shift
@@ -419,6 +438,24 @@ do
         --no-insarmaps)
             ingest_insarmaps_flag=0
             shift
+            ;;
+        --num-workers=*)
+            num_workers="${key#--num-workers=}"
+            shift
+            ;;
+        --num-workers)
+            [[ $# -lt 2 ]] && { echo "Error: --num-workers requires a positive integer" >&2; exit 1; }
+            num_workers="$2"
+            shift 2
+            ;;
+        --mbtiles-num-workers=*)
+            mbtiles_num_workers="${key#--mbtiles-num-workers=}"
+            shift
+            ;;
+        --mbtiles-num-workers)
+            [[ $# -lt 2 ]] && { echo "Error: --mbtiles-num-workers requires a positive integer" >&2; exit 1; }
+            mbtiles_num_workers="$2"
+            shift 2
             ;;
         --debug)
             debug_flag=1
@@ -437,6 +474,17 @@ do
 done
 
 set -- "${positional[@]}"
+
+_validate_positive_int_opt() {
+    local opt_name="$1" val="$2"
+    [[ "$val" =~ ^[1-9][0-9]*$ ]] || {
+        echo "Error: $opt_name must be a positive integer (got '$val')" >&2
+        exit 1
+    }
+}
+_validate_positive_int_opt "--num-workers" "$num_workers"
+_validate_positive_int_opt "--mbtiles-num-workers" "$mbtiles_num_workers"
+ingest_workers_opts=(--num-workers "$num_workers" --mbtiles-num-workers "$mbtiles_num_workers")
 
 # Validate --ref-lalo type if provided
 validate_ref_lalo() {
@@ -540,6 +588,57 @@ if ! FILE1=$(hv_he5_radar_los_path "$FILE1"); then exit 1; fi
 if ! FILE2=$(hv_he5_radar_los_path "$FILE2"); then exit 1; fi
 echo "FILE1 (radar LOS for pipeline): $FILE1"
 echo "FILE2 (radar LOS for pipeline): $FILE2"
+
+# Output directory (used for --clean, cache check, and Step 3)
+ORIGINAL_DIR="$PWD"
+PROJECT_DIR=$(get_base_projectname "$DIR_OR_FILE1")
+dir="$([ -f "$DIR_OR_FILE1" ] && dirname "$DIR_OR_FILE1" || echo "$DIR_OR_FILE1")"
+processing_method_dir=$(echo "$dir" | tr '/' '\n' | grep -E '^(mintpy|miaplpy)' | head -1 | cut -d'_' -f1)
+HORZVERT_DIR="${PROJECT_DIR}/${processing_method_dir}"
+mkdir -p "$ORIGINAL_DIR/$HORZVERT_DIR"
+
+hv_clean_cached_products() {
+    local outdir="$1"
+    [[ -d "$outdir" ]] || return 0
+    echo "Removing cached horz/vert products in: $outdir"
+    rm -f "$outdir"/*vert*.he5 "$outdir"/*horz*.he5 "$outdir"/*.hvparams 2>/dev/null || true
+}
+
+hv_python_option_suffix() {
+    local suffix=""
+    [[ -n "$mask_thresh" ]] && suffix="$suffix --mask-thresh $mask_thresh"
+    [[ -n "$REF_LAT" && -n "$REF_LON" ]] && suffix="$suffix --ref-lalo $REF_LAT $REF_LON"
+    [[ -n "$lat_step" ]] && suffix="$suffix --lat-step $lat_step"
+    [[ -n "$horz_az_angle" ]] && suffix="$suffix --horz-az-angle $horz_az_angle"
+    [[ -n "$window_size" ]] && suffix="$suffix --window-size $window_size"
+    [[ -n "$intervals" ]] && suffix="$suffix --intervals $intervals"
+    [[ -n "$start_date" ]] && suffix="$suffix --start-date $start_date"
+    [[ -n "$stop_date" ]] && suffix="$suffix --end-date $stop_date"
+    [[ -n "$period" ]] && suffix="$suffix --period $period"
+    [[ $force_flag == "1" ]] && suffix="$suffix --force"
+    echo "$suffix"
+}
+
+if [[ $clean_flag == "1" ]]; then
+    hv_clean_cached_products "$ORIGINAL_DIR/$HORZVERT_DIR"
+fi
+
+CACHE_HIT=0
+if [[ $force_flag == "0" ]]; then
+    echo ""
+    echo "##############################################"
+    echo "Step 0b: Check cached horz/vert products"
+    FILE1_ABS=$(realpath "$FILE1")
+    FILE2_ABS=$(realpath "$FILE2")
+    CACHE_CMD="horzvert_timeseries.py --check-cache-only \"$FILE1_ABS\" \"$FILE2_ABS\"$(hv_python_option_suffix)"
+    hv_announce_command "$ORIGINAL_DIR/$HORZVERT_DIR" "$CACHE_CMD"
+    if eval "$CACHE_CMD"; then
+        CACHE_HIT=1
+        echo "Cached horz/vert products are up to date; skipping re-reference, geocode, and compute."
+    fi
+fi
+
+if [[ $CACHE_HIT == "0" ]]; then
 
 ###############################################################################
 # Step 0c: Re-reference radar LOS to --ref-lalo (in place, same filename)
@@ -695,16 +794,8 @@ echo "FILE2: $FILE2"
 
 # Always pass the resolved (and possibly geocoded) .he5 file paths to horzvert_timeseries.py,
 # so that when the user passes directories (e.g. with --dataset filt*DS) Python receives the actual files.
-ORIGINAL_DIR="$PWD"
 FILE1_ABS=$(realpath "$FILE1")
 FILE2_ABS=$(realpath "$FILE2")
-
-# Compute output directory from user path (same as old script)
-PROJECT_DIR=$(get_base_projectname "$DIR_OR_FILE1")
-dir="$([ -f "$DIR_OR_FILE1" ] && dirname "$DIR_OR_FILE1" || echo "$DIR_OR_FILE1")"
-processing_method_dir=$(echo "$dir" | tr '/' '\n' | grep -E '^(mintpy|miaplpy)' | head -1 | cut -d'_' -f1)
-HORZVERT_DIR="${PROJECT_DIR}/${processing_method_dir}"
-mkdir -p "$ORIGINAL_DIR/$HORZVERT_DIR"
 
 ###############################################################################
 # Step 2: Run horzvert_timeseries.py (from ORIGINAL_DIR, same as old script)
@@ -713,23 +804,20 @@ echo ""
 echo "##############################################"
 echo "Step 2: Run horzvert_timeseries.py"
 
-CMD="horzvert_timeseries.py \"$FILE1_ABS\" \"$FILE2_ABS\""
-
-[[ -n "$mask_thresh" ]] && CMD="$CMD --mask-thresh $mask_thresh"
-[[ -n "$REF_LAT" && -n "$REF_LON" ]] && CMD="$CMD --ref-lalo $REF_LAT $REF_LON"
-[[ -n "$lat_step" ]] && CMD="$CMD --lat-step $lat_step"
-[[ -n "$horz_az_angle" ]] && CMD="$CMD --horz-az-angle $horz_az_angle"
-[[ -n "$window_size" ]] && CMD="$CMD --window-size $window_size"
-[[ -n "$intervals" ]] && CMD="$CMD --intervals $intervals"
-[[ -n "$start_date" ]] && CMD="$CMD --start-date $start_date"
-[[ -n "$stop_date" ]] && CMD="$CMD --end-date $stop_date"
-[[ -n "$period" ]] && CMD="$CMD --period $period"
+CMD="horzvert_timeseries.py \"$FILE1_ABS\" \"$FILE2_ABS\"$(hv_python_option_suffix)"
 
 _hv_hvz_dir="$ORIGINAL_DIR/$HORZVERT_DIR"
 hv_announce_command "$_hv_hvz_dir" "$CMD"
 append_hv_to_project_logs "$(date +"%Y%m%d:%H-%M") + ${CMD}"
 echo ""
 eval $CMD
+
+fi
+
+if [[ $CACHE_HIT == "1" ]]; then
+    ORIGINAL_RESOLVED_FILE1="$(realpath "$FILE1")"
+    ORIGINAL_RESOLVED_FILE2="$(realpath "$FILE2")"
+fi
 
 ###############################################################################
 # Step 3: Locate outputs (same as old script: cd to HORZVERT_DIR, find vert/horz)
@@ -763,16 +851,16 @@ echo "Step 4: Ingest into insarmaps"
 
 echo ""
 echo "##############################################"
-_hv_ingest_vert_cmd="ingest_insarmaps.bash $VERT_FILE"
+_hv_ingest_vert_cmd="ingest_insarmaps.bash $VERT_FILE ${ingest_workers_opts[*]}"
 hv_announce_command "$ORIGINAL_DIR/$HORZVERT_DIR" "$_hv_ingest_vert_cmd"
-ingest_insarmaps.bash "$VERT_FILE"
+ingest_insarmaps.bash "$VERT_FILE" "${ingest_workers_opts[@]}"
 echo "$ORIGINAL_DIR/$HORZVERT_DIR/$VERT_FILE" >> $DATA_FILES_TXT
 
 echo ""
 echo "##############################################"
-_hv_ingest_horz_cmd="ingest_insarmaps.bash $HORZ_FILE"
+_hv_ingest_horz_cmd="ingest_insarmaps.bash $HORZ_FILE ${ingest_workers_opts[*]}"
 hv_announce_command "$ORIGINAL_DIR/$HORZVERT_DIR" "$_hv_ingest_horz_cmd"
-ingest_insarmaps.bash "$HORZ_FILE"
+ingest_insarmaps.bash "$HORZ_FILE" "${ingest_workers_opts[@]}"
 echo "$ORIGINAL_DIR/$HORZVERT_DIR/$HORZ_FILE" >> $DATA_FILES_TXT
 
 get_ingest_dataset_opt() {
@@ -805,15 +893,15 @@ if [[ $ingest_los_flag == "1" ]]; then
     # LOS files were re-referenced in Step 0c; ingest without --ref-lalo (hdfeos5_2json uses this .he5).
     ingest_dataset_opt1=$(get_ingest_dataset_opt "$ORIGINAL_RESOLVED_FILE1")
     if [[ -n "$ingest_dataset_opt1" ]]; then
-        _hv_ingest_los1_cmd="ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE1 --dataset $ingest_dataset_opt1"
+        _hv_ingest_los1_cmd="ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE1 --dataset $ingest_dataset_opt1 ${ingest_workers_opts[*]}"
     else
-        _hv_ingest_los1_cmd="ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE1"
+        _hv_ingest_los1_cmd="ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE1 ${ingest_workers_opts[*]}"
     fi
     hv_announce_command "$(dirname "$ORIGINAL_RESOLVED_FILE1")" "$_hv_ingest_los1_cmd"
     if [[ -n "$ingest_dataset_opt1" ]]; then
-        ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE1" --dataset "$ingest_dataset_opt1"
+        ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE1" --dataset "$ingest_dataset_opt1" "${ingest_workers_opts[@]}"
     else
-        ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE1"
+        ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE1" "${ingest_workers_opts[@]}"
     fi
     echo "$ORIGINAL_RESOLVED_FILE1" >> $DATA_FILES_TXT
 
@@ -821,15 +909,15 @@ if [[ $ingest_los_flag == "1" ]]; then
     echo "##############################################"
     ingest_dataset_opt2=$(get_ingest_dataset_opt "$ORIGINAL_RESOLVED_FILE2")
     if [[ -n "$ingest_dataset_opt2" ]]; then
-        _hv_ingest_los2_cmd="ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE2 --dataset $ingest_dataset_opt2"
+        _hv_ingest_los2_cmd="ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE2 --dataset $ingest_dataset_opt2 ${ingest_workers_opts[*]}"
     else
-        _hv_ingest_los2_cmd="ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE2"
+        _hv_ingest_los2_cmd="ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE2 ${ingest_workers_opts[*]}"
     fi
     hv_announce_command "$(dirname "$ORIGINAL_RESOLVED_FILE2")" "$_hv_ingest_los2_cmd"
     if [[ -n "$ingest_dataset_opt2" ]]; then
-        ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE2" --dataset "$ingest_dataset_opt2"
+        ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE2" --dataset "$ingest_dataset_opt2" "${ingest_workers_opts[@]}"
     else
-        ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE2"
+        ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE2" "${ingest_workers_opts[@]}"
     fi
     echo "$ORIGINAL_RESOLVED_FILE2" >> $DATA_FILES_TXT
 

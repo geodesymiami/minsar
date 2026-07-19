@@ -240,9 +240,23 @@ test_horzvert_script_syntax_and_los_ingest_no_ref_lalo() {
     assert_contains "$content" "hv_promote_short_he5_to_corner_filename" "Uses MintPy/MiaplPy HE5 rename helper"
     assert_contains "$content" "reference_point_hdfeos5.bash" "Calls reference_point_hdfeos5.bash"
     assert_contains "$content" "hv_announce_command" "Uses hv_announce_command before subprocesses"
+    assert_contains "$content" "--check-cache-only" "Forwards cache check to horzvert_timeseries.py"
+    assert_contains "$content" "--force" "Documents --force option"
+    assert_contains "$content" "--clean" "Documents --clean option"
+    assert_contains "$content" "hv_clean_cached_products" "Defines clean helper for cached products"
     assert_not_contains "$content" 'ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE1" --ref-lalo' "LOS ingest file1 without --ref-lalo"
     assert_not_contains "$content" 'ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE2" --ref-lalo' "LOS ingest file2 without --ref-lalo"
     print_test_end "horzvert_timeseries.bash wiring"
+}
+
+test_horzvert_help_lists_cache_options() {
+    print_test_start "horzvert_timeseries.bash --help" "Help documents --force and --clean."
+    local content
+    content=$(cat "$HV_SCRIPT")
+    assert_contains "$content" "--force" "Help lists --force"
+    assert_contains "$content" "--clean" "Help lists --clean"
+    assert_contains "$content" ".hvparams" "Help mentions hvparams sidecar"
+    print_test_end "horzvert_timeseries.bash --help"
 }
 
 print_header "HORZVERT_TIMESERIES TESTS"
@@ -262,6 +276,7 @@ test_hv_promote_mintpy_double_placeholder_short_to_corner
 test_hv_scratchdir_display_path_under_scratch
 test_hv_announce_command_logs_to_dir
 test_horzvert_script_syntax_and_los_ingest_no_ref_lalo
+test_horzvert_help_lists_cache_options
 
 print_summary
 exit $?
