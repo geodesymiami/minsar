@@ -7,24 +7,16 @@ import os
 import sys
 import argparse
 from pathlib import Path
-from minsar.objects import message_rsmas
-from minsar.objects.auto_defaults import PathFind
-import minsar.utils.process_utilities as putils
-from minsar.job_submission import JOB_SUBMIT
-from minsar.objects.dataset_template import Template
-import minsar.utils.process_utilities as putils
-
-pathObj = PathFind()
 
 
-DESCRIPTION = ("""Creates jobfile to run save_hdfeos5.py for data in radar coordinates""")
-EXAMPLE = """example:
-    create_save_hdfeos5_jobfile.py $SAMPLESDIR/unittestGalapagosSenDT128.template miaplpy_SN_201606_201608/network_single_reference
-    create_save_hdfeos5_jobfile.py $SAMPLESDIR/unittestGalapagosSenDT128.template miaplpy_SN_201606_201608/network_single_reference --queue skx-dev
+DESCRIPTION = ("""Creates jobfile to export MiaplPy network products to HDF-EOS5 (radar coordinates).""")
+EXAMPLE = """Examples:
+create_save_hdfeos5_jobfile.py $SAMPLESDIR/unittestGalapagosSenDT128.template miaplpy_SN_201606_201608/network_single_reference
+create_save_hdfeos5_jobfile.py $SAMPLESDIR/unittestGalapagosSenDT128.template miaplpy_SN_201606_201608/network_single_reference --queue skx-dev
 """
 
 ###########################################################################################
-def create_parser():
+def create_parser(iargs=None):
 
     default_queuename = os.environ.get("QUEUENAME")
 
@@ -38,55 +30,86 @@ def create_parser():
     parser.add_argument('--outdir', dest='outdir', type=str, default=os.getcwd(), help='Output directory (Default: current directory.)')
     parser.add_argument('--outfile', dest='outfile', type=str, default='save_hdfeos5_radar', help='job file name (Default: save_hdfeos5_radar')
 
-    inps = parser.parse_args()
+    inps = parser.parse_args(args=iargs)
     return inps
+
 
 def get_network_prefix(network_dir):
     network_name = network_dir.split('network_')[1]
     if 'delaunay_4' in network_name:
-        prefix='Del4'
+        prefix = 'Del4'
     elif 'single_reference' in network_name:
-        prefix='Sing'
+        prefix = 'Sing'
     elif 'sequential_1' in network_name:
-        prefix='Seq1'
+        prefix = 'Seq1'
     elif 'sequential_2' in network_name:
-        prefix='Seq2'
+        prefix = 'Seq2'
     elif 'sequential_3' in network_name:
-        prefix='Seq3'
+        prefix = 'Seq3'
     elif 'sequential_4' in network_name:
-        prefix='Seq4'
+        prefix = 'Seq4'
     elif 'sequential_5' in network_name:
-        prefix='Seq5'
+        prefix = 'Seq5'
     elif 'sequential_6' in network_name:
-        prefix='Seq6'
+        prefix = 'Seq6'
     elif 'sequential_8' in network_name:
-        prefix='Seq8'
+        prefix = 'Seq8'
     elif 'mini_stacks' in network_name:
-        prefix='Mini'
+        prefix = 'Mini'
     else:
         raise Exception("USER ERROR: network name not recognized")
 
     return prefix
 
 
+def build_job_commands(processing_dir, prefix, filter_par, mask_thresh):
+    """Build shell command lines for the save_hdfeos5_radar job body."""
+    command = [f'cd {processing_dir}']
+
+    save_cmd = f'save_miaplpy_hdfeos5.bash -t smallbaselineApp.cfg --prefix {prefix} --mask-thresh {mask_thresh}'
+    if filter_par is None:
+        save_cmd += ' --no-filter'
+    else:
+        save_cmd += f' --filter {filter_par}'
+    command.append(save_cmd)
+
+    # Summary PNGs only when MintPy full plotting is OFF (runtime check of smallbaselineApp.cfg)
+    command.append('# Summary PNGs only when MintPy full plotting is OFF')
+    command.append(
+        "plot_val=$(awk -F= '/^[[:space:]]*mintpy\\.plot[[:space:]]*=/ {"
+        " gsub(/[[:space:]]/, \"\", $2); print tolower($2); exit"
+        " }' smallbaselineApp.cfg)"
+    )
+    command.append(
+        'if [[ "$plot_val" == "no" || "$plot_val" == "false" || "$plot_val" == "0" ]]; then\n'
+        '  plot_mintpy_summary_pngs.py --dir . -t smallbaselineApp.cfg\n'
+        'fi'
+    )
+    return command
+
+
 def main(iargs=None):
 
-    if not iargs is None:
+    if iargs is not None:
         input_arguments = iargs
     else:
-        input_arguments = sys.argv[1::]
+        input_arguments = sys.argv[1:]
 
-    inps = create_parser()
+    inps = create_parser(input_arguments)
     inps.work_dir = os.getcwd()
+
+    from minsar.objects import message_rsmas
+    from minsar.job_submission import JOB_SUBMIT
+    from minsar.objects.dataset_template import Template
 
     message_rsmas.log(inps.work_dir, os.path.basename(__file__) + ' ' + ' '.join(input_arguments))
 
     dataset_template = Template(inps.custom_template_file)
 
     try:
-       min_temp_coh =  dataset_template.get_options()['mintpy.networkInversion.minTempCoh']
-    except:
-       min_temp_coh = 0.7
+        min_temp_coh = dataset_template.get_options()['mintpy.networkInversion.minTempCoh']
+    except Exception:
+        min_temp_coh = 0.7
 
     inps.prefix = 'tops'   # in create_runfiles.py it was just there
 
@@ -95,51 +118,22 @@ def main(iargs=None):
 
     prefix = get_network_prefix(network_dir)
 
-    processing_dir = inps.work_dir +  '/' + inps.processing_dir
+    processing_dir = inps.work_dir + '/' + inps.processing_dir
     processing_dir = processing_dir.rstrip(os.path.sep)
 
     job_name = f'{inps.outdir}/{inps.outfile}'
     job_file_name = job_name
 
     mask_thresh = min_temp_coh
-    command = []
-    command.append( f'cd {processing_dir}' )
-    command.append( f'spatial_filter.py temporalCoherence.h5 -f lowpass_gaussian -p {inps.filter_par} &' )
-    command.append( f'wait' )
-    command.append( f'generate_mask.py temporalCoherence_lowpass_gaussian.h5 -m {mask_thresh} &' )
-    command.append( f'wait' )
-
-    command.append( f'save_hdfeos5.py timeseries_*demErr.h5 --tc temporalCoherence.h5 --asc avgSpatialCoh.h5 -m ../maskPS.h5 -g inputs/geometryRadar.h5 --dem-error demErr.h5 -t smallbaselineApp.cfg --suffix {prefix}PS &' )
-    command.append( f'save_hdfeos5.py timeseries_*demErr.h5 --tc temporalCoherence.h5 --asc avgSpatialCoh.h5 -m maskTempCoh.h5 -g inputs/geometryRadar.h5 --dem-error demErr.h5 -t smallbaselineApp.cfg --suffix {prefix}DS &' )
-    command.append( f'save_hdfeos5.py timeseries_*demErr.h5 --tc temporalCoherence_lowpass_gaussian.h5 --asc avgSpatialCoh.h5 -m maskTempCoh_lowpass_gaussian.h5 --dem-error demErr.h5  -g inputs/geometryRadar.h5 -t smallbaselineApp.cfg --suffix filt{prefix}DS &' )
-    command.append( f'geocode.py temporalCoherence_lowpass_gaussian.h5 -t smallbaselineApp.cfg  --outdir geo &' )
-    command.append( f'geocode.py maskTempCoh_lowpass_gaussian.h5 -t smallbaselineApp.cfg  --outdir geo &' )
-    command.append( f'geocode.py ../maskPS.h5 -t smallbaselineApp.cfg  --outdir geo &' )
-    command.append( f'wait' )
-
-    command.append( 'source ' + os.path.dirname(os.path.abspath(__file__)) + '/../lib/common_helpers.sh' )
-    command.append( f'h5file=`ls *_???????????_???????????_???????????_???????????*_{prefix}PS.he5` ; add_ref_lalo_to_file $h5file' )
-    command.append( f'h5file=`ls *_???????????_???????????_???????????_???????????*_{prefix}DS.he5` ; add_ref_lalo_to_file $h5file' )
-    command.append( f'h5file=`ls *_???????????_???????????_???????????_???????????*_filt{prefix}DS.he5` ; add_ref_lalo_to_file $h5file' )
-
-    command.append( f'view.py --dpi 150 --noverbose --nodisplay --update --memory 4.0 temporalCoherence_lowpass_gaussian.h5 -c gray -v 0 1 &')
-    command.append( f'view.py --dpi 150 --noverbose --nodisplay --update --memory 4.0 maskTempCoh_lowpass_gaussian.h5 -c gray -v 0 1 &')
-    command.append( f'view.py --dpi 150 --noverbose --nodisplay --update --memory 4.0 geo/geo_temporalCoherence_lowpass_gaussian.h5 -c gray -v 0 1 &')
-    command.append( f'view.py --dpi 150 --noverbose --nodisplay --update --memory 4.0 geo/geo_maskTempCoh_lowpass_gaussian.h5 -c gray -v 0 1 &')
-    command.append( f'view.py --dpi 150 --noverbose --nodisplay --update --memory 4.0 ../maskPS.h5 -c gray -v 0 1 &')
-    command.append( f'view.py --dpi 150 --noverbose --nodisplay --update --memory 4.0 geo/geo_maskPS.h5 -c gray -v 0 1 &')
-    command.append( f'wait' )
-    command.append( f'mv *png pic')
-
-    # Join the list into a string with linefeeds
-    final_command =[ '\n'.join(command) ]
+    command = build_job_commands(processing_dir, prefix, inps.filter_par, mask_thresh)
+    final_command = ['\n'.join(command)]
 
     # create job file
     inps.num_data = 1
-    job_obj= JOB_SUBMIT(inps)
+    job_obj = JOB_SUBMIT(inps)
     job_obj.get_memory_walltime(job_name="save_hdfeos5_radar", job_type='script')
     job_obj.submit_script(job_name, job_file_name, final_command, writeOnly='True')
-    print('jobfile created: ',job_file_name + '.job')
+    print('jobfile created: ', job_file_name + '.job')
 
     return
 

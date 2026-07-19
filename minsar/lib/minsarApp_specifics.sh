@@ -383,17 +383,34 @@ function run_command() {
 }
 
 ###########################################
+function list_merged_slc_yyyymmdd_dates() {
+# Print sorted YYYYMMDD acquisition directory names under merged/SLC (or $1), one per line.
+# Skips non-date dirs (e.g. excludeSeason, excludeSeason_MMDD-MMDD).
+    local slc_dir="${1:-merged/SLC}"
+    local name d
+    if [[ ! -d "$slc_dir" ]]; then
+        return 1
+    fi
+    for d in "$slc_dir"/*; do
+        [[ -d "$d" ]] || continue
+        name=$(basename "$d")
+        [[ "$name" =~ ^[0-9]{8}$ ]] || continue
+        echo "$name"
+    done | sort
+}
+
+###########################################
 function get_date_str() {
 # get string with start and end date
 if  [ ! -z ${template[miaplpy.load.startDate]} ] && [ ! ${template[miaplpy.load.startDate]} == "auto" ]; then
     start_date=${template[miaplpy.load.startDate]}
 else
-    start_date=$(ls merged/SLC | head -1)
+    start_date=$(list_merged_slc_yyyymmdd_dates | head -1)
 fi
 if  [ ! -z ${template[miaplpy.load.endDate]} ] && [ ! ${template[miaplpy.load.endDate]} == "auto" ]; then
     end_date=${template[miaplpy.load.endDate]}
 else
-    end_date=$(ls merged/SLC | tail -1)
+    end_date=$(list_merged_slc_yyyymmdd_dates | tail -1)
 fi
 date_str="${start_date:0:6}_${end_date:0:6}"
 echo $date_str

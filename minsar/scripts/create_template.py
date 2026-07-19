@@ -6,6 +6,8 @@ Runs get_sar_coverage.py --select to determine ascending/descending orbit labels
 reads a dummy template, fills in ssaraopt.relativeOrbit, miaplpy.subset.lalo,
 and date range (optional: --quick-run, --period, --start-date/--end-date, or
 --last-year for the full previous calendar year), writes the template to CWD.
+Sets ``mintpy.plot`` to yes when the ssaraopt span is ``<= 365`` days (else no);
+``--mintpy-plot`` / ``--mintpy-no-plot`` override that rule.
 With dual-pass ``--flight-dir`` values (``asc,desc`` default; also ``desc,asc`` or
 legacy ``both``), it also runs create_opposite_orbit_template to write the
 complementary pass when both directions have coverage. If only one direction
@@ -37,6 +39,7 @@ from minsar.utils.bbox_cli_argv import (
 )
 from minsar.utils.convert_bbox import _input_to_bounds
 from minsar.utils.exclude_season import parse_exclude_season
+from minsar.utils.ssaraopt_to_mintpy_plot import apply_mintpy_plot_line, resolve_mintpy_plot_value
 from minsar.utils.sar_platform import SAR_PLATFORM_KNOWN, normalize_sar_platform_token
 
 
@@ -374,6 +377,7 @@ def _substitute_template(
     end_date: str | None,
     exclude_season: str | None,
     tops_stack_coregistration: str = "NESD",
+    mintpy_plot: str = "no",
 ) -> str:
     """Replace orbit/AOI/date options, optionally adding ssaraopt.excludeSeason."""
     lines = content.splitlines()
@@ -407,8 +411,8 @@ def _substitute_template(
         out.append(line)
     if exclude_season is not None and not exclude_added and not exclude_matched:
         out.append(f"ssaraopt.excludeSeason             = {exclude_season}")
-    # End with newline (same as awk output in create_opposite_orbit_template.bash).
-    return "\n".join(out) + "\n"
+    text = "\n".join(out) + "\n"
+    return apply_mintpy_plot_line(text, mintpy_plot)
 
 
 def _run_create_opposite_orbit(
@@ -463,6 +467,8 @@ Examples:
   create_template.py 36.331:36.486,25.318:25.492 Santorini --platform S1
   create_template.py 36.331:36.486,25.318:25.492 Santorini --geometry
   create_template.py 36.331:36.486,25.318:25.492 Santorini --coregistration NESD
+  create_template.py 36.331:36.486,25.318:25.492 Santorini --quick-run 2026 --mintpy-no-plot
+  create_template.py 36.331:36.486,25.318:25.492 Santorini --period 20210101:20221231 --mintpy-plot
 """,
     )
     parser.add_argument("aoi", metavar="AOI", help="AOI: S:N,W:E; WKT POLYGON; Minus-first lat: quote AOI or argv normalization.")
@@ -478,6 +484,9 @@ Examples:
     parser.add_argument("--platform", default="S1", metavar="NAME", help="get_sar_coverage sensor (default S1); use S1 (NISAR/ALOS2 unsupported here)")
     parser.add_argument("--coregistration", dest="tops_coregistration", default=None, choices=["geometry", "NESD"], metavar="MODE", help="topsStack.coregistration; Default: NESD")
     parser.add_argument("--geometry", dest="geometry_mode", action="store_true", help="Same as --coregistration geometry")
+    plot_grp = parser.add_mutually_exclusive_group()
+    plot_grp.add_argument("--mintpy-plot", dest="mintpy_plot_cli", action="store_const", const="yes", default=None, help="Force mintpy.plot = yes (overrides date-span rule)")
+    plot_grp.add_argument("--mintpy-no-plot", dest="mintpy_plot_cli", action="store_const", const="no", help="Force mintpy.plot = no (overrides date-span rule)")
     return parser
 
 
@@ -623,6 +632,17 @@ def main(
         print(f"Error: dummy template not found: {dummy_path}", file=sys.stderr)
         return 1, None, None, ""
 
+    mintpy_plot = resolve_mintpy_plot_value(
+        start_date,
+        end_date,
+        cli_override=inps.mintpy_plot_cli,
+    )
+    print(
+        f"mintpy.plot = {mintpy_plot} "
+        f"(CLI override={inps.mintpy_plot_cli!r}; span from ssaraopt dates)",
+        file=sys.stderr,
+    )
+
     content = dummy_path.read_text()
     content = _substitute_template(
         content,
@@ -632,6 +652,7 @@ def main(
         end_date=end_date,
         exclude_season=exclude_season,
         tops_stack_coregistration=tops_co,
+        mintpy_plot=mintpy_plot,
     )
 
     out_base = f"{name}{primary_label}"

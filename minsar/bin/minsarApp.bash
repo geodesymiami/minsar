@@ -57,6 +57,7 @@ helptext="                                                                      
    --sleep SECS           sleep seconds before running                           \n\
    --chunks               process in form of multiple chunks.                    \n\
    --clean-start          rm -rf \$SCRATCHDIR/<project> then recreate work dir   \n\
+   --queue NAME           SLURM queue (sets QUEUENAME. Default:  QUEUENAME from env)\n\
                                                                                  \n\
 For sarvey:                                                                      \n\
    --miaplpy-stop 1      to only run step 1 (load_slc_geometry.py) of miaplpy    \n\
@@ -253,6 +254,11 @@ do
             miaplpy_flag=1
             shift
             ;;
+        --queue)
+            export QUEUENAME="$2"
+            shift
+            shift
+            ;;
         --miaplpy-start)
             miaplpy_flag=1
             miaplpy_start_cli_flag=1
@@ -354,6 +360,9 @@ do
 esac
 done
 set -- "${POSITIONAL[@]}" # restore positional parameters
+
+# Refresh after possible --queue (QUEUENAME may have changed in the parse loop)
+srun_cmd="srun -n1 -N1 -A $JOBSHEDULER_PROJECTNAME -p $QUEUENAME  -t 00:25:00 "
 
 if [[ ${#POSITIONAL[@]} -gt 1 ]]; then
     if [[ "$2" == -* ]]; then
@@ -828,8 +837,16 @@ if [[ $miaplpy_flag == "1" ]]; then
        run_command "create_jobfile_to_generate_miaplpy_jobfiles.py $template_file $miaplpy_dir_name"
        run_command "run_workflow.bash $template_file --jobfile $PWD/create_miaplpy_jobfiles.job"
 
-       # run miaplpy jobfiles
-       run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start $miaplpy_startstep --stop $miaplpy_stopstep"
+       # Run miaplpy jobfiles. After step 1 (load_data), resize run_05 unwrap packing from slcStack.h5, then continue from step 2.
+       if [[ "$miaplpy_startstep" == "1" ]]; then
+           run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 1 --stop 1"
+           run_command "resize_miaplpy_unwrap_jobfiles.py $miaplpy_dir_name"
+           if [[ "$miaplpy_stopstep" != "1" ]]; then
+               run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 2 --stop $miaplpy_stopstep"
+           fi
+       else
+           run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start $miaplpy_startstep --stop $miaplpy_stopstep"
+       fi
     fi
 
     # add missing ORBIT_DIRECTION / relative_orbit to inputs H5 (for saarvey / upload)
