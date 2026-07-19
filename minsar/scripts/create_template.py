@@ -39,7 +39,7 @@ from minsar.utils.bbox_cli_argv import (
 )
 from minsar.utils.convert_bbox import _input_to_bounds
 from minsar.utils.exclude_season import parse_exclude_season
-from minsar.utils.mintpy_plot_policy import apply_mintpy_plot_line, resolve_mintpy_plot_value
+from minsar.utils.ssaraopt_to_mintpy_plot import apply_mintpy_plot_line, resolve_mintpy_plot_value
 from minsar.utils.sar_platform import SAR_PLATFORM_KNOWN, normalize_sar_platform_token
 
 

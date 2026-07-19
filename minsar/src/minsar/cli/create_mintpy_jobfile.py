@@ -38,7 +38,7 @@ def effective_template_for_job(custom_template_file, processing_dir):
     Otherwise write ``{processing_dir}/.minsar_mintpy_template.template`` with
     ``mintpy.plot`` from the ssaraopt span rule (does not rewrite $TE).
     """
-    from minsar.utils.mintpy_plot_policy import (
+    from minsar.utils.ssaraopt_to_mintpy_plot import (
         apply_mintpy_plot_line,
         mintpy_plot_from_ssaraopt_span,
         read_template_option,

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Tests for minsar.utils.mintpy_plot_policy."""
+"""Tests for minsar.utils.ssaraopt_to_mintpy_plot."""
 
 import unittest
 from datetime import date
 
-from minsar.utils.mintpy_plot_policy import (
+from minsar.utils.ssaraopt_to_mintpy_plot import (
     apply_mintpy_plot_line,
     mintpy_plot_from_ssaraopt_span,
     parse_ssaraopt_date,

@@ -1,4 +1,4 @@
-"""Policy for MintPy ``mintpy.plot`` from ssaraopt date span.
+"""Map ssaraopt start/end dates to MintPy ``mintpy.plot`` (yes/no).
 
 Default is off; enable full plotting only when ``(end - start).days <= 365``.
 ``ssaraopt.endDate = auto`` is treated as today. Missing/unparseable dates → ``no``.
