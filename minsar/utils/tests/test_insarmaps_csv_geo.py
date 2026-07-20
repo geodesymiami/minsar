@@ -31,6 +31,22 @@ class TestInsarmapsCsvGeo(unittest.TestCase):
         finally:
             os.unlink(path)
 
+    def test_mean_lat_lon_egms_lowercase(self):
+        lines = [
+            "latitude,longitude,20200104",
+            "37.7,15.0,1",
+            "37.9,15.2,2",
+        ]
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False) as f:
+            f.write("\n".join(lines))
+            path = f.name
+        try:
+            ml, mo = csv_mean_lat_lon(path)
+            self.assertAlmostEqual(ml, 37.8)
+            self.assertAlmostEqual(mo, 15.1)
+        finally:
+            os.unlink(path)
+
     def test_get_center_coords_csv(self):
         try:
             import h5py  # noqa: F401 — get_data_footprint_centroid imports it at module load

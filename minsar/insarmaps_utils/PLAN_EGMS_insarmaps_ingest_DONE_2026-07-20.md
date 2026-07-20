@@ -1,16 +1,41 @@
 # Plan: EGMS L2a → Insarmaps ingest
 
+## Status
+
+**Implemented 2026-07-20** (core path). Example data: `/data/HDF5EOS/egmsEtnaSenA44/egms/`.
+
+| Item | Status |
+|------|--------|
+| `latitude`/`longitude` candidates (case-insensitive) in converter + `insarmaps_csv_geo.py` | Done |
+| `egms_metadata.py` — XML + filename + track_angle helpers | Done |
+| `egms2insarmaps.py` — convert → patch metadata → upload | Done |
+| Optional quality: `temporal_coherence`→coherence, `height_ortho`→elevation, `pid`→point_ID | Done (in converter) |
+| Unit tests | Done (`minsar/insarmaps_utils/tests/test_egms_metadata.py`) |
+| Full 1 GB Etna upload | Operational (run manually; use `--num-workers 1`) |
+
+## Usage
+
+```bash
+egms2insarmaps.py /data/HDF5EOS/egmsEtnaSenA44/egms/EGMS_L2a_044_0221_IW2_VV_2020_2024_1.csv --num-workers 1
+egms2insarmaps.py EGMS_L2a_044_0221_IW2_VV_2020_2024_1.csv --step 1 --num-workers 1
+egms2insarmaps.py EGMS_L2a_044_0221_IW2_VV_2020_2024_1.csv --step 2
+egms2insarmaps.py EGMS_L2a_044_0221_IW2_VV_2020_2024_1.csv --skip-upload
+egms2insarmaps.py EGMS_L2a_044_0221_IW2_VV_2020_2024_1.csv --flight-direction A --relative-orbit 44
+```
+
+Steps (same idea as `ingest_insarmaps.bash`):
+
+| Flag | Effect |
+|------|--------|
+| (default) | Step 1 then step 2 |
+| `--step 1` / `--hdfeos5_2json_mbtiles` / `--skip-upload` | CSV → JSON/MBTiles + metadata patch only |
+| `--step 2` / `--json_mbtiles2insarmaps` | Upload only (requires prior step 1) |
+
+Warn: ~1 GB CSV needs enough RAM; prefer `--num-workers 1`.
+
 ## Summary
 
-Gap analysis for ingesting the Etna EGMS L2a CSV into insarmaps via `hdfeos5_or_csv_2json_mbtiles.py`: one hard blocker (lat/lon column names), several metadata fields missing or filled with Galapagos dummy defaults, and a recommended path to enrich from the companion XML (plus optional manual/CLI overrides).
-
-## TODO
-
-- [ ] Add latitude/longitude (case-insensitive) to CSV lat/lon candidates in `hdfeos5_or_csv_2json_mbtiles.py` and `insarmaps_csv_geo.py`
-- [ ] Parse companion EGMS XML + filename for `relative_orbit`, `beam_swath`, `flight_direction`, `CENTER_LINE_UTC`
-- [ ] Add CLI flags for manual `flight_direction`, `relative_orbit`, `center-line-utc`, `project-name`, `post_processing_method`
-- [ ] Add small EGMS-like CSV/XML unit tests for column detection and attribute enrichment
-- [ ] Document EGMS CSV ingest notes and memory caveats
+Gap analysis for ingesting EGMS L2a CSV into insarmaps via `hdfeos5_or_csv_2json_mbtiles.py` plus orchestrator `egms2insarmaps.py`. Hard blocker was lowercase lat/lon column names; metadata enriched from companion XML / filename / CLI.
 
 ## Dataset facts
 
@@ -52,7 +77,7 @@ Date handling already accepts bare `YYYYMMDD` columns (non-SARvey branch) and sc
 
 `needed_attributes` (insarmaps DB popup/title fields) is large; CSV path fills some, then `add_dummy_attribute` injects **Galapagos placeholders** for the rest. Missing keys are simply omitted from the uploaded attribute list (not a hard crash).
 
-`enrich_attributes_from_slcstack` looks for `../inputs/slcStack.h5` and filenames like `S1_044_...` — **neither applies** to this EGMS file.
+`enrich_attributes_from_csv_filename` may fill mission/orbit from stems like `S1_044_...`. EGMS names do not match that pattern; use XML/CLI via `egms2insarmaps.py` instead.
 
 ## Hard blocker (must change code or rename columns)
 
@@ -115,7 +140,7 @@ These are the ones that matter for display naming (see `sarvey2insarmaps.merge_i
 
 - **EGMS `burst_id=0221`**: track-local progressive index; do **not** use directly as ESA/ASF burst ID for download.
 - **Practical SAFE path**: download one XML-listed SLC (e.g. `S1A_IW_SLC__1SDV_20200110T165613_...`) and read IW2 burst annotation for heading / `CENTER_LINE_UTC` / orbit direction — redundant if you already accept A + track 44 from CSV/XML.
-- **MintPy/MiaplPy path**: if you have track-44 Etna products, copy `ORBIT_DIRECTION`, `CENTER_LINE_UTC`, `RELATIVE_ORBIT`, `WAVELENGTH`, etc. from `.he5` / `slcStack.h5`. No Etna track-44 stack was found under `/Users/famelung/scratch` in a quick search; confirm your project path if you want that wired in.
+- **MintPy/MiaplPy path**: if you have track-44 Etna products, copy `ORBIT_DIRECTION`, `CENTER_LINE_UTC`, `RELATIVE_ORBIT`, `WAVELENGTH`, etc. from `.he5`. No Etna track-44 stack was found under `/Users/famelung/scratch` in a quick search; confirm your project path if you want that wired in.
 
 ## Recommended modifications (concrete approach)
 

@@ -3,9 +3,9 @@ import csv
 import math
 from statistics import mean
 
-# Same order as insarmaps_scripts/hdfeos5_or_csv_2json_mbtiles.py read_from_csv_file
-LAT_CANDIDATES = ["Y_geocorr", "Latitude", "Y", "ycoord"]
-LON_CANDIDATES = ["X_geocorr", "Longitude", "X", "xcoord"]
+# Same order as insarmaps_scripts/hdfeos5_or_csv_2json_mbtiles.py (case-insensitive match)
+LAT_CANDIDATES = ["Y_geocorr", "Latitude", "latitude", "Y", "ycoord"]
+LON_CANDIDATES = ["X_geocorr", "Longitude", "longitude", "X", "xcoord"]
 
 
 def _parse_float_cell(val):
@@ -18,6 +18,14 @@ def _parse_float_cell(val):
     if math.isnan(x):
         return None
     return x
+
+
+def _detect_lat_lon_fieldnames(fieldnames):
+    """Return (lat_col, lon_col) using LAT/LON_CANDIDATES (case-insensitive)."""
+    lower_map = {name.strip().lower(): name.strip() for name in fieldnames if name is not None}
+    lat_col = next((lower_map[c.lower()] for c in LAT_CANDIDATES if c.lower() in lower_map), None)
+    lon_col = next((lower_map[c.lower()] for c in LON_CANDIDATES if c.lower() in lower_map), None)
+    return lat_col, lon_col
 
 
 def load_csv_lat_lon_arrays(csv_path):
@@ -33,9 +41,7 @@ def load_csv_lat_lon_arrays(csv_path):
         reader = csv.DictReader(f)
         if not reader.fieldnames:
             raise ValueError("CSV has no header row")
-        colmap = {name.strip(): name for name in reader.fieldnames}
-        lat_col = next((colmap[c] for c in LAT_CANDIDATES if c in colmap), None)
-        lon_col = next((colmap[c] for c in LON_CANDIDATES if c in colmap), None)
+        lat_col, lon_col = _detect_lat_lon_fieldnames(reader.fieldnames)
         if lat_col is None or lon_col is None:
             raise ValueError(
                 "Could not find latitude/longitude columns. Supported names: "
