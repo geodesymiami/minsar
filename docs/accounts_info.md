@@ -51,4 +51,7 @@ asfpass="..."
 eossouser="..."
 eossopass="..."
 
+# EGMS (European Ground Motion Service) — path to CLMS JSON service key file
+# Create token at https://land.copernicus.eu (profile → API Tokens); save once as .jwt JSON
+egms_token="/path/to/egms_token.jwt"
 ```

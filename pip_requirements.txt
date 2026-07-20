@@ -8,5 +8,6 @@ fuzzywuzzy          # string matching
 jupyter-ai          # 
 geocoder            # insarmaps_sccripts
 requests>=2.20.0    # sardem
+PyJWT>=2.0.0        # egms_download.py CLMS auth
 password_config     # general use
 openpyxl            # create insar template
