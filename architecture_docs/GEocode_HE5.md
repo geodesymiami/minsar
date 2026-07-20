@@ -101,7 +101,23 @@ geocode.py timeseries.h5 -l inputs/geometryRadar.h5 -t smallbaselineApp.cfg --ou
 | `additions/mintpy/cli/geocode_orig.py` | Unmodified MintPy geocode |
 | `additions/mintpy/save_hdfeos5.py` | HDFEOS5 write |
 | `minsar/utils/extract_hdfeos5.py` | HDFEOS5 read |
+| `additions/mintpy/save_explorer.py` | Export geocoded timeseries / HDFEOS `.he5` → GMT GRD for QGIS InSAR Explorer |
+| `additions/mintpy/cli/save_explorer.py` | CLI: accept `timeseries` or geocoded `HDFEOS`; resolve `geo/geo_velocity.h5` |
 | `additions/mintpy/tests/test_geocode_wrapper.py` | Tests |
+| `additions/mintpy/tests/test_save_explorer.py` | save_explorer HDFEOS / velocity resolve tests |
+
+---
+
+## save_explorer (InSAR Explorer GRD export)
+
+Convert geocoded MintPy `timeseries` **or** HDFEOS5 (`.he5`) to GMT GRD files for [InSAR Explorer](https://insar-explorer.readthedocs.io/en/latest/#data-preparation-mintpy).
+
+```bash
+save_explorer.py S1_desc_....he5 -o InSAR-Explorer
+```
+
+**Velocity when `-v` omitted:** (1) matching `geo/geo_velocity.h5` or `geo_velocity.h5`, else (2) MintPy default linear fit (`polynomial=1` via `time_func`).  
+**Mask when `-m` omitted:** matching `geo/geo_maskTempCoh.h5` / sibling `maskTempCoh.h5`, else HDFEOS `quality/mask`. Radar-sized masks are skipped if the grid does not match.
 
 ---
 

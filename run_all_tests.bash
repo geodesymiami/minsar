@@ -116,6 +116,7 @@ run_python_tests() {
         "minsar/objects/tests"     # Objects unit tests (when created)
         "minsar/scripts/tests"     # Scripts unit tests
         "minsar/src/minsar/cli/tests"  # CLI jobfile creators
+        "minsar/insarmaps_utils/tests"  # EGMS / Insarmaps helpers
     )
     if [[ "${MINSAR_SKIP_MINTPY_ADDITIONS_TESTS:-0}" != "1" ]]; then
         test_locations+=("additions/mintpy/tests")   # MintPy additions (geocode wrapper, etc.)
