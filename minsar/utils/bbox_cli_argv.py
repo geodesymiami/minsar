@@ -16,6 +16,7 @@ __all__ = [
     "CREATE_TEMPLATE_ARGV_KW",
     "GET_SAR_COVERAGE_ARGV_KW",
     "DISPLAY_BBOX_ARGV_KW",
+    "EGMS_DOWNLOAD_ARGV_KW",
 ]
 
 
@@ -192,4 +193,19 @@ DISPLAY_BBOX_ARGV_KW = {
     "consume_one": (),
     "consume_two": ("--lat", "--lon"),
     "flags": ("--satellite", "--asf"),
+}
+
+EGMS_DOWNLOAD_ARGV_KW = {
+    "consume_one": (
+        "--aoi",
+        "--intersectsWith",
+        "--level",
+        "--releases",
+        "--dir",
+        "--direction",
+        "--relativeOrbit",
+        "--swath",
+    ),
+    "consume_two": (),
+    "flags": ("--print", "--download"),
 }
