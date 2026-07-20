@@ -1,23 +1,17 @@
 #!/usr/bin/env bash
 # horzvert_timeseries.bash
-# Wrapper script for horzvert_timeseries.py
-# Resolves file paths, geocodes radar-coded inputs, runs horzvert_timeseries.py,
-# and ingests results into insarmaps.
+# Resolves paths, writes script-style run_horzvert2timeseries, optionally executes it.
 #
-# Flow (2026-05):
-#   Step 0: Parse options and resolve file paths (dirs -> specific .he5 via get_eos5_file)
-#   Step 0b: If resolved path is geo_*.he5, switch to sibling radar S1*.he5 (same dir).
-#   Step 0c: Re-reference both radar LOS .he5 files to --ref-lalo in place (same basename;
-#            reference_point_hdfeos5.bash; then ingest does not pass --ref-lalo).
-#   Step 0d: If save_hdfeos5 wrote a short basename but a corner-suffix sibling exists (MintPy or
-#            MiaplPy), mv the updated short file onto the long path so REF and ingest use one file.
-#   Step 1: Geocode inputs if radar-coded (geocode.py; skip if already geocoded)
-#   Step 2: Run horzvert_timeseries.py (computes vert/horz from geocoded inputs)
-#   Step 3: Locate vert/horz outputs
-#   Step 4: Ingest into insarmaps (if not --no-insarmaps)
-#           4a: ingest vert/horz (no --ref-lalo, ref already in file)
-#           4b: ingest asc/desc radar S1*.he5 (already re-referenced; no --ref-lalo)
-#           4c: HTML/URLs
+# Flow:
+#   Step 0: Parse options and resolve file paths (dirs -> radar S1*.he5)
+#   Step 0b: Cache check (skip compute steps in run file when fresh)
+#   Write: <site>/<mintpy|miaplpy[_YYYYMM_YYYYMM]>/run_horzvert2timeseries
+#          (longer of the two input periods; ref & wait; geocode & wait;
+#          horzvert_timeseries.py; wait; ingest). Default stops here.
+#   --submit: bash run file (Mac/Jetstream/in-job) or create_slurm_jobfile --from-file
+#             + run_workflow.bash --jobfile (HPC login). Then HTML/urls.
+#
+# Run file may contain & / wait — not for LAUNCHER (script-style, like smallbaseline_wrapper.job).
 
 set -eo pipefail
 
@@ -27,25 +21,9 @@ SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
 source ${SCRIPT_DIR}/../lib/utils.sh
 source ${SCRIPT_DIR}/../lib/horzvert_timeseries_utils.sh
 
-# Dependencies: utils.sh [get_base_projectname], horzvert_timeseries_utils.sh, horzvert_timeseries.py (external),
-#   reference_point_hdfeos5.bash, geocode.py, write_insarmaps_framepage_urls.py,
-#   create_data_download_commands.py, ingest_insarmaps.bash.
-#   PlotData: plotdata.helper_functions (get_eos5_file, find_longitude_degree) -- TODO: copy into minsar.
-
-get_path_without_scratchdir() {
-    local file_path="$1"
-    [[ -z "$file_path" || ! -f "$file_path" ]] && return
-
-    local abs_path=$(realpath "$file_path" 2>/dev/null)
-    [[ -z "$abs_path" ]] && abs_path=$(cd "$(dirname "$file_path")" && pwd)/$(basename "$file_path")
-
-    if [[ -n "${SCRATCHDIR:-}" ]]; then
-        local scratchdir_resolved=$(realpath "$SCRATCHDIR" 2>/dev/null || (cd "$SCRATCHDIR" && pwd))
-        [[ "$abs_path" == "$scratchdir_resolved"/* ]] && abs_path="${abs_path#$scratchdir_resolved/}"
-    fi
-
-    echo "$abs_path"
-}
+# Dependencies: utils.sh, horzvert_timeseries_utils.sh, reference_point_hdfeos5.bash,
+#   geocode.py, horzvert_timeseries.py, ingest_insarmaps.bash, create_slurm_jobfile.sh,
+#   run_workflow.bash, write_insarmaps_framepage_urls.py, create_data_download_commands.py.
 
 normalize_insarmaps_coordinates() {
     local log_file="$1"
@@ -263,63 +241,37 @@ append_hv_to_project_logs() {
 
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     helptext="
+Usage: $SCRIPT_NAME <file_or_dir1> <file_or_dir2> --ref-lalo LAT LON [options]
+
 Examples:
     $SCRIPT_NAME ChilesSenD142/mintpy ChilesSenA120/mintpy --ref-lalo 0.649 -77.878
-    $SCRIPT_NAME ChilesSenD142/mintpy ChilesSenA120/mintpy --ref-lalo 0.649 -77.878 --intervals 6
-    $SCRIPT_NAME hvGalapagosSenD128/mintpy hvGalapagosSenA106/mintpy --ref-lalo -0.81 -91.190
     $SCRIPT_NAME hvGalapagosSenD128/mintpy hvGalapagosSenA106/mintpy --ref-lalo -0.81 -91.190 --no-insarmaps
     $SCRIPT_NAME hvGalapagosSenD128/miaplpy/network_single_reference hvGalapagosSenA106/miaplpy/network_single_reference --ref-lalo -0.81 -91.190 --no-ingest-los
-    $SCRIPT_NAME hvGalapagosSenD128/miaplpy/.../filtSingDS.he5 hvGalapagosSenA106/miaplpy/.../filtSingDS.he5 --ref-lalo -0.81 -91.190
-    $SCRIPT_NAME FernandinaSenD128/mintpy/ FernandinaSenA106/mintpy/ --ref-lalo -0.453 -91.390
-    $SCRIPT_NAME FernandinaSenD128/miaplpy/network_delaunay_4 FernandinaSenA106/miaplpy/network_delaunay_4 --ref-lalo -0.415 -91.543
-    $SCRIPT_NAME MaunaLoaSenDT87/mintpy MaunaLoaSenAT124/mintpy --period 20181001:20191031 --ref-lalo 19.50068 -155.55856
+    $SCRIPT_NAME FernandinaSenD128/miaplpy/network_delaunay_4 FernandinaSenA106/miaplpy/network_delaunay_4 --ref-lalo -0.415 -91.543 --submit
 
-  Arguments:
-      <file_or_dir1> <file_or_dir2>     Two ascending/descending .he5 files or directories.
-                                        If a directory: with --dataset use the youngest .he5 matching that type;
-                                        otherwise the newest .he5 is selected (PlotData get_eos5_file).
-
-  Options:
-      --dataset TYPE                  Select .he5 by type when argument is a directory: PS, DS, filtDS, filt*DS, or geo.
-                                        When not given, resolve_he5 is used (newest .he5 or get_eos5_file).
-      --mask-thresh FLOAT             Coherence threshold for masking (default: 0.55)
-      --ref-lalo LAT,LON or LAT LON   Reference point (required). Comma form or two numbers;
-                                        also --ref-lalo=LAT,LON
-      --lat-step FLOAT                Latitude step for geocoding (LON_STEP computed automatically)
-      --lalo-step LAT LON             Lat and lon step for geocoding (overrides --lat-step)
+Options:
+      --dataset TYPE                  Select .he5 type in a directory: PS, DS, filtDS, filt*DS, geo
+      -g, --geom-file FILE1 FILE2     Geometry files for horzvert_timeseries.py
+      --mask-thresh FLOAT             Coherence mask threshold (default: 0.55)
+      --ref-lalo LAT LON              Reference point (required); also LAT,LON or --ref-lalo=LAT,LON
+      --lat-step FLOAT                Latitude step for geocoding
+      --lalo-step LAT LON             Lat and lon step for geocoding
       --horz-az-angle FLOAT           Horizontal azimuth angle (default: 90)
-      --window-size INT               Window size for reference point lookup (default: 3)
+      --window-size INT               Reference-point window (default: 3)
       --intervals INT                 Interval block index (default: 2)
-      --start-date YYYYMMDD           Start date of limited period
-      --end-date YYYYMMDD             End date of limited period
-      --period YYYYMMDD:YYYYMMDD      Period of the search
-      --force                         Recompute horz/vert products even when cached outputs are up to date
-      --clean                         Remove cached *vert*/*horz*.he5 and .hvparams before running
-      --no-ingest-los                 Skip ingesting both re-referenced radar LOS .he5 files (default: ingest-los is enabled)
-      --no-insarmaps                  Skip running ingest_insarmaps.bash (default: insarmaps ingestion is enabled)
-      --num-workers N                 Passed to ingest_insarmaps.bash (hdfeos5_2json_mbtiles workers; default: 1)
-      --mbtiles-num-workers N         Passed to ingest_insarmaps.bash (json_mbtiles2insarmaps workers; default: 6)
-      --debug                         Enable debug mode (set -x)
-
-  Re-reference: Both resolved radar LOS .he5 files are updated in place to --ref-lalo via
-  reference_point_hdfeos5.bash before geocoding. If resolution picked geo_*.he5, the sibling radar
-  S1*.he5 in the same directory is used instead.
-  MiaplPy duplicates: if both a short-name HE5 (…_YYYYMMDD_YYYYMMDD_filt*DS.he5 or
-  …_YYYYMMDD_XXXXXXXX_filt*DS.he5 for update filenames) and a long-name copy with bbox corners exist,
-  the updated short file is moved onto the long path so one canonical file keeps the correct REF_* metadata.
-  Geocoding: If inputs are radar S1*.he5, an existing geo_S1*.he5 in the same directory is reused
-  only when it is newer than the radar file; otherwise geocode.py is run (refreshes stale geo).
-  If a geo_S1*.he5 is selected and the sibling radar file is newer, geocode is re-run from radar.
-
-  Output: data_files.txt, *vert*.he5, *horz*.he5, maskTempCoh.h5, image_pairs.txt.
-  Caching: When both *vert*/*horz*.he5 are newer than geocoded inputs and processing options match
-  (.hvparams sidecar), re-reference, geocode, and horzvert_timeseries.py are skipped unless --force.
-  Use --clean to delete cached horz/vert products and sidecars, then regenerate.
-  Other: overlay.html, index.html (copy of overlay), matrix.html, insarmaps.log, urls.log, download_commands.txt. Overwritten/recreated; no backups.
-  Logging: run_workflow-style lines (YYYYMMDD:HH-MM + ...) go to each input dataset mother log for the
-  full horzvert invocation. Each subprocess prints \"In \$SCRATCHDIR/.../\" (when under SCRATCHDIR) then
-  \"Running: ...\" and appends that line to the log file in the directory where the command runs
-  (e.g. .../network_delaunay_4/log for geocode/reference on an HE5 in that folder). CWD ./log unchanged.
+      --start-date YYYYMMDD           Start date
+      --end-date YYYYMMDD             End date
+      --period YYYYMMDD:YYYYMMDD      Date period
+      --force                         Recompute even if cached horz/vert are up to date
+      --clean                         Remove cached *vert*/*horz*.he5 and .hvparams
+      --no-ingest-los                 Skip ingesting radar LOS .he5 files
+      --no-insarmaps                  Skip ingest_insarmaps.bash
+      --ingest-parallel               Run ingest lines in parallel (& / wait)
+      --submit                        Execute run_horzvert2timeseries (default: write run file only)
+      --sleep SECS                    Sleep SECS seconds before running
+      --num-workers N                 ingest_insarmaps hdfeos5_2json workers (default: 1)
+      --mbtiles-num-workers N         ingest_insarmaps mbtiles workers (default: 6)
+      --debug                         set -x
     "
     printf "$helptext"
     exit 0
@@ -340,6 +292,8 @@ force_flag=0
 clean_flag=0
 ingest_los_flag=1
 ingest_insarmaps_flag=1
+ingest_parallel_flag=0
+submit_flag=0
 positional=()
 
 # Default values for options (lowercase - local/temporary variables)
@@ -357,6 +311,7 @@ stop_date=""
 period=""
 num_workers=1
 mbtiles_num_workers=6
+sleep_time=""
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]
@@ -439,6 +394,23 @@ do
             ingest_insarmaps_flag=0
             shift
             ;;
+        --ingest-parallel)
+            ingest_parallel_flag=1
+            shift
+            ;;
+        --submit|-s)
+            submit_flag=1
+            shift
+            ;;
+        --sleep=*)
+            sleep_time="${key#--sleep=}"
+            shift
+            ;;
+        --sleep)
+            [[ $# -lt 2 ]] && { echo "Error: --sleep requires a non-negative integer (seconds)" >&2; exit 1; }
+            sleep_time="$2"
+            shift 2
+            ;;
         --num-workers=*)
             num_workers="${key#--num-workers=}"
             shift
@@ -482,9 +454,22 @@ _validate_positive_int_opt() {
         exit 1
     }
 }
+_validate_nonneg_int_opt() {
+    local opt_name="$1" val="$2"
+    [[ "$val" =~ ^[0-9]+$ ]] || {
+        echo "Error: $opt_name must be a non-negative integer (got '$val')" >&2
+        exit 1
+    }
+}
 _validate_positive_int_opt "--num-workers" "$num_workers"
 _validate_positive_int_opt "--mbtiles-num-workers" "$mbtiles_num_workers"
+[[ -n "$sleep_time" ]] && _validate_nonneg_int_opt "--sleep" "$sleep_time"
 ingest_workers_opts=(--num-workers "$num_workers" --mbtiles-num-workers "$mbtiles_num_workers")
+
+if [[ -n "$sleep_time" ]]; then
+    echo "sleeping $sleep_time secs before starting ..."
+    sleep "$sleep_time"
+fi
 
 # Validate --ref-lalo type if provided
 validate_ref_lalo() {
@@ -589,11 +574,13 @@ if ! FILE2=$(hv_he5_radar_los_path "$FILE2"); then exit 1; fi
 echo "FILE1 (radar LOS for pipeline): $FILE1"
 echo "FILE2 (radar LOS for pipeline): $FILE2"
 
-# Output directory (used for --clean, cache check, and Step 3)
+# Output directory (used for --clean, cache check, and Step 3).
+# Keep the mintpy/miaplpy dir covering the longer period, e.g.
+#   EtnaSenA44/.../miaplpy_202001_202412 + EtnaSenD124/.../miaplpy_202001_202410
+#   → Etna/miaplpy_202001_202412
 ORIGINAL_DIR="$PWD"
 PROJECT_DIR=$(get_base_projectname "$DIR_OR_FILE1")
-dir="$([ -f "$DIR_OR_FILE1" ] && dirname "$DIR_OR_FILE1" || echo "$DIR_OR_FILE1")"
-processing_method_dir=$(echo "$dir" | tr '/' '\n' | grep -E '^(mintpy|miaplpy)' | head -1 | cut -d'_' -f1)
+processing_method_dir=$(hv_longest_processing_method_dir "$DIR_OR_FILE1" "$DIR_OR_FILE2")
 HORZVERT_DIR="${PROJECT_DIR}/${processing_method_dir}"
 mkdir -p "$ORIGINAL_DIR/$HORZVERT_DIR"
 
@@ -633,245 +620,40 @@ if [[ $force_flag == "0" ]]; then
     CACHE_CMD="horzvert_timeseries.py --check-cache-only \"$FILE1_ABS\" \"$FILE2_ABS\"$(hv_python_option_suffix)"
     hv_announce_command "$ORIGINAL_DIR/$HORZVERT_DIR" "$CACHE_CMD"
     if eval "$CACHE_CMD"; then
-        CACHE_HIT=1
-        echo "Cached horz/vert products are up to date; skipping re-reference, geocode, and compute."
+        # Require products under this run's HORZVERT_DIR (not a legacy bare miaplpy/ only).
+        if compgen -G "$ORIGINAL_DIR/$HORZVERT_DIR"/*vert*.he5 > /dev/null \
+            && compgen -G "$ORIGINAL_DIR/$HORZVERT_DIR"/*horz*.he5 > /dev/null; then
+            CACHE_HIT=1
+            echo "Cached horz/vert products are up to date; skipping re-reference, geocode, and compute in run file."
+        else
+            echo "Python cache reported a hit, but no *vert*/*horz*.he5 under $HORZVERT_DIR; will recompute there."
+        fi
     fi
 fi
 
-if [[ $CACHE_HIT == "0" ]]; then
-
 ###############################################################################
-# Step 0c: Re-reference radar LOS to --ref-lalo (in place, same filename)
+# Build geocode args and write run_horzvert2timeseries
 ###############################################################################
-echo ""
-echo "##############################################"
-echo "Step 0c: Re-reference radar LOS to --ref-lalo (reference_point_hdfeos5.bash)"
-
-REF_PT_SCRIPT="${SCRIPT_DIR}/reference_point_hdfeos5.bash"
-if [[ ! -f "$REF_PT_SCRIPT" ]]; then
-    echo "Error: Missing $REF_PT_SCRIPT" >&2
-    exit 1
-fi
-
-_hv_rf1="$(realpath "$FILE1")"
-_hv_rf2="$(realpath "$FILE2")"
-_hv_ref_paths=("$_hv_rf1")
-[[ "$_hv_rf1" != "$_hv_rf2" ]] && _hv_ref_paths+=("$_hv_rf2")
-for _hv_los in "${_hv_ref_paths[@]}"; do
-    echo ""
-    _hv_los_dir=$(dirname "$_hv_los")
-    _hv_ref_cmd="bash $(printf '%q' "$REF_PT_SCRIPT") $(printf '%q' "$_hv_los") --ref-lalo $(printf '%q' "$REF_LAT") $(printf '%q' "$REF_LON")"
-    hv_announce_command "$_hv_los_dir" "$_hv_ref_cmd"
-    append_hv_to_project_logs "$(date +"%Y%m%d:%H-%M") + ${_hv_ref_cmd}"
-    bash "$REF_PT_SCRIPT" "$_hv_los" --ref-lalo "$REF_LAT" "$REF_LON"
-done
-
-###############################################################################
-# Step 0d: Prefer corner-suffix HE5 name when short duplicate exists (MiaplPy)
-###############################################################################
-echo ""
-echo "##############################################"
-echo "Step 0d: Unify short-name vs corner-suffix HE5 filenames (MintPy / MiaplPy, if applicable)"
-
-if ! FILE1=$(hv_promote_short_he5_to_corner_filename "$FILE1"); then exit 1; fi
-if ! FILE2=$(hv_promote_short_he5_to_corner_filename "$FILE2"); then exit 1; fi
-echo "FILE1 (after optional rename): $FILE1"
-echo "FILE2 (after optional rename): $FILE2"
-
-# Paths for LOS ingestion (Step 4b): final radar paths after re-reference and optional rename.
-ORIGINAL_RESOLVED_FILE1="$(realpath "$FILE1")"
-ORIGINAL_RESOLVED_FILE2="$(realpath "$FILE2")"
-
-###############################################################################
-# Step 1: Geocode inputs if radar-coded
-###############################################################################
-echo ""
-echo "##############################################"
-echo "Step 1: Geocode inputs if radar-coded"
-
-# geocode.py is always called with --lalo-step LAT_STEP LON_STEP (or --lat-step when only lat is set).
-# LON_STEP is derived from ref_lalo[0] via find_longitude_degree when using --lat-step or default.
-# Default LAT_STEP when neither --lalo-step nor --lat-step given: 0.00014.
 DEFAULT_LAT_STEP="0.00014"
 GEOCODE_LALO_ARGS=""
 if [[ ${#lalo_step[@]} -eq 2 ]]; then
     GEOCODE_LALO_ARGS="--lalo-step ${lalo_step[0]} ${lalo_step[1]}"
-    echo "Using --lalo-step ${lalo_step[0]} ${lalo_step[1]} for geocode.py"
 elif [[ -n "$lat_step" ]]; then
-    ref_lat_for_lon="${REF_LAT:-0}"
-    LON_STEP=$(compute_lon_step "$ref_lat_for_lon" "$lat_step")
+    LON_STEP=$(compute_lon_step "${REF_LAT:-0}" "$lat_step")
     GEOCODE_LALO_ARGS="--lalo-step $lat_step $LON_STEP"
-    echo "Using --lalo-step $lat_step $LON_STEP (LON_STEP from ref_lat=$ref_lat_for_lon) for geocode.py"
 else
-    ref_lat_for_lon="${REF_LAT:-0}"
-    LON_STEP=$(compute_lon_step "$ref_lat_for_lon" "$DEFAULT_LAT_STEP")
+    LON_STEP=$(compute_lon_step "${REF_LAT:-0}" "$DEFAULT_LAT_STEP")
     GEOCODE_LALO_ARGS="--lalo-step $DEFAULT_LAT_STEP $LON_STEP"
-    echo "Using default --lalo-step $DEFAULT_LAT_STEP $LON_STEP (LON_STEP from ref_lat=$ref_lat_for_lon) for geocode.py"
 fi
-
-# Writes result path to $2 (temp file). All other output (messages + geocode.py) goes to stdout.
-# Refreshes stale geo_*.he5 when sibling radar *.he5 is newer (mtime). Reuses geo only when geo is newer than radar.
-geocode_if_needed() {
-    local file="$1"
-    local out_path="$2"
-    local file_dir file_base geo_out radar_in
-
-    file_dir=$(dirname "$file")
-    file_base=$(basename "$file")
-
-    if [[ "$file_base" == geo_* ]]; then
-        geo_out="${file_dir}/${file_base}"
-        radar_in="${file_dir}/${file_base#geo_}"
-        if [[ -f "$radar_in" ]] && [[ "$radar_in" -nt "$geo_out" ]] && is_geocoded "$file"; then
-            echo "Radar stack newer than geo; re-geocoding from: $radar_in"
-            file="$radar_in"
-            file_dir=$(dirname "$file")
-            file_base=$(basename "$file")
-        elif is_geocoded "$file"; then
-            echo "Already geocoded: $file"
-            echo "$file" > "$out_path"
-            return
-        elif [[ -f "$radar_in" ]]; then
-            echo "Geo file not usable as geocoded input; geocoding from radar: $radar_in"
-            file="$radar_in"
-            file_dir=$(dirname "$file")
-            file_base=$(basename "$file")
-        fi
-    elif is_geocoded "$file"; then
-        echo "Already geocoded: $file"
-        echo "$file" > "$out_path"
-        return
-    fi
-
-    file_dir=$(dirname "$file")
-    file_base=$(basename "$file")
-    if [[ "$file_base" == geo_* ]]; then
-        echo "Error: Cannot geocode: expected radar-coded S1*.he5 beside geo file, missing: ${file_dir}/${file_base#geo_}" >&2
-        exit 1
-    fi
-
-    geo_out="${file_dir}/geo_${file_base}"
-
-    if is_geocoded "$file"; then
-        echo "Already geocoded: $file"
-        echo "$file" > "$out_path"
-        return
-    fi
-
-    if [[ -f "$geo_out" ]] && [[ "$geo_out" -nt "$file" ]]; then
-        echo "Using existing geocoded file (newer than radar): $geo_out"
-        echo "$geo_out" > "$out_path"
-        return
-    fi
-
-    _hv_geo_cmd="geocode.py \"$file\" $GEOCODE_LALO_ARGS"
-    hv_announce_command "$file_dir" "$_hv_geo_cmd"
-    append_hv_geocode_log_for_file "$file" "$(date +"%Y%m%d:%H-%M") + ${_hv_geo_cmd}"
-    geocode.py "$file" $GEOCODE_LALO_ARGS
-
-    if [[ ! -f "$geo_out" ]]; then
-        echo "Error: Expected geocoded file not found: $geo_out"
-        exit 1
-    fi
-    echo "$geo_out" > "$out_path"
-}
-
-TMP1=$(mktemp)
-TMP2=$(mktemp)
-trap 'rm -f "$TMP1" "$TMP2"' EXIT
-
-echo ""
-geocode_if_needed "$FILE1" "$TMP1"
-FILE1=$(cat "$TMP1")
-
-echo ""
-geocode_if_needed "$FILE2" "$TMP2"
-FILE2=$(cat "$TMP2")
-
-echo "After geocoding:"
-echo "FILE1: $FILE1"
-echo "FILE2: $FILE2"
-
-# Always pass the resolved (and possibly geocoded) .he5 file paths to horzvert_timeseries.py,
-# so that when the user passes directories (e.g. with --dataset filt*DS) Python receives the actual files.
-FILE1_ABS=$(realpath "$FILE1")
-FILE2_ABS=$(realpath "$FILE2")
-
-###############################################################################
-# Step 2: Run horzvert_timeseries.py (from ORIGINAL_DIR, same as old script)
-###############################################################################
-echo ""
-echo "##############################################"
-echo "Step 2: Run horzvert_timeseries.py"
-
-CMD="horzvert_timeseries.py \"$FILE1_ABS\" \"$FILE2_ABS\"$(hv_python_option_suffix)"
-
-_hv_hvz_dir="$ORIGINAL_DIR/$HORZVERT_DIR"
-hv_announce_command "$_hv_hvz_dir" "$CMD"
-append_hv_to_project_logs "$(date +"%Y%m%d:%H-%M") + ${CMD}"
-echo ""
-eval $CMD
-
-fi
-
-if [[ $CACHE_HIT == "1" ]]; then
-    ORIGINAL_RESOLVED_FILE1="$(realpath "$FILE1")"
-    ORIGINAL_RESOLVED_FILE2="$(realpath "$FILE2")"
-fi
-
-###############################################################################
-# Step 3: Locate outputs (same as old script: cd to HORZVERT_DIR, find vert/horz)
-###############################################################################
-echo ""
-echo "##############################################"
-echo "Step 3: Locate outputs"
-
-DATA_FILES_TXT="$ORIGINAL_DIR/$HORZVERT_DIR/data_files.txt"
-rm -f $DATA_FILES_TXT ; touch $DATA_FILES_TXT
-
-cd "$ORIGINAL_DIR/$HORZVERT_DIR"
-rm -f insarmaps.log
-VERT_FILE=$(ls -t *vert*.he5 2>/dev/null | head -1)
-HORZ_FILE=$(ls -t *horz*.he5 2>/dev/null | head -1)
-
-echo "Found vert file: $VERT_FILE"
-echo "Found horz file: $HORZ_FILE"
-
-###############################################################################
-# Step 4: Ingest (if not --no-insarmaps)
-###############################################################################
-
-if [[ $ingest_insarmaps_flag == "0" ]]; then
-    exit 0
-fi
-
-echo ""
-echo "##############################################"
-echo "Step 4: Ingest into insarmaps"
-
-echo ""
-echo "##############################################"
-_hv_ingest_vert_cmd="ingest_insarmaps.bash $VERT_FILE ${ingest_workers_opts[*]}"
-hv_announce_command "$ORIGINAL_DIR/$HORZVERT_DIR" "$_hv_ingest_vert_cmd"
-ingest_insarmaps.bash "$VERT_FILE" "${ingest_workers_opts[@]}"
-echo "$ORIGINAL_DIR/$HORZVERT_DIR/$VERT_FILE" >> $DATA_FILES_TXT
-
-echo ""
-echo "##############################################"
-_hv_ingest_horz_cmd="ingest_insarmaps.bash $HORZ_FILE ${ingest_workers_opts[*]}"
-hv_announce_command "$ORIGINAL_DIR/$HORZVERT_DIR" "$_hv_ingest_horz_cmd"
-ingest_insarmaps.bash "$HORZ_FILE" "${ingest_workers_opts[@]}"
-echo "$ORIGINAL_DIR/$HORZVERT_DIR/$HORZ_FILE" >> $DATA_FILES_TXT
 
 get_ingest_dataset_opt() {
     local path="$1"
-    local abs_path
+    local abs_path he5_basename=""
     if [[ "$path" == /* ]]; then
         abs_path="$path"
     else
         abs_path="$ORIGINAL_DIR/$path"
     fi
-    local he5_basename=""
     if [[ -f "$abs_path" && "$abs_path" == *.he5 ]]; then
         he5_basename=$(basename "$abs_path")
     elif [[ -d "$abs_path" ]]; then
@@ -886,52 +668,103 @@ get_ingest_dataset_opt() {
         echo "DS"
     fi
 }
-if [[ $ingest_los_flag == "1" ]]; then
-    cd "$ORIGINAL_DIR/$HORZVERT_DIR"
+
+HV_RUN_DIR="$ORIGINAL_DIR/$HORZVERT_DIR"
+HV_RUN_FILE="$HV_RUN_DIR/run_horzvert2timeseries"
+mkdir -p "$HV_RUN_DIR"
+
+# Canonicalize short vs corner-suffix HE5 names before writing literal paths into the run file.
+if ! FILE1=$(hv_promote_short_he5_to_corner_filename "$(realpath "$FILE1")"); then exit 1; fi
+if ! FILE2=$(hv_promote_short_he5_to_corner_filename "$(realpath "$FILE2")"); then exit 1; fi
+FILE1=$(realpath "$FILE1")
+FILE2=$(realpath "$FILE2")
+
+GEOM_FILE_ARGS=""
+if [[ ${#geom_file[@]} -eq 2 ]]; then
+    GEOM_FILE_ARGS=" --geom-file $(printf '%q' "${geom_file[0]}") $(printf '%q' "${geom_file[1]}")"
+fi
+
+HV_RUN_FILE="$HV_RUN_FILE" \
+HV_RADAR1="$FILE1" \
+HV_RADAR2="$FILE2" \
+HV_REF_LAT="$REF_LAT" \
+HV_REF_LON="$REF_LON" \
+HV_OUTDIR="$ORIGINAL_DIR/$HORZVERT_DIR" \
+HV_CACHE_HIT="$CACHE_HIT" \
+HV_GEOCODE_ARGS="$GEOCODE_LALO_ARGS" \
+HV_PY_SUFFIX="$(hv_python_option_suffix)" \
+HV_INGEST_PARALLEL="$ingest_parallel_flag" \
+HV_INGEST_INSARMAPS="$ingest_insarmaps_flag" \
+HV_INGEST_LOS="$ingest_los_flag" \
+HV_INGEST_WORKERS_OPTS="${ingest_workers_opts[*]}" \
+HV_GEOM_FILE_ARGS="$GEOM_FILE_ARGS" \
+HV_DATASET_OPT1="$(get_ingest_dataset_opt "$FILE1")" \
+HV_DATASET_OPT2="$(get_ingest_dataset_opt "$FILE2")" \
+hv_write_run_horzvert2timeseries
+
+# On HPC login, always materialize the .job envelope (even without --submit).
+if hv_should_use_slurm_jobfile; then
+    (
+        cd "$HV_RUN_DIR"
+        create_slurm_jobfile.sh --job-name horzvert2timeseries --from-file run_horzvert2timeseries || true
+    )
+fi
+
+if [[ $submit_flag == "0" ]]; then
     echo ""
-    echo "##############################################"
-    # LOS files were re-referenced in Step 0c; ingest without --ref-lalo (hdfeos5_2json uses this .he5).
-    ingest_dataset_opt1=$(get_ingest_dataset_opt "$ORIGINAL_RESOLVED_FILE1")
-    if [[ -n "$ingest_dataset_opt1" ]]; then
-        _hv_ingest_los1_cmd="ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE1 --dataset $ingest_dataset_opt1 ${ingest_workers_opts[*]}"
-    else
-        _hv_ingest_los1_cmd="ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE1 ${ingest_workers_opts[*]}"
-    fi
-    hv_announce_command "$(dirname "$ORIGINAL_RESOLVED_FILE1")" "$_hv_ingest_los1_cmd"
-    if [[ -n "$ingest_dataset_opt1" ]]; then
-        ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE1" --dataset "$ingest_dataset_opt1" "${ingest_workers_opts[@]}"
-    else
-        ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE1" "${ingest_workers_opts[@]}"
-    fi
-    echo "$ORIGINAL_RESOLVED_FILE1" >> $DATA_FILES_TXT
-
+    echo "Wrote $HV_RUN_FILE"
     echo ""
-    echo "##############################################"
-    ingest_dataset_opt2=$(get_ingest_dataset_opt "$ORIGINAL_RESOLVED_FILE2")
-    if [[ -n "$ingest_dataset_opt2" ]]; then
-        _hv_ingest_los2_cmd="ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE2 --dataset $ingest_dataset_opt2 ${ingest_workers_opts[*]}"
-    else
-        _hv_ingest_los2_cmd="ingest_insarmaps.bash $ORIGINAL_RESOLVED_FILE2 ${ingest_workers_opts[*]}"
-    fi
-    hv_announce_command "$(dirname "$ORIGINAL_RESOLVED_FILE2")" "$_hv_ingest_los2_cmd"
-    if [[ -n "$ingest_dataset_opt2" ]]; then
-        ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE2" --dataset "$ingest_dataset_opt2" "${ingest_workers_opts[@]}"
-    else
-        ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE2" "${ingest_workers_opts[@]}"
-    fi
-    echo "$ORIGINAL_RESOLVED_FILE2" >> $DATA_FILES_TXT
+    echo "Re-run with --submit to execute."
+    exit 0
+fi
 
-    normalize_insarmaps_coordinates "insarmaps.log"
+echo ""
+echo "##############################################"
+echo "Executing run_horzvert2timeseries (--submit)"
+append_hv_to_project_logs "$(date +'%Y%m%d:%H-%M') + bash/run_workflow run_horzvert2timeseries"
+hv_run_or_submit_script "$HV_RUN_FILE" "horzvert2timeseries"
 
-    echo ""
-    echo "##############################################"
-    cd "$ORIGINAL_DIR"
-    HTML_SOURCE="${SCRIPT_DIR}/../html"
-    cp "$HTML_SOURCE"/*.html "$ORIGINAL_DIR/$HORZVERT_DIR/"
-    cp "$ORIGINAL_DIR/$HORZVERT_DIR/overlay.html" "$ORIGINAL_DIR/$HORZVERT_DIR/index.html"
-    write_insarmaps_framepage_urls.py "$HORZVERT_DIR" --outdir "$HORZVERT_DIR"
-    create_data_download_commands.py "$DATA_FILES_TXT"
+# After successful run: promote paths for HTML bookkeeping, locate outputs, write HTML/urls
+if ! FILE1=$(hv_promote_short_he5_to_corner_filename "$(realpath "$FILE1")"); then exit 1; fi
+if ! FILE2=$(hv_promote_short_he5_to_corner_filename "$(realpath "$FILE2")"); then exit 1; fi
+ORIGINAL_RESOLVED_FILE1="$(realpath "$FILE1")"
+ORIGINAL_RESOLVED_FILE2="$(realpath "$FILE2")"
 
+DATA_FILES_TXT="$ORIGINAL_DIR/$HORZVERT_DIR/data_files.txt"
+rm -f "$DATA_FILES_TXT"
+touch "$DATA_FILES_TXT"
+
+VERT_FILE=$(ls -t "$ORIGINAL_DIR/$HORZVERT_DIR"/*vert*.he5 2>/dev/null | head -1 || true)
+HORZ_FILE=$(ls -t "$ORIGINAL_DIR/$HORZVERT_DIR"/*horz*.he5 2>/dev/null | head -1 || true)
+if [[ -z "$VERT_FILE" || -z "$HORZ_FILE" ]]; then
+    echo "Error: missing *vert*/*horz*.he5 under $ORIGINAL_DIR/$HORZVERT_DIR after run" >&2
+    exit 1
+fi
+echo "$VERT_FILE" >> "$DATA_FILES_TXT"
+echo "$HORZ_FILE" >> "$DATA_FILES_TXT"
+[[ $ingest_los_flag == "1" ]] && {
+    echo "$ORIGINAL_RESOLVED_FILE1" >> "$DATA_FILES_TXT"
+    echo "$ORIGINAL_RESOLVED_FILE2" >> "$DATA_FILES_TXT"
+}
+
+if [[ $ingest_insarmaps_flag == "0" ]]; then
+    exit 0
+fi
+
+# Normalize log / write HTML (always after ingest when --submit, including --no-ingest-los)
+if [[ -f "$ORIGINAL_DIR/$HORZVERT_DIR/insarmaps.log" ]]; then
+    normalize_insarmaps_coordinates "$ORIGINAL_DIR/$HORZVERT_DIR/insarmaps.log"
+fi
+
+echo ""
+echo "##############################################"
+echo "Write InsarMaps HTML / urls / download commands"
+HTML_SOURCE="${SCRIPT_DIR}/../html"
+cp "$HTML_SOURCE/overlay.html" "$HTML_SOURCE/matrix.html" "$ORIGINAL_DIR/$HORZVERT_DIR/"
+cp "$ORIGINAL_DIR/$HORZVERT_DIR/overlay.html" "$ORIGINAL_DIR/$HORZVERT_DIR/index.html"
+write_insarmaps_framepage_urls.py "$HORZVERT_DIR" --outdir "$HORZVERT_DIR"
+create_data_download_commands.py "$DATA_FILES_TXT"
+if [[ -f "$ORIGINAL_DIR/$HORZVERT_DIR/urls.log" ]]; then
     echo "insarmaps frames created:"
-    cat "$HORZVERT_DIR/urls.log"
+    cat "$ORIGINAL_DIR/$HORZVERT_DIR/urls.log"
 fi

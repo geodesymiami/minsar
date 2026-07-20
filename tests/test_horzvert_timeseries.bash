@@ -229,35 +229,122 @@ test_hv_announce_command_logs_to_dir() {
 }
 
 test_horzvert_script_syntax_and_los_ingest_no_ref_lalo() {
-    print_test_start "horzvert_timeseries.bash wiring" "bash -n passes; LOS ingest does not use --ref-lalo."
+    print_test_start "horzvert_timeseries.bash wiring" "bash -n passes; run-file dispatch and LOS ingest wiring."
     local content _n
     bash -n "$HV_SCRIPT"
     _n=$?
     assert_equals "0" "$_n" "bash -n horzvert_timeseries.bash"
     content=$(cat "$HV_SCRIPT")
-    assert_contains "$content" "Step 0c: Re-reference radar LOS" "Documents re-reference step"
-    assert_contains "$content" "Step 0d: Unify short-name vs corner-suffix HE5" "Documents HE5 rename step"
+    assert_contains "$content" "run_horzvert2timeseries" "Writes run_horzvert2timeseries"
+    assert_contains "$content" "hv_write_run_horzvert2timeseries" "Uses run-file writer"
+    assert_contains "$content" "hv_run_or_submit_script" "Uses bash/SLURM dispatch helper"
+    assert_contains "$content" "reference_point_hdfeos5.bash" "References reference_point_hdfeos5.bash"
     assert_contains "$content" "hv_promote_short_he5_to_corner_filename" "Uses MintPy/MiaplPy HE5 rename helper"
-    assert_contains "$content" "reference_point_hdfeos5.bash" "Calls reference_point_hdfeos5.bash"
-    assert_contains "$content" "hv_announce_command" "Uses hv_announce_command before subprocesses"
     assert_contains "$content" "--check-cache-only" "Forwards cache check to horzvert_timeseries.py"
+    assert_contains "$content" "--submit" "Documents --submit option"
+    assert_contains "$content" "--ingest-parallel" "Documents --ingest-parallel option"
     assert_contains "$content" "--force" "Documents --force option"
     assert_contains "$content" "--clean" "Documents --clean option"
     assert_contains "$content" "hv_clean_cached_products" "Defines clean helper for cached products"
+    assert_contains "$content" "Write InsarMaps HTML" "HTML written outside LOS-only gate"
     assert_not_contains "$content" 'ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE1" --ref-lalo' "LOS ingest file1 without --ref-lalo"
     assert_not_contains "$content" 'ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE2" --ref-lalo' "LOS ingest file2 without --ref-lalo"
     print_test_end "horzvert_timeseries.bash wiring"
 }
 
 test_horzvert_help_lists_cache_options() {
-    print_test_start "horzvert_timeseries.bash --help" "Help documents --force and --clean."
+    print_test_start "horzvert_timeseries.bash --help" "Help documents --force, --clean, --submit, --sleep."
     local content
-    content=$(cat "$HV_SCRIPT")
+    content=$("$HV_SCRIPT" --help 2>&1)
     assert_contains "$content" "--force" "Help lists --force"
     assert_contains "$content" "--clean" "Help lists --clean"
-    assert_contains "$content" ".hvparams" "Help mentions hvparams sidecar"
+    assert_contains "$content" "--submit" "Help lists --submit"
+    assert_contains "$content" "--sleep" "Help lists --sleep"
+    assert_not_contains "$content" "Re-reference:" "No long prose after options"
     print_test_end "horzvert_timeseries.bash --help"
 }
+
+test_horzvert_sleep_rejects_non_integer() {
+    print_test_start "horzvert_timeseries.bash --sleep" "Rejects non-integer --sleep."
+    local rc=0
+    "$HV_SCRIPT" a b --ref-lalo 1 2 --sleep abc >/dev/null 2>&1 || rc=$?
+    assert_equals "1" "$rc" "Non-integer --sleep exits 1"
+    print_test_end "horzvert_timeseries.bash --sleep"
+}
+
+test_hv_longest_processing_method_dir() {
+    print_test_start "hv_longest_processing_method_dir" "Keeps mintpy/miaplpy dir with longer period."
+    local out
+    out=$(hv_longest_processing_method_dir \
+        "EtnaSenA44/miaplpy_202001_202412/network_delaunay_4/" \
+        "EtnaSenD124/miaplpy_202001_202410/network_delaunay_4/")
+    assert_equals "miaplpy_202001_202412" "$out" "Longer end date wins"
+    out=$(hv_longest_processing_method_dir \
+        "EtnaSenD124/miaplpy_202001_202410/network_delaunay_4/" \
+        "EtnaSenA44/miaplpy_202001_202412/network_delaunay_4/")
+    assert_equals "miaplpy_202001_202412" "$out" "Order-independent longer period"
+    out=$(hv_longest_processing_method_dir \
+        "ChilesSenD142/mintpy" \
+        "ChilesSenA120/mintpy")
+    assert_equals "mintpy" "$out" "Bare mintpy unchanged"
+    out=$(hv_longest_processing_method_dir \
+        "A/miaplpy/network_delaunay_4" \
+        "B/miaplpy/network_delaunay_4")
+    assert_equals "miaplpy" "$out" "Bare miaplpy unchanged"
+    out=$(hv_extract_processing_method_dir "EtnaSenA44/miaplpy_202001_202412/network_delaunay_4/file.he5")
+    assert_equals "miaplpy_202001_202412" "$out" "Extract from file path"
+    print_test_end "hv_longest_processing_method_dir"
+}
+
+test_hv_write_run_file_has_wait_and_amp() {
+    print_test_start "hv_write_run_horzvert2timeseries" "Run file has need_geocode flags, &/wait, and ingest."
+    local tmp runf content
+    tmp=$(mktemp -d)
+    mkdir -p "$tmp/out" "$tmp/scratch/SenA/net" "$tmp/scratch/SenD/net"
+    touch "$tmp/scratch/SenA/net/a.he5" "$tmp/scratch/SenD/net/b.he5"
+    export SCRATCHDIR="$tmp/scratch"
+    HV_RUN_FILE="$tmp/run_horzvert2timeseries" \
+    HV_RADAR1="$tmp/scratch/SenA/net/a.he5" \
+    HV_RADAR2="$tmp/scratch/SenD/net/b.he5" \
+    HV_REF_LAT="1.0" \
+    HV_REF_LON="2.0" \
+    HV_OUTDIR="$tmp/scratch/out" \
+    HV_CACHE_HIT=0 \
+    HV_GEOCODE_ARGS="--lalo-step 0.00014 0.00014" \
+    HV_PY_SUFFIX=" --ref-lalo 1.0 2.0" \
+    HV_INGEST_PARALLEL=1 \
+    HV_INGEST_INSARMAPS=1 \
+    HV_INGEST_LOS=1 \
+    HV_INGEST_WORKERS_OPTS="--num-workers 1" \
+    hv_write_run_horzvert2timeseries
+    runf="$tmp/run_horzvert2timeseries"
+    assert_file_exists "$runf" "Run file created"
+    content=$(cat "$runf")
+    assert_contains "$content" "reference_point_hdfeos5.bash" "Has ref-point commands"
+    assert_contains "$content" "SenA/net/a.he5" "SCRATCHDIR-relative radar path"
+    assert_contains "$content" "source " "Sources horzvert utils lib"
+    assert_contains "$content" "need_geocode1" "Has need_geocode1 flag"
+    assert_contains "$content" "need_geocode2" "Has need_geocode2 flag"
+    assert_not_contains "$content" "need_geocode() {" "need_geocode defined in lib, not run file"
+    assert_not_contains "$content" "_p1=" "No _p1 variable"
+    assert_not_contains "$content" "radar1=" "No radar1 variable"
+    assert_contains "$content" " &" "Has background ampersands"
+    assert_contains "$content" "hv_wait_pids" "Waits on background PIDs with failure propagation"
+    assert_contains "$content" "wait" "Has wait barriers"
+    assert_contains "$content" "horzvert_timeseries.py" "Has HV python"
+    assert_contains "$content" "hv_ingest_insarmaps_logged" "Ingest via logged helper"
+    assert_contains "$content" "missing *vert*/*horz*.he5" "Fails clearly if vert/horz missing before ingest"
+    assert_contains "$content" "cd " "Cds into product dir before ingest"
+    assert_contains "$content" "realpath" "Resolves vert/horz to absolute paths before cd"
+    assert_contains "$content" "/log" "Appends ingest lines to SCRATCHDIR log"
+    assert_contains "$(type hv_ingest_insarmaps_logged)" "ingest_insarmaps.bash" "Helper invokes ingest_insarmaps.bash"
+    bash -n "$runf"
+    assert_equals "0" "$?" "bash -n run file"
+    unset SCRATCHDIR
+    rm -rf "$tmp"
+    print_test_end "hv_write_run_horzvert2timeseries"
+}
+
 
 print_header "HORZVERT_TIMESERIES TESTS"
 
@@ -277,6 +364,9 @@ test_hv_scratchdir_display_path_under_scratch
 test_hv_announce_command_logs_to_dir
 test_horzvert_script_syntax_and_los_ingest_no_ref_lalo
 test_horzvert_help_lists_cache_options
+test_horzvert_sleep_rejects_non_integer
+test_hv_longest_processing_method_dir
+test_hv_write_run_file_has_wait_and_amp
 
 print_summary
 exit $?

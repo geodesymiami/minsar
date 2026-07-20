@@ -237,3 +237,299 @@ hv_promote_short_he5_to_corner_filename() {
 hv_promote_miaplpy_short_he5_to_corner_filename() {
     hv_promote_short_he5_to_corner_filename "$@"
 }
+
+# Print False | login_node | compute_node (via minsar.utils.system_utils).
+hv_are_we_on_slurm_system() {
+    python3 -c 'from minsar.utils.system_utils import are_we_on_slurm_system; r = are_we_on_slurm_system(); print(r if r else "False")'
+}
+
+# True when we should wrap a script-style run file as one SLURM .job (HPC login, not already in a job).
+hv_should_use_slurm_jobfile() {
+    local status
+    status=$(hv_are_we_on_slurm_system 2>/dev/null || echo "False")
+    [[ "$status" == "login_node" && -z "${SLURM_JOB_ID:-}" ]]
+}
+
+# Path for run_horzvert2timeseries: under $SCRATCHDIR → relative; else absolute.
+hv_runfile_path() {
+    local path="$1"
+    local abs scratch_abs
+
+    [[ -z "$path" ]] && return 0
+    abs=$(realpath "$path" 2>/dev/null || echo "$path")
+    if [[ -n "${SCRATCHDIR:-}" ]]; then
+        scratch_abs=$(realpath "$SCRATCHDIR" 2>/dev/null || (cd "$SCRATCHDIR" && pwd))
+        scratch_abs="${scratch_abs%/}"
+        if [[ "$abs" == "$scratch_abs"/* ]]; then
+            printf '%s' "${abs#$scratch_abs/}"
+            return 0
+        fi
+    fi
+    printf '%s' "$abs"
+}
+
+# mintpy/miaplpy path component from a file or directory (e.g. miaplpy_202001_202410).
+hv_extract_processing_method_dir() {
+    local path="$1"
+    local dir
+    [[ -z "$path" ]] && return 1
+    dir="$([ -f "$path" ] && dirname "$path" || echo "$path")"
+    echo "$dir" | tr '/' '\n' | grep -E '^(mintpy|miaplpy)(_|$)' | head -1
+}
+
+# Comparable period length for a processing-method dir name (months or days).
+# Bare mintpy/miaplpy (no dates) → 0 so dated names win when picking the longer span.
+hv_processing_method_dir_span() {
+    local name="$1"
+    local s e sm em sd ed
+
+    if [[ "$name" =~ ^(mintpy|miaplpy)_([0-9]{6})_([0-9]{6})$ ]]; then
+        s="${BASH_REMATCH[2]}"
+        e="${BASH_REMATCH[3]}"
+        sm=$((10#${s:0:4} * 12 + 10#${s:4:2}))
+        em=$((10#${e:0:4} * 12 + 10#${e:4:2}))
+        echo $((em - sm))
+        return 0
+    fi
+    if [[ "$name" =~ ^(mintpy|miaplpy)_([0-9]{8})_([0-9]{8})$ ]]; then
+        s="${BASH_REMATCH[2]}"
+        e="${BASH_REMATCH[3]}"
+        sd=$(date -d "${s:0:4}-${s:4:2}-${s:6:2}" +%s 2>/dev/null || true)
+        ed=$(date -d "${e:0:4}-${e:4:2}-${e:6:2}" +%s 2>/dev/null || true)
+        if [[ -n "$sd" && -n "$ed" ]]; then
+            echo $(((ed - sd) / 86400))
+            return 0
+        fi
+        echo $((10#$e - 10#$s))
+        return 0
+    fi
+    echo 0
+}
+
+# Among two input paths, keep the mintpy/miaplpy dir covering the longer period.
+# Example: miaplpy_202001_202412 vs miaplpy_202001_202410 → miaplpy_202001_202412
+hv_longest_processing_method_dir() {
+    local path1="$1"
+    local path2="$2"
+    local d1 d2 s1 s2
+
+    d1=$(hv_extract_processing_method_dir "$path1" || true)
+    d2=$(hv_extract_processing_method_dir "$path2" || true)
+    [[ -z "$d1" && -z "$d2" ]] && {
+        echo "mintpy"
+        return 0
+    }
+    [[ -z "$d1" ]] && {
+        echo "$d2"
+        return 0
+    }
+    [[ -z "$d2" || "$d1" == "$d2" ]] && {
+        echo "$d1"
+        return 0
+    }
+    s1=$(hv_processing_method_dir_span "$d1")
+    s2=$(hv_processing_method_dir_span "$d2")
+    if ((s1 >= s2)); then
+        echo "$d1"
+    else
+        echo "$d2"
+    fi
+}
+
+# Exit 0 if radar must be geocoded (no geo file, or radar newer than geo).
+need_geocode() {
+    local radar="$1"
+    local geo="$2"
+    [[ ! -f "$geo" || "$radar" -nt "$geo" ]]
+}
+
+# Wait for background PIDs; fail if any exited non-zero (set -e friendly).
+hv_wait_pids() {
+    local pid status=0
+    for pid in "$@"; do
+        wait "$pid" || status=1
+    done
+    return "$status"
+}
+
+# Run ingest_insarmaps.bash and append the same command line to scratch_log (SCRATCHDIR/log).
+# Usage: hv_ingest_insarmaps_logged SCRATCH_LOG [ingest_insarmaps.bash args...]
+# Call from product dir cwd so ingest writes insarmaps.log next to overlay.html.
+hv_ingest_insarmaps_logged() {
+    local scratch_log="$1"
+    shift
+    local log_cmd="ingest_insarmaps.bash" arg
+
+    for arg in "$@"; do
+        log_cmd+=" $(printf '%q' "$arg")"
+    done
+    if [[ -n "$scratch_log" ]]; then
+        mkdir -p "$(dirname "$scratch_log")"
+        echo "$(date +%Y%m%d:%H-%M) * ${log_cmd}" >> "$scratch_log"
+    fi
+    ingest_insarmaps.bash "$@"
+}
+
+# Write script-style run file run_horzvert2timeseries (may contain & / wait).
+# Paths under $SCRATCHDIR are written relative (cwd = $SCRATCHDIR when the run file runs).
+# Required: HV_RUN_FILE, HV_RADAR1, HV_RADAR2, HV_REF_LAT, HV_REF_LON, HV_OUTDIR
+# Optional: HV_CACHE_HIT=0|1, HV_GEOCODE_ARGS, HV_PY_SUFFIX, HV_INGEST_PARALLEL=0|1,
+#           HV_INGEST_INSARMAPS=1|0, HV_INGEST_LOS=1|0, HV_INGEST_WORKERS_OPTS (string),
+#           HV_GEOM_FILE_ARGS, HV_DATASET_OPT1, HV_DATASET_OPT2
+hv_write_run_horzvert2timeseries() {
+    local run_file="${HV_RUN_FILE:?}"
+    local radar1="${HV_RADAR1:?}"
+    local radar2="${HV_RADAR2:?}"
+    local ref_lat="${HV_REF_LAT:?}"
+    local ref_lon="${HV_REF_LON:?}"
+    local outdir="${HV_OUTDIR:?}"
+    local cache_hit="${HV_CACHE_HIT:-0}"
+    local geocode_args="${HV_GEOCODE_ARGS:-}"
+    local py_suffix="${HV_PY_SUFFIX:-}"
+    local ingest_parallel="${HV_INGEST_PARALLEL:-0}"
+    local ingest_insarmaps="${HV_INGEST_INSARMAPS:-1}"
+    local ingest_los="${HV_INGEST_LOS:-1}"
+    local workers_opts="${HV_INGEST_WORKERS_OPTS:-}"
+    local geom_args="${HV_GEOM_FILE_ARGS:-}"
+    local ds1="${HV_DATASET_OPT1:-}"
+    local ds2="${HV_DATASET_OPT2:-}"
+    local geo1 geo2 r_radar1 r_radar2 r_geo1 r_geo2 r_outdir
+    local q_radar1 q_radar2 q_geo1 q_geo2 q_outdir amp=""
+    local utils_sh abs_outdir abs_radar1 abs_radar2 abs_scratch_log
+    local q_abs_outdir q_abs_radar1 q_abs_radar2 q_scratch_log
+
+    utils_sh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/horzvert_timeseries_utils.sh"
+
+    mkdir -p "$(dirname "$run_file")" "$outdir"
+    [[ "$ingest_parallel" == "1" ]] && amp=" &"
+
+    geo1="$(dirname "$radar1")/geo_$(basename "$radar1")"
+    geo2="$(dirname "$radar2")/geo_$(basename "$radar2")"
+    r_radar1=$(hv_runfile_path "$radar1")
+    r_radar2=$(hv_runfile_path "$radar2")
+    r_geo1=$(hv_runfile_path "$geo1")
+    r_geo2=$(hv_runfile_path "$geo2")
+    r_outdir=$(hv_runfile_path "$outdir")
+    q_radar1=$(printf '%q' "$r_radar1")
+    q_radar2=$(printf '%q' "$r_radar2")
+    q_geo1=$(printf '%q' "$r_geo1")
+    q_geo2=$(printf '%q' "$r_geo2")
+    q_outdir=$(printf '%q' "$r_outdir")
+
+    # Absolute paths for ingest after cd into the product dir.
+    abs_outdir=$(realpath "$outdir" 2>/dev/null || echo "$outdir")
+    abs_radar1=$(realpath "$radar1" 2>/dev/null || echo "$radar1")
+    abs_radar2=$(realpath "$radar2" 2>/dev/null || echo "$radar2")
+    q_abs_outdir=$(printf '%q' "$abs_outdir")
+    q_abs_radar1=$(printf '%q' "$abs_radar1")
+    q_abs_radar2=$(printf '%q' "$abs_radar2")
+    abs_scratch_log=""
+    if [[ -n "${SCRATCHDIR:-}" ]]; then
+        abs_scratch_log="$(realpath "$SCRATCHDIR" 2>/dev/null || echo "$SCRATCHDIR")/log"
+    fi
+    q_scratch_log=$(printf '%q' "$abs_scratch_log")
+
+    {
+        echo '#!/usr/bin/env bash'
+        echo 'set -euo pipefail'
+        echo "source $(printf '%q' "$utils_sh")"
+        if [[ -n "${SCRATCHDIR:-}" ]]; then
+            echo "cd $(printf '%q' "$(realpath "$SCRATCHDIR" 2>/dev/null || echo "$SCRATCHDIR")")"
+        fi
+        echo ""
+
+        if [[ "$cache_hit" != "1" ]]; then
+            echo "pids=()"
+            echo "reference_point_hdfeos5.bash ${q_radar1} --ref-lalo $(printf '%q' "$ref_lat") $(printf '%q' "$ref_lon") &"
+            echo "pids+=(\"\$!\")"
+            if [[ "$radar1" != "$radar2" ]]; then
+                echo "reference_point_hdfeos5.bash ${q_radar2} --ref-lalo $(printf '%q' "$ref_lat") $(printf '%q' "$ref_lon") &"
+                echo "pids+=(\"\$!\")"
+            fi
+            echo "hv_wait_pids \"\${pids[@]}\" || exit 1"
+            echo ""
+            echo "need_geocode1=0"
+            echo "need_geocode2=0"
+            echo "need_geocode ${q_radar1} ${q_geo1} && need_geocode1=1"
+            echo "need_geocode ${q_radar2} ${q_geo2} && need_geocode2=1"
+            echo ""
+            echo "pids=()"
+            echo "if [[ \$need_geocode1 -eq 1 ]]; then"
+            echo "  geocode.py ${q_radar1} ${geocode_args} &"
+            echo "  pids+=(\"\$!\")"
+            echo "fi"
+            echo "if [[ \$need_geocode2 -eq 1 ]]; then"
+            echo "  geocode.py ${q_radar2} ${geocode_args} &"
+            echo "  pids+=(\"\$!\")"
+            echo "fi"
+            echo "if [[ \${#pids[@]} -gt 0 ]]; then"
+            echo "  hv_wait_pids \"\${pids[@]}\" || exit 1"
+            echo "fi"
+            echo ""
+            echo "horzvert_timeseries.py ${q_geo1} ${q_geo2}${py_suffix}${geom_args}"
+            echo "wait"
+            echo ""
+        fi
+
+        if [[ "$ingest_insarmaps" == "1" ]]; then
+            # Resolve products under SCRATCHDIR cwd, then cd into product dir so
+            # ingest writes insarmaps.log next to overlay.html (all four URLs).
+            # Also append command lines to SCRATCHDIR/log via hv_ingest_insarmaps_logged.
+            echo "VERT=\$(ls -t ${q_outdir}/*vert*.he5 2>/dev/null | head -1)"
+            echo "HORZ=\$(ls -t ${q_outdir}/*horz*.he5 2>/dev/null | head -1)"
+            echo "if [[ -z \"\$VERT\" || -z \"\$HORZ\" || ! -f \"\$VERT\" || ! -f \"\$HORZ\" ]]; then"
+            echo "  echo \"Error: missing *vert*/*horz*.he5 under ${q_outdir} (needed for ingest)\" >&2"
+            echo "  exit 1"
+            echo "fi"
+            echo "VERT=\$(realpath \"\$VERT\")"
+            echo "HORZ=\$(realpath \"\$HORZ\")"
+            echo "cd ${q_abs_outdir}"
+            echo "hv_ingest_insarmaps_logged ${q_scratch_log} \"\$VERT\" ${workers_opts}${amp}"
+            echo "hv_ingest_insarmaps_logged ${q_scratch_log} \"\$HORZ\" ${workers_opts}${amp}"
+            if [[ "$ingest_los" == "1" ]]; then
+                if [[ -n "$ds1" ]]; then
+                    echo "hv_ingest_insarmaps_logged ${q_scratch_log} ${q_abs_radar1} --dataset $(printf '%q' "$ds1") ${workers_opts}${amp}"
+                else
+                    echo "hv_ingest_insarmaps_logged ${q_scratch_log} ${q_abs_radar1} ${workers_opts}${amp}"
+                fi
+                if [[ -n "$ds2" ]]; then
+                    echo "hv_ingest_insarmaps_logged ${q_scratch_log} ${q_abs_radar2} --dataset $(printf '%q' "$ds2") ${workers_opts}${amp}"
+                else
+                    echo "hv_ingest_insarmaps_logged ${q_scratch_log} ${q_abs_radar2} ${workers_opts}${amp}"
+                fi
+            fi
+            if [[ "$ingest_parallel" == "1" ]]; then
+                echo "wait"
+            fi
+        fi
+    } > "$run_file"
+
+    chmod +x "$run_file"
+}
+
+# Execute script-style run file: bash locally, or create .job + run_workflow --jobfile on SLURM login.
+hv_run_or_submit_script() {
+    local run_file="$1"
+    local job_name="${2:-horzvert2timeseries}"
+    local job_file work_dir
+
+    [[ -f "$run_file" ]] || {
+        echo "hv_run_or_submit_script: missing $run_file" >&2
+        return 1
+    }
+    work_dir=$(dirname "$run_file")
+
+    if hv_should_use_slurm_jobfile; then
+        (
+            cd "$work_dir"
+            create_slurm_jobfile.sh --job-name "$job_name" --from-file "$(basename "$run_file")"
+        )
+        job_file="${work_dir}/${job_name}.job"
+        [[ -f "$job_file" ]] || job_file="${work_dir}/$(basename "$run_file" | sed 's/^run_//').job"
+        echo "Submitting via run_workflow.bash --jobfile $job_file"
+        run_workflow.bash --jobfile "$job_file"
+    else
+        echo "Running: bash $run_file"
+        bash "$run_file"
+    fi
+}

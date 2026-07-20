@@ -33,7 +33,7 @@ minsarApp.bash $SAMPLESDIR/template.template [--start STEP] [--stop STEP] [--min
 | 2 | `minsar/bin/run_workflow.bash` | Job submission and monitoring loop |
 | 3 | `minsar/bin/submit_jobs.bash` | Batch job submission |
 | 4 | `minsar/bin/sbatch_conditional.bash` | Resource-checked sbatch wrapper |
-| — | `minsar/bin/horzvert_timeseries.bash` | Asc/desc LOS: optional cache skip when `*vert*`/`*horz*` HE5 are newer than geocoded inputs and `.hvparams` matches (`--force` to recompute, `--clean` to delete cache); otherwise re-reference to `--ref-lalo` (`reference_point_hdfeos5.bash`), unify short-name vs corner-suffix MiaplPy HE5 duplicates, geocode, horz/vert (`horzvert_timeseries.py`), InsarMaps |
+| — | `minsar/bin/horzvert_timeseries.bash` | Asc/desc LOS: writes script-style `run_horzvert2timeseries` under the site product dir (e.g. `Etna/miaplpy_202001_202412` = longer of the two input periods; `&`/`wait`; not LAUNCHER). Default write-only; `--submit` runs via `bash` or `create_slurm_jobfile --from-file` + `run_workflow --jobfile`. Ingest runs from the product dir so `insarmaps.log` (asc/desc/vert/horz) sits with `overlay.html`; command lines are also appended to `$SCRATCHDIR/log`. In-memory `reference_point_hdfeos5.py`, cache skip (`--force`/`--clean`), geocode, horz/vert, InsarMaps |
 | 5 | `minsar/lib/utils.sh` | Core bash utilities |
 | 6 | `minsar/scripts/get_sar_coverage.py` | AOI coverage: orbits, counts; `--select` chooses Asc/Desc relative orbit (S1: prefers full-AOI consistency over incidence) |
 | — | `minsar/utils/modify_insarmapslog.py` | Back up and rewrite `insarmaps.log` start coordinates from a reference InsarMaps URL, then print a VolcDef `/data/HDF5EOS/` overlay URL |
@@ -169,6 +169,15 @@ run_workflow.bash $TE/template.template --miaplpy --start 1
 # Runs just this one job, doesn't build globlist
 run_workflow.bash --jobfile smallbaseline_wrapper.job
 ```
+
+### Run file types (launcher vs script)
+
+| Kind | Name pattern | May contain `wait`? | How executed |
+|------|--------------|---------------------|--------------|
+| **Launcher** | ISCE `run_01_*` … `run_NN_*` → `run_01_*_0.job` | No | LAUNCHER / `paramrun` |
+| **Script** | `run_horzvert2timeseries`, bodies behind `smallbaseline_wrapper.job`, `create_miaplpy_jobfiles.job` | Yes (`&` / `wait`) | `bash` run file, or one `.job` via `create_slurm_jobfile.sh --from-file` then `run_workflow --jobfile` |
+
+Horzvert is the starter for non-SLURM MinSAR: same run file works under `bash` on Jetstream/Mac and under SLURM as a single non-LAUNCHER job.
 
 ### MiaplPy Directory Structure
 

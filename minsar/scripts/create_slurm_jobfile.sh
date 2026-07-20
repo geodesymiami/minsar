@@ -3,16 +3,18 @@ set -euo pipefail
 
 function show_help() {
   cat << EOF
-Usage: ${0##*/} [OPTIONS] "<python_command> [<cmd_args>...]"
+Usage: ${0##*/} [OPTIONS] "<command> [<cmd_args>...]"
+       ${0##*/} [OPTIONS] --from-file <script>
 
-Creates a SLURM job file for the given Python command, e.g.:
-  ${0##*/} [OPTIONS] "smallbaselineApp.py /path/template --dir mintpy"
+Creates a SLURM job file for a command string, or for a bash script (--from-file).
+With --from-file, the job body runs: bash /abs/path/to/script
 
 Options:
   --help                Show this help message and exit
   --queue <queue>       Override SLURM partition/queue (default: \$QUEUENAME)
   --wall-time <hh:mm:ss> Override wall time (default: fetched from job_defaults.cfg)
   --job-name <name>     Override job name (default: base command minus .py/.sh/.bash)
+  --from-file <path>    Job body is: bash <path> (script-style run file; no LAUNCHER)
 
 Environment variables (if not overridden by flags):
   NOTIFICATIONEMAIL         e.g. falk.amelung@gmail.com
@@ -23,13 +25,14 @@ Environment variables (if not overridden by flags):
 Examples:
   ${0##*/} "smallbaselineApp.py /path/to/template --dir mintpy"
   ${0##*/} --queue skx --wall-time 1:50:00 --job-name smallbaseline_wrapper "create_runfiles.py --arg1 val1"
+  ${0##*/} --job-name horzvert2timeseries --from-file run_horzvert2timeseries
 EOF
 }
 
 # Parse command-line options with GNU getopt
 TEMP="$(getopt \
   -o '' \
-  --long help,queue:,wall-time:,job-name: \
+  --long help,queue:,wall-time:,job-name:,from-file: \
   -n "${0##*/}" -- "$@")"
 
 if [ $? -ne 0 ]; then
@@ -43,6 +46,7 @@ eval set -- "$TEMP"
 queue="${QUEUENAME:-}"
 job_name=""
 wall_time=""
+from_file=""
 
 while true; do
   case "$1" in
@@ -62,6 +66,10 @@ while true; do
       job_name="$2"
       shift 2
       ;;
+    --from-file)
+      from_file="$2"
+      shift 2
+      ;;
     --)
       shift
       break
@@ -72,21 +80,6 @@ while true; do
       ;;
   esac
 done
-
-# Now, the remaining args: first is <python_command> as a single string
-if [[ $# -lt 1 ]]; then
-  echo "Error: Missing <python_command> positional argument."
-  show_help
-  exit 1
-fi
-
-app_cmd_str="$1"
-
-# Split app_cmd_str into command and args using  Bash's array splitting to handle the command and its arguments
-read -r -a cmd_array <<< "$app_cmd_str"
-
-app_cmd="${cmd_array[0]}"
-app_args=("${cmd_array[@]:1}")
 
 ###############################################################################
 # Check environment variables
@@ -100,31 +93,59 @@ if [[ -z "${queue}" ]]; then
 fi
 
 ###############################################################################
-# Derive base command, strip .py, .sh, .bash if present
+# Resolve command body: --from-file or positional command string
 ###############################################################################
-base_cmd="$(basename "$app_cmd")"
+app_cmd=""
+app_args=()
+job_body=""
 
-# Remove trailing .py, .sh, .bash if present
-base_cmd="${base_cmd%.py}"
-base_cmd="${base_cmd%.sh}"
-base_cmd="${base_cmd%.bash}"
+if [[ -n "$from_file" ]]; then
+  if [[ ! -f "$from_file" ]]; then
+    echo "Error: --from-file not found: $from_file" >&2
+    exit 1
+  fi
+  # Absolute path for the job body
+  if [[ "$from_file" != /* ]]; then
+    from_file="$PWD/$from_file"
+  fi
+  from_file="$(cd "$(dirname "$from_file")" && pwd)/$(basename "$from_file")"
+  if [[ -z "$job_name" ]]; then
+    base="$(basename "$from_file")"
+    base="${base#run_}"
+    job_name="$base"
+  fi
+  job_body="bash $(printf '%q' "$from_file")"
+else
+  if [[ $# -lt 1 ]]; then
+    echo "Error: Missing <command> positional argument (or use --from-file)."
+    show_help
+    exit 1
+  fi
+  app_cmd_str="$1"
+  read -r -a cmd_array <<< "$app_cmd_str"
+  app_cmd="${cmd_array[0]}"
+  app_args=("${cmd_array[@]:1}")
 
-if [[ -z "$job_name" ]]; then
-  job_name="$base_cmd"
+  base_cmd="$(basename "$app_cmd")"
+  base_cmd="${base_cmd%.py}"
+  base_cmd="${base_cmd%.sh}"
+  base_cmd="${base_cmd%.bash}"
+  if [[ -z "$job_name" ]]; then
+    job_name="$base_cmd"
+  fi
+  job_body="$app_cmd ${app_args[*]}"
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/utils/minsar_functions.bash"
 
 if [[ -z "$wall_time" ]]; then
-  # use get_slurm_job_parameter to fetch c_walltime for the given job_name
   if ! wall_time="$(get_slurm_job_parameter --jobname "$job_name" c_walltime)"; then
     echo "Warning: Could not retrieve c_walltime for job_name='$job_name'. Using default 1:00:00 for wall time."
     wall_time="1:00:00"
   fi
 fi
 
-# Construct the SLURM job file
 job_file="${job_name}.job"
 
 cat << EOF > "$job_file"
@@ -141,7 +162,7 @@ cat << EOF > "$job_file"
 #SBATCH -t $wall_time
 
 # The actual command to run:
-$app_cmd ${app_args[@]}
+$job_body
 EOF
 
 chmod +x "$job_file"

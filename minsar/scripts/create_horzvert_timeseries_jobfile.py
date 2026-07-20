@@ -106,19 +106,14 @@ def create_parser():
                         help='Skip ingesting both input files (FILE1 and FILE2) with --ref-lalo (default: ingest-los is enabled)')
     parser.add_argument('--no-insarmaps', dest='no_insarmaps', action='store_true',
                         help='Skip running ingest_insarmaps.bash (default: insarmaps ingestion is enabled)')
-    parser.add_argument('--debug', dest='debug', action='store_true',
-                        help='Enable debug mode (set -x)')
-    
+    parser.add_argument('--debug', dest='debug', action='store_true', help='Enable debug mode (set -x)')
+    parser.add_argument('--sleep', dest='sleep', type=int, metavar='SECS', help='Sleep SECS seconds before running (passed to horzvert_timeseries.bash)')
+
     # SLURM job options
-    parser.add_argument("--queue", dest="queue", metavar="QUEUE", 
-                        default=os.getenv('QUEUENAME'), 
-                        help="Name of queue to submit job to")
-    parser.add_argument('--walltime', dest='wall_time', metavar="WALLTIME (HH:MM)", 
-                        default=None, 
-                        help='job walltime (default: from job_defaults.cfg)')
-    parser.add_argument('--submit', dest='submit', action='store_true',
-                        help='submit the job after creating the jobfile')
-   
+    parser.add_argument("--queue", dest="queue", metavar="QUEUE", default=os.getenv('QUEUENAME'), help="Name of queue to submit job to")
+    parser.add_argument('--walltime', dest='wall_time', metavar="WALLTIME (HH:MM)", default=None, help='job walltime (default: from job_defaults.cfg)')
+    parser.add_argument('--submit', dest='submit', action='store_true', help='submit the job after creating the jobfile')
+
     inps = parser.parse_args()
     return inps
 
@@ -190,6 +185,14 @@ def main(iargs=None):
     
     if inps.debug:
         command_parts.append('--debug')
+
+    if inps.sleep is not None:
+        if inps.sleep < 0:
+            print('Error: --sleep must be a non-negative integer', file=sys.stderr)
+            return 1
+        command_parts.extend(['--sleep', str(inps.sleep)])
+
+    command_parts.append('--submit')
 
     # Safe single line for the job body (paths with spaces)
     final_command = [' '.join(shlex.quote(str(p)) for p in command_parts)]

@@ -1,70 +1,51 @@
 #!/usr/bin/env bash
-# reference_point_hdfeos5.bash
-# Wrapper script to change reference point in HDFEOS5 file
-# Extracts components, updates reference point, and reconstructs HDFEOS5 file
+# Thin wrapper: change reference point in an HDFEOS5 file via reference_point_hdfeos5.py
+# (in-memory date-by-date; no extract/save_hdfeos5 round-trip).
 
 set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
 
-echo "sourcing ${SCRIPT_DIR}/../lib/minsarApp_specifics.sh ..."
-source ${SCRIPT_DIR}/../lib/minsarApp_specifics.sh
-echo "sourcing ${SCRIPT_DIR}/../lib/utils.sh ..."
-source ${SCRIPT_DIR}/../lib/utils.sh
-echo "sourcing ${SCRIPT_DIR}/../lib/common_helpers.sh ..."
-source ${SCRIPT_DIR}/../lib/common_helpers.sh
-echo "sourcing ${SCRIPT_DIR}/../lib/horzvert_timeseries_utils.sh ..."
-source ${SCRIPT_DIR}/../lib/horzvert_timeseries_utils.sh
-
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
-    helptext="
+    cat << EOF
 Usage:
     $SCRIPT_NAME <input_file.he5> --ref-lalo <lat> <lon> [options]
 
 Examples:
     $SCRIPT_NAME S1_vert_106_128_20180302_20180525.he5 --ref-lalo -0.81 -91.190
     $SCRIPT_NAME S1_vert_106_128_20180302_20180525.he5 --ref-lalo -0.81 -91.190 --output output.he5
-    $SCRIPT_NAME S1_vert_106_128_20180302_20180525.he5 --ref-lalo -0.81,-91.190 --keep-extracted
+    $SCRIPT_NAME S1_....he5 --ref-lalo -0.81,-91.190 --lookup geometryRadar.h5
 
 Options:
-    --ref-lalo LAT,LON or LAT LON   New reference point in latitude/longitude (required)
-    --output FILE                    Output HDFEOS5 filename (default: overwrite input with backup)
-    --keep-extracted                 Keep extracted intermediate files (default: remove after processing)
-    --help, -h                       Show this help message
-    "
-    printf "$helptext"
+    --ref-lalo LAT,LON or LAT LON   New reference point (required)
+    --output FILE                   Output HDFEOS5 path (default: update input in place)
+    --lookup FILE                   geometryRadar.h5 for RADAR files (optional)
+    --force                         Re-reference even if REF_Y/REF_X already match
+    --help, -h                      Show this help message
+EOF
     exit 0
 fi
 
-# Log file in the directory where script is invoked (current working directory)
 WORK_DIR="$PWD"
 LOG_FILE="$WORK_DIR/log"
-
-# Log the command line as early as possible (before parsing)
 echo "#############################################################################################" | tee -a "$LOG_FILE"
 echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $*" | tee -a "$LOG_FILE"
 
-# Initialize option parsing variables
 positional=()
 ref_lalo=()
 output_file=""
-keep_extracted=0
+lookup_file=""
+force_flag=0
 
-# Parse command line arguments
-while [[ $# -gt 0 ]]
-do
-    key="$1"
-
-    case $key in
+while [[ $# -gt 0 ]]; do
+    case "$1" in
         --ref-lalo)
             shift
             ref_lalo=()
             if [[ "$1" == *,* ]]; then
-                # Handle comma-separated format: LAT,LON
                 ref_lalo=("$1")
             else
-                # Handle space-separated format: LAT LON
                 ref_lalo=("$1" "$2")
                 shift
             fi
@@ -74,9 +55,22 @@ do
             output_file="$2"
             shift 2
             ;;
-        --keep-extracted)
-            keep_extracted=1
+        --lookup)
+            lookup_file="$2"
+            shift 2
+            ;;
+        --force)
+            force_flag=1
             shift
+            ;;
+        --keep-extracted)
+            # Deprecated (no extract step); accepted for backward compatibility
+            shift
+            ;;
+        -?*|--*)
+            echo "Error: Unknown option: $1" >&2
+            echo "Use $SCRIPT_NAME --help for available options" >&2
+            exit 1
             ;;
         *)
             positional+=("$1")
@@ -85,152 +79,28 @@ do
     esac
 done
 
-set -- "${positional[@]}"
-
-# Check for required arguments
 if [[ ${#positional[@]} -lt 1 ]]; then
-    echo "Error: Input HDFEOS5 file is required"
-    echo "Usage: $SCRIPT_NAME <input_file.he5> --ref-lalo <lat> <lon> [options]"
-    echo "Use --help for more information"
+    echo "Error: Input HDFEOS5 file is required" >&2
     exit 1
 fi
-
 if [[ ${#ref_lalo[@]} -eq 0 ]]; then
-    echo "Error: --ref-lalo is required"
-    echo "Usage: $SCRIPT_NAME <input_file.he5> --ref-lalo <lat> <lon> [options]"
-    echo "Use --help for more information"
+    echo "Error: --ref-lalo is required" >&2
     exit 1
 fi
 
 INPUT_FILE="${positional[0]}"
-
-# Convert to absolute path
-INPUT_FILE=$(readlink -f "$INPUT_FILE" 2>/dev/null || realpath "$INPUT_FILE" 2>/dev/null || echo "$INPUT_FILE")
 if [[ ! "$INPUT_FILE" =~ ^/ ]]; then
-    # If still relative, make it absolute from current directory
     INPUT_FILE="$PWD/$INPUT_FILE"
 fi
-
-# Check if input file exists
 if [[ ! -f "$INPUT_FILE" ]]; then
-    echo "Error: Input file not found: $INPUT_FILE"
+    echo "Error: Input file not found: $INPUT_FILE" >&2
     exit 1
 fi
 
-# Get input file directory and basename
-INPUT_DIR=$(dirname "$INPUT_FILE")
-INPUT_BASENAME=$(basename "$INPUT_FILE")
+py_args=("$INPUT_FILE" --ref-lalo "${ref_lalo[@]}")
+[[ -n "$output_file" ]] && py_args+=(--output "$output_file")
+[[ -n "$lookup_file" ]] && py_args+=(--lookup "$lookup_file")
+[[ $force_flag -eq 1 ]] && py_args+=(--force)
 
-# Keep update-mode on re-save when input filename uses XXXXXXXX endDate.
-# save_hdfeos5.py recomputes output filename; without --update it may switch to YYYYMMDD.
-# Alternative (future Python refactor): pass -t smallbaselineApp.cfg and let template
-# set mintpy.save.hdfEos5.update instead of inferring from filename.
-if [[ "$INPUT_FILE" == *"XXXXXXXX"* ]]; then
-    UPDATE_MODE="--update"
-else
-    UPDATE_MODE=""
-fi
-
-# checks whether filename contains a SUFFIX (non-11 characters. If 11 don't start with N or S)
-SUFFIX=$(echo "$INPUT_BASENAME" | awk -F'[_.]' '{s=$(NF-1); if (length(s)<11) print s; else if (length(s)==11 && s !~ /^[SN]/) print s; else print ""}');
-if [[ -n "$SUFFIX" ]]; then
-    SUFFIX_FLAG="--suffix ${SUFFIX}"
-else
-    SUFFIX_FLAG=""
-fi
-
-# Parse reference point coordinates
-if [[ ${#ref_lalo[@]} -eq 1 ]]; then
-    # Comma-separated format
-    IFS=',' read -ra COORDS <<< "${ref_lalo[0]}"
-    REF_LAT="${COORDS[0]}"
-    REF_LON="${COORDS[1]}"
-else
-    # Space-separated format
-    REF_LAT="${ref_lalo[0]}"
-    REF_LON="${ref_lalo[1]}"
-fi
-
-echo "Input file: $INPUT_FILE"
-echo "New reference point: lat=$REF_LAT, lon=$REF_LON"
-
-OUTPUT_FILE="$INPUT_FILE"
-
-OUTPUT_BASENAME=$(basename "$OUTPUT_FILE")
-echo "Output file: $OUTPUT_FILE" 
-
-# Step 1: Extract HDFEOS5 components
-echo "####################################"
-echo "Step 1: Extracting HDFEOS5 component"
-
-EXTRACT_CMD="extract_hdfeos5.py \"$INPUT_FILE\" --all"
-hv_announce_command "$INPUT_DIR" "$EXTRACT_CMD"
-eval $EXTRACT_CMD
-
-# Determine coordinate system by checking for geo_ prefix
-if [[ -f "$INPUT_DIR/geo_timeseries.h5" ]]; then
-    COORDS="GEO"
- elif [[ -f "$INPUT_DIR/timeseries.h5" ]]; then
-    COORDS="RADAR"
-else
-    echo "Error: Could not find extracted timeseries file"
-    exit 1
-fi
-echo "Detected coordinate system: $COORDS"
-
-# save_hdfeos5: --update and/or -t come from legacy vs recommended (see top of script).
-# Old line wrongly used --subset where --update or -t was intended; --subset is only from -t.
-if [[ "$COORDS" == "RADAR" ]]; then
-    REF_CMD="reference_point.py timeseries.h5 --lookup geometryRadar.h5 --lat $REF_LAT --lon $REF_LON ; add_ref_lalo_to_file timeseries.h5 --ref-lalo $REF_LAT $REF_LON"
-    SAVE_CMD="save_hdfeos5.py timeseries.h5 --tc temporalCoherence.h5 --asc avgSpatialCoherence.h5 -m mask.h5 -g geometryRadar.h5 $UPDATE_MODE $SUFFIX_FLAG"
-    EXTRACTED_FILES=("timeseries.h5" "mask.h5" "temporalCoherence.h5" "avgSpatialCoherence.h5" "geometryRadar.h5" "shadowMask.h5")
-else
-    REF_CMD="reference_point.py geo_timeseries.h5 --lat $REF_LAT --lon $REF_LON"
-    SAVE_CMD="save_hdfeos5.py geo_timeseries.h5 --tc geo_temporalCoherence.h5 --asc geo_avgSpatialCoherence.h5 -m geo_mask.h5 -g geo_geometryRadar.h5 $UPDATE_MODE $SUFFIX_FLAG"
-    EXTRACTED_FILES=("geo_timeseries.h5" "geo_mask.h5" "geo_temporalCoherence.h5" "geo_avgSpatialCoherence.h5" "geo_geometryRadar.h5" "geo_shadowMask.h5")
-fi
-
-
-echo "Step 2: Changing reference point"
-cd "$INPUT_DIR"
-hv_announce_command "$INPUT_DIR" "$REF_CMD"
-eval $REF_CMD
-
-echo "Step 3: Reconstructing HDFEOS5 file"
-hv_announce_command "$INPUT_DIR" "$SAVE_CMD"
-# Capture save_hdfeos5.py stdout so we can report the actual filename it wrote.
-# save_hdfeos5.py constructs the output name from metadata + --update + --suffix (no --subset),
-# which often differs from the input basename (e.g. corner-suffix segments are dropped).
-SAVE_LOG=$(mktemp)
-eval $SAVE_CMD | tee "$SAVE_LOG"
-ACTUAL_OUT=$(grep -E '^finished writing to ' "$SAVE_LOG" | tail -n 1 | sed -E 's/^finished writing to //')
-rm -f "$SAVE_LOG"
-if [[ -z "$ACTUAL_OUT" ]]; then
-    ACTUAL_OUT="$OUTPUT_FILE"
-elif [[ "$ACTUAL_OUT" != /* ]]; then
-    ACTUAL_OUT="$INPUT_DIR/$ACTUAL_OUT"
-fi
-
-echo "HDFEOS5 file reconstructed: $ACTUAL_OUT"
-
-# Step 4: Cleanup (if not --keep-extracted)
-if [[ $keep_extracted -eq 0 ]]; then
-    for file in "${EXTRACTED_FILES[@]}"; do
-        if [[ -f "$file" ]]; then
-            rm -f "$file"
-        fi
-    done
-fi
-
-_finished_display="$ACTUAL_OUT"
-if [[ "$ACTUAL_OUT" == "$PWD/"* ]]; then
-    _finished_display="${ACTUAL_OUT#$PWD/}"
-fi
-
-echo "####"
-echo "Finished changing reference point:  $_finished_display"
-echo "####"
-echo "####################################"
-echo "Done! Output file: $ACTUAL_OUT"
-echo "####################################"
-
+echo "Running: reference_point_hdfeos5.py ${py_args[*]}"
+reference_point_hdfeos5.py "${py_args[@]}"
