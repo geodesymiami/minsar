@@ -51,7 +51,16 @@ asfpass="..."
 eossouser="..."
 eossopass="..."
 
-# EGMS (European Ground Motion Service) — path to CLMS JSON service key file
-# Create token at https://land.copernicus.eu (profile → API Tokens); save once as .jwt JSON
-egms_token="/path/to/egms_token.jwt"
+# CLMS (Copernicus Land Monitoring Service) — path to JSON service key file
+# Create at https://land.copernicus.eu (profile → API Tokens); save as e.g. clms_service_key.json
+clms_service_key="/path/to/clms_service_key.json"
+```
+
+Refresh a Bearer access token when it expires (~1 hour):
+
+```bash
+clms_get_access_token.py --service-key /path/to/clms_service_key.json
+# or, if clms_service_key is set in password_config.py:
+clms_get_access_token.py
+clms_get_access_token.py --json   # includes expires_in
 ```

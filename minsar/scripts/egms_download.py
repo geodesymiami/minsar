@@ -2,7 +2,7 @@
 """List and download European Ground Motion Service (EGMS) products via the archive API.
 
 Requires a CLMS API service key (JSON file). Set its path in password_config.py as:
-  egms_token="/path/to/egms_token.jwt"
+  clms_service_key="/path/to/clms_service_key.json"
 
 AOI may be S:N,W:E (lat_min:lat_max,lon_min:lon_max) or WKT POLYGON((lon lat,...)).
 """
@@ -13,22 +13,24 @@ import argparse
 import json
 import os
 import sys
-import time
 from pathlib import Path
 from typing import Any
 
 import requests
 
 from minsar.utils.bbox_cli_argv import EGMS_DOWNLOAD_ARGV_KW, fix_argv_for_negative_bbox_sn_we
+from minsar.utils.clms_auth import auth_headers, get_access_token, resolve_clms_service_key_path
 from minsar.utils.convert_bbox import _input_to_bounds
 
 API_ENDPOINT = "https://egms.land.copernicus.eu/insar-api/archive"
 MAX_BBOX_DEG = 5.0
+# Used when GET /releases is slow or unavailable (EGMS API is sometimes flaky).
+FALLBACK_RELEASES = ["2020-2024", "2019-2023"]
 
 EXAMPLE = """\
 List and download EGMS products from the Copernicus Land Monitoring Service archive API.
 
-Requires CLMS JWT service key path in $SSARAHOME/password_config.py as egms_token="...".
+Requires CLMS service key in ~/accounts/password_config.py (clms_service_key=...) or $SSARAHOME/password_config.py.
 """
 
 EPILOG = """\
@@ -37,6 +39,7 @@ Examples:
   egms_download.py --aoi="Polygon((14.75 37.51, 15.25 37.51, 15.25 37.88, 14.75 37.88, 14.75 37.51))" --print
   egms_download.py --intersectsWith="Polygon((14.75 37.51, 15.25 37.51, 15.25 37.88, 14.75 37.88, 14.75 37.51))" --print
   egms_download.py --aoi="37.525:37.825,15.050:15.210" --level L2A --download --dir=./egms
+  egms_download.py --service-key ~/accounts/clms_service_key.json --aoi="37.525:37.825,15.050:15.210" --print
 """
 
 
@@ -56,6 +59,13 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--print", dest="do_print", action="store_true", help="Print matching granules")
     parser.add_argument("--download", action="store_true", help="Download matching granules")
     parser.add_argument("--dir", dest="outdir", metavar="FOLDER", default=None, help="Download directory (default: ./egms)")
+    parser.add_argument(
+        "--service-key",
+        "-k",
+        metavar="PATH",
+        default=None,
+        help="CLMS service key JSON (default: ~/accounts/clms_service_key.json or password_config.clms_service_key)",
+    )
     return parser
 
 
@@ -87,99 +97,7 @@ def aoi_to_egms_bbox(aoi: str) -> list[list[float]]:
     return [[min_lon, min_lat], [max_lon, max_lat]]
 
 
-def load_egms_token_path() -> Path:
-    """Return path to CLMS service key from password_config.egms_token."""
-    import importlib.util
-
-    ssara = os.getenv("SSARAHOME")
-    search_dirs: list[Path] = []
-    if ssara:
-        search_dirs.append(Path(ssara))
-    minsar_home = os.getenv("MINSAR_HOME")
-    if minsar_home:
-        search_dirs.append(Path(minsar_home) / "tools" / "ssara_client")
-        search_dirs.append(Path(minsar_home) / "minsar" / "utils" / "ssara_ASF")
-    here = Path(__file__).resolve()
-    repo = here.parents[2]
-    search_dirs.extend([repo / "tools" / "ssara_client", repo / "minsar" / "utils" / "ssara_ASF"])
-
-    seen: set[Path] = set()
-    last_err: Exception | None = None
-    for d in search_dirs:
-        d = d.resolve() if d.exists() else d
-        if d in seen:
-            continue
-        seen.add(d)
-        cfg = d / "password_config.py"
-        if not cfg.is_file():
-            continue
-        try:
-            spec = importlib.util.spec_from_file_location("_minsar_password_config_egms", cfg)
-            if spec is None or spec.loader is None:
-                continue
-            mod = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(mod)
-            token = getattr(mod, "egms_token", None)
-            if not token:
-                last_err = AttributeError(f"{cfg} has no egms_token=...")
-                continue
-            path = Path(os.path.expanduser(str(token))).expanduser()
-            if not path.is_file():
-                raise FileNotFoundError(f"egms_token file not found: {path}")
-            return path
-        except Exception as exc:  # noqa: BLE001
-            last_err = exc
-            continue
-
-    msg = (
-        "Could not load egms_token from password_config.py. "
-        'Add egms_token="/path/to/egms_token.jwt" (CLMS JSON service key).'
-    )
-    if last_err:
-        raise RuntimeError(f"{msg} Last error: {last_err}") from last_err
-    raise RuntimeError(msg)
-
-
-def get_access_token(service_key_path: Path | str) -> str:
-    """Exchange CLMS service key JSON for a short-lived Bearer access token."""
-    try:
-        import jwt  # PyJWT
-    except ImportError as exc:
-        raise RuntimeError("PyJWT is required for EGMS auth. Install with: pip install PyJWT") from exc
-
-    path = Path(service_key_path)
-    with path.open("rb") as f:
-        service_key = json.load(f)
-
-    for key in ("private_key", "client_id", "user_id", "token_uri"):
-        if key not in service_key:
-            raise ValueError(f"Service key missing '{key}': {path}")
-
-    private_key = service_key["private_key"].encode("utf-8")
-    now = int(time.time())
-    claim_set = {
-        "iss": service_key["client_id"],
-        "sub": service_key["user_id"],
-        "aud": service_key["token_uri"],
-        "iat": now,
-        "exp": now + 60 * 60,
-    }
-    grant = jwt.encode(claim_set, private_key, algorithm="RS256")
-    result = requests.post(
-        service_key["token_uri"],
-        headers={"Accept": "application/json", "Content-Type": "application/x-www-form-urlencoded"},
-        data={"grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer", "assertion": grant},
-        timeout=60,
-    )
-    result.raise_for_status()
-    access_token = result.json().get("access_token")
-    if not access_token:
-        raise RuntimeError(f"No access_token in OAuth response: {result.text[:500]}")
-    return access_token
-
-
-def auth_headers(access_token: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {access_token}", "Accept": "application/json"}
+# Auth helpers live in minsar.utils.clms_auth (also used by clms_get_access_token.py).
 
 
 def fetch_releases(headers: dict[str, str], api_endpoint: str = API_ENDPOINT) -> list[str]:
@@ -209,6 +127,24 @@ def pick_latest_release(releases: list[str]) -> str:
         return (0, 0)
 
     return sorted(releases, key=sort_key)[-1]
+
+
+def resolve_releases(headers: dict[str, str], explicit: str | None) -> list[str]:
+    """Return release id(s) from --releases or latest from API (with fallback)."""
+    if explicit:
+        return [r.strip() for r in explicit.split(",") if r.strip()]
+    try:
+        available = fetch_releases(headers)
+        latest = pick_latest_release(available)
+        print(f"Using latest release: {latest}", file=sys.stderr)
+        return [latest]
+    except Exception as exc:  # noqa: BLE001
+        latest = pick_latest_release(FALLBACK_RELEASES)
+        print(
+            f"Warning: could not fetch releases from EGMS API ({exc}); using {latest}",
+            file=sys.stderr,
+        )
+        return [latest]
 
 
 def build_search_query(
@@ -343,7 +279,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     try:
-        token_path = load_egms_token_path()
+        token_path = resolve_clms_service_key_path(args.service_key)
         access_token = get_access_token(token_path)
     except Exception as exc:  # noqa: BLE001
         print(f"Error: authentication failed: {exc}", file=sys.stderr)
@@ -351,16 +287,11 @@ def main(argv: list[str] | None = None) -> int:
 
     headers = auth_headers(access_token)
 
-    if args.releases:
-        releases = [r.strip() for r in args.releases.split(",") if r.strip()]
-    else:
-        try:
-            available = fetch_releases(headers)
-            releases = [pick_latest_release(available)]
-            print(f"Using latest release: {releases[0]}", file=sys.stderr)
-        except Exception as exc:  # noqa: BLE001
-            print(f"Error: could not determine releases: {exc}", file=sys.stderr)
-            return 1
+    try:
+        releases = resolve_releases(headers, args.releases)
+    except Exception as exc:  # noqa: BLE001
+        print(f"Error: could not determine releases: {exc}", file=sys.stderr)
+        return 1
 
     query = build_search_query(
         bbox=bbox,

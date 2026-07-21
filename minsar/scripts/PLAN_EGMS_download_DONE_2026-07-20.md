@@ -6,7 +6,8 @@
 
 | Item | Status |
 |------|--------|
-| CLMS JWT auth via `password_config.egms_token` (path to JSON service key) | Done |
+| CLMS JWT auth via `password_config.clms_service_key` (path to JSON service key) | Done |
+| Standalone token refresh: `clms_get_access_token.py` + `minsar/utils/clms_auth.py` | Done |
 | `--aoi` accepts S:N,W:E and WKT POLYGON; `--intersectsWith` alias | Done |
 | `--print` list granules; `--download` / `--dir`; `--level` default L2A | Done |
 | Default `--releases` = latest from API `/releases` | Done |
@@ -25,10 +26,10 @@ egms_download.py --aoi="37.525:37.825,15.050:15.210" --level L2A --download --di
 
 ## Setup
 
-1. Create a CLMS API token at [land.copernicus.eu](https://land.copernicus.eu) (profile → API Tokens); save the one-time JSON as e.g. `~/accounts/egms_token.jwt`.
+1. Create a CLMS API token at [land.copernicus.eu](https://land.copernicus.eu) (profile → API Tokens); save the one-time JSON as e.g. `~/accounts/clms_service_key.json`.
 2. In `$SSARAHOME/password_config.py`:
    ```python
-   egms_token="/path/to/egms_token.jwt"
+   clms_service_key="/path/to/clms_service_key.json"
    ```
 3. `pip install PyJWT` if needed.
 

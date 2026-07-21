@@ -16,6 +16,7 @@ from minsar.scripts.egms_download import (
     normalize_level,
     pick_latest_release,
     print_hits,
+    resolve_releases,
     search_products,
 )
 
@@ -75,6 +76,20 @@ class TestBuildSearchQuery(unittest.TestCase):
         self.assertEqual(q["direction"], "descending")
         self.assertEqual(q["relativeOrbit"], 124)
         self.assertEqual(q["swath"], "IW2")
+
+
+class TestResolveReleases(unittest.TestCase):
+    def test_explicit_releases(self):
+        out = resolve_releases({"Authorization": "Bearer x"}, "2019-2023,2020-2024")
+        self.assertEqual(out, ["2019-2023", "2020-2024"])
+
+    @patch("minsar.scripts.egms_download.fetch_releases", side_effect=TimeoutError("timed out"))
+    def test_fallback_when_api_unavailable(self, _mock_fetch):
+        buf = io.StringIO()
+        with patch("sys.stderr", buf):
+            out = resolve_releases({"Authorization": "Bearer x"}, None)
+        self.assertEqual(out, ["2020-2024"])
+        self.assertIn("Warning", buf.getvalue())
 
 
 class TestSearchAndPrint(unittest.TestCase):
