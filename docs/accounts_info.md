@@ -64,3 +64,10 @@ clms_get_access_token.py --service-key /path/to/clms_service_key.json
 clms_get_access_token.py
 clms_get_access_token.py --json   # includes expires_in
 ```
+
+Search EGMS products and download with curl (not Python):
+
+```bash
+egms_search.py --aoi="37.51:37.88,15.15:15.16" --swath IW2 --releases 2020-2024 --write-curl download_egms.sh
+bash download_egms.sh ./egms
+```

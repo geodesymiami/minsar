@@ -2,26 +2,29 @@
 
 ## Status
 
-**Implemented 2026-07-20.** Script: [`minsar/scripts/egms_download.py`](egms_download.py).
+**Updated 2026-07-21.** Search script: [`minsar/scripts/egms_search.py`](egms_search.py).  
+Downloads are done with **curl** via `--write-curl` (not Python `requests`).
 
 | Item | Status |
 |------|--------|
 | CLMS JWT auth via `password_config.clms_service_key` (path to JSON service key) | Done |
 | Standalone token refresh: `clms_get_access_token.py` + `minsar/utils/clms_auth.py` | Done |
 | `--aoi` accepts S:N,W:E and WKT POLYGON; `--intersectsWith` alias | Done |
-| `--print` list granules; `--download` / `--dir`; `--level` default L2A | Done |
-| Default `--releases` = latest from API `/releases` | Done |
-| Unit tests (mocked API) | Done (`minsar/scripts/tests/test_egms_download.py`) |
+| `--print` list granules; `--write-curl FILE` for curl download script | Done |
+| Default `--releases` = latest from API (fallback `2020-2024` if `/releases` times out) | Done |
+| Unstable orbit+swath: `egms_search_unstable.py` | Done |
+| Unit tests (mocked API) | Done (`minsar/scripts/tests/test_egms_search.py`) |
 | Docs: `docs/accounts_info.md`, `architecture_docs/FILE_STRUCTURE.md` | Done |
 | `PyJWT` in `pip_requirements.txt`; `minsar/scripts/tests` in `run_all_tests.bash` | Done |
 
 ## Usage
 
 ```bash
-egms_download.py --aoi="37.525:37.825,15.050:15.210" --print
-egms_download.py --aoi="Polygon((14.75 37.51, 15.25 37.51, 15.25 37.88, 14.75 37.88, 14.75 37.51))" --print
-egms_download.py --intersectsWith="Polygon((14.75 37.51, 15.25 37.51, 15.25 37.88, 14.75 37.88, 14.75 37.51))" --print
-egms_download.py --aoi="37.525:37.825,15.050:15.210" --level L2A --download --dir=./egms
+egms_search.py --aoi="37.525:37.825,15.050:15.210" --print
+egms_search.py --aoi="Polygon((14.75 37.51, 15.25 37.51, 15.25 37.88, 14.75 37.88, 14.75 37.51))" --print
+egms_search.py --intersectsWith="Polygon((14.75 37.51, 15.25 37.51, 15.25 37.88, 14.75 37.88, 14.75 37.51))" --print
+egms_search.py --aoi="37.51:37.88,15.15:15.16" --swath IW2 --releases 2020-2024 --write-curl download_egms.sh
+bash download_egms.sh ./egms
 ```
 
 ## Setup
@@ -37,8 +40,8 @@ Auth is **not** `tsxuser`/`tsxpass`. Listing and downloading both need the CLMS 
 
 ## Summary
 
-CLI to search and download European Ground Motion Service products via  
-`https://egms.land.copernicus.eu/insar-api/archive` (CLMS Bearer token from JWT service key).
+CLI to search European Ground Motion Service products via  
+`https://egms.land.copernicus.eu/insar-api/archive`. Downloads: generate a curl script (`--write-curl`) that refreshes the Bearer token and uses retries + resume.
 
 AOI → `_input_to_bounds` → EGMS `bbox` (max 5° span). Search requires `levels` + `releases`.
 

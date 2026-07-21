@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""List and download European Ground Motion Service (EGMS) products via the archive API.
+"""Search European Ground Motion Service (EGMS) products via the archive API.
+
+Print matching products. For downloads, write a curl script with --write-curl
+(more reliable than Python requests for large ZIPs: retries + resume).
 
 Requires a CLMS API service key (JSON file). Set its path in password_config.py as:
   clms_service_key="/path/to/clms_service_key.json"
@@ -11,14 +14,13 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Any
 
 import requests
 
-from minsar.utils.bbox_cli_argv import EGMS_DOWNLOAD_ARGV_KW, fix_argv_for_negative_bbox_sn_we
+from minsar.utils.bbox_cli_argv import EGMS_SEARCH_ARGV_KW, fix_argv_for_negative_bbox_sn_we
 from minsar.utils.clms_auth import auth_headers, get_access_token, resolve_clms_service_key_path
 from minsar.utils.convert_bbox import _input_to_bounds
 
@@ -28,18 +30,19 @@ MAX_BBOX_DEG = 5.0
 FALLBACK_RELEASES = ["2020-2024", "2019-2023"]
 
 EXAMPLE = """\
-List and download EGMS products from the Copernicus Land Monitoring Service archive API.
+Search EGMS products from the Copernicus Land Monitoring Service archive API.
+Print matches; optionally write a curl download script (--write-curl).
 
 Requires CLMS service key in ~/accounts/password_config.py (clms_service_key=...) or $SSARAHOME/password_config.py.
 """
 
 EPILOG = """\
 Examples:
-  egms_download.py --aoi="37.525:37.825,15.050:15.210" --print
-  egms_download.py --aoi="Polygon((14.75 37.51, 15.25 37.51, 15.25 37.88, 14.75 37.88, 14.75 37.51))" --print
-  egms_download.py --intersectsWith="Polygon((14.75 37.51, 15.25 37.51, 15.25 37.88, 14.75 37.88, 14.75 37.51))" --print
-  egms_download.py --aoi="37.525:37.825,15.050:15.210" --level L2A --download --dir=./egms
-  egms_download.py --service-key ~/accounts/clms_service_key.json --aoi="37.525:37.825,15.050:15.210" --print
+  egms_search.py --aoi="37.525:37.825,15.050:15.210" --print
+  egms_search.py --aoi="Polygon((14.75 37.51, 15.25 37.51, 15.25 37.88, 14.75 37.88, 14.75 37.51))" --print
+  egms_search.py --intersectsWith="Polygon((14.75 37.51, 15.25 37.51, 15.25 37.88, 14.75 37.88, 14.75 37.51))" --swath IW2 --print
+  egms_search.py --aoi="37.51:37.88,15.15:15.16" --swath IW2 --releases 2020-2024 --write-curl download_egms.sh
+  egms_search.py --service-key ~/accounts/clms_service_key.json --aoi="37.525:37.825,15.050:15.210" --print
 """
 
 
@@ -54,11 +57,16 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--level", default="L2A", metavar="LEVEL", help="Product level L2A, L2B, or L3 (default: L2A)")
     parser.add_argument("--releases", default=None, metavar="REL", help="Release id(s), comma-separated (default: latest from API)")
     parser.add_argument("--direction", default=None, metavar="DIR", help="ascending or descending")
-    parser.add_argument("--relativeOrbit", dest="relative_orbit", type=int, default=None, metavar="ORBIT", help="Relative orbit")
+    parser.add_argument("--relativeOrbit", dest="relative_orbit", type=int, default=None, metavar="ORBIT", help="Relative orbit (API may hang with --swath; use egms_search_unstable.py)")
     parser.add_argument("--swath", default=None, metavar="SWATH", help="Swath (e.g. IW1)")
-    parser.add_argument("--print", dest="do_print", action="store_true", help="Print matching granules")
-    parser.add_argument("--download", action="store_true", help="Download matching granules")
-    parser.add_argument("--dir", dest="outdir", metavar="FOLDER", default=None, help="Download directory (default: ./egms)")
+    parser.add_argument("--print", dest="do_print", action="store_true", help="Print matching granules (default if no --write-curl)")
+    parser.add_argument(
+        "--write-curl",
+        metavar="FILE",
+        default=None,
+        help="Write bash script of curl downloads (retries + resume); run: bash FILE [outdir]",
+    )
+    parser.add_argument("--dir", dest="outdir", metavar="FOLDER", default="./egms", help="Default download dir for --write-curl script (default: ./egms)")
     parser.add_argument(
         "--service-key",
         "-k",
@@ -95,9 +103,6 @@ def aoi_to_egms_bbox(aoi: str) -> list[list[float]]:
             f"AOI span {lon_span:.3f}° lon × {lat_span:.3f}° lat exceeds EGMS max of {MAX_BBOX_DEG}°."
         )
     return [[min_lon, min_lat], [max_lon, max_lat]]
-
-
-# Auth helpers live in minsar.utils.clms_auth (also used by clms_get_access_token.py).
 
 
 def fetch_releases(headers: dict[str, str], api_endpoint: str = API_ENDPOINT) -> list[str]:
@@ -225,33 +230,56 @@ def download_url(api_endpoint: str, filename: str, query_id: str) -> str:
     return f"{api_endpoint}/download/{filename}?id={query_id}"
 
 
-def download_hits(
-    headers: dict[str, str],
+def write_curl_script(
     result: dict[str, Any],
-    outdir: Path,
+    script_path: Path | str,
+    *,
+    outdir: str = "./egms",
     api_endpoint: str = API_ENDPOINT,
-) -> list[Path]:
-    hits = result.get("hits") or []
+) -> Path:
+    """Write a bash script that downloads hits with curl (retries + resume).
+
+    Each file refreshes the CLMS Bearer token via clms_get_access_token.py.
+    Usage: bash SCRIPT [outdir]
+    """
     query_id = result.get("id")
     if not query_id:
-        raise RuntimeError("Search result has no query id; cannot download")
-    outdir.mkdir(parents=True, exist_ok=True)
-    saved: list[Path] = []
+        raise RuntimeError("Search result has no query id; cannot write curl script")
+    hits = [h for h in (result.get("hits") or []) if h.get("filename")]
+    if not hits:
+        raise RuntimeError("No products to download; curl script not written")
+
+    path = Path(script_path).expanduser()
+    n = len(hits)
+    lines = [
+        "#!/usr/bin/env bash",
+        "# Generated by egms_search.py — download EGMS products with curl",
+        "# Usage: bash this_script.sh [outdir]",
+        "# Requires: curl, clms_get_access_token.py on PATH",
+        "set -euo pipefail",
+        f'OUTDIR="${{1:-{outdir}}}"',
+        'mkdir -p "$OUTDIR"',
+        f'echo "Downloading {n} file(s) to $OUTDIR"',
+        "",
+    ]
     for i, hit in enumerate(hits, 1):
-        filename = hit.get("filename")
-        if not filename:
-            continue
-        dest = outdir / filename
-        url = download_url(api_endpoint, filename, query_id)
-        print(f"[{i}/{len(hits)}] Downloading {filename} → {dest}")
-        with requests.get(url, headers=headers, stream=True, timeout=600) as r:
-            r.raise_for_status()
-            with dest.open("wb") as f:
-                for chunk in r.iter_content(chunk_size=1024 * 1024):
-                    if chunk:
-                        f.write(chunk)
-        saved.append(dest)
-    return saved
+        filename = hit["filename"]
+        url = download_url(api_endpoint, filename, str(query_id))
+        lines.extend(
+            [
+                f'echo "[{i}/{n}] {filename}"',
+                'TOKEN="$(clms_get_access_token.py)"',
+                "curl -fL --connect-timeout 30 --retry 10 --retry-delay 15 --retry-all-errors -C - \\",
+                '  -H "Authorization: Bearer ${TOKEN}" \\',
+                f'  -o "${{OUTDIR}}/{filename}" \\',
+                f'  "{url}"',
+                "",
+            ]
+        )
+    lines.append(f'echo "Done. Downloaded {n} file(s) to $OUTDIR"')
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    path.chmod(path.stat().st_mode | 0o111)
+    return path
 
 
 def resolve_aoi(args: argparse.Namespace) -> str:
@@ -263,12 +291,15 @@ def resolve_aoi(args: argparse.Namespace) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     raw = list(argv) if argv is not None else sys.argv[1:]
-    raw = fix_argv_for_negative_bbox_sn_we(raw, **EGMS_DOWNLOAD_ARGV_KW)
+    raw = fix_argv_for_negative_bbox_sn_we(raw, **EGMS_SEARCH_ARGV_KW)
     parser = create_parser()
     args = parser.parse_args(raw)
 
-    if not args.download:
+    # Always print unless user only asked for --write-curl without --print? Print by default.
+    if not args.write_curl:
         args.do_print = True
+    elif not args.do_print:
+        args.do_print = True  # still list products when writing curl script
 
     try:
         level = normalize_level(args.level)
@@ -311,14 +342,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.do_print:
         print_hits(result)
 
-    if args.download:
-        outdir = Path(os.path.expandvars(args.outdir or "./egms")).expanduser()
+    if args.write_curl:
         try:
-            paths = download_hits(headers, result, outdir)
+            script = write_curl_script(result, args.write_curl, outdir=args.outdir or "./egms")
         except Exception as exc:  # noqa: BLE001
-            print(f"Error: download failed: {exc}", file=sys.stderr)
+            print(f"Error: could not write curl script: {exc}", file=sys.stderr)
             return 1
-        print(f"Downloaded {len(paths)} file(s) to {outdir}")
+        print(f"Wrote {script}", file=sys.stderr)
+        print(f"Run: bash {script} {args.outdir or './egms'}", file=sys.stderr)
 
     return 0
 

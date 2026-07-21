@@ -9,7 +9,10 @@ High-level layout for navigation. The main workflow entry points live under `min
 | `minsar/bin/` | `minsarApp.bash`, `run_workflow.bash`, job wrappers |
 | `minsar/lib/` | Shared bash libraries |
 | `minsar/scripts/` | Python CLIs (download, ingest, helpers) |
-| `minsar/scripts/egms_download.py` | List/download EGMS products (CLMS archive API; `--aoi`, `--print`, `--download`) |
+| `minsar/scripts/egms_search.py` | Search EGMS products (CLMS archive API; `--print`, `--write-curl`) |
+| `minsar/scripts/egms_search_unstable.py` | EGMS search with `--relativeOrbit` + `--swath` client-side filter (API workaround) |
+| `minsar/scripts/clms_get_access_token.py` | Refresh CLMS OAuth Bearer token from JWT service key JSON |
+| `minsar/utils/clms_auth.py` | Shared CLMS jwt-bearer auth helpers |
 | `minsar/utils/` | Reusable Python modules and colocated `tests/` |
 | `minsar/defaults/` | Job and queue defaults |
 | `samples/` | Example `.template` files |

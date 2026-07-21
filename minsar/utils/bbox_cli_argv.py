@@ -195,7 +195,7 @@ DISPLAY_BBOX_ARGV_KW = {
     "flags": ("--satellite", "--asf"),
 }
 
-EGMS_DOWNLOAD_ARGV_KW = {
+EGMS_SEARCH_ARGV_KW = {
     "consume_one": (
         "--aoi",
         "--intersectsWith",
@@ -205,7 +205,12 @@ EGMS_DOWNLOAD_ARGV_KW = {
         "--direction",
         "--relativeOrbit",
         "--swath",
+        "--write-curl",
+        "--service-key",
+        "-k",
     ),
     "consume_two": (),
-    "flags": ("--print", "--download"),
+    "flags": ("--print",),
 }
+# Backward-compatible alias (old egms_download.py name).
+EGMS_DOWNLOAD_ARGV_KW = EGMS_SEARCH_ARGV_KW
