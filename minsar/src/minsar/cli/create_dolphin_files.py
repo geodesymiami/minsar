@@ -126,7 +126,7 @@ def populate_insarmaps_metadata(metadata, date_list, latitude, longitude, ref_ro
     rel_orbit = metadata.get("track_number", metadata.get("relative_orbit"))
     if rel_orbit is None:
         proj = str(metadata.get("PROJECT_NAME", os.path.basename(os.getcwd())))
-        m = re.search(r"[Dd](\d+)", proj)
+        m = re.search(r"(\d+)", proj)
         if m:
             rel_orbit = int(m.group(1))
     if rel_orbit is not None:
@@ -383,6 +383,14 @@ def collect_data(timeseries_path):
                     temp_coh = src.read(1)
             except:
                 raise FileNotFoundError("No temporal coherence file found in interferograms directory.")
+        elif glob.glob(str(timeseries_path.parent / 'interferograms' / 'temporal_coherence_*.tif')):
+            temp_coh_path = glob.glob(str(timeseries_path.parent / 'interferograms' / 'temporal_coherence_*.tif'))
+            temp_coh = []
+            for temp in temp_coh_path:
+                with rasterio.open(temp) as src:
+                    temp_coh.append(src.read(1))
+
+            temp_coh = np.mean(temp_coh, axis=0)
 
 
     metadata=dict(crs=crs.to_string(),transform=transform, bbox=bbox, LENGTH=shape[0], WIDTH=shape[1])
@@ -457,10 +465,17 @@ def plot_to_test(deformation_data, temp_coh):
 
 def main():
     # TODO for debug ########################################################################################################
-    #os.chdir('/scratch/09580/gdisilvestro/qChilesSenD142') #REMOVE!!!
+    os.chdir('/scratch/09580/gdisilvestro/qChilesSenA120') #REMOVE!!!
     #########################################################################################################################
 
-    CSLC = glob.glob(str(Path.cwd() / 'OPERA*.h5')) if glob.glob(str(Path.cwd() / 'OPERA*.h5')) else glob.glob(str(Path.cwd() / 'CSLC' / 'OPERA*.h5'))
+    if glob.glob(str(Path.cwd() / 'OPERA*.h5')):
+        CSLC = glob.glob(str(Path.cwd() / 'OPERA*.h5'))
+    elif glob.glob(str(Path.cwd() / 'CSLC' / 'OPERA*.h5')):
+        CSLC = glob.glob(str(Path.cwd() / 'CSLC' / 'OPERA*.h5'))
+    else:
+        CSLC = None
+    # elif glob.glob(str(Path.cwd() / 'gslcs' / '*' / '*' / '*.h5')):
+    #     CSLC = glob.glob(str(Path.cwd() / 'gslcs' / '*' / '*' / '*.h5'))
 
     timeseries_path = define_path()
 
@@ -568,12 +583,18 @@ def main():
 
     # Set Center incident angle
     if incidence is not None and not hasattr(metadata, 'CENTER_INCIDENCE_ANGLE'):
-        center_incidence = incidence[metadata['LENGTH'] // 2, metadata['WIDTH'] // 2]
+        center_incidence = incidence[incidence.shape[0] // 2, incidence.shape[1] // 2]
         metadata['CENTER_INCIDENCE_ANGLE'] = str(center_incidence)
 
     # Set Heading
     if az is not None and not hasattr(metadata, 'HEADING'):
         metadata['HEADING'] = str(np.nanmean(az) + 90)
+
+    if not metadata.get('orbit_pass_direction', metadata.get('orbit_direction', None)):
+        if 'SenD' or 'CskD' in Path.cwd().name:
+            metadata['orbit_pass_direction'] = 'descending'
+        elif 'SenA' or 'CskA' in Path.cwd().name:
+            metadata['orbit_pass_direction'] = 'ascending'
 
     # Set reference point
     if 'REF_X' not in metadata or 'REF_Y' not in metadata:
