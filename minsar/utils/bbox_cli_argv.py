@@ -206,6 +206,7 @@ EGMS_SEARCH_ARGV_KW = {
         "--relativeOrbit",
         "--swath",
         "--write-curl",
+        "--json-out",
         "--service-key",
         "-k",
     ),

@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,7 @@ Examples:
   egms_search.py --aoi="Polygon((14.75 37.51, 15.25 37.51, 15.25 37.88, 14.75 37.88, 14.75 37.51))" --print
   egms_search.py --intersectsWith="Polygon((14.75 37.51, 15.25 37.51, 15.25 37.88, 14.75 37.88, 14.75 37.51))" --swath IW2 --print
   egms_search.py --aoi="37.51:37.88,15.15:15.16" --swath IW2 --releases 2020-2024 --write-curl download_egms.sh
+  egms_search.py --aoi="37.51:37.88,15.15:15.16" --releases 2020-2024 --json-out egms_hits.json --print
   egms_search.py --service-key ~/accounts/clms_service_key.json --aoi="37.525:37.825,15.050:15.210" --print
 """
 
@@ -59,12 +61,18 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--direction", default=None, metavar="DIR", help="ascending or descending")
     parser.add_argument("--relativeOrbit", dest="relative_orbit", type=int, default=None, metavar="ORBIT", help="Relative orbit (API may hang with --swath; use egms_search_unstable.py)")
     parser.add_argument("--swath", default=None, metavar="SWATH", help="Swath (e.g. IW1)")
-    parser.add_argument("--print", dest="do_print", action="store_true", help="Print matching granules (default if no --write-curl)")
+    parser.add_argument("--print", dest="do_print", action="store_true", help="Print matching granules (default if no --write-curl/--json-out)")
     parser.add_argument(
         "--write-curl",
         metavar="FILE",
         default=None,
         help="Write bash script of curl downloads (retries + resume); run: bash FILE [outdir]",
+    )
+    parser.add_argument(
+        "--json-out",
+        metavar="FILE",
+        default=None,
+        help="Write search result JSON {id, hits} for local filtering / egms_download.bash",
     )
     parser.add_argument("--dir", dest="outdir", metavar="FOLDER", default="./egms", help="Default download dir for --write-curl script (default: ./egms)")
     parser.add_argument(
@@ -180,18 +188,50 @@ def search_products(
     headers: dict[str, str],
     query: dict[str, Any],
     api_endpoint: str = API_ENDPOINT,
+    *,
+    timeout: float = 180.0,
+    retries: int = 4,
+    retry_wait_s: float = 15.0,
 ) -> dict[str, Any]:
-    r = requests.post(
-        f"{api_endpoint}/search",
-        headers=headers,
-        data=json.dumps(query),
-        timeout=120,
-    )
-    r.raise_for_status()
-    result = r.json()
-    if result.get("message") and not result.get("status", True) and not result.get("hits"):
-        raise RuntimeError(result["message"])
-    return result
+    """POST /search with retries on timeout / transient HTTP errors."""
+    url = f"{api_endpoint}/search"
+    body = json.dumps(query)
+    last_exc: Exception | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            r = requests.post(
+                url,
+                headers=headers,
+                data=body,
+                timeout=timeout,
+            )
+            if r.status_code in (429, 500, 502, 503, 504) and attempt < retries:
+                wait = retry_wait_s * attempt
+                print(
+                    f"Warning: search HTTP {r.status_code} (attempt {attempt}/{retries}); "
+                    f"retrying in {wait:.0f}s...",
+                    file=sys.stderr,
+                )
+                time.sleep(wait)
+                continue
+            r.raise_for_status()
+            result = r.json()
+            if result.get("message") and not result.get("status", True) and not result.get("hits"):
+                raise RuntimeError(result["message"])
+            return result
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as exc:
+            last_exc = exc
+            if attempt >= retries:
+                break
+            wait = retry_wait_s * attempt
+            print(
+                f"Warning: search failed (attempt {attempt}/{retries}): {exc}; "
+                f"retrying in {wait:.0f}s...",
+                file=sys.stderr,
+            )
+            time.sleep(wait)
+    assert last_exc is not None
+    raise RuntimeError(f"search failed after {retries} attempts: {last_exc}") from last_exc
 
 
 def format_filesize(nbytes: int | None) -> str:
@@ -228,6 +268,36 @@ def print_hits(result: dict[str, Any]) -> None:
 
 def download_url(api_endpoint: str, filename: str, query_id: str) -> str:
     return f"{api_endpoint}/download/{filename}?id={query_id}"
+
+
+def write_json_listing(result: dict[str, Any], path: Path | str) -> Path:
+    """Write compact search listing JSON with query id and hits."""
+    out = Path(path).expanduser()
+    payload = {"id": result.get("id"), "hits": result.get("hits") or []}
+    out.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    return out
+
+
+def write_url_tsv(
+    result: dict[str, Any],
+    path: Path | str,
+    *,
+    api_endpoint: str = API_ENDPOINT,
+) -> Path:
+    """Write TSV lines filename<TAB>url for parallel curl/xargs download."""
+    query_id = result.get("id")
+    if not query_id:
+        raise RuntimeError("Search result has no query id; cannot write URL list")
+    hits = [h for h in (result.get("hits") or []) if h.get("filename")]
+    if not hits:
+        raise RuntimeError("No products to download; URL list not written")
+    out = Path(path).expanduser()
+    lines = []
+    for hit in hits:
+        filename = hit["filename"]
+        lines.append(f"{filename}\t{download_url(api_endpoint, filename, str(query_id))}")
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return out
 
 
 def write_curl_script(
@@ -269,10 +339,12 @@ def write_curl_script(
             [
                 f'echo "[{i}/{n}] {filename}"',
                 'TOKEN="$(clms_get_access_token.py)"',
-                "curl -fL --connect-timeout 30 --retry 10 --retry-delay 15 --retry-all-errors -C - \\",
+                # Longer SSL/connect timeout; HTTP/1.1; resume (-C -); many retries
+                "curl -fL --http1.1 --connect-timeout 120 --retry 20 --retry-delay 30 --retry-all-errors -C - \\",
                 '  -H "Authorization: Bearer ${TOKEN}" \\',
                 f'  -o "${{OUTDIR}}/{filename}" \\',
                 f'  "{url}"',
+                "sleep 2",
                 "",
             ]
         )
@@ -295,11 +367,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = create_parser()
     args = parser.parse_args(raw)
 
-    # Always print unless user only asked for --write-curl without --print? Print by default.
-    if not args.write_curl:
+    # Always print listing by default when no output-only flags force silence
+    if not args.write_curl and not args.json_out:
         args.do_print = True
     elif not args.do_print:
-        args.do_print = True  # still list products when writing curl script
+        args.do_print = True
 
     try:
         level = normalize_level(args.level)
@@ -341,6 +413,14 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.do_print:
         print_hits(result)
+
+    if args.json_out:
+        try:
+            jpath = write_json_listing(result, args.json_out)
+        except Exception as exc:  # noqa: BLE001
+            print(f"Error: could not write JSON listing: {exc}", file=sys.stderr)
+            return 1
+        print(f"Wrote {jpath}", file=sys.stderr)
 
     if args.write_curl:
         try:

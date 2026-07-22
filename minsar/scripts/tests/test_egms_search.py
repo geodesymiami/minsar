@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import io
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -149,10 +150,29 @@ class TestWriteCurlScript(unittest.TestCase):
             self.assertIn("clms_get_access_token.py", text)
             self.assertIn("curl -fL", text)
             self.assertIn("-C -", text)
-            self.assertIn("--retry 10", text)
+            self.assertIn("--http1.1", text)
+            self.assertIn("--connect-timeout 120", text)
+            self.assertIn("--retry 20", text)
             self.assertIn("EGMS_demo.zip", text)
             self.assertIn("id=qid-abc", text)
             self.assertTrue(script.stat().st_mode & 0o100)
+
+    def test_write_json_and_url_tsv(self):
+        from minsar.scripts.egms_search import write_json_listing, write_url_tsv
+
+        result = {
+            "id": "qid-abc",
+            "hits": [{"filename": "EGMS_demo.zip", "filesize": 6}],
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            jpath = write_json_listing(result, Path(tmp) / "hits.json")
+            data = json.loads(jpath.read_text(encoding="utf-8"))
+            self.assertEqual(data["id"], "qid-abc")
+            self.assertEqual(len(data["hits"]), 1)
+            tsv = write_url_tsv(result, Path(tmp) / "urls.tsv")
+            line = tsv.read_text(encoding="utf-8").strip()
+            self.assertIn("EGMS_demo.zip\t", line)
+            self.assertIn("id=qid-abc", line)
 
     def test_empty_hits_raises(self):
         with self.assertRaises(RuntimeError):

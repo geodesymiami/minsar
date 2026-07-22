@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -129,6 +130,45 @@ class TestConverterLatLon(unittest.TestCase):
         lat, lon = mod.detect_lat_lon_columns(["latitude", "longitude", "20200104"])
         self.assertEqual(lat, "latitude")
         self.assertEqual(lon, "longitude")
+
+
+class TestResolveInsarmapsHosts(unittest.TestCase):
+    def test_olddata_default(self):
+        from egms2insarmaps import resolve_insarmaps_hosts
+
+        env = {
+            "INSARMAPSHOST_OLDDATA": "149.165.153.50",
+            "INSARMAPSHOST_RECENTDATA": "recent.example",
+        }
+        with unittest.mock.patch.dict(os.environ, env, clear=False):
+            hosts = resolve_insarmaps_hosts(Path("EGMS_L2a_044_IW2.csv"))
+        self.assertEqual(hosts, ["149.165.153.50"])
+
+    def test_recentdata_for_xxxxxxxx(self):
+        from egms2insarmaps import resolve_insarmaps_hosts
+
+        env = {
+            "INSARMAPSHOST_OLDDATA": "old.example",
+            "INSARMAPSHOST_RECENTDATA": "149.165.153.50",
+        }
+        with unittest.mock.patch.dict(os.environ, env, clear=False):
+            hosts = resolve_insarmaps_hosts(Path("S1_desc_142_XXXXXXXX.csv"))
+        self.assertEqual(hosts, ["149.165.153.50"])
+
+    def test_cli_override(self):
+        from egms2insarmaps import resolve_insarmaps_hosts
+
+        hosts = resolve_insarmaps_hosts(Path("x.csv"), "a.example,b.example")
+        self.assertEqual(hosts, ["a.example", "b.example"])
+
+    def test_missing_env_raises(self):
+        from egms2insarmaps import resolve_insarmaps_hosts
+
+        env = {"INSARMAPSHOST_OLDDATA": "", "INSARMAPSHOST_RECENTDATA": ""}
+        with unittest.mock.patch.dict(os.environ, env, clear=False):
+            with self.assertRaises(ValueError) as ctx:
+                resolve_insarmaps_hosts(Path("EGMS.csv"))
+        self.assertIn("INSARMAPSHOST_OLDDATA", str(ctx.exception))
 
 
 class TestResolveIngestStep(unittest.TestCase):

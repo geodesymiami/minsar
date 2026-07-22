@@ -2,49 +2,40 @@
 
 ## Status
 
-**Updated 2026-07-21.** Search script: [`minsar/scripts/egms_search.py`](egms_search.py).  
-Downloads are done with **curl** via `--write-curl` (not Python `requests`).
+**Updated 2026-07-21.** Search: [`egms_search.py`](egms_search.py). Wrapper: [`egms_download.bash`](egms_download.bash).  
+Downloads via **curl** (`--write-curl` / bash); local filters after a minimal API search.
 
 | Item | Status |
 |------|--------|
-| CLMS JWT auth via `password_config.clms_service_key` (path to JSON service key) | Done |
-| Standalone token refresh: `clms_get_access_token.py` + `minsar/utils/clms_auth.py` | Done |
-| `--aoi` accepts S:N,W:E and WKT POLYGON; `--intersectsWith` alias | Done |
-| `--print` list granules; `--write-curl FILE` for curl download script | Done |
-| Default `--releases` = latest from API (fallback `2020-2024` if `/releases` times out) | Done |
-| Unstable orbit+swath: `egms_search_unstable.py` | Done |
-| Unit tests (mocked API) | Done (`minsar/scripts/tests/test_egms_search.py`) |
-| Docs: `docs/accounts_info.md`, `architecture_docs/FILE_STRUCTURE.md` | Done |
-| `PyJWT` in `pip_requirements.txt`; `minsar/scripts/tests` in `run_all_tests.bash` | Done |
+| CLMS JWT auth via `password_config.clms_service_key` / `~/accounts/clms_service_key.json` | Done |
+| `clms_get_access_token.py` + `minsar/utils/clms_auth.py` | Done |
+| `egms_search.py`: `--print`, `--json-out`, `--write-curl` | Done |
+| `filter_egms_hits.py`: local orbit/swath/direction filter | Done |
+| `egms_download.bash`: search → filter → print/download; `--parallel` default 1 | Done |
+| `test_egms_search_options.py`: live option timing TSV (not CI) | Done |
+| Unit tests | Done (`test_egms_search.py`, `test_filter_egms_hits.py`) |
 
 ## Usage
 
 ```bash
-egms_search.py --aoi="37.525:37.825,15.050:15.210" --print
-egms_search.py --aoi="Polygon((14.75 37.51, 15.25 37.51, 15.25 37.88, 14.75 37.88, 14.75 37.51))" --print
-egms_search.py --intersectsWith="Polygon((14.75 37.51, 15.25 37.51, 15.25 37.88, 14.75 37.88, 14.75 37.51))" --print
-egms_search.py --aoi="37.51:37.88,15.15:15.16" --swath IW2 --releases 2020-2024 --write-curl download_egms.sh
-bash download_egms.sh ./egms
+egms_search.py --aoi="37.51:37.88,15.15:15.16" --releases 2020-2024 --json-out egms_hits.json --print
+egms_download.bash --aoi='37.51:37.88,15.15:15.16' --releases=2020-2024 --swath=IW2 --relativeOrbit=44 --print
+egms_download.bash --aoi='37.51:37.88,15.15:15.16' --releases=2020-2024 --swath=IW2 --relativeOrbit=44 --download --dir=./egms
+egms_download.bash --aoi='37.51:37.88,15.15:15.16' --releases=2020-2024 --download --parallel=1
+egms_download.bash --aoi='37.51:37.88,15.15:15.16' --releases=2020-2024 --download --no-unzip
+test_egms_search_options.py --timeout 45 -o egms_search_options_report.tsv
 ```
+
+**First-layer API args (provisional):** AOI + `--level` + `--releases` only.  
+**Local filters:** `--relativeOrbit`, `--swath`, `--direction`.  
+**After download:** unzip into `--dir` by default (`--no-unzip` to skip).
 
 ## Setup
 
-1. Create a CLMS API token at [land.copernicus.eu](https://land.copernicus.eu) (profile → API Tokens); save the one-time JSON as e.g. `~/accounts/clms_service_key.json`.
-2. In `$SSARAHOME/password_config.py`:
-   ```python
-   clms_service_key="/path/to/clms_service_key.json"
-   ```
-3. `pip install PyJWT` if needed.
+1. CLMS API token → `~/accounts/clms_service_key.json`
+2. Optional: `clms_service_key="..."` in `password_config.py`
+3. `pip install PyJWT` if needed
 
-Auth is **not** `tsxuser`/`tsxpass`. Listing and downloading both need the CLMS service key.
+## Related
 
-## Summary
-
-CLI to search European Ground Motion Service products via  
-`https://egms.land.copernicus.eu/insar-api/archive`. Downloads: generate a curl script (`--write-curl`) that refreshes the Bearer token and uses retries + resume.
-
-AOI → `_input_to_bounds` → EGMS `bbox` (max 5° span). Search requires `levels` + `releases`.
-
-## Related (not this work)
-
-- Insarmaps ingest of downloaded EGMS CSV: [`minsar/insarmaps_utils/PLAN_EGMS_insarmaps_ingest_DONE_2026-07-20.md`](../insarmaps_utils/PLAN_EGMS_insarmaps_ingest_DONE_2026-07-20.md)
+- Insarmaps ingest: [`minsar/insarmaps_utils/PLAN_EGMS_insarmaps_ingest_DONE_2026-07-20.md`](../insarmaps_utils/PLAN_EGMS_insarmaps_ingest_DONE_2026-07-20.md)
