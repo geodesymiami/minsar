@@ -70,4 +70,6 @@ Search EGMS products and download with curl (not Python):
 ```bash
 egms_search.py --aoi="37.51:37.88,15.15:15.16" --swath IW2 --releases 2020-2024 --write-curl download_egms.sh
 bash download_egms.sh ./egms
+egms_download.bash --aoi='37.51:37.88,15.15:15.16' --releases=2020-2024 --swath=IW2 --relativeOrbit=44 --print
+egms_download.bash --aoi='37.51:37.88,15.15:15.16' --releases=2020-2024 --swath=IW2 --relativeOrbit=44 --download --dir=./egms
 ```

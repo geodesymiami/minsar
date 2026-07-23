@@ -76,6 +76,8 @@ ln -sf $MINSAR_HOME/additions/mintpy/cli/geocode.py $MINSAR_HOME/tools/MintPy/sr
 ln -sf $MINSAR_HOME/additions/mintpy/cli/geocode_orig.py $MINSAR_HOME/tools/MintPy/src/mintpy/cli
 ln -sf $MINSAR_HOME/additions/mintpy/save_explorer.py $MINSAR_HOME/tools/MintPy/src/mintpy
 ln -sf $MINSAR_HOME/additions/mintpy/cli/save_explorer.py $MINSAR_HOME/tools/MintPy/src/mintpy/cli
+ln -sf $MINSAR_HOME/additions/mintpy/save_qgis.py $MINSAR_HOME/tools/MintPy/src/mintpy
+ln -sf $MINSAR_HOME/additions/mintpy/cli/save_qgis.py $MINSAR_HOME/tools/MintPy/src/mintpy/cli
 ln -sf $MINSAR_HOME/additions/mintpy/subset.py $MINSAR_HOME/tools/MintPy/src/mintpy/cli
 #ln -sf $MINSAR_HOME/additions/mintpy/plot_network.py $MINTPY_HOME/src/mintpy
 #ln -sf $MINSAR_HOME/additions/mintpy/save_hdfeos5.py $MINTPY_HOME/src/mintpy

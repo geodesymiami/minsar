@@ -103,8 +103,11 @@ geocode.py timeseries.h5 -l inputs/geometryRadar.h5 -t smallbaselineApp.cfg --ou
 | `minsar/utils/extract_hdfeos5.py` | HDFEOS5 read |
 | `additions/mintpy/save_explorer.py` | Export geocoded timeseries / HDFEOS `.he5` → GMT GRD for QGIS InSAR Explorer |
 | `additions/mintpy/cli/save_explorer.py` | CLI: accept `timeseries` or geocoded `HDFEOS`; resolve `geo/geo_velocity.h5` |
+| `additions/mintpy/save_qgis.py` | Export timeseries / HDFEOS (geo or radar) → QGIS shapefile; estimate velocity; apply mask |
+| `additions/mintpy/cli/save_qgis.py` | CLI: `-g` required for classic timeseries; optional for HDFEOS; optional `-m` |
 | `additions/mintpy/tests/test_geocode_wrapper.py` | Tests |
 | `additions/mintpy/tests/test_save_explorer.py` | save_explorer HDFEOS / velocity resolve tests |
+| `additions/mintpy/tests/test_save_qgis.py` | save_qgis HDFEOS / mask / velocity-estimate tests |
 
 ---
 
@@ -119,6 +122,25 @@ save_explorer.py S1_desc_....he5 -o InSAR-Explorer
 **Velocity when `-v` omitted:** (1) matching `geo/geo_velocity.h5` or `geo_velocity.h5`, else (2) MintPy default linear fit (`polynomial=1` via `time_func`).  
 **Mask when `-m` omitted:** matching `geo/geo_maskTempCoh.h5` / sibling `maskTempCoh.h5`, else HDFEOS `quality/mask`. Radar-sized masks are skipped if the grid does not match.
 
+---
+
+## save_qgis (QGIS vector export)
+
+Convert MintPy `timeseries` **or** HDFEOS5 (`.he5`), in **geocoded or radar** coordinates, to a QGIS vector file.
+
+**Default output:** GeoPackage (`.gpkg`). Use `--no-gpkg` for classic ESRI shapefile (`.shp`).
+
+```bash
+save_qgis.py geo_timeseries_ERA5_demErr.h5 -g geo_geometryRadar.h5
+save_qgis.py S1_desc_....he5
+save_qgis.py S1_....he5 --no-gpkg
+save_qgis.py S1_....he5 -g inputs/geometryRadar.h5 -m maskTempCoh.h5
+```
+
+**Velocity:** always estimated from the input timeseries / HE5 with MintPy default (`polynomial=1`). Does **not** read `velocity.h5` / `geo_velocity.h5`. Prints the equivalent standalone command, e.g. `timeseries2velocity.py <file>`. `V_STDEV` is set to `0`.  
+**Mask:** required and applied (masked pixels omitted). Resolve order: `-m` → sibling `*maskTempCoh.h5` → HDFEOS `quality/mask`.  
+**Geometry (`-g`):** required for classic `timeseries` `.h5`. Optional for geocoded `.he5` (lat/lon from geo metadata; height from HE5). For radar `.he5`, uses embedded `latitude`/`longitude` when present, else pass `-g`.
+**Output:** `-o` sets path; extension `.gpkg`/`.shp` selects format. Default `{ts_basename}.gpkg`; `--no-gpkg` → `{ts_basename}.shp`.
 ---
 
 ## Option B2 (Implemented): Full in-place HDFEOS5 Geocoding
