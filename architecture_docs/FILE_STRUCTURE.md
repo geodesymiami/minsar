@@ -9,6 +9,7 @@ High-level layout for navigation. The main workflow entry points live under `min
 | `minsar/bin/` | `minsarApp.bash`, `run_workflow.bash`, job wrappers |
 | `minsar/lib/` | Shared bash libraries |
 | `minsar/scripts/` | Python CLIs (download, ingest, helpers) |
+| `minsar/scripts/calculate_bbox.py` | Expand AOI (S:N,W:E) for S1 asc+desc coverage → larger `subset.lalo` |
 | `minsar/scripts/egms_search.py` | Search EGMS products (CLMS archive API; `--print`, `--json-out`, `--write-curl`) |
 | `minsar/scripts/egms_search_unstable.py` | EGMS search with `--relativeOrbit` + `--swath` client-side filter (API workaround) |
 | `minsar/scripts/filter_egms_hits.py` | Local filter of EGMS search JSON (orbit/swath/direction) + curl/URL lists |

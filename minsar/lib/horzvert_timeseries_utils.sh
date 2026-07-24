@@ -373,9 +373,9 @@ hv_ingest_insarmaps_logged() {
 # Write script-style run file run_horzvert2timeseries (may contain & / wait).
 # Paths under $SCRATCHDIR are written relative (cwd = $SCRATCHDIR when the run file runs).
 # Required: HV_RUN_FILE, HV_RADAR1, HV_RADAR2, HV_REF_LAT, HV_REF_LON, HV_OUTDIR
-# Optional: HV_CACHE_HIT=0|1, HV_GEOCODE_ARGS, HV_PY_SUFFIX, HV_INGEST_PARALLEL=0|1,
-#           HV_INGEST_INSARMAPS=1|0, HV_INGEST_LOS=1|0, HV_INGEST_WORKERS_OPTS (string),
-#           HV_GEOM_FILE_ARGS, HV_DATASET_OPT1, HV_DATASET_OPT2
+# Optional: HV_CACHE_HIT=0|1, HV_GEOCODE_ARGS, HV_PY_SUFFIX, HV_COMPUTE_PARALLEL=1|0,
+#           HV_INGEST_PARALLEL=0|1, HV_INGEST_INSARMAPS=1|0, HV_INGEST_LOS=1|0,
+#           HV_INGEST_WORKERS_OPTS (string), HV_GEOM_FILE_ARGS, HV_DATASET_OPT1, HV_DATASET_OPT2
 hv_write_run_horzvert2timeseries() {
     local run_file="${HV_RUN_FILE:?}"
     local radar1="${HV_RADAR1:?}"
@@ -386,6 +386,7 @@ hv_write_run_horzvert2timeseries() {
     local cache_hit="${HV_CACHE_HIT:-0}"
     local geocode_args="${HV_GEOCODE_ARGS:-}"
     local py_suffix="${HV_PY_SUFFIX:-}"
+    local compute_parallel="${HV_COMPUTE_PARALLEL:-1}"
     local ingest_parallel="${HV_INGEST_PARALLEL:-0}"
     local ingest_insarmaps="${HV_INGEST_INSARMAPS:-1}"
     local ingest_los="${HV_INGEST_LOS:-1}"
@@ -439,32 +440,48 @@ hv_write_run_horzvert2timeseries() {
         echo ""
 
         if [[ "$cache_hit" != "1" ]]; then
-            echo "pids=()"
-            echo "reference_point_hdfeos5.bash ${q_radar1} --ref-lalo $(printf '%q' "$ref_lat") $(printf '%q' "$ref_lon") &"
-            echo "pids+=(\"\$!\")"
-            if [[ "$radar1" != "$radar2" ]]; then
-                echo "reference_point_hdfeos5.bash ${q_radar2} --ref-lalo $(printf '%q' "$ref_lat") $(printf '%q' "$ref_lon") &"
+            if [[ "$compute_parallel" == "1" ]]; then
+                echo "pids=()"
+                echo "reference_point_hdfeos5.bash ${q_radar1} --ref-lalo $(printf '%q' "$ref_lat") $(printf '%q' "$ref_lon") &"
                 echo "pids+=(\"\$!\")"
+                if [[ "$radar1" != "$radar2" ]]; then
+                    echo "reference_point_hdfeos5.bash ${q_radar2} --ref-lalo $(printf '%q' "$ref_lat") $(printf '%q' "$ref_lon") &"
+                    echo "pids+=(\"\$!\")"
+                fi
+                echo "hv_wait_pids \"\${pids[@]}\" || exit 1"
+            else
+                echo "reference_point_hdfeos5.bash ${q_radar1} --ref-lalo $(printf '%q' "$ref_lat") $(printf '%q' "$ref_lon")"
+                if [[ "$radar1" != "$radar2" ]]; then
+                    echo "reference_point_hdfeos5.bash ${q_radar2} --ref-lalo $(printf '%q' "$ref_lat") $(printf '%q' "$ref_lon")"
+                fi
             fi
-            echo "hv_wait_pids \"\${pids[@]}\" || exit 1"
             echo ""
             echo "need_geocode1=0"
             echo "need_geocode2=0"
             echo "need_geocode ${q_radar1} ${q_geo1} && need_geocode1=1"
             echo "need_geocode ${q_radar2} ${q_geo2} && need_geocode2=1"
             echo ""
-            echo "pids=()"
-            echo "if [[ \$need_geocode1 -eq 1 ]]; then"
-            echo "  geocode.py ${q_radar1} ${geocode_args} &"
-            echo "  pids+=(\"\$!\")"
-            echo "fi"
-            echo "if [[ \$need_geocode2 -eq 1 ]]; then"
-            echo "  geocode.py ${q_radar2} ${geocode_args} &"
-            echo "  pids+=(\"\$!\")"
-            echo "fi"
-            echo "if [[ \${#pids[@]} -gt 0 ]]; then"
-            echo "  hv_wait_pids \"\${pids[@]}\" || exit 1"
-            echo "fi"
+            if [[ "$compute_parallel" == "1" ]]; then
+                echo "pids=()"
+                echo "if [[ \$need_geocode1 -eq 1 ]]; then"
+                echo "  geocode.py ${q_radar1} ${geocode_args} &"
+                echo "  pids+=(\"\$!\")"
+                echo "fi"
+                echo "if [[ \$need_geocode2 -eq 1 ]]; then"
+                echo "  geocode.py ${q_radar2} ${geocode_args} &"
+                echo "  pids+=(\"\$!\")"
+                echo "fi"
+                echo "if [[ \${#pids[@]} -gt 0 ]]; then"
+                echo "  hv_wait_pids \"\${pids[@]}\" || exit 1"
+                echo "fi"
+            else
+                echo "if [[ \$need_geocode1 -eq 1 ]]; then"
+                echo "  geocode.py ${q_radar1} ${geocode_args}"
+                echo "fi"
+                echo "if [[ \$need_geocode2 -eq 1 ]]; then"
+                echo "  geocode.py ${q_radar2} ${geocode_args}"
+                echo "fi"
+            fi
             echo ""
             echo "horzvert_timeseries.py ${q_geo1} ${q_geo2}${py_suffix}${geom_args}"
             echo "wait"

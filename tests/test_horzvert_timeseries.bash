@@ -243,6 +243,7 @@ test_horzvert_script_syntax_and_los_ingest_no_ref_lalo() {
     assert_contains "$content" "--check-cache-only" "Forwards cache check to horzvert_timeseries.py"
     assert_contains "$content" "--submit" "Documents --submit option"
     assert_contains "$content" "--ingest-parallel" "Documents --ingest-parallel option"
+    assert_contains "$content" "--no-parallel" "Documents --no-parallel option"
     assert_contains "$content" "--force" "Documents --force option"
     assert_contains "$content" "--clean" "Documents --clean option"
     assert_contains "$content" "hv_clean_cached_products" "Defines clean helper for cached products"
@@ -253,13 +254,14 @@ test_horzvert_script_syntax_and_los_ingest_no_ref_lalo() {
 }
 
 test_horzvert_help_lists_cache_options() {
-    print_test_start "horzvert_timeseries.bash --help" "Help documents --force, --clean, --submit, --sleep."
+    print_test_start "horzvert_timeseries.bash --help" "Help documents --force, --clean, --submit, --sleep, --no-parallel."
     local content
     content=$("$HV_SCRIPT" --help 2>&1)
     assert_contains "$content" "--force" "Help lists --force"
     assert_contains "$content" "--clean" "Help lists --clean"
     assert_contains "$content" "--submit" "Help lists --submit"
     assert_contains "$content" "--sleep" "Help lists --sleep"
+    assert_contains "$content" "--no-parallel" "Help lists --no-parallel"
     assert_not_contains "$content" "Re-reference:" "No long prose after options"
     print_test_end "horzvert_timeseries.bash --help"
 }
@@ -345,6 +347,45 @@ test_hv_write_run_file_has_wait_and_amp() {
     print_test_end "hv_write_run_horzvert2timeseries"
 }
 
+test_hv_write_run_file_no_parallel_is_sequential() {
+    print_test_start "hv_write_run_horzvert2timeseries --no-parallel" "Compute steps sequential when HV_COMPUTE_PARALLEL=0."
+    local tmp runf content
+    tmp=$(mktemp -d)
+    mkdir -p "$tmp/out" "$tmp/scratch/SenA/net" "$tmp/scratch/SenD/net"
+    touch "$tmp/scratch/SenA/net/a.he5" "$tmp/scratch/SenD/net/b.he5"
+    export SCRATCHDIR="$tmp/scratch"
+    HV_RUN_FILE="$tmp/run_horzvert2timeseries" \
+    HV_RADAR1="$tmp/scratch/SenA/net/a.he5" \
+    HV_RADAR2="$tmp/scratch/SenD/net/b.he5" \
+    HV_REF_LAT="1.0" \
+    HV_REF_LON="2.0" \
+    HV_OUTDIR="$tmp/scratch/out" \
+    HV_CACHE_HIT=0 \
+    HV_GEOCODE_ARGS="--lalo-step 0.00014 0.00014" \
+    HV_PY_SUFFIX=" --ref-lalo 1.0 2.0" \
+    HV_COMPUTE_PARALLEL=0 \
+    HV_INGEST_PARALLEL=0 \
+    HV_INGEST_INSARMAPS=1 \
+    HV_INGEST_LOS=0 \
+    HV_INGEST_WORKERS_OPTS="--num-workers 1" \
+    hv_write_run_horzvert2timeseries
+    runf="$tmp/run_horzvert2timeseries"
+    assert_file_exists "$runf" "Run file created"
+    content=$(cat "$runf")
+    assert_contains "$content" "reference_point_hdfeos5.bash" "Has ref-point commands"
+    assert_contains "$content" "geocode.py" "Has geocode commands"
+    assert_not_contains "$content" "hv_wait_pids" "No hv_wait_pids when sequential"
+    assert_not_contains "$content" "pids=()" "No pid array when sequential"
+    # Ref/geocode lines must not end with background &
+    assert_equals "0" "$(echo "$content" | grep -cE 'reference_point_hdfeos5\.bash .* &$')" "Ref-point lines not backgrounded"
+    assert_equals "0" "$(echo "$content" | grep -cE 'geocode\.py .* &$')" "Geocode lines not backgrounded"
+    bash -n "$runf"
+    assert_equals "0" "$?" "bash -n sequential run file"
+    unset SCRATCHDIR
+    rm -rf "$tmp"
+    print_test_end "hv_write_run_horzvert2timeseries --no-parallel"
+}
+
 
 print_header "HORZVERT_TIMESERIES TESTS"
 
@@ -367,6 +408,7 @@ test_horzvert_help_lists_cache_options
 test_horzvert_sleep_rejects_non_integer
 test_hv_longest_processing_method_dir
 test_hv_write_run_file_has_wait_and_amp
+test_hv_write_run_file_no_parallel_is_sequential
 
 print_summary
 exit $?

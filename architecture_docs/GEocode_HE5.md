@@ -140,7 +140,8 @@ save_qgis.py S1_....he5 -g inputs/geometryRadar.h5 -m maskTempCoh.h5
 **Velocity:** always estimated from the input timeseries / HE5 with MintPy default (`polynomial=1`). Does **not** read `velocity.h5` / `geo_velocity.h5`. Prints the equivalent standalone command, e.g. `timeseries2velocity.py <file>`. `V_STDEV` is set to `0`.  
 **Mask:** required and applied (masked pixels omitted). Resolve order: `-m` → sibling `*maskTempCoh.h5` → HDFEOS `quality/mask`.  
 **Geometry (`-g`):** required for classic `timeseries` `.h5`. Optional for geocoded `.he5` (lat/lon from geo metadata; height from HE5). For radar `.he5`, uses embedded `latitude`/`longitude` when present, else pass `-g`.
-**Output:** `-o` sets path; extension `.gpkg`/`.shp` selects format. Default `{ts_basename}.gpkg`; `--no-gpkg` → `{ts_basename}.shp`.
+**Output:** `-o` sets path; extension `.gpkg`/`.shp` selects format. Default `{ts_basename}.gpkg`; `--no-gpkg` → `{ts_basename}.shp`.  
+**CRS:** WGS 84 / EPSG:4326 (written with a PROJ-DB-safe fallback so QGIS gets a defined geographic CRS).
 ---
 
 ## Option B2 (Implemented): Full in-place HDFEOS5 Geocoding

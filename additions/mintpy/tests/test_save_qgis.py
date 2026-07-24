@@ -25,6 +25,7 @@ try:
         get_ts_date_list,
         resolve_lat_lon,
         resolve_mask,
+        wgs84_spatial_ref,
         write_vector_file,
     )
     HAS_MINTPY = True
@@ -259,6 +260,33 @@ class TestSaveQgisHdfeos(unittest.TestCase):
             self.assertEqual(lats.shape, (2, 3))
             self.assertTrue(np.all(np.isfinite(lats)))
             self.assertTrue(np.all(np.isfinite(lons)))
+
+    def test_wgs84_spatial_ref_has_wkt(self):
+        srs = wgs84_spatial_ref()
+        wkt = srs.ExportToWkt() or ""
+        self.assertTrue(len(wkt) > 20)
+        self.assertIn("WGS", wkt.upper())
+
+    def test_write_gpkg_has_epsg_4326(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dates = ["20200101", "20210101"]
+            cube = np.zeros((2, 2, 2), dtype=np.float32)
+            cube[1] = 0.01
+            he5 = root / "prod.he5"
+            _write_geo_hdfeos(he5, dates, cube)
+            fDict = gather_files(str(he5))
+            gpkg = root / "out.gpkg"
+            write_vector_file(fDict, str(gpkg), box=(0, 0, 2, 2))
+            from osgeo import ogr
+            ds = ogr.Open(str(gpkg))
+            srs = ds.GetLayer(0).GetSpatialRef()
+            self.assertIsNotNone(srs)
+            wkt = srs.ExportToWkt() or ""
+            self.assertNotIn("Undefined geographic SRS", wkt)
+            # GPKG should store EPSG:4326 when WGS84 WKT is used
+            self.assertEqual(srs.GetAuthorityName(None), "EPSG")
+            self.assertEqual(srs.GetAuthorityCode(None), "4326")
 
     def test_write_gpkg_applies_mask(self):
         with tempfile.TemporaryDirectory() as tmp:

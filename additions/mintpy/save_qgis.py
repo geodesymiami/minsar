@@ -13,7 +13,7 @@ import os
 
 import h5py
 import numpy as np
-from osgeo import ogr
+from osgeo import ogr, osr
 from scipy import linalg
 
 from mintpy.objects import HDFEOS, timeseries
@@ -33,6 +33,26 @@ def add_metadata(feature, location, attrs):
     for k, v in attrs.items():
         feature.SetField(k, v)
     return
+
+
+def wgs84_spatial_ref():
+    """Return WGS84 SpatialReference for lon/lat (EPSG:4326).
+
+    Prefer ImportFromEPSG when PROJ works; fall back to SetWellKnownGeogCS('WGS84')
+    when the PROJ EPSG database is missing/broken (common on some HPC/conda setups).
+    Without a valid SRS, QGIS may fail to place GeoPackage points correctly.
+    """
+    srs = osr.SpatialReference()
+    err = srs.ImportFromEPSG(4326)
+    if err != 0 or not (srs.ExportToWkt() or '').strip():
+        srs = osr.SpatialReference()
+        srs.SetWellKnownGeogCS('WGS84')
+    # GDAL 3+: lon/lat order for GIS (matches AddPoint(lon, lat))
+    try:
+        srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    except AttributeError:
+        pass
+    return srs
 
 
 def get_ts_date_list(ts_file):
@@ -299,8 +319,8 @@ def write_vector_file(fDict, out_file, box=None, zero_first=False, atr=None):
     ds = driver.CreateDataSource(out_file)
     if ds is None:
         raise RuntimeError(f'failed to create output: {out_file}')
-    srs = ogr.osr.SpatialReference()
-    srs.ImportFromEPSG(4326)
+    srs = wgs84_spatial_ref()
+    print('CRS: WGS 84 (EPSG:4326)')
     layer = ds.CreateLayer('mintpy', srs, geom_type=ogr.wkbPoint)
 
     #Add code for each point

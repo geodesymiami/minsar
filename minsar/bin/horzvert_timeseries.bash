@@ -19,6 +19,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
 
 source ${SCRIPT_DIR}/../lib/utils.sh
+# platforms_defaults.bash (pulled in by utils.sh when bootstrapping) overwrites SCRIPT_DIR
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source ${SCRIPT_DIR}/../lib/horzvert_timeseries_utils.sh
 
 # Dependencies: utils.sh, horzvert_timeseries_utils.sh, reference_point_hdfeos5.bash,
@@ -266,6 +268,7 @@ Options:
       --clean                         Remove cached *vert*/*horz*.he5 and .hvparams
       --no-ingest-los                 Skip ingesting radar LOS .he5 files
       --no-insarmaps                  Skip ingest_insarmaps.bash
+      --no-parallel                   Run ref-point and geocode sequentially (lower memory)
       --ingest-parallel               Run ingest lines in parallel (& / wait)
       --submit                        Execute run_horzvert2timeseries (default: write run file only)
       --sleep SECS                    Sleep SECS seconds before running
@@ -292,6 +295,7 @@ force_flag=0
 clean_flag=0
 ingest_los_flag=1
 ingest_insarmaps_flag=1
+compute_parallel_flag=1
 ingest_parallel_flag=0
 submit_flag=0
 positional=()
@@ -392,6 +396,10 @@ do
             ;;
         --no-insarmaps)
             ingest_insarmaps_flag=0
+            shift
+            ;;
+        --no-parallel)
+            compute_parallel_flag=0
             shift
             ;;
         --ingest-parallel)
@@ -693,6 +701,7 @@ HV_OUTDIR="$ORIGINAL_DIR/$HORZVERT_DIR" \
 HV_CACHE_HIT="$CACHE_HIT" \
 HV_GEOCODE_ARGS="$GEOCODE_LALO_ARGS" \
 HV_PY_SUFFIX="$(hv_python_option_suffix)" \
+HV_COMPUTE_PARALLEL="$compute_parallel_flag" \
 HV_INGEST_PARALLEL="$ingest_parallel_flag" \
 HV_INGEST_INSARMAPS="$ingest_insarmaps_flag" \
 HV_INGEST_LOS="$ingest_los_flag" \
