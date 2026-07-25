@@ -60,11 +60,11 @@ pip install -e tools/sarvey[dev] --no-deps
 rm -rf tools/miniforge3/pkgs
 
 ###  Install SNAPHU #################
-wget --no-check-certificate  https://web.stanford.edu/group/radar/softwareandlinks/sw/snaphu/snaphu-v2.0.5.tar.gz  -P tools
-tar -xvf tools/snaphu-v2.0.5.tar.gz -C tools
-perl -pi -e 's/\/usr\/local/\$(PWD)\/snaphu-v2.0.5/g' tools/snaphu-v2.0.5/src/Makefile
+wget --no-check-certificate  https://web.stanford.edu/group/radar/softwareandlinks/sw/snaphu/snaphu-v2.0.7.tar.gz  -P tools
+tar -xvf tools/snaphu-v2.0.7.tar.gz -C tools
+perl -pi -e 's/\/usr\/local/\$(PWD)\/snaphu-v2.0.7/g' tools/snaphu-v2.0.7/src/Makefile
 cc=tools/miniforge3/bin/cc
-make -C tools/snaphu-v2.0.5/src
+make -C tools/snaphu-v2.0.7/src
 
 ### Adding not-commited MintPy fixes
 MINSAR_HOME="$(pwd)"
