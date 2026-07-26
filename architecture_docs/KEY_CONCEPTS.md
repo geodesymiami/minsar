@@ -112,6 +112,14 @@ Persistent Scatterer (PS) and Distributed Scatterer (DS) analysis.
 - `sequential_N`: Connect each date to N neighbors
 - `delaunay`: Delaunay triangulation in space-time
 
+### MiaplPy / MintPy directory naming
+
+`get_miaplpy_dir_name()` / `get_mintpy_dir_name()` in `minsar/lib/minsarApp_specifics.sh` build product directory names from `minsar.miaplpyDir.addition` / `minsar.mintpyDir.addition` (`auto`, `date`, `lalo`, or a custom token).
+
+When `ssaraopt.excludeSeason = MMDD-MMDD` is set in the template, the same `_exMMDD-MMDD` suffix is appended (e.g. `miaplpy_201410_202606_ex0101-0630`). The suffix comes from the template only — not from scanning `merged/SLC`.
+
+Seasonal SLC quarantine (after download / topsStack) uses the same token: `exclude_season_slc.py` moves matching `YYYYMMDD` dirs into `merged/SLC/exMMDD-MMDD/`.
+
 ## Job System
 
 ### Job Files

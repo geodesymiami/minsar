@@ -6,6 +6,16 @@ and by default increases the node number so the job finishes as quickly as possi
 If the required node count exceeds MAX_NODES_PJ (16 on skx-dev), splits into multiple
 run_05_miaplpy_unwrap_ifgram_*.job files.
 
+When unwrap commands use ``--num_tiles N`` with N>1, MiaplPy/SNAPHU runs with
+``--nproc N`` (tile parallelism). PPN is then limited by CPU as well as memory::
+
+    mem_ppn = floor(MEM_PER_NODE_MB / mem_per_task_MiB)
+    cpu_ppn = max(1, CPUS_PER_NODE // N)   # one unwrap may use N tile processes
+    LAUNCHER_PPN = min(mem_ppn, cpu_ppn)
+
+Tiled memory is estimated as full-scene bytes / N (tile-local work), which matches
+OPERA-like 5x5 runs (~few GiB RSS) better than the single-tile model.
+
 Requires miaplpy step 1 (load_data) so that inputs/slcStack.h5 exists.
 
 Phase 2 recipe (manual; automate later in minsarApp / run_workflow)::
@@ -217,6 +227,25 @@ def read_unwrap_tasks(run_files_dir: Path) -> list[str]:
     return tasks
 
 
+def parse_num_tiles_from_run_files(run_files_dir: Path, tasks: list[str]) -> int:
+    """Max --num_tiles from task list and any run_05_* launcher splits.
+
+    Master ``run_05_miaplpy_unwrap_ifgram`` may still say ``--num_tiles 1`` after a
+    manual tiled edit of ``*_0`` / ``*_1``; take the maximum so PPN matches what runs.
+    """
+    ntiles = parse_num_tiles_from_tasks(tasks)
+    for path in run_files_dir.iterdir():
+        if not path.is_file():
+            continue
+        if path.name != RUN05_BASE and re.fullmatch(rf'{RUN05_BASE}_\d+', path.name) is None:
+            continue
+        for line in path.read_text(errors='replace').splitlines():
+            if 'unwrap_ifgram.py' not in line:
+                continue
+            ntiles = max(ntiles, parse_num_tiles_from_command(line))
+    return ntiles
+
+
 def extract_unwrap_command(line: str) -> str:
     m = re.search(r'(unwrap_ifgram\.py\b.*)', line)
     if not m:
@@ -228,14 +257,52 @@ def extract_unwrap_command(line: str) -> str:
     return cmd.strip()
 
 
-def mem_per_task_mib(length: int, width: int, bytes_per_pixel: float) -> float:
-    return length * width * bytes_per_pixel / (1024.0 ** 2)
+def parse_num_tiles_from_command(cmd: str) -> int:
+    """Return --num_tiles from an unwrap_ifgram.py command line (default 1)."""
+    m = re.search(r'--num_tiles\s+(\d+)', cmd)
+    if not m:
+        return 1
+    return max(1, int(m.group(1)))
 
 
-def compute_ppn(mem_mib: float, mem_per_node_mb: int, cpus_per_node: int) -> int:
+def parse_num_tiles_from_tasks(tasks: list[str]) -> int:
+    """Return the maximum --num_tiles among unwrap task lines (default 1)."""
+    if not tasks:
+        return 1
+    return max(parse_num_tiles_from_command(cmd) for cmd in tasks)
+
+
+def mem_per_task_mib(length: int, width: int, bytes_per_pixel: float,
+                     num_tiles: int = 1) -> float:
+    """Estimate snaphu RSS per unwrap task (MiB).
+
+    Single-tile: LENGTH*WIDTH*bytes_per_pixel.
+    Tiled (num_tiles>1): divide by num_tiles (tile-local optimization; SNAPHU
+    ``--nproc`` may run several tiles, but peak is far below full-scene single-tile).
+    """
+    full = length * width * bytes_per_pixel / (1024.0 ** 2)
+    ntiles = max(1, int(num_tiles))
+    if ntiles <= 1:
+        return full
+    return full / float(ntiles)
+
+
+def compute_ppn(mem_mib: float, mem_per_node_mb: int, cpus_per_node: int,
+                num_tiles: int = 1) -> int:
+    """LAUNCHER_PPN from memory, capped by tile parallelism when num_tiles>1.
+
+    MiaplPy sets SNAPHU ``--nproc = num_tiles``, so each concurrent unwrap can use
+    that many cores. PPN is limited by both memory and ``cpus // num_tiles``.
+    """
     if mem_mib <= 0:
-        return cpus_per_node
-    return min(cpus_per_node, max(1, int(math.floor(mem_per_node_mb / mem_mib))))
+        mem_ppn = cpus_per_node
+    else:
+        mem_ppn = min(cpus_per_node, max(1, int(math.floor(mem_per_node_mb / mem_mib))))
+    ntiles = max(1, int(num_tiles))
+    if ntiles <= 1:
+        return mem_ppn
+    cpu_ppn = max(1, int(cpus_per_node // ntiles))
+    return min(mem_ppn, cpu_ppn)
 
 
 def max_width_for_ppn48(length: int, mem_per_node_mb: int, bytes_per_pixel: float,
@@ -353,8 +420,12 @@ def main(iargs=None):
 
     tasks = read_unwrap_tasks(run_files_dir)
     n_tasks = len(tasks)
-    mem_mib = mem_per_task_mib(length, width, inps.bytes_per_pixel)
-    ppn = compute_ppn(mem_mib, queue_info['mem_per_node_mb'], queue_info['cpus_per_node'])
+    num_tiles = parse_num_tiles_from_run_files(run_files_dir, tasks)
+    mem_mib = mem_per_task_mib(length, width, inps.bytes_per_pixel, num_tiles=num_tiles)
+    ppn = compute_ppn(
+        mem_mib, queue_info['mem_per_node_mb'], queue_info['cpus_per_node'],
+        num_tiles=num_tiles,
+    )
     www = max_width_for_ppn48(
         length, queue_info['mem_per_node_mb'], inps.bytes_per_pixel,
         cpus_for_ref=queue_info['cpus_per_node'],
@@ -367,6 +438,12 @@ def main(iargs=None):
         f"Queue {queue_name} with node memory {mem_gb} GB, file size {length}x{width}. "
         f"For {queue_info['cpus_per_node']} simultaneous jobs max file size is {length}x{www}"
     )
+    if num_tiles > 1:
+        cpu_ppn = max(1, queue_info['cpus_per_node'] // num_tiles)
+        print(
+            f'num_tiles={num_tiles} (SNAPHU --nproc={num_tiles}): '
+            f'cpu_ppn_cap={cpu_ppn}, using tiled mem estimate'
+        )
 
     scale = not inps.no_scale_node_number
     plans = plan_job_split(
@@ -377,7 +454,7 @@ def main(iargs=None):
     waves = int(math.ceil(n_tasks / float(concurrent))) if concurrent else 0
 
     print(f'bytes_per_pixel={inps.bytes_per_pixel:g}  mem_per_task={mem_mib:.1f} MiB  '
-          f'LAUNCHER_PPN={ppn}  n_tasks={n_tasks}')
+          f'num_tiles={num_tiles}  LAUNCHER_PPN={ppn}  n_tasks={n_tasks}')
     print(f'scale_node_number={scale}  jobfiles={len(plans)}  total_nodes={total_nodes}  '
           f'MAX_NODES_PJ={queue_info["max_nodes_pj"]}  estimated_waves={waves}')
     for start, end, n_nodes, job_index in plans:

@@ -35,6 +35,23 @@ def parse_exclude_season(exclude_season: str | None) -> tuple[str, str] | None:
     return start_mmdd, end_mmdd
 
 
+def exclude_season_token(exclude_season: str | None) -> str | None:
+    """Return ``exMMDD-MMDD`` for a valid season, or None if unset/empty."""
+    parsed = parse_exclude_season(exclude_season)
+    if parsed is None:
+        return None
+    start_mmdd, end_mmdd = parsed
+    return f"ex{start_mmdd}-{end_mmdd}"
+
+
+def exclude_season_dir_name(exclude_season: str) -> str:
+    """Return quarantine/subdir token ``exMMDD-MMDD`` (raises if season empty/invalid)."""
+    token = exclude_season_token(exclude_season)
+    if token is None:
+        raise ValueError(f"Empty exclude season: {exclude_season!r}")
+    return token
+
+
 def iso_date_to_date(iso_date: str) -> _dt.date:
     """Parse YYYY-MM-DD to a date object."""
     return _dt.datetime.strptime(iso_date, "%Y-%m-%d").date()

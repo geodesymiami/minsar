@@ -24,18 +24,14 @@ class TestListDateDirs(unittest.TestCase):
             root = Path(td)
             (root / "20240115").mkdir()
             (root / "20240601").mkdir()
-            (root / "excludeSeason_0101-0331").mkdir()
-            (root / "excludeSeason").mkdir()
+            (root / "ex0101-0331").mkdir()
             (root / "notadate").mkdir()
             (root / "20240115.txt").write_text("x")
             dates = {p.name for p in MOD.list_slc_date_dirs(root)}
             self.assertEqual(dates, {"20240115", "20240601"})
 
     def test_exclude_season_dest_name(self):
-        self.assertEqual(
-            MOD.exclude_season_dest_name("0101-0331"),
-            "excludeSeason_0101-0331",
-        )
+        self.assertEqual(MOD.exclude_season_dest_name("0101-0331"), "ex0101-0331")
 
 
 class TestMoveExcludeSeason(unittest.TestCase):
@@ -46,7 +42,7 @@ class TestMoveExcludeSeason(unittest.TestCase):
                 (root / d).mkdir()
             moved = MOD.move_exclude_season_slc(root, "1015-0515", dry_run=False)
             self.assertEqual(sorted(moved), ["20231020", "20240110"])
-            dest = root / "excludeSeason_1015-0515"
+            dest = root / "ex1015-0515"
             self.assertTrue((dest / "20231020").is_dir())
             self.assertTrue((dest / "20240110").is_dir())
             self.assertTrue((root / "20240601").is_dir())
@@ -60,7 +56,7 @@ class TestMoveExcludeSeason(unittest.TestCase):
             moved = MOD.move_exclude_season_slc(root, "0101-0331", dry_run=True)
             self.assertEqual(moved, ["20240110"])
             self.assertTrue((root / "20240110").is_dir())
-            self.assertFalse((root / "excludeSeason_0101-0331").exists())
+            self.assertFalse((root / "ex0101-0331").exists())
 
     def test_invalid_season_raises(self):
         with tempfile.TemporaryDirectory() as td:

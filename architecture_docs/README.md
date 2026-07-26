@@ -97,7 +97,7 @@ MiaplPy step 10 (`run_10_save_hdfeos5_radar_0.job`) is built by `create_save_hdf
 |------|---------|
 | `minsar/bin/` | Entry point scripts |
 | `minsar/lib/` | Shared bash libraries |
-| `minsar/scripts/` | Helper scripts (`exclude_season_slc.py`, `save_miaplpy_hdfeos5.bash`, `plot_mintpy_summary_pngs.py`, jobfile creators, …) |
+| `minsar/scripts/` | Helper scripts (`exclude_season_slc.py` → `merged/SLC/exMMDD-MMDD/`, `save_miaplpy_hdfeos5.bash`, `plot_mintpy_summary_pngs.py`, jobfile creators, …) |
 | `minsar/defaults/` | Configuration files |
 | `samples/` | Template examples |
 | `tests/` | Test suite |
