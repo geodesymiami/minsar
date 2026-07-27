@@ -17,6 +17,7 @@ __all__ = [
     "GET_SAR_COVERAGE_ARGV_KW",
     "DISPLAY_BBOX_ARGV_KW",
     "EGMS_DOWNLOAD_ARGV_KW",
+    "CALCULATE_MIAPLPY_SUBSET_ARGV_KW",
 ]
 
 
@@ -215,3 +216,15 @@ EGMS_SEARCH_ARGV_KW = {
 }
 # Backward-compatible alias (old egms_download.py name).
 EGMS_DOWNLOAD_ARGV_KW = EGMS_SEARCH_ARGV_KW
+
+CALCULATE_MIAPLPY_SUBSET_ARGV_KW = {
+    "consume_one": (
+        "--orbit",
+        "--mode",
+        "--asc-heading",
+        "--desc-heading",
+        "--decimals",
+    ),
+    "consume_two": (),
+    "flags": (),
+}
