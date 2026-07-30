@@ -90,7 +90,7 @@ def create_parser():
 
                Masjed dam (sarvey example)
         sarvey2insarmaps.py outputs/p2_coh80_ts.h5
-        sarvey2insarmaps.py outputs/p2_coh80_ts.h5 --no-upload
+        sarvey2insarmaps.py outputs/p2_coh80_ts.h5 --upload
         sarvey2insarmaps.py outputs/p2_coh80_ts.h5 --sarvey-geocorr
 
         sarvey2insarmaps.py outputs/shp/p2_coh70_ts.shp
@@ -107,8 +107,7 @@ def create_parser():
         default=os.environ.get("INSARMAPSHOST", os.getenv("INSARMAPS_HOST")),
         help="Insarmaps server host (default: environment variable INSARMAPSHOST)"
     )
-    # parser.add_argument("--upload", dest='upload_flag', action="store_true", help="Upload to jetstream (Default: no)")
-    parser.add_argument("--no-upload",dest='upload_flag',action="store_false", help="Do not upload to jetstream (Default: upload)")
+    parser.add_argument("--upload", dest="upload_flag", action="store_true", help="Upload to jetstream (default: no upload)")
 
     parser.add_argument("--skip-upload", action="store_true", help="Skip upload to Insarmaps")
     parser.add_argument("--make-jobfile", action="store_true", help="Generate jobfile")
