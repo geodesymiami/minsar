@@ -8,17 +8,35 @@ Script: `minsar/scripts/resize_miaplpy_unwrap_jobfiles.py` (on `PATH` via `minsa
 
 Snaphu memory scales with image pixels (~420 bytes/pixel). With `LAUNCHER_PPN=48` on a 192 GB SKX node, large scenes sit at the memory limit. This script sets an integer `LAUNCHER_PPN` from node memory / estimated mem-per-task and, by default, increases the node number (splitting into multiple jobfiles if needed) so walltime stays short.
 
+When unwrap commands use `--num_tiles N` with **N > 1**, MiaplPy/SNAPHU also runs with `--nproc N`. Each concurrent unwrap can use that many cores, so PPN is capped by CPU as well as memory (OPERA-like 5×5 / `N=25` → `LAUNCHER_PPN=1` on 48-core SKX).
+
 ## Formulas
 
 ```text
+# Single-tile (num_tiles == 1)
 mem_per_task_MiB = LENGTH * WIDTH * 420 / 1024^2
 LAUNCHER_PPN     = min(CPUS_PER_NODE, floor(MEM_PER_NODE_MB / mem_per_task_MiB))
+
+# Tiled (num_tiles = N > 1); N parsed from unwrap_ifgram.py --num_tiles
+mem_per_task_MiB = (LENGTH * WIDTH * 420 / 1024^2) / N
+mem_ppn          = min(CPUS_PER_NODE, floor(MEM_PER_NODE_MB / mem_per_task_MiB))
+cpu_ppn          = max(1, CPUS_PER_NODE // N)
+LAUNCHER_PPN     = min(mem_ppn, cpu_ppn)
+
 nodes_needed     = ceil(n_tasks / LAUNCHER_PPN)
 ```
 
 If `nodes_needed > MAX_NODES_PJ` (16 on `skx-dev`), create multiple `run_05_miaplpy_unwrap_ifgram_*.job` files, each with at most `MAX_NODES_PJ` nodes.
 
 Queue limits and memory come from `minsar/defaults/queues.cfg`.
+
+Tile count itself comes from the template:
+
+```text
+ntiles = num_pixels // miaplpy.unwrap.snaphu.tileNumPixels   # (min 1)
+```
+
+OPERA-like ~2 Mpx tiles for a ~45 Mpx scene: `tileNumPixels ≈ 1790000` → `ntiles=25` → MiaplPy `--tile 5 5 400 400`.
 
 ## Automation in `minsarApp.bash`
 
@@ -53,4 +71,11 @@ First status line example:
 
 ```text
 Queue skx-dev with node memory 192 GB, file size 2221x4786. For 48 simultaneous jobs max file size is 2221xWWW
+```
+
+Tiled example:
+
+```text
+num_tiles=25 (SNAPHU --nproc=25): cpu_ppn_cap=1, using tiled mem estimate
+... LAUNCHER_PPN=1 ...
 ```

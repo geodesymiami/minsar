@@ -250,13 +250,15 @@ Examples:
     $SCRIPT_NAME hvGalapagosSenD128/mintpy hvGalapagosSenA106/mintpy --ref-lalo -0.81 -91.190 --no-insarmaps
     $SCRIPT_NAME hvGalapagosSenD128/miaplpy/network_single_reference hvGalapagosSenA106/miaplpy/network_single_reference --ref-lalo -0.81 -91.190 --no-ingest-los
     $SCRIPT_NAME FernandinaSenD128/miaplpy/network_delaunay_4 FernandinaSenA106/miaplpy/network_delaunay_4 --ref-lalo -0.415 -91.543 --submit
+    $SCRIPT_NAME LaPalmaSenA60/miaplpy/network_delaunay_4 LaPalmaSenD169/miaplpy/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --save-qgis --submit
+    $SCRIPT_NAME LaPalmaSenA60/miaplpy/network_delaunay_4 LaPalmaSenD169/miaplpy/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --save-qgis-all --submit
 
 Options:
       --dataset TYPE                  Select .he5 type in a directory: PS, DS, filtDS, filt*DS, geo
       -g, --geom-file FILE1 FILE2     Geometry files for horzvert_timeseries.py
       --mask-thresh FLOAT             Coherence mask threshold (default: 0.55)
       --ref-lalo LAT LON              Reference point (required); also LAT,LON or --ref-lalo=LAT,LON
-      --lat-step FLOAT                Latitude step for geocoding
+      --lat-step FLOAT                Latitude step for geocoding (default: 0.0008)
       --lalo-step LAT LON             Lat and lon step for geocoding
       --horz-az-angle FLOAT           Horizontal azimuth angle (default: 90)
       --window-size INT               Reference-point window (default: 3)
@@ -270,6 +272,8 @@ Options:
       --no-insarmaps                  Skip ingest_insarmaps.bash
       --no-parallel                   Run ref-point and geocode sequentially (lower memory)
       --ingest-parallel               Run ingest lines in parallel (& / wait)
+      --save-qgis, --save_qgis        Export GeoPackage for geo asc/desc + vert/horz (.he5); add to download_commands.txt
+      --save-qgis-all, --save_qgis_all  Like --save-qgis plus radar asc/desc LOS .he5 (six products total)
       --submit                        Execute run_horzvert2timeseries (default: write run file only)
       --sleep SECS                    Sleep SECS seconds before running
       --num-workers N                 ingest_insarmaps hdfeos5_2json workers (default: 1)
@@ -297,6 +301,7 @@ ingest_los_flag=1
 ingest_insarmaps_flag=1
 compute_parallel_flag=1
 ingest_parallel_flag=0
+save_qgis_mode=""
 submit_flag=0
 positional=()
 
@@ -404,6 +409,22 @@ do
             ;;
         --ingest-parallel)
             ingest_parallel_flag=1
+            shift
+            ;;
+        --save-qgis-all|--save_qgis_all)
+            [[ -n "$save_qgis_mode" ]] && {
+                echo "Error: use only one of --save-qgis or --save-qgis-all" >&2
+                exit 1
+            }
+            save_qgis_mode="all"
+            shift
+            ;;
+        --save-qgis|--save_qgis)
+            [[ -n "$save_qgis_mode" ]] && {
+                echo "Error: use only one of --save-qgis or --save-qgis-all" >&2
+                exit 1
+            }
+            save_qgis_mode="geo"
             shift
             ;;
         --submit|-s)
@@ -642,16 +663,22 @@ fi
 ###############################################################################
 # Build geocode args and write run_horzvert2timeseries
 ###############################################################################
-DEFAULT_LAT_STEP="0.00014"
+DEFAULT_LAT_STEP="0.0008"
+GEOCODE_LAT_STEP=""
+GEOCODE_LON_STEP=""
 GEOCODE_LALO_ARGS=""
 if [[ ${#lalo_step[@]} -eq 2 ]]; then
-    GEOCODE_LALO_ARGS="--lalo-step ${lalo_step[0]} ${lalo_step[1]}"
+    GEOCODE_LAT_STEP="${lalo_step[0]}"
+    GEOCODE_LON_STEP="${lalo_step[1]}"
+    GEOCODE_LALO_ARGS="--lalo-step ${GEOCODE_LAT_STEP} ${GEOCODE_LON_STEP}"
 elif [[ -n "$lat_step" ]]; then
-    LON_STEP=$(compute_lon_step "${REF_LAT:-0}" "$lat_step")
-    GEOCODE_LALO_ARGS="--lalo-step $lat_step $LON_STEP"
+    GEOCODE_LAT_STEP="$lat_step"
+    GEOCODE_LON_STEP=$(compute_lon_step "${REF_LAT:-0}" "$lat_step")
+    GEOCODE_LALO_ARGS="--lalo-step $GEOCODE_LAT_STEP $GEOCODE_LON_STEP"
 else
-    LON_STEP=$(compute_lon_step "${REF_LAT:-0}" "$DEFAULT_LAT_STEP")
-    GEOCODE_LALO_ARGS="--lalo-step $DEFAULT_LAT_STEP $LON_STEP"
+    GEOCODE_LAT_STEP="$DEFAULT_LAT_STEP"
+    GEOCODE_LON_STEP=$(compute_lon_step "${REF_LAT:-0}" "$DEFAULT_LAT_STEP")
+    GEOCODE_LALO_ARGS="--lalo-step $GEOCODE_LAT_STEP $GEOCODE_LON_STEP"
 fi
 
 get_ingest_dataset_opt() {
@@ -705,6 +732,7 @@ HV_COMPUTE_PARALLEL="$compute_parallel_flag" \
 HV_INGEST_PARALLEL="$ingest_parallel_flag" \
 HV_INGEST_INSARMAPS="$ingest_insarmaps_flag" \
 HV_INGEST_LOS="$ingest_los_flag" \
+HV_SAVE_QGIS="${save_qgis_mode:-off}" \
 HV_INGEST_WORKERS_OPTS="${ingest_workers_opts[*]}" \
 HV_GEOM_FILE_ARGS="$GEOM_FILE_ARGS" \
 HV_DATASET_OPT1="$(get_ingest_dataset_opt "$FILE1")" \
@@ -740,8 +768,9 @@ ORIGINAL_RESOLVED_FILE1="$(realpath "$FILE1")"
 ORIGINAL_RESOLVED_FILE2="$(realpath "$FILE2")"
 
 DATA_FILES_TXT="$ORIGINAL_DIR/$HORZVERT_DIR/data_files.txt"
-rm -f "$DATA_FILES_TXT"
-touch "$DATA_FILES_TXT"
+{
+    echo "# geocode-lalo-step $GEOCODE_LAT_STEP $GEOCODE_LON_STEP"
+} > "$DATA_FILES_TXT"
 
 VERT_FILE=$(ls -t "$ORIGINAL_DIR/$HORZVERT_DIR"/*vert*.he5 2>/dev/null | head -1 || true)
 HORZ_FILE=$(ls -t "$ORIGINAL_DIR/$HORZVERT_DIR"/*horz*.he5 2>/dev/null | head -1 || true)
@@ -756,7 +785,47 @@ echo "$HORZ_FILE" >> "$DATA_FILES_TXT"
     echo "$ORIGINAL_RESOLVED_FILE2" >> "$DATA_FILES_TXT"
 }
 
+GEO_FILE1="$(dirname "$ORIGINAL_RESOLVED_FILE1")/geo_$(basename "$ORIGINAL_RESOLVED_FILE1")"
+GEO_FILE2="$(dirname "$ORIGINAL_RESOLVED_FILE2")/geo_$(basename "$ORIGINAL_RESOLVED_FILE2")"
+
+hv_data_files_contains() {
+    local path="$1"
+    [[ -f "$DATA_FILES_TXT" ]] && grep -qxF "$path" "$DATA_FILES_TXT"
+}
+
+hv_append_gpkg_for_he5() {
+    local he5_path="$1"
+    local gpkg_path="${he5_path%.he5}.gpkg"
+    [[ -z "$he5_path" || "$he5_path" != *.he5 ]] && return 0
+    if [[ ! -f "$he5_path" ]]; then
+        echo "Error: --save-qgis expected .he5 missing: $he5_path" >&2
+        exit 1
+    fi
+    if [[ ! -f "$gpkg_path" ]]; then
+        echo "Error: --save-qgis expected GeoPackage missing: $gpkg_path" >&2
+        exit 1
+    fi
+    hv_data_files_contains "$he5_path" || echo "$he5_path" >> "$DATA_FILES_TXT"
+    hv_data_files_contains "$gpkg_path" || echo "$gpkg_path" >> "$DATA_FILES_TXT"
+}
+
+if [[ -n "$save_qgis_mode" ]]; then
+    hv_append_gpkg_for_he5 "$VERT_FILE"
+    hv_append_gpkg_for_he5 "$HORZ_FILE"
+    hv_append_gpkg_for_he5 "$GEO_FILE1"
+    hv_append_gpkg_for_he5 "$GEO_FILE2"
+    if [[ "$save_qgis_mode" == "all" ]]; then
+        hv_append_gpkg_for_he5 "$ORIGINAL_RESOLVED_FILE1"
+        hv_append_gpkg_for_he5 "$ORIGINAL_RESOLVED_FILE2"
+    fi
+fi
+
+if [[ $ingest_insarmaps_flag == "0" && -z "$save_qgis_mode" ]]; then
+    exit 0
+fi
+
 if [[ $ingest_insarmaps_flag == "0" ]]; then
+    create_data_download_commands.py "$DATA_FILES_TXT"
     exit 0
 fi
 

@@ -246,6 +246,10 @@ test_horzvert_script_syntax_and_los_ingest_no_ref_lalo() {
     assert_contains "$content" "--no-parallel" "Documents --no-parallel option"
     assert_contains "$content" "--force" "Documents --force option"
     assert_contains "$content" "--clean" "Documents --clean option"
+    assert_contains "$content" "--save-qgis" "Documents --save-qgis option"
+    assert_contains "$content" "--save-qgis-all" "Documents --save-qgis-all option"
+    assert_contains "$content" "HV_SAVE_QGIS" "Passes HV_SAVE_QGIS to run-file writer"
+    assert_contains "$content" 'DEFAULT_LAT_STEP="0.0008"' "Default geocode lat step is 0.0008"
     assert_contains "$content" "hv_clean_cached_products" "Defines clean helper for cached products"
     assert_contains "$content" "Write InsarMaps HTML" "HTML written outside LOS-only gate"
     assert_not_contains "$content" 'ingest_insarmaps.bash "$ORIGINAL_RESOLVED_FILE1" --ref-lalo' "LOS ingest file1 without --ref-lalo"
@@ -262,6 +266,9 @@ test_horzvert_help_lists_cache_options() {
     assert_contains "$content" "--submit" "Help lists --submit"
     assert_contains "$content" "--sleep" "Help lists --sleep"
     assert_contains "$content" "--no-parallel" "Help lists --no-parallel"
+    assert_contains "$content" "--save-qgis" "Help lists --save-qgis"
+    assert_contains "$content" "--save-qgis-all" "Help lists --save-qgis-all"
+    assert_contains "$content" "0.0008" "Help lists default lat-step 0.0008"
     assert_not_contains "$content" "Re-reference:" "No long prose after options"
     print_test_end "horzvert_timeseries.bash --help"
 }
@@ -334,6 +341,7 @@ test_hv_write_run_file_has_wait_and_amp() {
     assert_contains "$content" "hv_wait_pids" "Waits on background PIDs with failure propagation"
     assert_contains "$content" "wait" "Has wait barriers"
     assert_contains "$content" "horzvert_timeseries.py" "Has HV python"
+    assert_not_contains "$content" "save_qgis.py" "No save_qgis when HV_SAVE_QGIS unset"
     assert_contains "$content" "hv_ingest_insarmaps_logged" "Ingest via logged helper"
     assert_contains "$content" "missing *vert*/*horz*.he5" "Fails clearly if vert/horz missing before ingest"
     assert_contains "$content" "cd " "Cds into product dir before ingest"
@@ -386,6 +394,72 @@ test_hv_write_run_file_no_parallel_is_sequential() {
     print_test_end "hv_write_run_horzvert2timeseries --no-parallel"
 }
 
+test_hv_write_run_file_save_qgis_geo() {
+    print_test_start "hv_write_run_horzvert2timeseries --save-qgis" \
+        "Run file exports geo asc/desc + vert/horz (not radar LOS)."
+    local tmp runf content
+    tmp=$(mktemp -d)
+    mkdir -p "$tmp/out" "$tmp/scratch/SenA/net" "$tmp/scratch/SenD/net"
+    touch "$tmp/scratch/SenA/net/a.he5" "$tmp/scratch/SenD/net/b.he5" \
+        "$tmp/scratch/SenA/net/geo_a.he5" "$tmp/scratch/SenD/net/geo_b.he5"
+    export SCRATCHDIR="$tmp/scratch"
+    HV_RUN_FILE="$tmp/run_horzvert2timeseries" \
+    HV_RADAR1="$tmp/scratch/SenA/net/a.he5" \
+    HV_RADAR2="$tmp/scratch/SenD/net/b.he5" \
+    HV_REF_LAT="1.0" \
+    HV_REF_LON="2.0" \
+    HV_OUTDIR="$tmp/scratch/out" \
+    HV_CACHE_HIT=1 \
+    HV_SAVE_QGIS=geo \
+    HV_INGEST_INSARMAPS=0 \
+    HV_INGEST_LOS=1 \
+    hv_write_run_horzvert2timeseries
+    runf="$tmp/run_horzvert2timeseries"
+    content=$(cat "$runf")
+    assert_equals "4" "$(echo "$content" | grep -c 'save_qgis.py')" "Four save_qgis calls"
+    assert_contains "$content" 'save_qgis.py "$VERT"' "Saves vert"
+    assert_contains "$content" 'save_qgis.py "$HORZ"' "Saves horz"
+    assert_contains "$content" "geo_a.he5" "Saves geo asc"
+    assert_contains "$content" "geo_b.he5" "Saves geo desc"
+    assert_not_contains "$content" "SenA/net/a.he5" "No radar asc save_qgis"
+    bash -n "$runf"
+    assert_equals "0" "$?" "bash -n save-qgis run file"
+    unset SCRATCHDIR
+    rm -rf "$tmp"
+    print_test_end "hv_write_run_horzvert2timeseries --save-qgis"
+}
+
+test_hv_write_run_file_save_qgis_all() {
+    print_test_start "hv_write_run_horzvert2timeseries --save-qgis-all" \
+        "Run file exports radar + geo + vert/horz (six products)."
+    local tmp runf content
+    tmp=$(mktemp -d)
+    mkdir -p "$tmp/out" "$tmp/scratch/SenA/net" "$tmp/scratch/SenD/net"
+    touch "$tmp/scratch/SenA/net/a.he5" "$tmp/scratch/SenD/net/b.he5" \
+        "$tmp/scratch/SenA/net/geo_a.he5" "$tmp/scratch/SenD/net/geo_b.he5"
+    export SCRATCHDIR="$tmp/scratch"
+    HV_RUN_FILE="$tmp/run_horzvert2timeseries" \
+    HV_RADAR1="$tmp/scratch/SenA/net/a.he5" \
+    HV_RADAR2="$tmp/scratch/SenD/net/b.he5" \
+    HV_REF_LAT="1.0" \
+    HV_REF_LON="2.0" \
+    HV_OUTDIR="$tmp/scratch/out" \
+    HV_CACHE_HIT=1 \
+    HV_SAVE_QGIS=all \
+    HV_INGEST_INSARMAPS=0 \
+    hv_write_run_horzvert2timeseries
+    runf="$tmp/run_horzvert2timeseries"
+    content=$(cat "$runf")
+    assert_equals "6" "$(echo "$content" | grep -c 'save_qgis.py')" "Six save_qgis calls"
+    assert_contains "$content" "SenA/net/a.he5" "Saves radar asc"
+    assert_contains "$content" "SenD/net/b.he5" "Saves radar desc"
+    bash -n "$runf"
+    assert_equals "0" "$?" "bash -n save-qgis-all run file"
+    unset SCRATCHDIR
+    rm -rf "$tmp"
+    print_test_end "hv_write_run_horzvert2timeseries --save-qgis-all"
+}
+
 
 print_header "HORZVERT_TIMESERIES TESTS"
 
@@ -409,6 +483,8 @@ test_horzvert_sleep_rejects_non_integer
 test_hv_longest_processing_method_dir
 test_hv_write_run_file_has_wait_and_amp
 test_hv_write_run_file_no_parallel_is_sequential
+test_hv_write_run_file_save_qgis_geo
+test_hv_write_run_file_save_qgis_all
 
 print_summary
 exit $?

@@ -385,7 +385,7 @@ function run_command() {
 ###########################################
 function list_merged_slc_yyyymmdd_dates() {
 # Print sorted YYYYMMDD acquisition directory names under merged/SLC (or $1), one per line.
-# Skips non-date dirs (e.g. excludeSeason, excludeSeason_MMDD-MMDD).
+# Skips non-date dirs (e.g. ex0101-0630 quarantine folders from exclude_season_slc.py).
     local slc_dir="${1:-merged/SLC}"
     local name d
     if [[ ! -d "$slc_dir" ]]; then
@@ -397,6 +397,24 @@ function list_merged_slc_yyyymmdd_dates() {
         [[ "$name" =~ ^[0-9]{8}$ ]] || continue
         echo "$name"
     done | sort
+}
+
+###########################################
+function get_exclude_season_suffix() {
+# If template[ssaraopt.excludeSeason] is set as MMDD-MMDD, echo "_exMMDD-MMDD"; else echo "".
+# Used by get_miaplpy_dir_name / get_mintpy_dir_name. Does not scan merged/SLC.
+    local season="${template[ssaraopt.excludeSeason]:-}"
+    season="${season#"${season%%[![:space:]]*}"}"
+    season="${season%"${season##*[![:space:]]}"}"
+    if [[ -z "$season" || "$season" == "auto" ]]; then
+        echo ""
+        return 0
+    fi
+    if [[ "$season" =~ ^[0-9]{4}-[0-9]{4}$ ]]; then
+        echo "_ex${season}"
+    else
+        echo ""
+    fi
 }
 
 ###########################################
@@ -419,6 +437,7 @@ echo $date_str
 ###########################################
 function get_miaplpy_dir_name() {
 # assign miaplpyDir.Addition  lalo,dirname or 'miaplpy' for 'auto'
+# Appends _exMMDD-MMDD when ssaraopt.excludeSeason is set (template only; not from disk).
 date_str=$(get_date_str)
 if [ -z ${template[minsar.miaplpyDir.addition]} ] || [ ${template[minsar.miaplpyDir.addition]} == "auto" ]; then
    miaplpy_dir_name="miaplpy"
@@ -445,11 +464,12 @@ else
    miaplpy_dir_name=miaplpy_"${template[minsar.miaplpyDir.addition]}"_${date_str}
 fi
 unset IFS
-echo $miaplpy_dir_name
+echo "${miaplpy_dir_name}$(get_exclude_season_suffix)"
 }
 ###########################################
 function get_mintpy_dir_name() {
 # assign mintpyDir.addition  lalo, date, name, or 'mintpy' for 'auto'
+# Appends _exMMDD-MMDD when ssaraopt.excludeSeason is set (template only; not from disk).
 date_str=$(get_date_str)
 if [ -z ${template[minsar.mintpyDir.addition]} ] || [ ${template[minsar.mintpyDir.addition]} == "auto" ]; then
    mintpy_dir_name="mintpy"
@@ -476,7 +496,7 @@ else
    mintpy_dir_name=mintpy_"${template[minsar.mintpyDir.addition]}"_${date_str}
 fi
 unset IFS
-echo $mintpy_dir_name
+echo "${mintpy_dir_name}$(get_exclude_season_suffix)"
 }
 ###########################################
 function get_network_type {

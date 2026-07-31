@@ -19,6 +19,43 @@ from scipy import linalg
 from mintpy.objects import HDFEOS, timeseries
 from mintpy.utils import ptime, readfile, time_func, utils as ut
 
+HDFEOS_DISP_PATH = 'HDFEOS/GRIDS/timeseries/observation/displacement'
+
+
+def _has_hdfeos_displacement(ts_file):
+    """True when file contains standard HDFEOS displacement cube."""
+    try:
+        with h5py.File(ts_file, 'r') as f:
+            return HDFEOS_DISP_PATH in f
+    except OSError:
+        return False
+
+
+def read_ts_attribute(ts_file):
+    """MintPy attributes with FILE_TYPE corrected for hybrid horz/vert HDFEOS.
+
+    horzvert_timeseries.py may write root latitude/longitude/timeseries datasets
+    alongside HDFEOS/GRIDS/...; MintPy then infers FILE_TYPE=geometry even though
+    the file is a valid HDFEOS product.
+    """
+    atr = dict(readfile.read_attribute(ts_file))
+    if atr.get('FILE_TYPE') != 'HDFEOS' and _has_hdfeos_displacement(ts_file):
+        atr['FILE_TYPE'] = 'HDFEOS'
+    return atr
+
+
+def _read_hdfeos_quality_dataset(ts_file, name, box=None):
+    """Read HDFEOS/GRIDS/timeseries/quality/<name>, avoiding top-level name clashes."""
+    path = f'HDFEOS/GRIDS/timeseries/quality/{name}'
+    with h5py.File(ts_file, 'r') as f:
+        if path not in f:
+            raise KeyError(path)
+        ds = f[path]
+        if box is None:
+            return ds[()]
+        x0, y0, x1, y1 = box
+        return ds[y0:y1, x0:x1]
+
 
 #########################################################################################
 def add_metadata(feature, location, attrs):
@@ -57,7 +94,7 @@ def wgs84_spatial_ref():
 
 def get_ts_date_list(ts_file):
     """Return date list for a MintPy timeseries or HDFEOS file."""
-    atr = readfile.read_attribute(ts_file)
+    atr = read_ts_attribute(ts_file)
     ftype = atr['FILE_TYPE']
     if ftype == 'HDFEOS':
         return HDFEOS(ts_file).get_date_list()
@@ -80,7 +117,7 @@ def _geo_attrs_match(atr_a, atr_b):
 
 def resolve_mask(ts_file, msk_file=None, atr=None):
     """Resolve mask array: -m file, matching sibling mask, or HDFEOS quality/mask."""
-    atr = atr or readfile.read_attribute(ts_file)
+    atr = atr or read_ts_attribute(ts_file)
     ts_dir = os.path.dirname(os.path.abspath(ts_file))
     prefix = 'geo_' if os.path.basename(ts_file).startswith('geo_') else ''
 
@@ -120,6 +157,9 @@ def resolve_mask(ts_file, msk_file=None, atr=None):
 
     if atr.get('FILE_TYPE') == 'HDFEOS':
         try:
+            if _has_hdfeos_displacement(ts_file):
+                print(f'read mask data from HDFEOS quality/mask: {ts_file}')
+                return _read_hdfeos_quality_dataset(ts_file, 'mask'), ts_file
             print(f'read mask data from HDFEOS quality/mask: {ts_file}')
             return readfile.read(ts_file, datasetName='mask')[0], ts_file
         except Exception as exc:
@@ -138,7 +178,7 @@ def estimate_velocity_mintpy_default(ts_file, atr=None):
 
     Same estimator as timeseries2velocity.py default (time_func / lstsq).
     """
-    atr = atr or readfile.read_attribute(ts_file)
+    atr = atr or read_ts_attribute(ts_file)
     print(f'estimating velocity from {ts_file} via MintPy default (polynomial=1)')
     print(f'equivalent command: timeseries2velocity.py {ts_file}')
 
@@ -189,7 +229,7 @@ def gather_files(ts_file, geom_file=None, msk_file=None):
     Gather mintpy / HDFEOS inputs. Velocity is always estimated (not from velocity.h5).
     '''
     print('gather auxliary data files')
-    atr = readfile.read_attribute(ts_file)
+    atr = read_ts_attribute(ts_file)
     ftype = atr['FILE_TYPE']
     ts_dir = os.path.dirname(os.path.abspath(ts_file))
     prefix = 'geo_' if os.path.basename(ts_file).startswith('geo_') else ''
@@ -250,7 +290,7 @@ def read_bounding_box(pix_box, geo_box, geom_file, atr=None):
 
 
 def _is_hdfeos_file(fname):
-    return readfile.read_attribute(fname).get('FILE_TYPE') == 'HDFEOS'
+    return read_ts_attribute(fname).get('FILE_TYPE') == 'HDFEOS'
 
 
 def _h5_path(is_hdfeos, classic_name, hdfeos_group):
@@ -370,13 +410,20 @@ def write_vector_file(fDict, out_file, box=None, zero_first=False, atr=None):
         layer.CreateField(fd)
     layerDefn = layer.GetLayerDefn()
 
-    atr = atr or readfile.read_attribute(fDict['TimeSeries'])
+    atr = atr or read_ts_attribute(fDict['TimeSeries'])
     if box is None:
         box = (0, 0, int(atr['WIDTH']), int(atr['LENGTH']))
 
     # mask (already resolved path in gather_files; re-read with box)
-    mask = readfile.read(fDict['Mask'], datasetName='mask' if _is_hdfeos_file(fDict['Mask']) else None,
-                         box=box, print_msg=False)[0]
+    if _is_hdfeos_file(fDict['Mask']) and _has_hdfeos_displacement(fDict['Mask']):
+        mask = _read_hdfeos_quality_dataset(fDict['Mask'], 'mask', box=box)
+    else:
+        mask = readfile.read(
+            fDict['Mask'],
+            datasetName='mask' if _is_hdfeos_file(fDict['Mask']) else None,
+            box=box,
+            print_msg=False,
+        )[0]
     # classic maskTempCoh often has dataset "mask" too; if None datasetName, readfile picks first
     if mask.dtype == np.bool_ or mask.dtype == bool:
         mask = mask.astype(np.uint8)
@@ -471,7 +518,7 @@ def write_shape_file(fDict, shp_file, box=None, zero_first=False, atr=None):
 #########################################################################################
 def save_qgis(inps):
 
-    atr = readfile.read_attribute(inps.ts_file)
+    atr = read_ts_attribute(inps.ts_file)
     geom_for_box = inps.geom_file or inps.ts_file
 
     # Read bounding box

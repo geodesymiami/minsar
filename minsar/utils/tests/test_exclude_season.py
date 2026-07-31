@@ -3,6 +3,8 @@ import unittest
 
 from minsar.utils.exclude_season import (
     date_in_exclude_season,
+    exclude_season_dir_name,
+    exclude_season_token,
     iso_date_to_date,
     parse_exclude_season,
 )
@@ -37,6 +39,16 @@ class TestExcludeSeason(unittest.TestCase):
 
     def test_iso_date_to_date(self):
         self.assertEqual(iso_date_to_date("2026-04-10"), datetime.date(2026, 4, 10))
+
+    def test_exclude_season_token(self):
+        self.assertEqual(exclude_season_token("0101-0630"), "ex0101-0630")
+        self.assertIsNone(exclude_season_token(None))
+        self.assertIsNone(exclude_season_token(""))
+
+    def test_exclude_season_dir_name(self):
+        self.assertEqual(exclude_season_dir_name("0101-0630"), "ex0101-0630")
+        with self.assertRaises(ValueError):
+            exclude_season_dir_name("")
 
 
 if __name__ == "__main__":

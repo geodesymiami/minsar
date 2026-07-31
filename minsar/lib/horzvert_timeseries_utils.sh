@@ -375,7 +375,8 @@ hv_ingest_insarmaps_logged() {
 # Required: HV_RUN_FILE, HV_RADAR1, HV_RADAR2, HV_REF_LAT, HV_REF_LON, HV_OUTDIR
 # Optional: HV_CACHE_HIT=0|1, HV_GEOCODE_ARGS, HV_PY_SUFFIX, HV_COMPUTE_PARALLEL=1|0,
 #           HV_INGEST_PARALLEL=0|1, HV_INGEST_INSARMAPS=1|0, HV_INGEST_LOS=1|0,
-#           HV_INGEST_WORKERS_OPTS (string), HV_GEOM_FILE_ARGS, HV_DATASET_OPT1, HV_DATASET_OPT2
+#           HV_INGEST_WORKERS_OPTS (string), HV_GEOM_FILE_ARGS, HV_DATASET_OPT1, HV_DATASET_OPT2,
+#           HV_SAVE_QGIS=off|geo|all  (geo: vert/horz + geo asc/desc; all: + radar asc/desc)
 hv_write_run_horzvert2timeseries() {
     local run_file="${HV_RUN_FILE:?}"
     local radar1="${HV_RADAR1:?}"
@@ -390,14 +391,15 @@ hv_write_run_horzvert2timeseries() {
     local ingest_parallel="${HV_INGEST_PARALLEL:-0}"
     local ingest_insarmaps="${HV_INGEST_INSARMAPS:-1}"
     local ingest_los="${HV_INGEST_LOS:-1}"
+    local save_qgis="${HV_SAVE_QGIS:-off}"
     local workers_opts="${HV_INGEST_WORKERS_OPTS:-}"
     local geom_args="${HV_GEOM_FILE_ARGS:-}"
     local ds1="${HV_DATASET_OPT1:-}"
     local ds2="${HV_DATASET_OPT2:-}"
     local geo1 geo2 r_radar1 r_radar2 r_geo1 r_geo2 r_outdir
     local q_radar1 q_radar2 q_geo1 q_geo2 q_outdir amp=""
-    local utils_sh abs_outdir abs_radar1 abs_radar2 abs_scratch_log
-    local q_abs_outdir q_abs_radar1 q_abs_radar2 q_scratch_log
+    local utils_sh abs_outdir abs_radar1 abs_radar2 abs_geo1 abs_geo2 abs_scratch_log
+    local q_abs_outdir q_abs_radar1 q_abs_radar2 q_abs_geo1 q_abs_geo2 q_scratch_log
 
     utils_sh="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/horzvert_timeseries_utils.sh"
 
@@ -421,9 +423,13 @@ hv_write_run_horzvert2timeseries() {
     abs_outdir=$(realpath "$outdir" 2>/dev/null || echo "$outdir")
     abs_radar1=$(realpath "$radar1" 2>/dev/null || echo "$radar1")
     abs_radar2=$(realpath "$radar2" 2>/dev/null || echo "$radar2")
+    abs_geo1=$(realpath "$geo1" 2>/dev/null || echo "$geo1")
+    abs_geo2=$(realpath "$geo2" 2>/dev/null || echo "$geo2")
     q_abs_outdir=$(printf '%q' "$abs_outdir")
     q_abs_radar1=$(printf '%q' "$abs_radar1")
     q_abs_radar2=$(printf '%q' "$abs_radar2")
+    q_abs_geo1=$(printf '%q' "$abs_geo1")
+    q_abs_geo2=$(printf '%q' "$abs_geo2")
     abs_scratch_log=""
     if [[ -n "${SCRATCHDIR:-}" ]]; then
         abs_scratch_log="$(realpath "$SCRATCHDIR" 2>/dev/null || echo "$SCRATCHDIR")/log"
@@ -488,18 +494,32 @@ hv_write_run_horzvert2timeseries() {
             echo ""
         fi
 
-        if [[ "$ingest_insarmaps" == "1" ]]; then
-            # Resolve products under SCRATCHDIR cwd, then cd into product dir so
-            # ingest writes insarmaps.log next to overlay.html (all four URLs).
-            # Also append command lines to SCRATCHDIR/log via hv_ingest_insarmaps_logged.
+        if [[ "$save_qgis" != "off" || "$ingest_insarmaps" == "1" ]]; then
             echo "VERT=\$(ls -t ${q_outdir}/*vert*.he5 2>/dev/null | head -1)"
             echo "HORZ=\$(ls -t ${q_outdir}/*horz*.he5 2>/dev/null | head -1)"
             echo "if [[ -z \"\$VERT\" || -z \"\$HORZ\" || ! -f \"\$VERT\" || ! -f \"\$HORZ\" ]]; then"
-            echo "  echo \"Error: missing *vert*/*horz*.he5 under ${q_outdir} (needed for ingest)\" >&2"
+            echo "  echo \"Error: missing *vert*/*horz*.he5 under ${q_outdir}\" >&2"
             echo "  exit 1"
             echo "fi"
             echo "VERT=\$(realpath \"\$VERT\")"
             echo "HORZ=\$(realpath \"\$HORZ\")"
+        fi
+
+        if [[ "$save_qgis" != "off" ]]; then
+            echo "save_qgis.py \"\$VERT\""
+            echo "save_qgis.py \"\$HORZ\""
+            echo "save_qgis.py ${q_abs_geo1}"
+            echo "save_qgis.py ${q_abs_geo2}"
+            if [[ "$save_qgis" == "all" ]]; then
+                echo "save_qgis.py ${q_abs_radar1}"
+                echo "save_qgis.py ${q_abs_radar2}"
+            fi
+            echo ""
+        fi
+
+        if [[ "$ingest_insarmaps" == "1" ]]; then
+            # Cd into product dir so ingest writes insarmaps.log next to overlay.html.
+            # Also append command lines to SCRATCHDIR/log via hv_ingest_insarmaps_logged.
             echo "cd ${q_abs_outdir}"
             echo "hv_ingest_insarmaps_logged ${q_scratch_log} \"\$VERT\" ${workers_opts}${amp}"
             echo "hv_ingest_insarmaps_logged ${q_scratch_log} \"\$HORZ\" ${workers_opts}${amp}"

@@ -12,7 +12,7 @@
 import os
 import sys
 
-from mintpy.utils import readfile
+from mintpy.save_qgis import read_ts_attribute
 from mintpy.utils.arg_utils import create_argument_parser
 
 #########################################################################################
@@ -63,7 +63,7 @@ def cmd_line_parse(iargs=None):
     parser = create_parser()
     inps = parser.parse_args(args=iargs)
 
-    atr = readfile.read_attribute(inps.ts_file)
+    atr = read_ts_attribute(inps.ts_file)
     ftype = atr['FILE_TYPE']
     if ftype not in ['timeseries', 'HDFEOS']:
         raise Exception(f'Input file ({ftype}) is NOT time series or HDFEOS!')

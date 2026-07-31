@@ -23,6 +23,7 @@ try:
         estimate_velocity_mintpy_default,
         gather_files,
         get_ts_date_list,
+        read_ts_attribute,
         resolve_lat_lon,
         resolve_mask,
         wgs84_spatial_ref,
@@ -119,6 +120,21 @@ def _write_radar_hdfeos(path: Path, dates, cube, mask=None):
         geom.create_dataset("longitude", data=lons)
 
 
+def _write_hybrid_vert_hdfeos(path: Path, dates, cube, mask=None):
+    """Hybrid horz/vert HE5: HDFEOS tree plus top-level lat/lon/timeseries (MintPy -> geometry)."""
+    length, width = cube.shape[1], cube.shape[2]
+    _write_geo_hdfeos(path, dates, cube, mask=mask)
+    with h5py.File(path, "a") as f:
+        f.create_dataset("date", data=np.array(dates, dtype="S8"))
+        f.create_dataset("timeseries", data=cube.astype(np.float32))
+        f.create_dataset("bperp", data=np.zeros(len(dates), dtype=np.float32))
+        f.create_dataset("latitude", data=np.full((length, width), 28.6, np.float32))
+        f.create_dataset("longitude", data=np.full((length, width), -17.9, np.float32))
+        f.create_dataset("mask", data=(mask if mask is not None else np.ones((length, width), bool)).astype(bool))
+        f.attrs["displacement_type"] = "vertical"
+        f.attrs["processing_type"] = "vertical timeseries"
+
+
 def _write_geometry(path: Path, length, width, *, geo=True):
     with h5py.File(path, "w") as f:
         f.create_dataset("height", data=np.zeros((length, width), np.float32))
@@ -165,6 +181,25 @@ class TestSaveQgisHdfeos(unittest.TestCase):
             self.assertEqual(inps.ts_file, str(he5))
             self.assertTrue(inps.out_file.endswith(".gpkg"))
             self.assertFalse(inps.no_gpkg)
+
+    def test_cli_accepts_hybrid_vert_hdfeos_mintpy_geometry(self):
+        """horz/vert products with top-level latitude confuse MintPy FILE_TYPE."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            dates = ["20250104", "20250116"]
+            cube = np.zeros((2, 3, 4), dtype=np.float32)
+            cube[1] = 0.01
+            he5 = root / "S1_vert_169_060.he5"
+            _write_hybrid_vert_hdfeos(he5, dates, cube)
+            from mintpy.utils import readfile
+            self.assertEqual(readfile.read_attribute(str(he5))["FILE_TYPE"], "geometry")
+            self.assertEqual(read_ts_attribute(str(he5))["FILE_TYPE"], "HDFEOS")
+            inps = save_qgis_cli.cmd_line_parse([str(he5)])
+            self.assertTrue(inps.out_file.endswith(".gpkg"))
+            fDict = gather_files(str(he5))
+            self.assertEqual(fDict["TimeSeries"], str(he5))
+            self.assertEqual(fDict["Mask"], str(he5))
+            self.assertEqual(get_ts_date_list(str(he5)), dates)
 
     def test_cli_no_gpkg_defaults_to_shp(self):
         with tempfile.TemporaryDirectory() as tmp:

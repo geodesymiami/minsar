@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Move SLC date directories that fall in ssaraopt.excludeSeason into excludeSeason_<SEASON>/.
+"""Move SLC date directories that fall in ssaraopt.excludeSeason into exMMDD-MMDD/.
 
 For MiaplPy / ISCE topsStack ``merged/SLC`` layouts: each acquisition is a
 ``YYYYMMDD`` directory. Dates whose month-day falls in the seasonal window
-``MMDD-MMDD`` are moved to ``<SLC_DIR>/excludeSeason_<SEASON>/<YYYYMMDD>``.
+``MMDD-MMDD`` are moved to ``<SLC_DIR>/exMMDD-MMDD/<YYYYMMDD>``.
 """
 
 from __future__ import annotations
@@ -15,14 +15,18 @@ import shutil
 import sys
 from pathlib import Path
 
-from minsar.utils.exclude_season import date_in_exclude_season, parse_exclude_season
+from minsar.utils.exclude_season import (
+    date_in_exclude_season,
+    exclude_season_dir_name,
+    parse_exclude_season,
+)
 
 _DATE_DIR_RE = re.compile(r"^\d{8}$")
-_EXCLUDE_SEASON_DIR_RE = re.compile(r"^excludeSeason(_|$)")
+_EXCLUDE_SEASON_DIR_RE = re.compile(r"^ex[0-9]{4}-[0-9]{4}$")
 
 DESCRIPTION = (
     "Move SLC date directories matching a seasonal exclude window (ssaraopt.excludeSeason) "
-    "from SLC_DIR into SLC_DIR/excludeSeason_<SEASON>/."
+    "from SLC_DIR into SLC_DIR/exMMDD-MMDD/."
 )
 
 EPILOG = """\
@@ -34,16 +38,12 @@ Examples:
 
 
 def exclude_season_dest_name(season: str) -> str:
-    """Return destination subdir name, e.g. ``excludeSeason_0101-0331``."""
-    parsed = parse_exclude_season(season)
-    if parsed is None:
-        raise ValueError(f"Empty exclude season: {season!r}")
-    start_mmdd, end_mmdd = parsed
-    return f"excludeSeason_{start_mmdd}-{end_mmdd}"
+    """Return destination subdir name, e.g. ``ex0101-0331``."""
+    return exclude_season_dir_name(season)
 
 
 def list_slc_date_dirs(slc_dir: Path) -> list[Path]:
-    """Return YYYYMMDD subdirectories of ``slc_dir`` (not under excludeSeason*)."""
+    """Return YYYYMMDD subdirectories of ``slc_dir`` (not under ``exMMDD-MMDD``)."""
     if not slc_dir.is_dir():
         raise FileNotFoundError(f"SLC directory not found: {slc_dir}")
     out: list[Path] = []
@@ -67,7 +67,7 @@ def move_exclude_season_slc(
     *,
     dry_run: bool = False,
 ) -> list[str]:
-    """Move date dirs in ``season`` (MMDD-MMDD) to ``slc_dir/excludeSeason_<SEASON>``.
+    """Move date dirs in ``season`` (MMDD-MMDD) to ``slc_dir/exMMDD-MMDD``.
 
     Returns sorted list of YYYYMMDD names that were (or would be) moved.
     """
