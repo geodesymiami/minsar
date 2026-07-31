@@ -91,6 +91,7 @@ def create_parser():
                Masjed dam (sarvey example)
         sarvey2insarmaps.py outputs/p2_coh80_ts.h5
         sarvey2insarmaps.py outputs/p2_coh80_ts.h5 --upload
+        sarvey2insarmaps.py outputs/p2_coh80_ts.h5 --suffix thermal
         sarvey2insarmaps.py outputs/p2_coh80_ts.h5 --sarvey-geocorr
 
         sarvey2insarmaps.py outputs/shp/p2_coh70_ts.shp
@@ -108,6 +109,7 @@ def create_parser():
         help="Insarmaps server host (default: environment variable INSARMAPSHOST)"
     )
     parser.add_argument("--upload", dest="upload_flag", action="store_true", help="Upload to jetstream (default: no upload)")
+    parser.add_argument("--suffix", metavar="TAG", default=None, help="Tag appended to Insarmaps dataset filename before the extension (e.g. thermal → ..._thermal.csv)")
 
     parser.add_argument("--skip-upload", action="store_true", help="Skip upload to Insarmaps")
     parser.add_argument("--make-jobfile", action="store_true", help="Generate jobfile")
@@ -228,6 +230,32 @@ def generate_dataset_name_from_csv(csv_file_path, sarvey_inputs_dir_path=None):
         rel_orbit = f"{int(rel_orbit_raw):03d}" if str(rel_orbit_raw).isdigit() else "000"
 
     return f"{mission}_{rel_orbit}_{start_date}_{end_date}_{corners_str}"
+
+def normalize_user_suffix(user_suffix):
+    """Return a cleaned --suffix tag or None; reject empty or path-like values."""
+    if user_suffix is None:
+        return None
+    tag = str(user_suffix).strip().strip("_")
+    if not tag:
+        raise ValueError("--suffix must be a non-empty tag")
+    if re.search(r"[/\\]", tag):
+        raise ValueError("--suffix must not contain path separators")
+    return tag
+
+def build_ingest_basename(dataset_name, output_suffix="", user_suffix=None):
+    """Build Insarmaps dataset stem from auto name, output-dir tag, and optional --suffix."""
+    parts = [dataset_name]
+    if output_suffix:
+        parts.append(str(output_suffix).strip("_"))
+    tag = normalize_user_suffix(user_suffix)
+    if tag:
+        parts.append(tag)
+    return "_".join(part for part in parts if part).rstrip("_")
+
+def build_ingest_csv_filename(dataset_name, output_suffix="", user_suffix=None, geocorr=False):
+    """Return final CSV filename for Insarmaps ingest."""
+    stem = build_ingest_basename(dataset_name, output_suffix, user_suffix)
+    return f"{stem}_geocorr.csv" if geocorr else f"{stem}.csv"
 
 def build_commands(shp_file_path, csv_file_path, geocorr_csv_path, json_dir, mbtiles_path, input_csv, inps):
     """
@@ -393,7 +421,7 @@ def extract_metadata_from_inputs(sarvey_inputs_dir_path):
 
     return attributes, dataset_name
 
-def update_and_save_final_metadata(json_dir, outdir, dataset_name, metadata, output_suffix):
+def update_and_save_final_metadata(json_dir, outdir, ingest_stem, metadata):
     """
     Update metadata dictionary using metadata.pickle if available,
     and save the final metadata as a JSON file.
@@ -415,9 +443,7 @@ def update_and_save_final_metadata(json_dir, outdir, dataset_name, metadata, out
         except Exception as e:
             print(f"[WARN] Failed to read final metadata from pickle: {e}")
 
-    final_meta_path = outdir / f"{dataset_name}_{output_suffix}"
-    final_meta_path = Path(str(final_meta_path).rstrip('_'))
-    final_meta_path = final_meta_path.with_name(f"{final_meta_path.name}_final_metadata.json")
+    final_meta_path = outdir / f"{ingest_stem}_final_metadata.json"
     with open(final_meta_path, "w") as f:
         json.dump(metadata, f, indent=2)
     print(f"[INFO] Final metadata written to: {final_meta_path}")
@@ -651,16 +677,15 @@ def main():
         dataset_name = generate_dataset_name_from_csv(input_csv, sarvey_inputs_dir_path)
 
         output_suffix = Path(output_path).name.partition("outputs_")[2]
+        ingest_stem = build_ingest_basename(dataset_name, output_suffix, inps.suffix)
 
         #replace mbtiles path to reflect final name
-        mbtiles_path = json_dir / f"{dataset_name}_{output_suffix}"
-        mbtiles_path = Path(str(mbtiles_path).rstrip('_'))
-        mbtiles_path = f"{mbtiles_path}.mbtiles"
+        mbtiles_path = json_dir / f"{ingest_stem}.mbtiles"
 
         #rename csv to match desired output format
-        final_csv_name = f"{dataset_name}_{output_suffix}"
-        final_csv_name = final_csv_name.rstrip('_')                       # remove trailing "_" if there is
-        final_csv_name += "_geocorr.csv" if inps.do_geocorr else ".csv"
+        final_csv_name = build_ingest_csv_filename(
+            dataset_name, output_suffix, inps.suffix, geocorr=inps.do_geocorr
+        )
         final_csv_path = output_path / final_csv_name
 
         #to final format
@@ -682,17 +707,14 @@ def main():
         run_command(cmd_hdfeos5, conda_env=None)
         metadata, _ = extract_metadata_from_inputs(sarvey_inputs_dir_path)
         merge_into_metadata_pickle(json_dir, metadata)
-        metadata = update_and_save_final_metadata(json_dir, output_path, dataset_name, metadata, output_suffix)
+        metadata = update_and_save_final_metadata(json_dir, output_path, ingest_stem, metadata)
 
         # Step 5: run json_mbtiles2insarmaps to ingest data into insarmaps
         if not inps.skip_upload:
             run_command(cmd_jsonmbtiles, conda_env=None if platform.system() == "Darwin" else None)
 
         #rename MBTiles to match dataset name
-        final_mbtiles_name = f"{dataset_name}_{output_suffix}"
-        final_mbtiles_name = final_mbtiles_name.rstrip('_')
-        final_mbtiles_name = f"{final_mbtiles_name}.mbtiles"
-        final_mbtiles_path = json_dir / final_mbtiles_name
+        final_mbtiles_path = json_dir / f"{ingest_stem}.mbtiles"
 
         #update mbtiles_path only if the file exists
         if final_mbtiles_path.exists():
@@ -714,9 +736,7 @@ def main():
 
         # Step 6: create insarmaps.log with URL
         host = inps.insarmaps_host.split(",")[0]
-        dataset_name_with_suffix = f"{dataset_name}_{output_suffix}"
-        dataset_name_with_suffix = dataset_name_with_suffix.rstrip('_')
-        url = generate_insarmaps_url(host, dataset_name_with_suffix, metadata, geocorr=inps.do_geocorr)
+        url = generate_insarmaps_url(host, ingest_stem, metadata, geocorr=inps.do_geocorr)
 
         with open('insarmaps.log', 'a') as f:
             f.write(url + "\n")
