@@ -9,7 +9,7 @@ run_05_miaplpy_unwrap_ifgram_*.job files.
 When unwrap commands use ``--num_tiles N`` with N>1, MiaplPy/SNAPHU runs with
 ``--nproc N`` (tile parallelism). PPN is then limited by CPU as well as memory::
 
-    mem_ppn = floor(MEM_PER_NODE_MB / mem_per_task_MiB)
+    mem_ppn = max(1, floor(MEM_PER_NODE_MB / mem_per_task_MiB) - 2)
     cpu_ppn = max(1, CPUS_PER_NODE // N)   # one unwrap may use N tile processes
     LAUNCHER_PPN = min(mem_ppn, cpu_ppn)
 
@@ -54,6 +54,10 @@ except ImportError as exc:  # pragma: no cover
     sys.exit(1)
 
 BYTES_PER_PIXEL = 420
+# Reserve slots below floor(mem/node) so concurrent snaphu startups
+# (many large mallocs at once) do not fail at the node memory cliff.
+# Margin 1 was still too thin for Etna Big1 (PPN=25 → 1/64 OOM); use 2.
+PPN_SAFETY_MARGIN = 2
 RUN05_BASE = 'run_05_miaplpy_unwrap_ifgram'
 
 
@@ -297,7 +301,11 @@ def compute_ppn(mem_mib: float, mem_per_node_mb: int, cpus_per_node: int,
     if mem_mib <= 0:
         mem_ppn = cpus_per_node
     else:
-        mem_ppn = min(cpus_per_node, max(1, int(math.floor(mem_per_node_mb / mem_mib))))
+        raw_ppn = int(math.floor(mem_per_node_mb / mem_mib))
+        mem_ppn = min(
+            cpus_per_node,
+            max(1, raw_ppn - PPN_SAFETY_MARGIN),
+        )
     ntiles = max(1, int(num_tiles))
     if ntiles <= 1:
         return mem_ppn

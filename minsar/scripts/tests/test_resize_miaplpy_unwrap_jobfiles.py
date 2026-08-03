@@ -69,10 +69,22 @@ class TestMemPerTask(unittest.TestCase):
 
 class TestComputePpn(unittest.TestCase):
     def test_single_tile_memory_limited(self):
-        # ~17.5 GiB task on 192 GB / 48 CPU node -> PPN 10
+        # ~17.5 GiB task on 192 GB / 48 CPU node -> raw PPN 10, minus margin 2 -> 8
         mem_mib = mem_per_task_mib(3692, 12136, BYTES_PER_PIXEL, num_tiles=1)
         ppn = compute_ppn(mem_mib, 192000, 48, num_tiles=1)
-        self.assertEqual(ppn, 10)
+        self.assertEqual(ppn, 8)
+
+    def test_etna_sized_scene_avoids_cliff_ppn(self):
+        # EtnaSenD124: 3558x7242, observed ~9.5 GiB peak; PPN=18 caused 3/64 OOM
+        mem_mib = mem_per_task_mib(3558, 7242, BYTES_PER_PIXEL, num_tiles=1)
+        ppn = compute_ppn(mem_mib, 192000, 48, num_tiles=1)
+        self.assertEqual(ppn, 16)
+
+    def test_big1_scene_uses_margin_two(self):
+        # miaplpy_Big1 2851x6354: margin 1 gave PPN=25 and 1/64 snaphu OOM
+        mem_mib = mem_per_task_mib(2851, 6354, BYTES_PER_PIXEL, num_tiles=1)
+        ppn = compute_ppn(mem_mib, 192000, 48, num_tiles=1)
+        self.assertEqual(ppn, 24)
 
     def test_tiled_25_cpu_capped_to_one(self):
         # OPERA-like: --nproc 25 on 48-core SKX -> at most one unwrap per node
@@ -83,10 +95,10 @@ class TestComputePpn(unittest.TestCase):
     def test_tiled_2_memory_and_cpu_cap(self):
         mem_mib = mem_per_task_mib(3692, 12136, BYTES_PER_PIXEL, num_tiles=2)
         ppn = compute_ppn(mem_mib, 192000, 48, num_tiles=2)
-        mem_ppn = int(math.floor(192000 / mem_mib))
+        mem_ppn = max(1, int(math.floor(192000 / mem_mib)) - 2)
         cpu_ppn = 48 // 2
         self.assertEqual(ppn, min(mem_ppn, cpu_ppn))
-        self.assertEqual(ppn, 21)
+        self.assertEqual(ppn, 19)
 
 
 class TestPlanJobSplitTiled(unittest.TestCase):

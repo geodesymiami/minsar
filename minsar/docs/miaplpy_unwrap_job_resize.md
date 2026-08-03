@@ -15,11 +15,11 @@ When unwrap commands use `--num_tiles N` with **N > 1**, MiaplPy/SNAPHU also run
 ```text
 # Single-tile (num_tiles == 1)
 mem_per_task_MiB = LENGTH * WIDTH * 420 / 1024^2
-LAUNCHER_PPN     = min(CPUS_PER_NODE, floor(MEM_PER_NODE_MB / mem_per_task_MiB))
+LAUNCHER_PPN     = min(CPUS_PER_NODE, max(1, floor(MEM_PER_NODE_MB / mem_per_task_MiB) - 2))
 
 # Tiled (num_tiles = N > 1); N parsed from unwrap_ifgram.py --num_tiles
 mem_per_task_MiB = (LENGTH * WIDTH * 420 / 1024^2) / N
-mem_ppn          = min(CPUS_PER_NODE, floor(MEM_PER_NODE_MB / mem_per_task_MiB))
+mem_ppn          = min(CPUS_PER_NODE, max(1, floor(MEM_PER_NODE_MB / mem_per_task_MiB) - 2))
 cpu_ppn          = max(1, CPUS_PER_NODE // N)
 LAUNCHER_PPN     = min(mem_ppn, cpu_ppn)
 
@@ -27,6 +27,8 @@ nodes_needed     = ceil(n_tasks / LAUNCHER_PPN)
 ```
 
 If `nodes_needed > MAX_NODES_PJ` (16 on `skx-dev`), create multiple `run_05_miaplpy_unwrap_ifgram_*.job` files, each with at most `MAX_NODES_PJ` nodes.
+
+The `- 2` safety margin avoids snaphu `malloc` failures when many unwraps start on the same node at once (launcher first wave). Margin 1 was still too thin for Etna `miaplpy_Big1` (PPN=25 → 1/64 OOM).
 
 Queue limits and memory come from `minsar/defaults/queues.cfg`.
 
