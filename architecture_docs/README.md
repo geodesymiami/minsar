@@ -69,6 +69,7 @@ minsarApp.bash
 | [ISCE2_UPGRADE.md](../docs/ISCE2_UPGRADE.md) | Interim CDSE fetchOrbit symlink; conda isce2 2.6.4 upgrade and **remove symlink** checklist | fetchOrbit / orbit download failures |
 | [1-BURST_ISCE_TROUBLESHOOTING.md](./1-BURST_ISCE_TROUBLESHOOTING.md) | Single-burst ISCE/TOPS patches; fetchOrbit SciHub vs CDSE | 1-burst stacks, misreg/merge errors |
 | [GEocode_HE5.md](./GEocode_HE5.md) | Geocode S1*.he5 (HDFEOS5) via thin wrapper over MintPy | Geocoding radar .he5 to geographic |
+| [HE5_NAMING.md](./HE5_NAMING.md) | `.he5` filename pattern for MintPy and MiaplPy (`save_hdfeos5.py`, suffixes, corners, update mode) | Understanding or predicting HE5 output names |
 | [tools/sarvey/docs/ARCHITECTURE.md](../tools/sarvey/docs/ARCHITECTURE.md) | SARvey: MTI time series tool (tools/sarvey), CLI, workflow, inputs | Using or integrating SARvey; displacement from SLC stack |
 
 ## Quick Lookup Tables
