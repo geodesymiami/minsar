@@ -258,8 +258,8 @@ Options:
       -g, --geom-file FILE1 FILE2     Geometry files for horzvert_timeseries.py
       --mask-thresh FLOAT             Coherence mask threshold (default: 0.55)
       --ref-lalo LAT LON              Reference point (required); also LAT,LON or --ref-lalo=LAT,LON
-      --lat-step FLOAT                Latitude step for geocoding (default: 0.0008)
-      --lalo-step LAT LON             Lat and lon step for geocoding
+      --lat-step FLOAT                Latitude step for geocoding (default: 0.0008; lon from --ref-lalo)
+      --lalo-step LAT LON             Lat and lon step for geocoding (default: 0.0008 and lon from --ref-lalo)
       --horz-az-angle FLOAT           Horizontal azimuth angle (default: 90)
       --window-size INT               Reference-point window (default: 3)
       --intervals INT                 Interval block index (default: 2)
