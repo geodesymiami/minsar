@@ -125,6 +125,7 @@ export PATH=${PATH}:${MINSAR_HOME}/tools/snaphu-v2.0.7/bin
 export PATH=${PATH}:${MINSAR_HOME}/tools/insarmaps_scripts
 export PATH=${PATH}:${MINSAR_HOME}/tools/emirhan_insarmaps_utils
 export PATH=${PATH}:${MINSAR_HOME}/tools/autoencoder
+export PATH=${PATH}:${MINSAR_HOME}/tools/etna-slider/comparison/scripts
 export PATH=${PATH}:${MINSAR_HOME}/tools/MakeTemplate/src/maketemplate/cli
 export PATH=${PATH}:${PROJ_LIB}
 export PATH=${PATH}:${MINSAR_HOME}/tools/S4I/viewer4falk
