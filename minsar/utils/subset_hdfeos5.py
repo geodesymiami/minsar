@@ -521,14 +521,14 @@ def create_parser(subparsers=None):
     synopsis = 'Subset file(s), including HDFEOS5 (e.g. from save_hdfeos5). Uses geometry in file; errors if missing.'
     epilog = """
 Examples:
-  subset.py S1_desc_120_142_mintpy_20141025_XXXXXXXX.he5 --subset-lalo=30.5:31.0,130.0:131.0
-  subset.py file.he5 -l 30.5 31.0 -L 130.0 131.0
-  subset.py file.he5 -y 0 500 -x 0 400
-  subset.py file.he5 -r reference.h5
-  subset.py file.he5 -t template.txt
-  subset.py file.he5 geometryRadar.h5 --lookup geometryRadar.h5 -l 36.60 36.61 -L 24.90 24.92
+  subset_hdfeos5.py S1_desc_120_142_mintpy_20141025_XXXXXXXX.he5 --subset-lalo=30.5:31.0,130.0:131.0
+  subset_hdfeos5.py file.he5 -l 30.5 31.0 -L 130.0 131.0
+  subset_hdfeos5.py file.he5 -y 0 500 -x 0 400
+  subset_hdfeos5.py file.he5 -r reference.h5
+  subset_hdfeos5.py file.he5 -t template.txt
+  subset_hdfeos5.py file.he5 geometryRadar.h5 --lookup geometryRadar.h5 -l 36.60 36.61 -L 24.90 24.92
 """
-    name = __name__.split('.')[-1] if '__name__' in dir() else 'subset'
+    name = __name__.split('.')[-1] if '__name__' in dir() else 'subset_hdfeos5'
     parser = create_argument_parser(
         name, synopsis=synopsis, description=synopsis, epilog=epilog, subparsers=subparsers
     )
