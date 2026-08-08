@@ -1,7 +1,7 @@
-# Plan: Retire MintPy overlay for subset.py; keep HDFEOS helper as minsar util
+# Plan: Fix `subset_sarvey.bash` to use stock MintPy `--lookup`
 
 ## Status: DONE
 
-- Moved `additions/mintpy/subset.py` → `minsar/utils/subset_hdfeos5.py`
-- Removed `ln -sf …/subset.py …/mintpy/cli` from `setup/install_minsar.bash`
-- `update_symlinks.py --dry-run`: no subset overlay; "All sym links are in place"
+- Dropped Falk MintPy branch / `latest_mintpy_version_flag`
+- Always: `subset.py … --lookup geometryRadar.h5` for `slcStack.h5` and `geometryRadar.h5`
+- Left `display_bbox.py` unchanged
