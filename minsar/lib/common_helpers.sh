@@ -41,14 +41,139 @@ fi
 }
 ###########################################
 function changequeuepvc() {
-if [[ "$1" == "--help" || "$1" == "-h" ]]; then
-   echo "  Usage: changequeuepvc run_10*.job"; return
-fi
-if [[ $PLATFORM_NAME == "stampede3" ]] ; then
-          sed -i "s|skx-dev|pvc|g" "$@" ;
-          sed -i "s|skx|pvc|g" "$@" ;
-          sed -i "s/^#SBATCH -n \s*[0-9]\+/#SBATCH -n ${cpus_per_node_icx}/" "$@"
-fi
+  local walltime="7:00:00"
+  local -a positionals=()
+  local -a jobfile_globs=()
+  local -a job_files=()
+  local jobfiles_set=0
+  local dir=""
+  local g f
+  local -a matches
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --help|-h)
+        echo "Usage: changequeuepvc [--walltime HH:MM:SS] [--jobfiles GLOB ...] FILE.job|DIR"
+        echo "  stampede3: set partition to pvc, -n=${cpus_per_node_icx}, walltime (default 7:00:00)"
+        echo "  DIR mode: select .job files via --jobfiles (default: run_06*.job run_07*.job run_08*.job run_09*.job)"
+        echo
+        echo "Examples:"
+        echo "changequeuepvc run_09*.job"
+        echo "changequeuepvc --walltime 2:00:00 run_09*.job"
+        echo "changequeuepvc run_files/"
+        echo "changequeuepvc run_files/ --jobfiles run_08*.job run_09*.job"
+        echo "changequeuepvc --walltime 2:00:00 run_files/"
+        return 0
+        ;;
+      --walltime|-t)
+        if [[ -z "${2:-}" ]]; then
+          echo "Error: --walltime requires HH:MM:SS" >&2
+          return 1
+        fi
+        walltime="$2"
+        shift 2
+        ;;
+      --jobfiles)
+        jobfiles_set=1
+        shift
+        while [[ $# -gt 0 ]]; do
+          case "$1" in
+            -?*|--*) break ;;
+            *)
+              jobfile_globs+=("$1")
+              shift
+              ;;
+          esac
+        done
+        if [[ ${#jobfile_globs[@]} -lt 1 ]]; then
+          echo "Error: --jobfiles requires at least one GLOB" >&2
+          return 1
+        fi
+        ;;
+      -?*|--*)
+        echo "Error: Unknown option: $1" >&2
+        echo "Use changequeuepvc --help for available options" >&2
+        return 1
+        ;;
+      *)
+        positionals+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  if [[ ${#positionals[@]} -lt 1 ]]; then
+    echo "Usage: changequeuepvc [--walltime HH:MM:SS] [--jobfiles GLOB ...] FILE.job|DIR"
+    echo "Use changequeuepvc --help for more information"
+    return 1
+  fi
+
+  if [[ ! "$walltime" =~ ^[0-9]{1,2}:[0-9]{2}(:[0-9]{2})?$ ]]; then
+    echo "Error: --walltime must be HH:MM or HH:MM:SS, got: $walltime" >&2
+    return 1
+  fi
+
+  # Directory mode: exactly one positional that is a directory
+  if [[ ${#positionals[@]} -eq 1 && -d "${positionals[0]}" ]]; then
+    dir="${positionals[0]}"
+    dir="${dir%/}"
+    if [[ $jobfiles_set -eq 0 ]]; then
+      # Quote patterns so cwd pathname expansion does not rewrite them
+      jobfile_globs=('run_06*.job' 'run_07*.job' 'run_08*.job' 'run_09*.job')
+    fi
+    job_files=()
+    shopt -s nullglob
+    for g in "${jobfile_globs[@]}"; do
+      matches=( "${dir}"/${g} )
+      for f in "${matches[@]}"; do
+        [[ -f "$f" ]] || continue
+        job_files+=("$f")
+      done
+    done
+    shopt -u nullglob
+    if [[ ${#job_files[@]} -lt 1 ]]; then
+      echo "Error: no job files matched in ${dir}/ with pattern(s): ${jobfile_globs[*]}" >&2
+      return 1
+    fi
+  else
+    if [[ $jobfiles_set -eq 1 ]]; then
+      echo "Error: --jobfiles is only valid with a directory argument" >&2
+      return 1
+    fi
+    # One positional that is a directory but -d failed earlier is impossible here;
+    # still reject directories so we never pass them to sed.
+    job_files=()
+    for f in "${positionals[@]}"; do
+      if [[ -d "$f" ]]; then
+        echo "Error: directory given but job files were not resolved: $f" >&2
+        echo "Hint: re-source helpers: source \"\${MINSAR_HOME}/minsar/lib/common_helpers.sh\"" >&2
+        return 1
+      fi
+      if [[ ! -f "$f" ]]; then
+        echo "Error: not a file or directory: $f" >&2
+        return 1
+      fi
+      job_files+=("$f")
+    done
+  fi
+
+  if [[ ${#job_files[@]} -lt 1 ]]; then
+    echo "Error: no job files to update" >&2
+    return 1
+  fi
+  for f in "${job_files[@]}"; do
+    if [[ ! -f "$f" ]]; then
+      echo "Error: refusing to edit non-file: $f" >&2
+      return 1
+    fi
+  done
+
+  if [[ "${PLATFORM_NAME}" == "stampede3" ]]; then
+    sed -i "s|skx-dev|pvc|g" "${job_files[@]}"
+    sed -i "s|skx|pvc|g" "${job_files[@]}"
+    sed -i "s/^#SBATCH -n \s*[0-9]\+/#SBATCH -n ${cpus_per_node_icx}/" "${job_files[@]}"
+    sed -i "s/^#SBATCH -t .*/#SBATCH -t ${walltime}/" "${job_files[@]}"
+  fi
 }
 ###########################################
 ###########################################
