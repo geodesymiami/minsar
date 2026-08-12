@@ -21,7 +21,7 @@ Options:
   --root DIR       Scratch parent (default: \$SCRATCHDIR)
   --miaplpy YEARS  Strip stale *miaplpy* (keep pic/; default 2; YEARS may be decimal)
   --mintpy YEARS   Strip stale *mintpy* (keep pic/; default 2)
-  --keep-filt      Under *miaplpy*, only remove old *_Del4DS*/*_Del4PS* (no full strip)
+  --keep-filt      Under *miaplpy*, remove old *.he5 except *filt* and *_???????????.he5 (no full strip)
   --keep-he5       Never delete *.he5 files
   --inputs YEARS   Remove old miaplpy*/inputs/{slcStack,geometryRadar}.h5 (default 1)
   --pic YEARS      Remove old pic/ outside *miaplpy*/*mintpy* (default 5)
@@ -333,7 +333,8 @@ strip_stale_named_dirs() {
     done < <(find "${SCOPES[@]}" -type d -name "$name_glob" -print0 2>/dev/null)
 }
 
-# Under *miaplpy*: remove *_Del4DS* / *_Del4PS* older than DAYS (keeps filtDel4* and other .he5).
+# Under *miaplpy*: remove old *.he5 except *filt* and names ending in _ + 11 chars + .he5
+# (e.g. ..._N3654E02710.he5; not necessarily N/E).
 remove_keepfilt_del4_files() {
     local days="$1"
     local f
@@ -341,8 +342,9 @@ remove_keepfilt_del4_files() {
         return 0
     fi
     while IFS= read -r -d $'\0' f; do
-        remove_file "$f" "keepfilt"
-    done < <(find "${SCOPES[@]}" -type f -path '*/miaplpy*/*' \( -name '*_Del4DS*' -o -name '*_Del4PS*' \) \
+        remove_file "$f" "keep-filt"
+    done < <(find "${SCOPES[@]}" -type f -path '*/miaplpy*/*' -name '*.he5' \
+        ! -name '*filt*.he5' ! -name '*_???????????.he5' \
         -mtime +"${days}" -print0 2>/dev/null)
 }
 
@@ -460,7 +462,7 @@ print_removal_report() {
             "mintpy strip") has_mintpy=1 ;;
             "old inputs") has_inputs=1 ;;
             "old pic") has_pic=1 ;;
-            "keepfilt") has_keepfilt=1 ;;
+            "keep-filt") has_keepfilt=1 ;;
         esac
     done < "$CAND_FILE"
 
@@ -549,7 +551,7 @@ print_usage_report() {
 log_cmd "$@"
 [[ "$DRY_RUN" -eq 1 ]] && echo "Mode: DRY-RUN"
 [[ "$SUMMARY_ONLY" -eq 1 ]] && echo "Mode: SUMMARY only"
-[[ "$KEEP_FILT" -eq 1 ]] && echo "Mode: keep-filt (miaplpy Del4 only)"
+[[ "$KEEP_FILT" -eq 1 ]] && echo "Mode: keep-filt (keep filt + *_???????????.he5)"
 [[ "$KEEP_HE5" -eq 1 ]] && echo "Mode: keep-he5"
 [[ "$SHOW_ALL" -eq 1 ]] && echo "Mode: show-all"
 

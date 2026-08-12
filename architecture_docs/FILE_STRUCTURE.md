@@ -13,6 +13,7 @@ High-level layout for navigation. The main workflow entry points live under `min
 | `minsar/scripts/calculate_bbox_for_miaplpy_subset_lalo.py` | Expand AOI → Asc/Desc `miaplpy.subset.lalo` using platform heading |
 | `minsar/utils/miaplpy_subset_lalo_expand.py` | Heading-based AOI expansion helpers for that CLI |
 | `minsar/utils/subset_hdfeos5.py` | Optional HDFEOS5 (`.he5`) spatial subset CLI (not a MintPy overlay; stock MintPy `subset.py` used for `.h5`) |
+| `minsar/utils/clean_dir.bash` | Purge stale `*miaplpy*`/`*mintpy*` under `$SCRATCHDIR` (keep `pics/` unless `--pics`); `--keepfilt` for Del4-only; decimal YEARS; multi/prefix `PROJECT`; `--inputs`; `--summary` / `--dry-run` |
 | `minsar/scripts/egms_search.py` | Search EGMS products (CLMS archive API; `--print`, `--json-out`, `--write-curl`) |
 | `minsar/scripts/egms_search_unstable.py` | EGMS search with `--relativeOrbit` + `--swath` client-side filter (API workaround) |
 | `minsar/scripts/filter_egms_hits.py` | Local filter of EGMS search JSON (orbit/swath/direction) + curl/URL lists |
