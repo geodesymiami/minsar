@@ -60,9 +60,9 @@ function changequeuepvc() {
         echo "Examples:"
         echo "changequeuepvc run_09*.job"
         echo "changequeuepvc --walltime 2:00:00 run_09*.job"
-        echo "changequeuepvc run_files/"
-        echo "changequeuepvc run_files/ --jobfiles run_08*.job run_09*.job"
-        echo "changequeuepvc --walltime 2:00:00 run_files/"
+        echo "changequeuepvc miaplpy/network_delaunay_4/run_files"
+        echo "changequeuepvc miaplpy/network_delaunay_4/run_files --jobfiles run_08*.job run_09*.job"
+        echo "changequeuepvc --walltime 2:00:00 miaplpy/network_delaunay_4/run_files"
         return 0
         ;;
       --walltime|-t)
@@ -173,6 +173,8 @@ function changequeuepvc() {
     sed -i "s|skx|pvc|g" "${job_files[@]}"
     sed -i "s/^#SBATCH -n \s*[0-9]\+/#SBATCH -n ${cpus_per_node_icx}/" "${job_files[@]}"
     sed -i "s/^#SBATCH -t .*/#SBATCH -t ${walltime}/" "${job_files[@]}"
+    echo "Modified ${#job_files[@]} jobfile(s):"
+    printf '  %s\n' "${job_files[@]}"
   fi
 }
 ###########################################

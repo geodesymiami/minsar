@@ -837,12 +837,17 @@ if [[ $miaplpy_flag == "1" ]]; then
        run_command "create_jobfile_to_generate_miaplpy_jobfiles.py $template_file $miaplpy_dir_name"
        run_command "run_workflow.bash $template_file --jobfile $PWD/create_miaplpy_jobfiles.job"
 
-       # Run miaplpy jobfiles. After step 1 (load_data), resize run_05 unwrap packing from slcStack.h5, then continue from step 2.
-       if [[ "$miaplpy_startstep" == "1" ]]; then
-           run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 1 --stop 1"
-           run_command "resize_miaplpy_unwrap_jobfiles.py $miaplpy_dir_name"
-           if [[ "$miaplpy_stopstep" != "1" ]]; then
-               run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 2 --stop $miaplpy_stopstep"
+       # Resize run_05 unwrap packing when start <= 5 (before unwrap).
+       if [[ "$miaplpy_startstep" -le 5 ]]; then
+           if [[ "$miaplpy_startstep" -eq 1 ]]; then
+               run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 1 --stop 1"
+               run_command "resize_miaplpy_unwrap_jobfiles.py $miaplpy_dir_name"
+               if [[ "$miaplpy_stopstep" != "1" ]]; then
+                   run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start 2 --stop $miaplpy_stopstep"
+               fi
+           else
+               run_command "resize_miaplpy_unwrap_jobfiles.py $miaplpy_dir_name"
+               run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start $miaplpy_startstep --stop $miaplpy_stopstep"
            fi
        else
            run_command "run_workflow.bash $template_file --dir $miaplpy_dir_name --start $miaplpy_startstep --stop $miaplpy_stopstep"

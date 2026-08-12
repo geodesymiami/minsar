@@ -42,13 +42,11 @@ OPERA-like ~2 Mpx tiles for a ~45 Mpx scene: `tileNumPixels ≈ 1790000` →
 
 ## Automation in `minsarApp.bash`
 
-When `--miaplpy` starts at step 1, `minsarApp.bash` runs:
+When miaplpy starts at step ≤ 5, `minsarApp.bash` runs `resize_miaplpy_unwrap_jobfiles.py` before unwrap (step 5):
 
-1. `run_workflow.bash … --start 1 --stop 1` (load_data → `inputs/slcStack.h5`)
-2. `resize_miaplpy_unwrap_jobfiles.py <miaplpy_dir>`
-3. `run_workflow.bash … --start 2 --stop <miaplpy_stop>` (skipped if `--miaplpy-stop 1`)
-
-If `--miaplpy-start` is greater than 1, the resize step is skipped (resume path).
+- `--start miaplpy` (start step 1): load_data → resize → continue from step 2
+- `--miaplpy-start 2`…`5`: resize, then run from that step
+- `--miaplpy-start` ≥ 6: resize is skipped (past unwrap)
 
 ## Manual recipe (same sequence)
 
