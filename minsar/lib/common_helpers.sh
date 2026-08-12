@@ -451,27 +451,71 @@ fi
 function rsyncTJ() {
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
 helptext="            \n\
-  rsyncTJ:  rsync directory TO JETSTREAM server from local $SCRATCHDIR \n\
+  rsyncTJ:  rsync directory or file TO JETSTREAM under /data/HDF5EOS/<path-relative-to-\$SCRATCHDIR> \n\
+                                                 \n\
+  Works from \$SCRATCHDIR or any subdirectory.   \n\
                                                  \n\
   Examples:                                      \n\
-            (from $SCRATCHDIR:)                  \n\
-     rsyncTJ MaunLoaSenAT124                     \n\
+     (from \$SCRATCHDIR:)                        \n\
+       rsyncTJ q1EtnaSenD128                     \n\
+       rsyncTJ q1EtnaSenD128/miaplpy_*/network_*/file.he5 \n\
                                                  \n\
-            (from /scratch/MaunaLoaSenAT124:)     \n\
-     rsyncTJ                                     \n\
+     (from project dir:)                         \n\
+       rsyncTJ                                   \n\
+       rsyncTJ miaplpy_*/network_*/file.he5      \n\
+                                                 \n\
+     (from a deep subdir:)                       \n\
+       rsyncTJ file.he5                          \n\
     "
     printf "$helptext"
     return
 fi
 
-if [[ $# -eq 0 && $(basename $(dirname $PWD)) == "scratch" ]]; then
-  dir=$(basename $PWD)
-else
-  dir=$1
+if [[ -z "$SCRATCHDIR" ]]; then
+  echo "ERROR: SCRATCHDIR is not set"
+  return 1
 fi
 
-echo "Syncing directory $dir from jetstream:"
-cmd="rsync -avzh --progress $SCRATCHDIR/$dir/ exouser@149.165.154.65:/data/HDF5EOS/$dir "
+# Resolve local source: cwd-relative first, then \$SCRATCHDIR-relative; no-arg = current dir
+if [[ $# -eq 0 ]]; then
+  local_src="$PWD"
+else
+  arg="$1"
+  if [[ -e "$PWD/$arg" ]]; then
+    if [[ -d "$PWD/$arg" ]]; then
+      local_src="$(cd "$PWD/$arg" && pwd)"
+    else
+      local_src="$(cd "$(dirname "$PWD/$arg")" && pwd)/$(basename "$arg")"
+    fi
+  elif [[ -e "$SCRATCHDIR/$arg" ]]; then
+    if [[ -d "$SCRATCHDIR/$arg" ]]; then
+      local_src="$(cd "$SCRATCHDIR/$arg" && pwd)"
+    else
+      local_src="$(cd "$(dirname "$SCRATCHDIR/$arg")" && pwd)/$(basename "$arg")"
+    fi
+  else
+    echo "ERROR: $arg not found under \$PWD ($PWD) or \$SCRATCHDIR ($SCRATCHDIR)"
+    return 1
+  fi
+fi
+
+if [[ "$local_src" != "$SCRATCHDIR" && "$local_src" != "$SCRATCHDIR"/* ]]; then
+  echo "ERROR: $local_src is not under \$SCRATCHDIR ($SCRATCHDIR)"
+  return 1
+fi
+
+remote_rel="${local_src#"$SCRATCHDIR"/}"
+
+if [[ -f "$local_src" ]]; then
+  echo "Syncing file $remote_rel to jetstream:"
+  cmd="rsync -avzh --progress $local_src exouser@149.165.154.65:/data/HDF5EOS/$remote_rel"
+elif [[ -d "$local_src" ]]; then
+  echo "Syncing directory $remote_rel to jetstream:"
+  cmd="rsync -avzh --progress $local_src/ exouser@149.165.154.65:/data/HDF5EOS/$remote_rel "
+else
+  echo "ERROR: $local_src is neither a file nor a directory"
+  return 1
+fi
 echo running ... $cmd
 $cmd
 }

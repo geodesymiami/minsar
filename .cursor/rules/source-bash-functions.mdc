@@ -1,0 +1,14 @@
+---
+description: When bash function/script changes seem broken, ask if the user re-sourced
+alwaysApply: true
+---
+
+# Re-source bash functions before debugging
+
+When the user reports that a recent change to a **bash function** or **sourced shell helper** (e.g. in `minsar/lib/*.sh`, `common_helpers.sh`, `environment.bash`) is not working, or that behavior still matches the old code:
+
+1. **Ask first** whether they re-sourced the environment / functions in that shell (e.g. `source $MINSAR_HOME/setup/environment.bash` or their usual `s.bw2` / equivalent).
+2. Treat an unsourced interactive shell as the likely cause if symptoms match the old implementation (old echo text, old flags, trailing `/` on files, etc.).
+3. Only then dig into logic bugs, alternate definitions, or PATH issues.
+
+Do not assume the running shell picked up file edits automatically — bash functions are loaded at source time.
