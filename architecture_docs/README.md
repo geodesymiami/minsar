@@ -88,7 +88,7 @@ minsarApp.bash
 
 **`mintpy.plot` policy:** `docs/dummy_miaplpy_1.template` defaults to `mintpy.plot = no`. `create_template.py` sets `yes` when `(ssaraopt.endDate − ssaraopt.startDate).days <= 365` (`endDate=auto` → today); `--mintpy-plot` / `--mintpy-no-plot` override. Summary PNGs (not per-ifgram) run via `plot_mintpy_summary_pngs.py` when work-dir `smallbaselineApp.cfg` has `mintpy.plot = no` — MintPy jobfile (`create_mintpy_jobfile.py`) and MiaplPy step 10 (`create_save_hdfeos5_jobfile.py` → `save_miaplpy_hdfeos5.bash`). If `$TE` omits `mintpy.plot`, the mintpy jobfile injects the span rule into a local `.minsar_mintpy_template.template` (does not rewrite `$TE`).
 
-When miaplpy starts at step 1, `minsarApp.bash` runs step 1, then `resize_miaplpy_unwrap_jobfiles.py` (snaphu PPN/nodes from `slcStack.h5`), then steps 2… (see `minsar/docs/miaplpy_unwrap_job_resize.md`).
+When miaplpy starts at step ≤ 5, `minsarApp.bash` runs `resize_miaplpy_unwrap_jobfiles.py` (snaphu PPN/nodes from `slcStack.h5`) before unwrap; for `--start miaplpy` that is after step 1 (see `minsar/docs/miaplpy_unwrap_job_resize.md`).
 
 MiaplPy step 10 (`run_10_save_hdfeos5_radar_0.job`) is built by `create_save_hdfeos5_jobfile.py` and runs `save_miaplpy_hdfeos5.bash` (parallel HE5 export/geocode), then `plot_mintpy_summary_pngs.py` only if `mintpy.plot = no` in `smallbaselineApp.cfg`.
 
