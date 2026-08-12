@@ -1,65 +1,55 @@
 #!/usr/bin/env bash
-# clean_dir.bash -- purge stale projects / selected MiaplPy products under $SCRATCHDIR
+# clean_dir.bash -- purge stale miaplpy/mintpy trees and selected products under $SCRATCHDIR
 set -eo pipefail
 
 SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
 
-# Top-level dirs eligible for stale removal must contain a satellite+track token, e.g.:
-#   EtnaSenA44, EtnaSenAT44, EtnaSenDT128, EtnaTsxSMD36, KilaueaCskAT10, AlcedotestEnvD140
-# Bash ERE (used with [[ =~ ]])
-SAT_TRACK_RE='(Sen[AD]T?[0-9]+|Tsx[A-Za-z]*[0-9]+|Csk[A-Za-z]*[0-9]+|Env[A-Za-z]*[0-9]+|Alos[A-Za-z0-9]*[0-9]+)'
-
-# How many largest entries to show (largest last)
 SUMMARY_TOP_DIRS=20
 SUMMARY_TOP_FILES=50
 DRY_RUN_TOP=20
-# Stale projects older than this (years) are removed entirely, including pics/
-STALE_FULL_YEARS=10
 
 print_help() {
     cat <<EOF
-Purge stale top-level projects and selected MiaplPy products under a scratch root,
-then report disk usage. With --summary, only report usage (no deletes).
 
-Stale top-level cleanup only applies to dirs whose names contain a satellite+track
-abbreviation (e.g. EtnaSenA44, EtnaSenAT44, EtnaTsxSMD36). Never touches famelung
-or names without that pattern (e.g. Etna).
-
-For --stale: strip eligible project contents but keep pics/ (full wipe if nothing
-newer than ${STALE_FULL_YEARS}y). Also remove *Del4DS*/*Del4PS*.he5 under
-miaplpy*/network_* older than --stale YEARS.
+purge stale miaplpy*, mintpy* and inputs dirs (keep pic/).
 
 Usage: $SCRIPT_NAME [OPTIONS] [PROJECT ...]
 
-  PROJECT   Optional. One or more names under \$SCRATCHDIR (e.g. EtnaSenD124),
-            absolute paths, or prefixes (LangilaSen → LangilaSen*). Globs in the
-            name (LangilaSen*) are expanded under --root. If omitted, all
-            projects under --root are scanned.
+  PROJECT   Optional. One or more names under \$SCRATCHDIR (e.g. EtnaSenD124 or EtnaSen)
 
 Options:
-  --root DIR       Scratch parent (default: \$SCRATCHDIR); used to resolve PROJECT
-  --stale YEARS    Project strip + Del4DS/Del4PS .he5 age cutoff (default: 2; full wipe >${STALE_FULL_YEARS}y)
-  --inputs YEARS   Age cutoff for miaplpy*/inputs/{slcStack,geometryRadar}.h5 (default: 1)
-  --pics YEARS     Remove pics/ dirs with no file newer than YEARS (default: 5)
+  --root DIR       Scratch parent (default: \$SCRATCHDIR)
+  --miaplpy YEARS  Strip stale *miaplpy* (keep pic/; default 2; YEARS may be decimal)
+  --mintpy YEARS   Strip stale *mintpy* (keep pic/; default 2)
+  --keep-filt      Under *miaplpy*, only remove old *_Del4DS*/*_Del4PS* (no full strip)
+  --keep-he5       Never delete *.he5 files
+  --inputs YEARS   Remove old miaplpy*/inputs/{slcStack,geometryRadar}.h5 (default 1)
+  --pic YEARS      Remove old pic/ outside *miaplpy*/*mintpy* (default 5)
   --dry-run        Preview removals (top ${DRY_RUN_TOP} by size); nothing deleted
+  --show-all       List all removed/would-remove paths (not only top ${DRY_RUN_TOP})
   --summary        Print largest top-level dirs and largest files
   -h, --help       Show this help
 
 Examples:
   $SCRIPT_NAME --dry-run
   $SCRIPT_NAME --dry-run EtnaSenD124
-  $SCRIPT_NAME LangilaSen --dry-run --stale 1
-  $SCRIPT_NAME --dry-run --stale 3 --inputs 2 --pics 5
+  $SCRIPT_NAME LangilaSen --dry-run --miaplpy 0.5 --keep-filt
+  $SCRIPT_NAME LangilaSen --miaplpy 0.5 --keep-he5 --show-all
+  $SCRIPT_NAME --dry-run --miaplpy 3 --mintpy 3 --inputs 2 --pic 5
 EOF
 }
 
 ROOT=""
 TARGET_ARGS=()
-STALE_YEARS=2
+MIAPLPY_YEARS=2
+MINTPY_YEARS=2
 INPUTS_YEARS=1
-PICS_YEARS=5
+PIC_YEARS=5
 DRY_RUN=0
 SUMMARY_ONLY=0
+KEEP_FILT=0
+KEEP_HE5=0
+SHOW_ALL=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -67,17 +57,33 @@ while [[ $# -gt 0 ]]; do
             ROOT="$2"
             shift 2
             ;;
-        --stale)
-            STALE_YEARS="$2"
+        --miaplpy)
+            MIAPLPY_YEARS="$2"
+            shift 2
+            ;;
+        --mintpy)
+            MINTPY_YEARS="$2"
             shift 2
             ;;
         --inputs)
             INPUTS_YEARS="$2"
             shift 2
             ;;
-        --pics)
-            PICS_YEARS="$2"
+        --pic)
+            PIC_YEARS="$2"
             shift 2
+            ;;
+        --keep-filt)
+            KEEP_FILT=1
+            shift
+            ;;
+        --keep-he5)
+            KEEP_HE5=1
+            shift
+            ;;
+        --show-all)
+            SHOW_ALL=1
+            shift
             ;;
         --dry-run)
             DRY_RUN=1
@@ -116,14 +122,19 @@ if [[ ! -d "$ROOT" ]]; then
     exit 1
 fi
 
-for pair in "STALE_YEARS:$STALE_YEARS" "INPUTS_YEARS:$INPUTS_YEARS" "PICS_YEARS:$PICS_YEARS"; do
+for pair in "MIAPLPY_YEARS:$MIAPLPY_YEARS" "MINTPY_YEARS:$MINTPY_YEARS" "INPUTS_YEARS:$INPUTS_YEARS" "PIC_YEARS:$PIC_YEARS"; do
     name="${pair%%:*}"
     val="${pair#*:}"
-    if [[ ! "$val" =~ ^[0-9]+$ ]]; then
-        echo "Error: $name must be a non-negative integer (got: $val)" >&2
+    if [[ ! "$val" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+        echo "Error: $name must be a non-negative number (got: $val)" >&2
         exit 1
     fi
 done
+
+# find -mtime needs integer days; round years*365 to nearest day.
+years_to_days() {
+    awk -v y="$1" 'BEGIN { d = y * 365; if (d < 0) d = 0; printf "%d", int(d + 0.5) }'
+}
 
 ROOT="$(cd "$ROOT" && pwd)"
 
@@ -216,10 +227,10 @@ else
     SCOPES=("$ROOT")
 fi
 
-STALE_DAYS=$((STALE_YEARS * 365))
-STALE_FULL_DAYS=$((STALE_FULL_YEARS * 365))
-INPUTS_DAYS=$((INPUTS_YEARS * 365))
-PICS_DAYS=$((PICS_YEARS * 365))
+MIAPLPY_DAYS="$(years_to_days "$MIAPLPY_YEARS")"
+MINTPY_DAYS="$(years_to_days "$MINTPY_YEARS")"
+INPUTS_DAYS="$(years_to_days "$INPUTS_YEARS")"
+PIC_DAYS="$(years_to_days "$PIC_YEARS")"
 
 # Candidate list: lines are "BYTES<TAB>PATH" (used for dry-run and quiet execute summary)
 CAND_FILE=""
@@ -238,13 +249,6 @@ log_cmd() {
     fi
 }
 
-# True if basename is eligible for stale project removal (satellite+track in name).
-is_stale_removal_candidate() {
-    local base="$1"
-    [[ "$base" == "famelung" ]] && return 1
-    [[ "$base" =~ $SAT_TRACK_RE ]]
-}
-
 # True if any regular file under dir is newer than N days.
 has_file_newer_than_days() {
     local dir="$1"
@@ -252,27 +256,94 @@ has_file_newer_than_days() {
     find "$dir" -type f -mtime -"${days}" -print -quit 2>/dev/null | grep -q .
 }
 
-# Remove all top-level entries in project except pics/
-remove_project_keep_pics() {
-    local proj="$1"
+# Like has_file_newer_than_days, but ignore pic/ (kept separately).
+has_file_newer_than_days_excluding_pic() {
+    local dir="$1"
+    local days="$2"
+    find "$dir" -type f ! -path '*/pic/*' -mtime -"${days}" -print -quit 2>/dev/null | grep -q .
+}
+
+# True if path is a pic/ directory under a *miaplpy* or *mintpy* tree.
+is_miaplpy_or_mintpy_pic() {
+    local p="$1"
+    local d b
+    [[ "$(basename "$p")" == "pic" ]] || return 1
+    d="$(dirname "$p")"
+    while [[ -n "$d" && "$d" != "/" && "$d" != "." ]]; do
+        b="$(basename "$d")"
+        if [[ "$b" == *miaplpy* || "$b" == *mintpy* ]]; then
+            return 0
+        fi
+        d="$(dirname "$d")"
+    done
+    return 1
+}
+
+# True if directory contains any *.he5 file.
+dir_has_he5() {
+    local dir="$1"
+    find "$dir" -type f -name '*.he5' -print -quit 2>/dev/null | grep -q .
+}
+
+# Strip dir contents but keep every pic/ directory anywhere in the tree.
+# With --keep-he5, also leave all *.he5 files in place.
+remove_dir_keep_pic() {
+    local dir="$1"
+    local reason="${2:-strip}"
     local item base
     local saved_nullglob=0
     shopt -q nullglob && saved_nullglob=1
     shopt -s nullglob
-    for item in "$proj"/*; do
+    for item in "$dir"/*; do
         base="$(basename "$item")"
-        if [[ "$base" == "pics" ]]; then
+        if [[ "$base" == "pic" ]]; then
+            continue
+        fi
+        if [[ -f "$item" && "$KEEP_HE5" -eq 1 && "$base" == *.he5 ]]; then
             continue
         fi
         if [[ -d "$item" && ! -L "$item" ]]; then
-            remove_dir "$item"
+            if find "$item" -type d -name pic -print -quit 2>/dev/null | grep -q . \
+                || { [[ "$KEEP_HE5" -eq 1 ]] && dir_has_he5 "$item"; }; then
+                # Nested pic/ and/or .he5: clean inside, do not remove wholesale
+                remove_dir_keep_pic "$item" "$reason"
+            else
+                remove_dir "$item" "$reason"
+            fi
         else
-            remove_file "$item"
+            remove_file "$item" "$reason"
         fi
     done
     if [[ "$saved_nullglob" -eq 0 ]]; then
         shopt -u nullglob
     fi
+}
+
+# Strip matching processing dirs older than DAYS (always keep pic/ anywhere under them).
+strip_stale_named_dirs() {
+    local name_glob="$1"
+    local days="$2"
+    local reason="$3"
+    local procdir
+    while IFS= read -r -d $'\0' procdir; do
+        if has_file_newer_than_days_excluding_pic "$procdir" "$days"; then
+            continue
+        fi
+        remove_dir_keep_pic "$procdir" "$reason"
+    done < <(find "${SCOPES[@]}" -type d -name "$name_glob" -print0 2>/dev/null)
+}
+
+# Under *miaplpy*: remove *_Del4DS* / *_Del4PS* older than DAYS (keeps filtDel4* and other .he5).
+remove_keepfilt_del4_files() {
+    local days="$1"
+    local f
+    if [[ "$KEEP_HE5" -eq 1 ]]; then
+        return 0
+    fi
+    while IFS= read -r -d $'\0' f; do
+        remove_file "$f" "keepfilt"
+    done < <(find "${SCOPES[@]}" -type f -path '*/miaplpy*/*' \( -name '*_Del4DS*' -o -name '*_Del4PS*' \) \
+        -mtime +"${days}" -print0 2>/dev/null)
 }
 
 file_bytes() {
@@ -306,17 +377,24 @@ human_gib() {
 }
 
 # Record a path that will be / was removed (size before delete).
-# CAND_FILE lines: BYTES<TAB>PATH
+# CAND_FILE lines: BYTES<TAB>REASON<TAB>PATH
 record_candidate() {
     local p="$1"
+    local reason="${2:-remove}"
     local sz
     sz="$(path_bytes "$p")"
-    printf '%s\t%s\n' "$sz" "$p" >> "$CAND_FILE"
+    printf '%s\t%s\t%s\n' "$sz" "$reason" "$p" >> "$CAND_FILE"
 }
 
 remove_file() {
     local f="$1"
-    record_candidate "$f"
+    local reason="${2:-remove}"
+    local base
+    base="$(basename "$f")"
+    if [[ "$KEEP_HE5" -eq 1 && "$base" == *.he5 ]]; then
+        return 0
+    fi
+    record_candidate "$f" "$reason"
     if [[ "$DRY_RUN" -eq 0 ]]; then
         rm -f "$f"
     fi
@@ -324,7 +402,12 @@ remove_file() {
 
 remove_dir() {
     local d="$1"
-    record_candidate "$d"
+    local reason="${2:-remove}"
+    if [[ "$KEEP_HE5" -eq 1 ]] && dir_has_he5 "$d"; then
+        remove_dir_keep_pic "$d" "$reason"
+        return 0
+    fi
+    record_candidate "$d" "$reason"
     if [[ "$DRY_RUN" -eq 0 ]]; then
         rm -rf "$d"
     fi
@@ -332,7 +415,16 @@ remove_dir() {
 
 # CLI options line for dry-run (includes optional PROJECT args as given).
 options_used_line() {
-    local line="$SCRIPT_NAME --stale $STALE_YEARS --inputs $INPUTS_YEARS --pics $PICS_YEARS"
+    local line="$SCRIPT_NAME --miaplpy $MIAPLPY_YEARS --mintpy $MINTPY_YEARS --inputs $INPUTS_YEARS --pic $PIC_YEARS"
+    if [[ "$KEEP_FILT" -eq 1 ]]; then
+        line="$line --keep-filt"
+    fi
+    if [[ "$KEEP_HE5" -eq 1 ]]; then
+        line="$line --keep-he5"
+    fi
+    if [[ "$SHOW_ALL" -eq 1 ]]; then
+        line="$line --show-all"
+    fi
     local t
     for t in "${TARGET_ARGS[@]}"; do
         line="$line $t"
@@ -344,7 +436,9 @@ options_used_line() {
 print_removal_report() {
     local n_total=0
     local bytes_total=0
-    local sz
+    local sz reason
+    local has_miaplpy=0 has_mintpy=0 has_inputs=0 has_pic=0 has_keepfilt=0
+    local summary_bits=() summary_txt=""
 
     if [[ ! -s "$CAND_FILE" ]]; then
         echo ""
@@ -358,24 +452,46 @@ print_removal_report() {
         return 0
     fi
 
-    while IFS=$'\t' read -r sz _; do
+    while IFS=$'\t' read -r sz reason _; do
         n_total=$((n_total + 1))
         bytes_total=$((bytes_total + sz))
+        case "$reason" in
+            "miaplpy strip") has_miaplpy=1 ;;
+            "mintpy strip") has_mintpy=1 ;;
+            "old inputs") has_inputs=1 ;;
+            "old pic") has_pic=1 ;;
+            "keepfilt") has_keepfilt=1 ;;
+        esac
     done < "$CAND_FILE"
+
+    [[ "$has_miaplpy" -eq 1 ]] && summary_bits+=("miaplpy strip")
+    [[ "$has_keepfilt" -eq 1 ]] && summary_bits+=("keep-filt")
+    [[ "$has_mintpy" -eq 1 ]] && summary_bits+=("mintpy strip")
+    [[ "$has_inputs" -eq 1 ]] && summary_bits+=("old inputs")
+    [[ "$has_pic" -eq 1 ]] && summary_bits+=("old pic")
+    if [[ ${#summary_bits[@]} -gt 0 ]]; then
+        summary_txt=$(IFS=', '; echo "${summary_bits[*]}")
+        summary_txt=": ${summary_txt}"
+    fi
 
     echo ""
     if [[ "$DRY_RUN" -eq 1 ]]; then
-        echo "======== Dry-run: would remove $n_total path(s), ~$(human_gib "$bytes_total") ========"
+        echo "======== Dry-run: would remove $n_total path(s), ~$(human_gib "$bytes_total")${summary_txt} ========"
         echo "Options used (lower those years for more candidates):"
         echo "  $(options_used_line)"
     else
-        echo "======== Removed $n_total path(s), ~$(human_gib "$bytes_total") ========"
+        echo "======== Removed $n_total path(s), ~$(human_gib "$bytes_total")${summary_txt} ========"
     fi
     echo ""
     (
         set +o pipefail
-        sort -n "$CAND_FILE" | tail -n "$DRY_RUN_TOP" \
-            | awk -F'\t' '{ printf "%10.2f GiB  %s\n", $1/1024/1024/1024, $2 }'
+        if [[ "$SHOW_ALL" -eq 1 ]]; then
+            sort -n "$CAND_FILE" \
+                | awk -F'\t' '{ printf "%10.2f GiB  %s\n", $1/1024/1024/1024, $3 }'
+        else
+            sort -n "$CAND_FILE" | tail -n "$DRY_RUN_TOP" \
+                | awk -F'\t' '{ printf "%10.2f GiB  %s\n", $1/1024/1024/1024, $3 }'
+        fi
     )
 }
 
@@ -431,15 +547,11 @@ print_usage_report() {
 }
 
 log_cmd "$@"
-echo "Root: $ROOT"
-if [[ "$FULL_TREE" -eq 0 ]]; then
-    echo "Projects (${#SCOPES[@]}):"
-    for _p in "${SCOPES[@]}"; do
-        echo "  $_p"
-    done
-fi
 [[ "$DRY_RUN" -eq 1 ]] && echo "Mode: DRY-RUN"
 [[ "$SUMMARY_ONLY" -eq 1 ]] && echo "Mode: SUMMARY only"
+[[ "$KEEP_FILT" -eq 1 ]] && echo "Mode: keep-filt (miaplpy Del4 only)"
+[[ "$KEEP_HE5" -eq 1 ]] && echo "Mode: keep-he5"
+[[ "$SHOW_ALL" -eq 1 ]] && echo "Mode: show-all"
 
 if [[ "$SUMMARY_ONLY" -eq 1 ]]; then
     print_usage_report
@@ -449,71 +561,41 @@ fi
 CAND_FILE="$(mktemp)"
 
 #######################################
-# 1. Stale projects (satellite+track names only)
+# 1. Miaplpy: full strip, or --keep-filt Del4 files only
 #######################################
-stale_projects=()
-shopt -s nullglob
-if [[ "$FULL_TREE" -eq 1 ]]; then
-    stale_projects=("$ROOT"/*)
+if [[ "$KEEP_FILT" -eq 1 ]]; then
+    remove_keepfilt_del4_files "$MIAPLPY_DAYS"
 else
-    stale_projects=("${SCOPES[@]}")
+    strip_stale_named_dirs '*miaplpy*' "$MIAPLPY_DAYS" "miaplpy strip"
 fi
-shopt -u nullglob
-for proj in "${stale_projects[@]}"; do
-    [[ -d "$proj" ]] || continue
-    base="$(basename "$proj")"
-    if ! is_stale_removal_candidate "$base"; then
-        continue
-    fi
-    if has_file_newer_than_days "$proj" "$STALE_DAYS"; then
-        continue
-    elif has_file_newer_than_days "$proj" "$STALE_FULL_DAYS"; then
-        # Stale but not ancient: strip contents, keep pics/
-        remove_project_keep_pics "$proj"
-    else
-        # Nothing newer than STALE_FULL_YEARS: remove entire project
-        remove_dir "$proj"
-    fi
-done
 
 #######################################
-# 2. Del4DS / Del4PS HE5 under miaplpy*/network_* (older than --stale)
+# 2. Stale *mintpy* dirs (keep pic/)
 #######################################
-while IFS= read -r -d $'\0' netdir; do
-    while IFS= read -r -d $'\0' he5; do
-        remove_file "$he5"
-    done < <(find "$netdir" -type f \( -name "*Del4DS*.he5" -o -name "*Del4PS*.he5" \) \
-        -mtime +"${STALE_DAYS}" -print0 2>/dev/null)
-done < <(find "${SCOPES[@]}" -type d -path "*/miaplpy*/network_*" -print0 2>/dev/null)
+strip_stale_named_dirs '*mintpy*' "$MINTPY_DAYS" "mintpy strip"
 
 #######################################
-# 3. *timeseries*.h5 under miaplpy*/network_*
-#######################################
-while IFS= read -r -d $'\0' netdir; do
-    while IFS= read -r -d $'\0' ts; do
-        remove_file "$ts"
-    done < <(find "$netdir" -type f -name "*timeseries*.h5" -print0 2>/dev/null)
-done < <(find "${SCOPES[@]}" -type d -path "*/miaplpy*/network_*" -print0 2>/dev/null)
-
-#######################################
-# 4. Old inputs slcStack / geometryRadar
+# 3. Old inputs slcStack / geometryRadar
 #######################################
 while IFS= read -r -d $'\0' f; do
-    remove_file "$f"
+    remove_file "$f" "old inputs"
 done < <(find "${SCOPES[@]}" -type f \( -path "*/miaplpy*/inputs/slcStack.h5" -o -path "*/miaplpy*/inputs/geometryRadar.h5" \) -mtime +"${INPUTS_DAYS}" -print0 2>/dev/null)
 
 #######################################
-# 5. Old pics/ directories
+# 4. Old pic/ directories (never under *miaplpy* / *mintpy*)
 #######################################
-while IFS= read -r -d $'\0' picsdir; do
-    if has_file_newer_than_days "$picsdir" "$PICS_DAYS"; then
+while IFS= read -r -d $'\0' picdir; do
+    if is_miaplpy_or_mintpy_pic "$picdir"; then
         continue
     fi
-    remove_dir "$picsdir"
-done < <(find "${SCOPES[@]}" -type d -name pics -print0 2>/dev/null)
+    if has_file_newer_than_days "$picdir" "$PIC_DAYS"; then
+        continue
+    fi
+    remove_dir "$picdir" "old pic"
+done < <(find "${SCOPES[@]}" -type d -name pic -print0 2>/dev/null)
 
 #######################################
-# 6. Report (same top-N list for dry-run and execute)
+# 5. Report (same top-N list for dry-run and execute)
 #######################################
 print_removal_report
 
@@ -523,6 +605,5 @@ if [[ "$DRY_RUN" -eq 1 ]]; then
     exit 0
 fi
 
-print_usage_report
 echo ""
 echo "$SCRIPT_NAME completed."
