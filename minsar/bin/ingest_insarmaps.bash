@@ -35,11 +35,13 @@ Examples:
     $SCRIPT_NAME mintpy --dataset geo --step 1
     $SCRIPT_NAME mintpy --step 1                         # dataset defaults to geo
     $SCRIPT_NAME mintpy --json_mbtiles2insarmaps         # step 2 only (same as --step 2); requires prior step 1
+    $SCRIPT_NAME mintpy --dataset geo --suffix thermal
 
   Options:
       --ref-lalo LAT,LON or LAT LON   Reference point (lat,lon or lat lon)
       --dataset {PS,DS,filtDS,filt*DS,geo} or comma-separated {PS,DS,filt*DS}  Dataset to upload (default: geo)
                                           Use comma-separated values to ingest multiple types: --dataset PS,DS or --dataset PS,DS,filt*DS
+      --suffix TAG                    Append _TAG to .he5/.csv basename for ingest (mbtiles/dataset name)
       --hdfeos5_2json_mbtiles         Run only HDFEOS5 → JSON/mbtiles (no insarmaps upload); same as --step 1
                                       For a .csv input, step 1 runs hdfeos5_or_csv_2json_mbtiles.py instead of hdfeos5_2json_mbtiles.py
       --json_mbtiles2insarmaps        Run only insarmaps upload (assumes step 1 succeeded); same as --step 2
@@ -90,6 +92,7 @@ period=""
 num_workers_cli=""
 mbtiles_num_workers_cli=""
 quiet_summary=0
+suffix=""
 
 # Apply ingest step from numeric argument (1 or 2), long flags, or --step N
 _apply_ingest_step_arg() {
@@ -139,6 +142,11 @@ do
             ;;
         --dataset)
             dataset="$2"
+            shift 2
+            ;;
+        --suffix)
+            [[ $# -lt 2 ]] && { echo "Error: --suffix requires a TAG" >&2; exit 1; }
+            suffix="$2"
             shift 2
             ;;
         --debug)
@@ -238,6 +246,59 @@ validate_dataset() {
 }
 validate_dataset "$dataset"
 
+# Normalize --suffix (same rules as sarvey2insarmaps.py)
+normalize_suffix() {
+    local tag="$1"
+    tag="${tag#"${tag%%[![:space:]]*}"}"
+    tag="${tag%"${tag##*[![:space:]]}"}"
+    tag="${tag#_}"
+    tag="${tag%_}"
+    if [[ -z "$tag" ]]; then
+        echo "Error: --suffix must be a non-empty tag" >&2
+        exit 1
+    fi
+    if [[ "$tag" == *"/"* || "$tag" == *"\\"* ]]; then
+        echo "Error: --suffix must not contain path separators" >&2
+        exit 1
+    fi
+    echo "$tag"
+}
+if [[ -n "$suffix" ]]; then
+    suffix="$(normalize_suffix "$suffix")"
+fi
+
+# Hardlink/symlink to stem_TAG.ext so mbtiles/dataset names include the tag (no file copy).
+apply_ingest_suffix() {
+    local src="$1"
+    local tag="$2"
+    local dir base ext stem dest
+    dir="$(dirname "$src")"
+    base="$(basename "$src")"
+    ext="${base##*.}"
+    stem="${base%.*}"
+    if [[ "$stem" == *"_${tag}" ]]; then
+        echo "$src"
+        return 0
+    fi
+    dest="${dir}/${stem}_${tag}.${ext}"
+    if [[ -e "$dest" ]]; then
+        echo "$dest"
+        return 0
+    fi
+    if ln "$src" "$dest" 2>/dev/null; then
+        echo "Created hardlink for --suffix: $dest" | tee -a "$LOG_FILE"
+        echo "$dest"
+        return 0
+    fi
+    if (cd "$dir" && ln -s "$base" "${stem}_${tag}.${ext}"); then
+        echo "Created symlink for --suffix: $dest" | tee -a "$LOG_FILE"
+        echo "$dest"
+        return 0
+    fi
+    echo "Error: could not create hardlink/symlink for --suffix: $dest" >&2
+    exit 1
+}
+
 _validate_positive_int_opt() {
     local opt_name="$1" val="$2"
     [[ "$val" =~ ^[1-9][0-9]*$ ]] || {
@@ -320,6 +381,10 @@ elif [[ -d "$INPUT_PATH" ]]; then
         ds_type=$(echo "$ds_type" | xargs)  # Trim whitespace
         # Find the youngest file matching this dataset type
         for file in "${all_he5_files[@]}"; do
+            # Prefer originals when --suffix is set (skip prior stem_TAG.he5 hardlinks)
+            if [[ -n "$suffix" && "$(basename "$file")" == *"_${suffix}.he5" ]]; then
+                continue
+            fi
             if file_matches_dataset "$file" "$ds_type"; then
                 ingest_files+=("$file")
                 break  # Only take the first (youngest) match for this dataset type
@@ -359,6 +424,9 @@ fi
 
 # Process each input file (.he5 or .csv)
 for ingest_file in "${ingest_files[@]}"; do
+    if [[ -n "$suffix" ]]; then
+        ingest_file="$(apply_ingest_suffix "$ingest_file" "$suffix")"
+    fi
     echo "####################################"
     echo "Processing: $ingest_file"
     if [[ "$ingest_file" == *"XXXXXXXX"* ]]; then

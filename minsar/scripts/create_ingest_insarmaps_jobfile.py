@@ -37,6 +37,7 @@ EXAMPLE = """Examples:
     
     create_ingest_insarmaps_jobfile.py mintpy --step 1
     create_ingest_insarmaps_jobfile.py mintpy --step 2
+    create_ingest_insarmaps_jobfile.py mintpy --dataset geo --suffix thermal
 """
 ###########################################################################################
 def create_parser():
@@ -54,6 +55,7 @@ def create_parser():
                         default='geo', 
                         help='Dataset to upload (default: %(default)s). Options: {PS,DS,filtDS,filt*DS,geo} or comma-separated {PS,DS,filt*DS}. '
                              'Use comma-separated values to ingest multiple types: --dataset PS,DS or --dataset PS,DS,filt*DS')
+    parser.add_argument('--suffix', metavar='TAG', default=None, help='Tag appended to .he5/.csv basename before extension (passed to ingest_insarmaps.bash)')
     parser.add_argument('--debug', dest='debug', action='store_true',
                         help='Enable debug mode (set -x)')
     parser.add_argument('--quiet-summary', dest='quiet_summary', action='store_true',
@@ -114,6 +116,9 @@ def main(iargs=None):
     
     if inps.dataset:
         command_parts.extend(['--dataset', inps.dataset])
+
+    if inps.suffix:
+        command_parts.extend(['--suffix', inps.suffix])
     
     if inps.debug:
         command_parts.append('--debug')
