@@ -13,15 +13,19 @@ print_help() {
 
 purge stale miaplpy*, mintpy* and inputs dirs (keep pic/).
 
-Usage: $SCRIPT_NAME [OPTIONS] [PROJECT ...]
+Usage: $SCRIPT_NAME [OPTIONS] [TARGET ...]
 
-  PROJECT   Optional. One or more names under \$SCRATCHDIR (e.g. EtnaSenD124 or EtnaSen)
+  TARGET    Optional. Project and/or specific miaplpy/mintpy dir:
+            - name under \$SCRATCHDIR (e.g. EtnaSenD124)
+            - path relative to \$SCRATCHDIR or CWD (e.g. EtnaSenD124/miaplpy_...)
+            - miaplpy_* / mintpy_* basename (resolved under CWD or \$SCRATCHDIR/*/)
 
 Options:
   --root DIR       Scratch parent (default: \$SCRATCHDIR)
   --miaplpy YEARS  Strip stale *miaplpy* (keep pic/; default 2; YEARS may be decimal)
   --mintpy YEARS   Strip stale *mintpy* (keep pic/; default 2)
-  --keep-filt      Under *miaplpy*, remove old *.he5 except *filt* and *_???????????.he5 (no full strip)
+  --keep-filt      Under *miaplpy*, remove *.he5 except *filt* and *_???????????.he5
+                   (no full strip; ignores --miaplpy age / all matching .he5)
   --keep-he5       Never delete *.he5 files
   --inputs YEARS   Remove old miaplpy*/inputs/{slcStack,geometryRadar}.h5 (default 1)
   --pic YEARS      Remove old pic/ outside *miaplpy*/*mintpy* (default 5)
@@ -33,6 +37,7 @@ Options:
 Examples:
   $SCRIPT_NAME --dry-run
   $SCRIPT_NAME --dry-run EtnaSenD124
+  $SCRIPT_NAME --keep-filt --dry-run miaplpy_bboxTry_202001_202012
   $SCRIPT_NAME LangilaSen --dry-run --miaplpy 0.5 --keep-filt
   $SCRIPT_NAME LangilaSen --miaplpy 0.5 --keep-he5 --show-all
   $SCRIPT_NAME --dry-run --miaplpy 3 --mintpy 3 --inputs 2 --pic 5
@@ -138,12 +143,14 @@ years_to_days() {
 
 ROOT="$(cd "$ROOT" && pwd)"
 
-# Append absolute dirs matching one PROJECT arg into array named by $2 (nameref).
+# Append absolute dirs matching one TARGET arg into array named by $2 (nameref).
+# Accepts project names under ROOT, CWD-relative paths, and miaplpy*/mintpy* basenames.
 resolve_project_arg() {
     local arg="$1"
     local -n _resolved_out="$2"
     local matches=() m abs pattern
     local saved_nullglob=0
+    local added=0
 
     if [[ "$arg" == /* ]]; then
         if [[ ! -d "$arg" ]]; then
@@ -154,9 +161,35 @@ resolve_project_arg() {
         return 0
     fi
 
+    # Exact path under ROOT (project or project/miaplpy_...)
     if [[ -d "$ROOT/$arg" ]]; then
         _resolved_out+=("$(cd "$ROOT/$arg" && pwd)")
         return 0
+    fi
+
+    # Relative to CWD (e.g. miaplpy_bboxTry_... when already in the project dir)
+    if [[ -d "$arg" ]]; then
+        _resolved_out+=("$(cd "$arg" && pwd)")
+        return 0
+    fi
+
+    # Basename miaplpy_*/mintpy_* under any project: $ROOT/*/name
+    if [[ "$arg" == *miaplpy* || "$arg" == *mintpy* ]] && [[ "$arg" != */* ]]; then
+        shopt -q nullglob && saved_nullglob=1
+        shopt -s nullglob
+        matches=("$ROOT"/*/"$arg")
+        if [[ "$saved_nullglob" -eq 0 ]]; then
+            shopt -u nullglob
+        fi
+        for m in "${matches[@]}"; do
+            [[ -d "$m" ]] || continue
+            abs="$(cd "$m" && pwd)"
+            _resolved_out+=("$abs")
+            added=1
+        done
+        if [[ "$added" -eq 1 ]]; then
+            return 0
+        fi
     fi
 
     if [[ "$arg" == *[\*\?\[]* ]]; then
@@ -173,12 +206,7 @@ resolve_project_arg() {
         shopt -u nullglob
     fi
 
-    if [[ ${#matches[@]} -eq 0 ]]; then
-        echo "Error: no project matching under $ROOT: $arg" >&2
-        return 1
-    fi
-
-    local added=0
+    added=0
     for m in "${matches[@]}"; do
         [[ -d "$m" ]] || continue
         abs="$(cd "$m" && pwd)"
@@ -186,7 +214,7 @@ resolve_project_arg() {
         added=1
     done
     if [[ "$added" -eq 0 ]]; then
-        echo "Error: no project directory matching under $ROOT: $arg" >&2
+        echo "Error: no project/directory matching under $ROOT or CWD: $arg" >&2
         return 1
     fi
     return 0
@@ -333,19 +361,18 @@ strip_stale_named_dirs() {
     done < <(find "${SCOPES[@]}" -type d -name "$name_glob" -print0 2>/dev/null)
 }
 
-# Under *miaplpy*: remove old *.he5 except *filt* and names ending in _ + 11 chars + .he5
-# (e.g. ..._N3654E02710.he5; not necessarily N/E).
+# Under *miaplpy*: remove *.he5 except *filt* and names ending in _ + 11 chars + .he5
+# (e.g. ..._N3654E02710.he5; not necessarily N/E). Age is ignored (--miaplpy N has no effect).
 remove_keepfilt_del4_files() {
-    local days="$1"
     local f
     if [[ "$KEEP_HE5" -eq 1 ]]; then
         return 0
     fi
     while IFS= read -r -d $'\0' f; do
         remove_file "$f" "keep-filt"
-    done < <(find "${SCOPES[@]}" -type f -path '*/miaplpy*/*' -name '*.he5' \
-        ! -name '*filt*.he5' ! -name '*_???????????.he5' \
-        -mtime +"${days}" -print0 2>/dev/null)
+    done < <(find "${SCOPES[@]}" -type f \( -path '*/miaplpy*/*' -o -path '*/miaplpy*' \) \
+        -name '*.he5' ! -name '*filt*.he5' ! -name '*_???????????.he5' \
+        -print0 2>/dev/null)
 }
 
 file_bytes() {
@@ -415,9 +442,14 @@ remove_dir() {
     fi
 }
 
-# CLI options line for dry-run (includes optional PROJECT args as given).
+# CLI options line for dry-run (includes optional TARGET args as given).
 options_used_line() {
-    local line="$SCRIPT_NAME --miaplpy $MIAPLPY_YEARS --mintpy $MINTPY_YEARS --inputs $INPUTS_YEARS --pic $PIC_YEARS"
+    local miaplpy_years_disp="$MIAPLPY_YEARS"
+    # --keep-filt ignores age; show 0 so the report matches behavior.
+    if [[ "$KEEP_FILT" -eq 1 ]]; then
+        miaplpy_years_disp=0
+    fi
+    local line="$SCRIPT_NAME --miaplpy $miaplpy_years_disp --mintpy $MINTPY_YEARS --inputs $INPUTS_YEARS --pic $PIC_YEARS"
     if [[ "$KEEP_FILT" -eq 1 ]]; then
         line="$line --keep-filt"
     fi
@@ -551,7 +583,7 @@ print_usage_report() {
 log_cmd "$@"
 [[ "$DRY_RUN" -eq 1 ]] && echo "Mode: DRY-RUN"
 [[ "$SUMMARY_ONLY" -eq 1 ]] && echo "Mode: SUMMARY only"
-[[ "$KEEP_FILT" -eq 1 ]] && echo "Mode: keep-filt (keep filt + *_???????????.he5)"
+[[ "$KEEP_FILT" -eq 1 ]] && echo "Mode: keep-filt (keep filt + *_???????????.he5; age ignored)"
 [[ "$KEEP_HE5" -eq 1 ]] && echo "Mode: keep-he5"
 [[ "$SHOW_ALL" -eq 1 ]] && echo "Mode: show-all"
 
@@ -566,35 +598,36 @@ CAND_FILE="$(mktemp)"
 # 1. Miaplpy: full strip, or --keep-filt Del4 files only
 #######################################
 if [[ "$KEEP_FILT" -eq 1 ]]; then
-    remove_keepfilt_del4_files "$MIAPLPY_DAYS"
+    # Only the selected *.he5 removals; skip mintpy/inputs/pic cleanup below.
+    remove_keepfilt_del4_files
 else
     strip_stale_named_dirs '*miaplpy*' "$MIAPLPY_DAYS" "miaplpy strip"
+
+    #######################################
+    # 2. Stale *mintpy* dirs (keep pic/)
+    #######################################
+    strip_stale_named_dirs '*mintpy*' "$MINTPY_DAYS" "mintpy strip"
+
+    #######################################
+    # 3. Old inputs slcStack / geometryRadar
+    #######################################
+    while IFS= read -r -d $'\0' f; do
+        remove_file "$f" "old inputs"
+    done < <(find "${SCOPES[@]}" -type f \( -path "*/miaplpy*/inputs/slcStack.h5" -o -path "*/miaplpy*/inputs/geometryRadar.h5" \) -mtime +"${INPUTS_DAYS}" -print0 2>/dev/null)
+
+    #######################################
+    # 4. Old pic/ directories (never under *miaplpy* / *mintpy*)
+    #######################################
+    while IFS= read -r -d $'\0' picdir; do
+        if is_miaplpy_or_mintpy_pic "$picdir"; then
+            continue
+        fi
+        if has_file_newer_than_days "$picdir" "$PIC_DAYS"; then
+            continue
+        fi
+        remove_dir "$picdir" "old pic"
+    done < <(find "${SCOPES[@]}" -type d -name pic -print0 2>/dev/null)
 fi
-
-#######################################
-# 2. Stale *mintpy* dirs (keep pic/)
-#######################################
-strip_stale_named_dirs '*mintpy*' "$MINTPY_DAYS" "mintpy strip"
-
-#######################################
-# 3. Old inputs slcStack / geometryRadar
-#######################################
-while IFS= read -r -d $'\0' f; do
-    remove_file "$f" "old inputs"
-done < <(find "${SCOPES[@]}" -type f \( -path "*/miaplpy*/inputs/slcStack.h5" -o -path "*/miaplpy*/inputs/geometryRadar.h5" \) -mtime +"${INPUTS_DAYS}" -print0 2>/dev/null)
-
-#######################################
-# 4. Old pic/ directories (never under *miaplpy* / *mintpy*)
-#######################################
-while IFS= read -r -d $'\0' picdir; do
-    if is_miaplpy_or_mintpy_pic "$picdir"; then
-        continue
-    fi
-    if has_file_newer_than_days "$picdir" "$PIC_DAYS"; then
-        continue
-    fi
-    remove_dir "$picdir" "old pic"
-done < <(find "${SCOPES[@]}" -type d -name pic -print0 2>/dev/null)
 
 #######################################
 # 5. Report (same top-N list for dry-run and execute)
