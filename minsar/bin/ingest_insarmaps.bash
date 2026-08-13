@@ -286,12 +286,13 @@ apply_ingest_suffix() {
         return 0
     fi
     if ln "$src" "$dest" 2>/dev/null; then
-        echo "Created hardlink for --suffix: $dest" | tee -a "$LOG_FILE"
+        # Messages must go to stderr/log only — stdout is captured as the path
+        echo "Created hardlink for --suffix: $dest" | tee -a "$LOG_FILE" >&2
         echo "$dest"
         return 0
     fi
     if (cd "$dir" && ln -s "$base" "${stem}_${tag}.${ext}"); then
-        echo "Created symlink for --suffix: $dest" | tee -a "$LOG_FILE"
+        echo "Created symlink for --suffix: $dest" | tee -a "$LOG_FILE" >&2
         echo "$dest"
         return 0
     fi
