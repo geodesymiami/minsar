@@ -20,6 +20,45 @@ import shutil
 sys.path.insert(0, os.getenv("SSARAHOME"))
 import password_config as password
 
+def _load_get_output_filename():
+    """Prefer MinSAR additions/mintpy save_hdfeos5 over upstream MintPy."""
+    import importlib.util
+
+    minsar_home = os.environ.get("MINSAR_HOME", "")
+    if minsar_home:
+        he5_path = Path(minsar_home) / "additions" / "mintpy" / "save_hdfeos5.py"
+        if he5_path.is_file():
+            spec = importlib.util.spec_from_file_location("minsar_save_hdfeos5", he5_path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod.get_output_filename
+
+    from mintpy.save_hdfeos5 import get_output_filename
+    return get_output_filename
+
+_get_output_filename_fn = None
+
+def _get_he5_get_output_filename():
+    global _get_output_filename_fn
+    if _get_output_filename_fn is None:
+        _get_output_filename_fn = _load_get_output_filename()
+    return _get_output_filename_fn
+
+try:
+    from mintpy.objects import sensor as mintpy_sensor
+except ImportError:
+    mintpy_sensor = None
+
+def he5_dataset_filename(metadata, suffix=None, subset_mode=True):
+    """Call get_output_filename across MinSAR and upstream MintPy signatures."""
+    import inspect
+
+    get_output_filename = _get_he5_get_output_filename()
+    kwargs = {"suffix": suffix, "update_mode": False, "subset_mode": subset_mode}
+    if "template" in inspect.signature(get_output_filename).parameters:
+        return get_output_filename(metadata, {}, **kwargs)
+    return get_output_filename(metadata, **kwargs)
+
 def merge_into_metadata_pickle(json_dir, attrs):
     """Ensure Insarmaps' JSON/metadata.pickle has every direction key/value the title might read."""
 
@@ -181,55 +220,114 @@ def set_output_paths(output_path, base_filename, do_geocorr):
 
     return csv_file_path, geocorr_csv_path, json_dir, mbtiles_path, output_path
 
+def _parse_int_orbit(value):
+    """Parse orbit/track numbers stored as int, float, or numeric string."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return int(float(text))
+    except (TypeError, ValueError):
+        return None
+
+def resolve_relative_orbit(slc_attr, geom_attr=None):
+    """Return relative orbit from stack/geometry attributes (HE5-compatible lookup)."""
+    geom_attr = geom_attr or {}
+    for src in (slc_attr, geom_attr):
+        for key in ("relative_orbit", "unavco.relative_orbit", "track_number"):
+            orbit = _parse_int_orbit(src.get(key))
+            if orbit is not None:
+                return orbit
+    return None
+
+def csv_bbox_to_footprint_wkt(df):
+    """Build a closed WKT POLYGON from CSV X/Y min/max bounds."""
+    min_lat, max_lat = df["Y"].min(), df["Y"].max()
+    min_lon, max_lon = df["X"].min(), df["X"].max()
+    footprint_corners = [
+        (max_lat, min_lon),
+        (min_lat, min_lon),
+        (min_lat, max_lon),
+        (max_lat, max_lon),
+        (max_lat, min_lon),
+    ]
+    return putils.corners_to_wkt_polygon(footprint_corners)
+
+def build_he5_metadata_for_naming(attributes, start_date, end_date, data_footprint_wkt):
+    """Build metadata dict for get_output_filename() using CSV dates and stack attributes."""
+    meta = dict(attributes)
+    meta["first_date"] = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:8]}"
+    meta["last_date"] = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:8]}"
+    meta["data_footprint"] = data_footprint_wkt
+
+    if mintpy_sensor is not None:
+        try:
+            meta["mission"] = mintpy_sensor.get_unavco_mission_name(meta)
+        except ValueError:
+            pass
+    if "mission" not in meta:
+        platform_raw = (meta.get("PLATFORM") or meta.get("mission") or "S1").upper()
+        platform_aliases = {
+            "TSX": "TSX", "TERRASAR-X": "TSX", "SENTINEL-1": "S1", "S1": "S1", "SEN": "S1",
+            "ERS": "ERS", "ENVISAT": "ENVISAT", "ALOS": "ALOS",
+        }
+        meta["mission"] = platform_aliases.get(platform_raw, platform_raw or "S1")
+
+    meta.setdefault("beam_mode", "IW")
+    beam_swath = meta.get("beam_swath", meta.get("beamSwath", 0))
+    try:
+        meta["beam_swath"] = int(beam_swath or 0)
+    except (TypeError, ValueError):
+        meta["beam_swath"] = 0
+
+    rel_orbit = _parse_int_orbit(meta.get("relative_orbit"))
+    if rel_orbit is None:
+        rel_orbit = resolve_relative_orbit(meta, {})
+    if rel_orbit is None:
+        raise ValueError(
+            "relative_orbit not found in slcStack.h5 or geometryRadar.h5; "
+            "run add_missing_attributes.py"
+        )
+    meta["relative_orbit"] = rel_orbit
+    meta["post_processing_method"] = "sarvey"
+    if "ORBIT_DIRECTION" not in meta:
+        for key in ("flight_direction", "orbit_direction"):
+            val = str(meta.get(key, "")).strip().upper()
+            if val in ("A", "ASCENDING"):
+                meta["ORBIT_DIRECTION"] = "ASCENDING"
+                break
+            if val in ("D", "DESCENDING"):
+                meta["ORBIT_DIRECTION"] = "DESCENDING"
+                break
+    return meta
+
 def generate_dataset_name_from_csv(csv_file_path, sarvey_inputs_dir_path=None):
     """
-    Generate dataset name from CSV (bbox/date) and optional metadata from sarvey_inputs_dir_path.
+    Generate Insarmaps dataset stem using HE5 naming (see architecture_docs/HE5_NAMING.md).
+    Corners always come from the CSV bounding box.
     """
     df = pd.read_csv(csv_file_path)
 
-    #extract date columns
     time_cols = [col for col in df.columns if re.fullmatch(r"D\d{8}", col)]
     if not time_cols:
         raise ValueError("No valid date columns found in CSV (expected format: DYYYYMMDD).")
 
-    #sort and strip starting 'D'
     time_cols = sorted(col[1:] for col in time_cols)
     start_date = time_cols[0]
     end_date = time_cols[-1]
+    data_footprint_wkt = csv_bbox_to_footprint_wkt(df)
 
-    #get bounding box
-    min_lat, max_lat = df["Y"].min(), df["Y"].max()
-    min_lon, max_lon = df["X"].min(), df["X"].max()
-    lat1 = f"N{int(min_lat * 10000):05d}"
-    lat2 = f"N{int(max_lat * 10000):05d}"
-    lon1 = f"W{abs(int(max_lon * 10000)):06d}"
-    lon2 = f"W{abs(int(min_lon * 10000)):06d}"
+    if not sarvey_inputs_dir_path:
+        raise ValueError("sarvey_inputs_dir_path is required to build HE5-compatible dataset names.")
 
-    # Get the four corners of the data. We use a rectangular box and lat/lon min/max until we have figures out coordinates of the subset.
-    footprint_corners = [
-        (max_lat, min_lon),         # top-left
-        (min_lat, min_lon),         # top-right
-        (min_lat, max_lon),         # bottom-right
-        (max_lat, max_lon),         # bottom-left
-        (max_lat, min_lon)          # close the polygon
-    ]
-    polygon_str = putils.corners_to_wkt_polygon(footprint_corners)
-    corners_str = putils.polygon_corners_string(polygon_str)
-
-    mission, rel_orbit = "S1", "000"
-    if sarvey_inputs_dir_path:
-        attributes, _ = extract_metadata_from_inputs(sarvey_inputs_dir_path)
-        platform_raw = (attributes.get("PLATFORM") or attributes.get("mission") or "").upper()
-        platform_aliases = {
-            "TSX": "TSX", "TERRASAR-X": "TSX", "SENTINEL-1": "S1", "S1": "S1", "SEN": "S1", "Sen": "S1",
-            "ERS": "ERS", "ENVISAT": "ENVISAT", "ALOS": "ALOS"
-        }
-        mission = platform_aliases.get(platform_raw, "S1")
-
-        rel_orbit_raw = attributes.get("relative_orbit", "")
-        rel_orbit = f"{int(rel_orbit_raw):03d}" if str(rel_orbit_raw).isdigit() else "000"
-
-    return f"{mission}_{rel_orbit}_{start_date}_{end_date}_{corners_str}"
+    attributes, _ = extract_metadata_from_inputs(sarvey_inputs_dir_path)
+    he5_meta = build_he5_metadata_for_naming(
+        attributes, start_date, end_date, data_footprint_wkt
+    )
+    he5_name = he5_dataset_filename(he5_meta, suffix=None, subset_mode=True)
+    return Path(he5_name).stem
 
 def normalize_user_suffix(user_suffix):
     """Return a cleaned --suffix tag or None; reject empty or path-like values."""
@@ -313,11 +411,10 @@ def get_sarvey_export_path():
 
 def extract_metadata_from_inputs(sarvey_inputs_dir_path):
     """
-    Extract essential metadata from slcStack.h5 and geometryRadar.h5 to generate a dataset name.
-    Returns a dict of metadata and a created dataset name string based on platform, dates, and bbox.
+    Extract stack metadata from slcStack.h5 and geometryRadar.h5 for Insarmaps ingest.
+    Returns attributes dict (dataset stem is built later from CSV via generate_dataset_name_from_csv).
     """
     attributes = {}
-    dataset_name = None
 
     slc_path = sarvey_inputs_dir_path / "slcStack.h5"
     geom_path = sarvey_inputs_dir_path / "geometryRadar.h5"
@@ -327,11 +424,11 @@ def extract_metadata_from_inputs(sarvey_inputs_dir_path):
         slc_attr = readfile.read_attribute(str(slc_path))
 
         keys_to_extract = [
-            "mission", "PLATFORM", "beam_mode", "flight_direction", "relative_orbit",
-            "processing_method", "REF_LAT", "REF_LON", "areaName", "DATE",
+            "mission", "PLATFORM", "beam_mode", "beam_swath", "flight_direction", "relative_orbit",
+            "processing_method", "post_processing_method", "REF_LAT", "REF_LON", "areaName", "DATE",
             "LAT_REF1", "LAT_REF2", "LAT_REF3", "LAT_REF4",
             "LON_REF1", "LON_REF2", "LON_REF3", "LON_REF4",
-            "ORBIT_DIRECTION"
+            "ORBIT_DIRECTION", "HEADING",
         ]
         for key in keys_to_extract:
             if key in slc_attr:
@@ -349,11 +446,22 @@ def extract_metadata_from_inputs(sarvey_inputs_dir_path):
         elif dir_src in ("DESCENDING", "D"):
             attributes["orbit_direction"] = "D"
 
+    geom_attr = {}
     #load geometryRadar.h5 attributes
     if geom_path.exists():
         geom_attr = readfile.read_attribute(str(geom_path))
         if "beamSwath" in geom_attr:
             attributes["beamSwath"] = geom_attr["beamSwath"]
+        for key in (
+            "unavco.relative_orbit", "relative_orbit", "track_number",
+            "HEADING", "ORBIT_DIRECTION", "beam_swath", "beamSwath",
+        ):
+            if key not in attributes and key in geom_attr:
+                attributes[key] = geom_attr[key]
+
+    rel_orbit = resolve_relative_orbit(attributes, geom_attr)
+    if rel_orbit is not None:
+        attributes["relative_orbit"] = rel_orbit
 
     #set default/fallback attributes
     attributes.setdefault("data_type", "LOS_TIMESERIES")
@@ -363,63 +471,17 @@ def extract_metadata_from_inputs(sarvey_inputs_dir_path):
     attributes.setdefault("history", str(date.today()))
     attributes.setdefault("data_footprint", "")
 
-    #generate dataset name
-    try:
-        #normalize platform name
-        platform_raw = (attributes.get("PLATFORM") or attributes.get("mission") or "").upper()
-        platform_aliases = {
-            "TSX": "TSX", "TERRASAR-X": "TSX", "SENTINEL-1": "S1", "S1": "S1", "SEN": "S1", "Sen": "S1",
-            "ERS": "ERS", "ENVISAT": "ENVISAT", "ALOS": "ALOS"
-        }
-        mission = platform_aliases.get(platform_raw, platform_raw or "S1")
-
-        #orbit
-        rel_orbit_raw = attributes.get("relative_orbit", "")
-        rel_orbit = f"{int(rel_orbit_raw):03d}" if str(rel_orbit_raw).isdigit() else "000"
-
-        #default date values
-        start_date, end_date = "YYYYMMDD", "YYYYMMDD"
-
-        #try to get actual start/end dates from dataset
-        if slc_path.exists():
-            try:
-                with h5py.File(slc_path, "r") as f:
-                    if "date" in f:
-                        date_list = [d.decode() if isinstance(d, bytes) else str(d) for d in f["date"][:]]
-                        if date_list:
-                            start_date, end_date = date_list[0], date_list[-1]
-            except Exception as e:
-                print(f"[WARN] Could not read 'date' dataset from slcStack.h5: {e}")
-
-        #use bounding box to generate geographic part of the name
-        lat_vals = [float(attributes[k]) for k in ["LAT_REF1", "LAT_REF2", "LAT_REF3", "LAT_REF4"] if k in attributes]
-        lon_vals = [float(attributes[k]) for k in ["LON_REF1", "LON_REF2", "LON_REF3", "LON_REF4"] if k in attributes]
-
-        if lat_vals and lon_vals:
-            lat1 = f"N{int(min(lat_vals) * 10000):05d}"
-            lat2 = f"N{int(max(lat_vals) * 10000):05d}"
-            lon1 = f"W{abs(int(max(lon_vals) * 10000)):06d}"
-            lon2 = f"W{abs(int(min(lon_vals) * 10000)):06d}"
-            dataset_name = f"{mission}_{rel_orbit}_{start_date}_{end_date}_{lat1}_{lat2}_{lon1}_{lon2}"
-        else:
-            dataset_name = f"{mission}_{rel_orbit}_{start_date}_{end_date}"
-
-    except Exception as e:
-        print(f"[WARN] Could not generate dataset_name: {e}")
-
-    #info summary
-    mission = attributes.get('mission') or attributes.get('PLATFORM')
-    platform = attributes.get('PLATFORM')
-    beam = attributes.get('beam_mode')
-    orbit = attributes.get('relative_orbit')
-
-    bbox = f"({attributes.get('LAT_REF3')}, {attributes.get('LON_REF4')}) to ({attributes.get('LAT_REF2')}, {attributes.get('LON_REF1')})"
-
-    print(f"[INFO] slcStack.h5: mission={mission}, platform={platform}, beam_mode={beam}, orbit={orbit}")
+    print(f"[INFO] slcStack.h5: mission={attributes.get('mission') or attributes.get('PLATFORM')}, "
+          f"platform={attributes.get('PLATFORM')}, beam_mode={attributes.get('beam_mode')}, "
+          f"orbit={attributes.get('relative_orbit')}")
+    bbox = (
+        f"({attributes.get('LAT_REF3')}, {attributes.get('LON_REF4')}) to "
+        f"({attributes.get('LAT_REF2')}, {attributes.get('LON_REF1')})"
+    )
     print(f"[INFO] bounding box: {bbox}")
     print("[INFO] slcStack.h5 metadata loaded. Final dataset name will be computed from the CSV.")
 
-    return attributes, dataset_name
+    return attributes, None
 
 def update_and_save_final_metadata(json_dir, outdir, ingest_stem, metadata):
     """
