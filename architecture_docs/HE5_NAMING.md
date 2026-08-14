@@ -13,7 +13,7 @@ MinSAR uses MintPy’s `save_hdfeos5.py` (`additions/mintpy/save_hdfeos5.py`) fo
 | `mission` | `sensor.get_unavco_mission_name()` → e.g. `S1` |
 | `asc` / `desc` | `get_orbit_direction_str()` from `ORBIT_DIRECTION` or `HEADING` |
 | `orbit` | `relative_orbit`, zero-padded 3 digits → `124` |
-| `method` | `post_processing_method` lowercased → `mintpy` or `miaplpy` |
+| `method` | `post_processing_method` lowercased → `mintpy`, `miaplpy`, or `sarvey` (SARvey Insarmaps ingest) |
 | `start` | first acquisition date → `YYYYMMDD` |
 | `end` | last acquisition date → `YYYYMMDD` or `XXXXXXXX` (see below) |
 | `corners` | optional subset footprint (see below) |
@@ -101,5 +101,6 @@ MintPy short forms may include `…_mintpy_YYYYMMDD_XXXXXXXX.he5` or `…_XXXXXX
 | `reference_point_hdfeos5.bash` | Re-reference in-memory; may write short name |
 | `geocode_hdfeos5.py` | `geo_` + radar basename |
 | `extract_hdfeos5.py` | Reverse export (not naming) |
+| `sarvey2insarmaps.py` | SARvey CSV/MBTiles ingest; same base pattern via `get_output_filename()`, corners always from CSV bbox |
 
 Horz/vert products (`*vert*.he5`, `*horz*.he5`) use a separate pipeline in `horzvert_timeseries.bash`, not the patterns above.
