@@ -13,9 +13,10 @@ from urllib.parse import parse_qsl, urlencode, urlparse
 
 DESCRIPTION = """\
 Open an InsarMaps URL in Safari (default) or Chrome via compiled AppleScript.
-TARGET is a dataset .h5/.he5 name or a full InsarMaps URL. Layout etna-south is
-the default for dataset names; for a full URL, pass --layout to apply a preset
-view while keeping the URL host and startDataset. MintPy aliases (--vlim,
+TARGET is a dataset .h5/.he5 name or a full InsarMaps URL. --layout selects a
+preset (etna-south default) or a file containing an InsarMaps URL (center, zoom,
+ref point, scale). A full URL supplies host and
+startDataset; a dataset name supplies startDataset only. MintPy aliases (--vlim,
 --ref-lalo, --lalo, --start-date/--end-date) map to the matching InsarMaps
 query parameters. After resizing a window, --print-bounds reports --bounds
 values for the front Safari or Chrome window. Quote URLs that contain '&';
@@ -30,6 +31,7 @@ open_insarmaps.py S1_desc_124_egms_IW12_850-851-852_VV_2020_2024_concat.h5 --lay
 open_insarmaps.py "http://149.165.153.50/start/37.7189/15.3566/8.2384?startDataset=S1_desc_124_egms_IW12_850-851-852_VV_2020_2024_concat&flyToDatasetCenter=false&refPointLat=37.496&refPointLon=15.09"
 open_insarmaps.py S1_desc_124_egms_IW12_850-851-852_VV_2020_2024_concat.h5 --vlim -2 2 --ref-lalo 37.4989,15.0846
 open_insarmaps.py S1_desc_124_egms_IW12_850-851-852_VV_2020_2024_concat.h5 --layout etna-north --browser chrome
+open_insarmaps.py S1_desc_124_egms_IW12_850-851-852_VV_2020_2024_concat.h5 --layout ~/etna_north1.txt
 open_insarmaps.py --print-bounds
 """
 
@@ -139,6 +141,22 @@ def dataset_name_from_target(target: str) -> str:
     return name
 
 
+def resolve_layout(layout_arg: str | None) -> dict:
+    """Return map state from a preset name or a file containing an InsarMaps URL."""
+    if layout_arg is None:
+        return dict(LAYOUTS["etna-south"])
+    if layout_arg in LAYOUTS:
+        return dict(LAYOUTS[layout_arg])
+    path = Path(layout_arg).expanduser()
+    if path.is_file():
+        content = path.read_text(encoding="utf-8").strip()
+        if not content:
+            raise ValueError(f"Layout file is empty: {path}")
+        return parse_insarmaps_url(content)
+    presets = ", ".join(sorted(LAYOUTS))
+    raise ValueError(f"Unknown layout {layout_arg!r}; use a preset ({presets}) or a layout file path")
+
+
 def parse_insarmaps_url(target: str) -> dict:
     """Parse origin, /start/lat/lon/zoom, and query parameters from an InsarMaps URL."""
     parsed = urlparse(normalize_url(target))
@@ -172,7 +190,7 @@ def create_parser() -> argparse.ArgumentParser:
         allow_abbrev=False,
     )
     parser.add_argument("target", nargs="?", help="Dataset file/name (.h5/.he5 suffix stripped) or full InsarMaps URL")
-    parser.add_argument("--layout", choices=list(LAYOUTS), help="Preset view: etna-south (default for dataset names), etna-north")
+    parser.add_argument("--layout", metavar="PRESET|FILE", help="Preset view or file with an InsarMaps URL (default: etna-south)")
     parser.add_argument("--browser", choices=("safari", "chrome"), default="safari", help="Browser to open (default: safari)")
     parser.add_argument(
         "--bounds", nargs=4, type=int, metavar=("LEFT", "TOP", "RIGHT", "BOTTOM"),
@@ -235,25 +253,17 @@ def initial_state(args: argparse.Namespace) -> dict:
             "URL has no startDataset; quote the URL so the shell does not split on '&'"
         )
 
-    if args.layout:
-        state = dict(LAYOUTS[args.layout])
-        if parsed_url is not None:
-            state["host"] = parsed_url["host"]
-            if parsed_url.get("startDataset"):
-                state["startDataset"] = parsed_url["startDataset"]
-        elif target:
-            state["startDataset"] = dataset_name_from_target(target)
-        return state
+    if not target and not args.layout:
+        raise ValueError("TARGET or --layout is required")
 
+    state = resolve_layout(args.layout)
     if parsed_url is not None:
-        return parsed_url
-
-    if target:
-        state = dict(LAYOUTS["etna-south"])
+        state["host"] = parsed_url["host"]
+        if parsed_url.get("startDataset"):
+            state["startDataset"] = parsed_url["startDataset"]
+    elif target:
         state["startDataset"] = dataset_name_from_target(target)
-        return state
-
-    raise ValueError("TARGET or --layout is required")
+    return state
 
 
 def apply_cli_overrides(state: dict, args: argparse.Namespace) -> None:
