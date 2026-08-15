@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """In-memory reference-point update for MintPy HDFEOS5 (.he5) files.
 
-Updates displacement date-by-date (one 2D slice at a time) so large LOS cubes
-do not require extract_hdfeos5 → reference_point.py → save_hdfeos5.
-Default is in-place (same basename). Use --output to write a different path.
+Resolves lat/lon from GEO metadata or in-file geometry latitude/longitude
+(MintPy geo2radar + geometryRadar.h5 only as fallback). Subtracts the
+reference time series from the displacement cube in memory when the pixel
+changes. Default is in-place (same basename). Use --output to write a
+different path.
 """
 
 from __future__ import annotations
@@ -14,18 +16,22 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
 
 import h5py
 import numpy as np
 
 DISP_PATH = "HDFEOS/GRIDS/timeseries/observation/displacement"
 OBS_GROUP = "HDFEOS/GRIDS/timeseries/observation"
+TS_GROUP = "HDFEOS/GRIDS/timeseries"
+LAT_PATH = "HDFEOS/GRIDS/timeseries/geometry/latitude"
+LON_PATH = "HDFEOS/GRIDS/timeseries/geometry/longitude"
+MAX_INMEMORY_BYTES = 4 * 1024**3
 
 DESCRIPTION = """\
 Change the spatial reference point of an HDFEOS5 timeseries in place (or to --output).
-GEO files use Y_FIRST/X_FIRST metadata; RADAR files need geometryRadar.h5 lookup
-(beside the file, --lookup, or temporary geometry extract).
+GEO files use Y_FIRST/X_FIRST; RADAR files use in-file latitude/longitude
+(or --lookup / geometryRadar.h5 / temporary extract as fallback).
+Prints current and new reference; quits if the pixel is unchanged.
 """
 
 EXAMPLE = """Examples:
@@ -33,6 +39,10 @@ reference_point_hdfeos5.py S1_....he5 --ref-lalo -0.81 -91.190
 reference_point_hdfeos5.py S1_....he5 --ref-lalo -0.81,-91.190 --output out.he5
 reference_point_hdfeos5.py geo_S1_....he5 --ref-lalo 36.4 25.47
 """
+
+
+def _log(msg):
+    print(msg, flush=True)
 
 
 def create_parser():
@@ -106,8 +116,8 @@ def read_he5_metadata(he5_path):
         meta.update(_attrs_to_dict(f.attrs))
         if OBS_GROUP in f:
             meta.update(_attrs_to_dict(f[OBS_GROUP].attrs))
-        if "HDFEOS/GRIDS/timeseries" in f:
-            meta.update(_attrs_to_dict(f["HDFEOS/GRIDS/timeseries"].attrs))
+        if TS_GROUP in f:
+            meta.update(_attrs_to_dict(f[TS_GROUP].attrs))
         if DISP_PATH not in f:
             raise KeyError(f"Missing dataset {DISP_PATH} in {he5_path}")
         meta.update(_attrs_to_dict(f[DISP_PATH].attrs))
@@ -138,6 +148,26 @@ def lalo_to_yx_geo(meta, lat, lon):
             f"{length}x{width} for lat={lat}, lon={lon}"
         )
     return ref_y, ref_x
+
+
+def lalo_to_yx_from_arrays(lat2d, lon2d, lat, lon):
+    """Nearest valid pixel to (lat, lon) in 2D latitude/longitude arrays."""
+    d2 = (lat2d.astype(np.float64) - lat) ** 2 + (lon2d.astype(np.float64) - lon) ** 2
+    d2 = np.where(np.isfinite(d2), d2, np.inf)
+    if not np.isfinite(d2).any():
+        raise ValueError("No valid lat/lon pixels for reference search")
+    ref_y, ref_x = np.unravel_index(int(np.argmin(d2)), d2.shape)
+    return int(ref_y), int(ref_x)
+
+
+def lalo_to_yx_he5_geometry(he5_path, lat, lon):
+    """Return (y, x) from in-file geometry lat/lon, or None if datasets missing."""
+    with h5py.File(he5_path, "r") as f:
+        if LAT_PATH not in f or LON_PATH not in f:
+            return None
+        lat2d = f[LAT_PATH][()]
+        lon2d = f[LON_PATH][()]
+    return lalo_to_yx_from_arrays(lat2d, lon2d, lat, lon)
 
 
 def lalo_to_yx_radar(meta, lat, lon, lookup_path):
@@ -205,9 +235,37 @@ def resolve_ref_yx(he5_path, lat, lon, lookup=None):
     if is_geo_coords(meta):
         ref_y, ref_x = lalo_to_yx_geo(meta, lat, lon)
         return ref_y, ref_x, meta, "GEO"
+    _log("Resolving reference pixel from in-file latitude/longitude ...")
+    yx = lalo_to_yx_he5_geometry(he5_path, lat, lon)
+    if yx is not None:
+        return yx[0], yx[1], meta, "RADAR"
+    _log("In-file lat/lon not found; using geometryRadar.h5 lookup ...")
     lookup_path = ensure_radar_lookup(he5_path, lookup_pre=lookup)
     ref_y, ref_x = lalo_to_yx_radar(meta, lat, lon, lookup_path)
     return ref_y, ref_x, meta, "RADAR"
+
+
+def _parse_current_ref(meta):
+    """Return (y, x, lat, lon); y/x are None if missing or unparsable."""
+    try:
+        cur_y = int(float(meta["REF_Y"]))
+        cur_x = int(float(meta["REF_X"]))
+    except (KeyError, TypeError, ValueError):
+        cur_y, cur_x = None, None
+    try:
+        cur_lat = float(meta["REF_LAT"])
+        cur_lon = float(meta["REF_LON"])
+    except (KeyError, TypeError, ValueError):
+        cur_lat, cur_lon = None, None
+    return cur_y, cur_x, cur_lat, cur_lon
+
+
+def _fmt_ref(y, x, lat, lon):
+    """Format a reference point for logging."""
+    yx = f"y={y}, x={x}" if y is not None and x is not None else "y=?, x=?"
+    if lat is None or lon is None:
+        return f"{yx} (lat=?, lon=?)"
+    return f"{yx} (lat={lat}, lon={lon})"
 
 
 def _set_ref_attrs(h5obj, ref_y, ref_x, lat, lon):
@@ -218,18 +276,84 @@ def _set_ref_attrs(h5obj, ref_y, ref_x, lat, lon):
     h5obj.attrs["REF_LON"] = str(lon)
 
 
+def _apply_ref_attrs(f, ref_y, ref_x, lat, lon):
+    """Write REF_* on root, observation, and timeseries groups if present."""
+    _set_ref_attrs(f, ref_y, ref_x, lat, lon)
+    if OBS_GROUP in f:
+        _set_ref_attrs(f[OBS_GROUP], ref_y, ref_x, lat, lon)
+    if TS_GROUP in f:
+        _set_ref_attrs(f[TS_GROUP], ref_y, ref_x, lat, lon)
+
+
+def _check_ref_series(ref, ref_y, ref_x):
+    """Raise if any date is NaN at the reference pixel."""
+    if np.isnan(ref).any():
+        bad = int(np.flatnonzero(np.isnan(ref))[0])
+        raise ValueError(
+            f"NaN at reference pixel (y={ref_y}, x={ref_x}) on date index {bad}"
+        )
+
+
+def update_displacement(ds, ref_y, ref_x):
+    """Subtract displacement at (ref_y, ref_x) from every date.
+
+    Loads the cube when it fits in MAX_INMEMORY_BYTES; otherwise writes
+    chunk-aligned date blocks so LZF chunks are rewritten once.
+    """
+    n_dates, length, width = ds.shape[0], ds.shape[1], ds.shape[2]
+    nbytes = int(n_dates) * int(length) * int(width) * ds.dtype.itemsize
+    if nbytes <= MAX_INMEMORY_BYTES:
+        _log(
+            f"Updating displacement in memory "
+            f"({n_dates} dates, {length}x{width}, {nbytes / 1e6:.1f} MB) ..."
+        )
+        data = ds[()]
+        ref = np.asarray(data[:, ref_y, ref_x])
+        _check_ref_series(ref, ref_y, ref_x)
+        data -= ref[:, None, None]
+        ds[()] = data
+        return
+
+    chunk0 = ds.chunks[0] if ds.chunks else 1
+    _log(
+        f"Updating displacement in {chunk0}-date blocks "
+        f"({n_dates} dates, {length}x{width}) ..."
+    )
+    ref = np.asarray(ds[:, ref_y, ref_x])
+    _check_ref_series(ref, ref_y, ref_x)
+    for i0 in range(0, n_dates, chunk0):
+        i1 = min(i0 + chunk0, n_dates)
+        slab = np.asarray(ds[i0:i1, :, :])
+        slab = slab - ref[i0:i1, None, None]
+        ds[i0:i1, :, :] = slab
+
+
 def reference_point_hdfeos5(he5_path, lat, lon, outfile=None, lookup=None, force=False):
     """Subtract displacement at (lat, lon) from every date; update REF_* attrs.
 
-    Returns path to the updated HE5 file.
+    Returns path to the updated HE5 file, or the input path if the reference
+    pixel is unchanged (no write).
     """
     he5_path = os.path.abspath(he5_path)
     if not os.path.isfile(he5_path):
         raise FileNotFoundError(he5_path)
 
+    _log(f"Reading {he5_path} ...")
+    ref_y, ref_x, meta, coords = resolve_ref_yx(he5_path, lat, lon, lookup=lookup)
+    cur_y, cur_x, cur_lat, cur_lon = _parse_current_ref(meta)
+
+    _log(f"Coordinate system: {coords}")
+    _log(f"Current reference: {_fmt_ref(cur_y, cur_x, cur_lat, cur_lon)}")
+    _log(f"New reference:     {_fmt_ref(ref_y, ref_x, lat, lon)}")
+
+    if not force and cur_y is not None and cur_y == ref_y and cur_x == ref_x:
+        _log("Current and new reference point are the same; nothing to do.")
+        return he5_path
+
     if outfile:
         outfile = os.path.abspath(outfile)
-        if os.path.abspath(outfile) != he5_path:
+        if outfile != he5_path:
+            _log(f"Copying to {outfile} ...")
             shutil.copy2(he5_path, outfile)
             work_path = outfile
         else:
@@ -237,45 +361,11 @@ def reference_point_hdfeos5(he5_path, lat, lon, outfile=None, lookup=None, force
     else:
         work_path = he5_path
 
-    ref_y, ref_x, meta, coords = resolve_ref_yx(work_path, lat, lon, lookup=lookup)
-    print(f"Coordinate system: {coords}")
-    print(f"Reference pixel: y={ref_y}, x={ref_x} (lat={lat}, lon={lon})")
-
-    if not force:
-        try:
-            cur_y = int(float(meta.get("REF_Y", -999)))
-            cur_x = int(float(meta.get("REF_X", -999)))
-            if cur_y == ref_y and cur_x == ref_x:
-                print("SAME reference pixel already in file; updating REF_LAT/REF_LON only.")
-                with h5py.File(work_path, "r+") as f:
-                    _set_ref_attrs(f, ref_y, ref_x, lat, lon)
-                    if OBS_GROUP in f:
-                        _set_ref_attrs(f[OBS_GROUP], ref_y, ref_x, lat, lon)
-                    if "HDFEOS/GRIDS/timeseries" in f:
-                        _set_ref_attrs(f["HDFEOS/GRIDS/timeseries"], ref_y, ref_x, lat, lon)
-                return work_path
-        except (TypeError, ValueError):
-            pass
-
     with h5py.File(work_path, "r+") as f:
-        ds = f[DISP_PATH]
-        n_dates = ds.shape[0]
-        for i in range(n_dates):
-            slab = ds[i, :, :]
-            ref_val = slab[ref_y, ref_x]
-            if np.isnan(ref_val):
-                raise ValueError(
-                    f"NaN at reference pixel (y={ref_y}, x={ref_x}) on date index {i}"
-                )
-            slab = slab - ref_val
-            ds[i, :, :] = slab
-        _set_ref_attrs(f, ref_y, ref_x, lat, lon)
-        if OBS_GROUP in f:
-            _set_ref_attrs(f[OBS_GROUP], ref_y, ref_x, lat, lon)
-        if "HDFEOS/GRIDS/timeseries" in f:
-            _set_ref_attrs(f["HDFEOS/GRIDS/timeseries"], ref_y, ref_x, lat, lon)
+        update_displacement(f[DISP_PATH], ref_y, ref_x)
+        _apply_ref_attrs(f, ref_y, ref_x, lat, lon)
 
-    print(f"Updated reference point in: {work_path}")
+    _log(f"Updated reference point in: {work_path}")
     return work_path
 
 
@@ -299,7 +389,7 @@ def main(iargs=None):
     except Exception as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
-    print(f"Done: {out}")
+    print(f"Done: {out}", flush=True)
     return 0
 
 
