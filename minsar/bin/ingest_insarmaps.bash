@@ -36,6 +36,8 @@ Examples:
     $SCRIPT_NAME mintpy --step 1                         # dataset defaults to geo
     $SCRIPT_NAME mintpy --json_mbtiles2insarmaps         # step 2 only (same as --step 2); requires prior step 1
     $SCRIPT_NAME mintpy --dataset geo --suffix thermal
+    $SCRIPT_NAME mintpy --submit
+    $SCRIPT_NAME hvGalapagosSenD128/mintpy --ref-lalo -0.81,-91.190 --submit
 
   Options:
       --ref-lalo LAT,LON or LAT LON   Reference point (lat,lon or lat lon)
@@ -49,6 +51,8 @@ Examples:
       --num-workers N                 Parallel workers for hdfeos5_2json_mbtiles (sets HDFEOS_NUM_WORKERS; default 6 or env)
       --mbtiles-num-workers N         Parallel workers for json_mbtiles2insarmaps (sets MBTILES_NUM_WORKERS; default 6 or env)
       --quiet-summary                 suppress printing generated insarmaps URLs (still appends to insarmaps.log)
+      --submit                        Run ingest now (inline on Mac/Jetstream; jobfile + run_workflow on SLURM login)
+                                      Prints InsarMaps URLs after completion when using --submit
       --debug                         Enable debug mode (set -x)
       Default (no step flags): run both steps in order.
 
@@ -73,6 +77,7 @@ echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $*" | tee -a "$LOG_FILE"
 
 # Initialize option parsing variables (lowercase)
 debug_flag=0
+submit_flag=0
 positional=()
 # ingest_step: all (default) | step1 (HDFEOS5→JSON/mbtiles only) | step2 (upload only; step1 must have run)
 ingest_step="all"
@@ -155,6 +160,10 @@ do
             ;;
         --quiet-summary)
             quiet_summary=1
+            shift
+            ;;
+        --submit)
+            submit_flag=1
             shift
             ;;
         --step=*)
@@ -403,6 +412,43 @@ else
     exit 1
 fi
 
+ingest_submit_slurm_job() {
+    local job_file="${WORK_DIR}/ingest_insarmaps.job"
+    local -a cmd=(create_ingest_insarmaps_jobfile.py "$INPUT_PATH")
+    if [[ ${#ref_lalo[@]} -gt 0 ]]; then
+        cmd+=(--ref-lalo)
+        if [[ ${#ref_lalo[@]} -eq 1 ]]; then
+            cmd+=("${ref_lalo[0]}")
+        else
+            cmd+=("${ref_lalo[0]}" "${ref_lalo[1]}")
+        fi
+    fi
+    [[ -n "$dataset" ]] && cmd+=(--dataset "$dataset")
+    [[ -n "$suffix" ]] && cmd+=(--suffix "$suffix")
+    [[ $debug_flag == 1 ]] && cmd+=(--debug)
+    [[ $quiet_summary == 1 ]] && cmd+=(--quiet-summary)
+    [[ -n "$num_workers_cli" ]] && cmd+=(--num-workers "$num_workers_cli")
+    [[ -n "$mbtiles_num_workers_cli" ]] && cmd+=(--mbtiles-num-workers "$mbtiles_num_workers_cli")
+    case "$ingest_step" in
+        step1) cmd+=(--hdfeos5_2json_mbtiles) ;;
+        step2) cmd+=(--json_mbtiles2insarmaps) ;;
+    esac
+    echo "Creating jobfile: ${cmd[*]}"
+    "${cmd[@]}"
+    [[ -f "$job_file" ]] || {
+        echo "Error: jobfile not created: $job_file" >&2
+        exit 1
+    }
+    echo "Submitting via run_workflow.bash --jobfile $job_file"
+    run_workflow.bash --jobfile "$job_file"
+    ingest_print_insarmaps_urls "$DATA_DIR" "$WORK_DIR"
+}
+
+if [[ $submit_flag == 1 ]] && minsar_should_use_slurm_jobfile; then
+    ingest_submit_slurm_job
+    exit 0
+fi
+
 SSARAHOME=${SSARAHOME:-""}
 if [[ -n "$SSARAHOME" ]]; then
     INSARMAPS_USER=$(python3 -c "import sys; sys.path.insert(0, '$SSARAHOME'); import password_config; print(password_config.docker_insaruser)" 2>/dev/null || echo "")
@@ -568,3 +614,7 @@ for ingest_file in "${ingest_files[@]}"; do
         done
     fi
 done
+
+if [[ $submit_flag == 1 ]]; then
+    ingest_print_insarmaps_urls "$DATA_DIR" "$WORK_DIR"
+fi

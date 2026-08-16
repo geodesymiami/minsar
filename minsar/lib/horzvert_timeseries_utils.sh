@@ -245,6 +245,10 @@ hv_are_we_on_slurm_system() {
 
 # True when we should wrap a script-style run file as one SLURM .job (HPC login, not already in a job).
 hv_should_use_slurm_jobfile() {
+    if declare -F minsar_should_use_slurm_jobfile >/dev/null 2>&1; then
+        minsar_should_use_slurm_jobfile
+        return
+    fi
     local status
     status=$(hv_are_we_on_slurm_system 2>/dev/null || echo "False")
     [[ "$status" == "login_node" && -z "${SLURM_JOB_ID:-}" ]]

@@ -6,7 +6,7 @@
 import os
 import sys
 import argparse
-import subprocess
+import shutil
 from minsar.objects import message_rsmas
 from minsar.job_submission import JOB_SUBMIT
 
@@ -81,10 +81,24 @@ def create_parser():
                         default=None, 
                         help='job walltime (default: from job_defaults.cfg)')
     parser.add_argument('--submit', dest='submit', action='store_true',
-                        help='submit the job after creating the jobfile')
+                        help='Run via run_workflow.bash after creating the jobfile (foreground).')
    
     inps = parser.parse_args()
     return inps
+
+
+def find_run_workflow_bash():
+    """Resolve run_workflow.bash from PATH or RSMASINSAR_HOME/MINSAR_HOME."""
+    path = shutil.which('run_workflow.bash')
+    if path:
+        return os.path.abspath(path)
+    for env in ('RSMASINSAR_HOME', 'MINSAR_HOME'):
+        base = os.environ.get(env)
+        if base:
+            p = os.path.join(base, 'minsar', 'bin', 'run_workflow.bash')
+            if os.path.isfile(p):
+                return os.path.abspath(p)
+    return None
 
 def main(iargs=None):
     
@@ -144,22 +158,17 @@ def main(iargs=None):
     # Create the jobfile
     job_obj.submit_script(job_name, job_file_name, final_command, writeOnly='True')
     job_file_path = os.path.join(inps.work_dir, job_file_name + '.job')
+    job_file_abs = os.path.abspath(job_file_path)
     print('jobfile created: ', job_file_name + '.job')
     
-    # Submit the job if --submit option is provided
     if inps.submit:
-        try:
-            result = subprocess.run(['sbatch', job_file_path], 
-                                  check=True, 
-                                  capture_output=True, 
-                                  text=True)
-            print('Job submitted:', result.stdout.strip())
-        except subprocess.CalledProcessError as e:
-            print(f'Error submitting job: {e.stderr}')
+        run_workflow_bash = find_run_workflow_bash()
+        if not run_workflow_bash:
+            print('Error: run_workflow.bash not found in PATH or RSMASINSAR_HOME/MINSAR_HOME.', file=sys.stderr)
             return 1
-        except FileNotFoundError:
-            print('Error: sbatch command not found. Are you on a SLURM cluster?')
-            return 1
+        print('Running..... run_workflow.bash --jobfile', os.path.basename(job_file_abs))
+        argv = ['bash', run_workflow_bash, '--jobfile', job_file_abs]
+        os.execv('/bin/bash', argv)
 
     return None
 

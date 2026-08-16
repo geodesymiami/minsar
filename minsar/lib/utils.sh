@@ -618,3 +618,54 @@ function write_framepage_url() {
 
     echo "Wrote ${#frame_urls[@]} URL(s) to ${output_file}"
 }
+
+# Print False | login_node | compute_node (via minsar.utils.system_utils).
+minsar_are_we_on_slurm_system() {
+    python3 -c 'from minsar.utils.system_utils import are_we_on_slurm_system; r = are_we_on_slurm_system(); print(r if r else "False")'
+}
+
+# True when we should wrap a script-style run as one SLURM .job (HPC login, not already in a job).
+minsar_should_use_slurm_jobfile() {
+    local status
+    status=$(minsar_are_we_on_slurm_system 2>/dev/null || echo "False")
+    [[ "$status" == "login_node" && -z "${SLURM_JOB_ID:-}" ]]
+}
+
+# Print InsarMaps URLs after ingest (--submit on any platform).
+ingest_print_insarmaps_urls() {
+    local data_dir="$1"
+    local work_dir="$2"
+    local log_file url f
+
+    [[ -n "$data_dir" && -n "$work_dir" ]] || return 0
+
+    if [[ -d "${data_dir}/pic" && -f "${data_dir}/pic/insarmaps.log" ]]; then
+        log_file="${data_dir}/pic/insarmaps.log"
+    elif [[ -f "${work_dir}/insarmaps.log" ]]; then
+        log_file="${work_dir}/insarmaps.log"
+    elif [[ -f "${data_dir}/insarmaps.log" ]]; then
+        log_file="${data_dir}/insarmaps.log"
+    else
+        for f in \
+            "${work_dir}/ingest_insarmaps_"*.o \
+            "${work_dir}/stdout_ingest_insarmaps/ingest_insarmaps_"*.o; do
+            [[ -f "$f" ]] || continue
+            url=$(grep -E '^https?://' "$f" | grep '/start/' | tail -1)
+            if [[ -n "$url" ]]; then
+                echo ""
+                echo "InsarMaps at:"
+                grep -E '^https?://' "$f" | grep '/start/' | sort -u
+                return 0
+            fi
+        done
+        return 0
+    fi
+
+    [[ -f "$log_file" ]] || return 0
+    url=$(grep -E '^https?://' "$log_file" | tail -1)
+    [[ -n "$url" ]] || return 0
+
+    echo ""
+    echo "InsarMaps at:"
+    grep -E '^https?://' "$log_file" | sort -u
+}
