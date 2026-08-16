@@ -8,8 +8,9 @@
 #   Write: <site>/<mintpy|miaplpy[_YYYYMM_YYYYMM]>/run_horzvert2timeseries
 #          (longer of the two input periods; ref & wait; geocode & wait;
 #          horzvert_timeseries.py; wait; ingest). Default stops here.
-#   --submit: bash run file (Mac/Jetstream/in-job) or create_slurm_jobfile --from-file
-#             + run_workflow.bash --jobfile (HPC login). Then HTML/urls.
+#   --submit: bash run file (Mac/Jetstream/in-job) or job_submission.py
+#             + run_workflow.bash --jobfile (HPC login). The run file writes
+#             HTML/urls/data_files and uploads to Jetstream unless on the data server.
 #
 # Run file may contain & / wait — not for LAUNCHER (script-style, like smallbaseline_wrapper.job).
 
@@ -24,26 +25,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source ${SCRIPT_DIR}/../lib/horzvert_timeseries_utils.sh
 
 # Dependencies: utils.sh, horzvert_timeseries_utils.sh, reference_point_hdfeos5.bash,
-#   geocode.py, horzvert_timeseries.py, ingest_insarmaps.bash, create_slurm_jobfile.sh,
-#   run_workflow.bash, write_insarmaps_framepage_urls.py, create_data_download_commands.py.
-
-normalize_insarmaps_coordinates() {
-    local log_file="$1"
-
-    echo "Normalizing coordinates in insarmaps.log to use vert coordinates..."
-
-    local vert_lat=$(grep "vert" "$log_file" | head -n 1 | cut -d/ -f5)
-    local vert_lon=$(grep "vert" "$log_file" | head -n 1 | cut -d/ -f6)
-
-    echo "Using vert coordinates: $vert_lat, $vert_lon"
-
-    sed -i.bak -E "s|(/start/)[^/]+/[^/]+/|\1${vert_lat}/${vert_lon}/|" "$log_file"
-    sed -i.bak -E "s|flyToDatasetCenter=true|flyToDatasetCenter=false|g" "$log_file"
-
-    rm -f "${log_file}.bak"
-
-    echo "Updated all coordinates in insarmaps.log and disabled flyToDatasetCenter"
-}
+#   geocode.py, horzvert_timeseries.py, ingest_insarmaps.bash, create_horzvert_runfile_job.py,
+#   run_workflow.bash, write_insarmaps_framepage_urls.py, create_data_download_commands.py,
+#   upload_horzvert.py.
 
 # Resolve a path to a specific .he5 file.
 # If path is a file, return it. If a directory, use PlotData's get_eos5_file
@@ -235,6 +219,7 @@ append_hv_geocode_log_for_file() {
 append_hv_to_project_logs() {
     local line="$1"
     [[ -z "$line" ]] && return 0
+    [[ -n "${HV_PROJECT_ABS:-}" && -d "$HV_PROJECT_ABS" ]] && echo "$line" >> "${HV_PROJECT_ABS}/log"
     [[ -n "${HV_MOTHER1_ABS:-}" && -d "$HV_MOTHER1_ABS" ]] && echo "$line" >> "${HV_MOTHER1_ABS}/log"
     if [[ -n "${HV_MOTHER2_ABS:-}" && -d "$HV_MOTHER2_ABS" && "$HV_MOTHER2_ABS" != "$HV_MOTHER1_ABS" ]]; then
         echo "$line" >> "${HV_MOTHER2_ABS}/log"
@@ -252,13 +237,15 @@ Examples:
     $SCRIPT_NAME FernandinaSenD128/miaplpy/network_delaunay_4 FernandinaSenA106/miaplpy/network_delaunay_4 --ref-lalo -0.415 -91.543 --submit
     $SCRIPT_NAME LaPalmaSenA60/miaplpy/network_delaunay_4 LaPalmaSenD169/miaplpy/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --save-qgis --submit
     $SCRIPT_NAME LaPalmaSenA60/miaplpy/network_delaunay_4 LaPalmaSenD169/miaplpy/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --save-qgis-all --submit
+    $SCRIPT_NAME LaPalmaRecentSenA60/miaplpy/network_delaunay_4 LaPalmaRecentSenD169/miaplpy/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --submit --sleep 30
+    $SCRIPT_NAME LaPalmaRecentSenA60/miaplpy_202201_202606/network_delaunay_4 LaPalmaRecentSenD169/miaplpy_202501_202606/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --submit --upload
 
 Options:
       --dataset TYPE                  Select .he5 type in a directory: PS, DS, filtDS, filt*DS, geo
       -g, --geom-file FILE1 FILE2     Geometry files for horzvert_timeseries.py
       --mask-thresh FLOAT             Coherence mask threshold (default: 0.55)
       --ref-lalo LAT LON              Reference point (required); also LAT,LON or --ref-lalo=LAT,LON
-      --lat-step FLOAT                Latitude step for geocoding (default: 0.0008; lon from --ref-lalo)
+      --lat-step FLOAT                Latitude step for geocoding (default: 0.0008; lon from --ref-lalo) (0.0002 for 22.7 m azimuth resolution)
       --lalo-step LAT LON             Lat and lon step for geocoding (default: 0.0008 and lon from --ref-lalo)
       --horz-az-angle FLOAT           Horizontal azimuth angle (default: 90)
       --window-size INT               Reference-point window (default: 3)
@@ -267,15 +254,17 @@ Options:
       --end-date YYYYMMDD             End date
       --period YYYYMMDD:YYYYMMDD      Date period
       --force                         Recompute even if cached horz/vert are up to date
-      --clean                         Remove cached *vert*/*horz*.he5 and .hvparams
+      --clean                         Remove cached *vert*/*horz*.he5 and horzvert.hvparams
       --no-ingest-los                 Skip ingesting radar LOS .he5 files
       --no-insarmaps                  Skip ingest_insarmaps.bash
       --no-parallel                   Run ref-point and geocode sequentially (lower memory)
       --ingest-parallel               Run ingest lines in parallel (& / wait)
       --save-qgis, --save_qgis        Export GeoPackage for geo asc/desc + vert/horz (.he5); add to download_commands.txt
       --save-qgis-all, --save_qgis_all  Like --save-qgis plus radar asc/desc LOS .he5 (six products total)
-      --submit                        Execute run_horzvert2timeseries (default: write run file only)
-      --sleep SECS                    Sleep SECS seconds before running
+      --submit                        Execute now (bash, or job_submission.py + run_workflow on SLURM login)
+      --upload                        Upload created product dir to Jetstream (default on Stampede/Mac; skipped on Jetstream)
+      --no-upload                     Skip Jetstream upload
+      --sleep SECS                    sleep seconds before running
       --num-workers N                 ingest_insarmaps hdfeos5_2json workers (default: 1)
       --mbtiles-num-workers N         ingest_insarmaps mbtiles workers (default: 6)
       --debug                         set -x
@@ -303,6 +292,8 @@ compute_parallel_flag=1
 ingest_parallel_flag=0
 save_qgis_mode=""
 submit_flag=0
+upload_flag=1
+upload_explicit=0
 positional=()
 
 # Default values for options (lowercase - local/temporary variables)
@@ -429,6 +420,24 @@ do
             ;;
         --submit|-s)
             submit_flag=1
+            shift
+            ;;
+        --upload)
+            [[ $upload_flag == "0" && $upload_explicit == "1" ]] && {
+                echo "Error: use only one of --upload or --no-upload" >&2
+                exit 1
+            }
+            upload_flag=1
+            upload_explicit=1
+            shift
+            ;;
+        --no-upload)
+            [[ $upload_explicit == "1" && $upload_flag == "1" ]] && {
+                echo "Error: use only one of --upload or --no-upload" >&2
+                exit 1
+            }
+            upload_flag=0
+            upload_explicit=1
             shift
             ;;
         --sleep=*)
@@ -558,6 +567,15 @@ fi
 DIR_OR_FILE1="${positional[0]}"
 DIR_OR_FILE2="${positional[1]}"
 
+ORIGINAL_DIR="$PWD"
+PROJECT_DIR=$(get_base_projectname "$DIR_OR_FILE1")
+HV_PROJECT_ABS="$ORIGINAL_DIR/$PROJECT_DIR"
+mkdir -p "$HV_PROJECT_ABS"
+{
+    echo "##############################################"
+    echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME ${HV_INVOCATION_CMDLINE}"
+} >> "${HV_PROJECT_ABS}/log"
+
 HV_MOTHER1_NAME=$(hv_mother_sensor_dir "$DIR_OR_FILE1")
 HV_MOTHER2_NAME=$(hv_mother_sensor_dir "$DIR_OR_FILE2")
 HV_MOTHER1_ABS=$(hv_resolve_mother_abs "$HV_MOTHER1_NAME")
@@ -607,11 +625,13 @@ echo "FILE2 (radar LOS for pipeline): $FILE2"
 # Keep the mintpy/miaplpy dir covering the longer period, e.g.
 #   EtnaSenA44/.../miaplpy_202001_202412 + EtnaSenD124/.../miaplpy_202001_202410
 #   → Etna/miaplpy_202001_202412
-ORIGINAL_DIR="$PWD"
-PROJECT_DIR=$(get_base_projectname "$DIR_OR_FILE1")
 processing_method_dir=$(hv_longest_processing_method_dir "$DIR_OR_FILE1" "$DIR_OR_FILE2")
 HORZVERT_DIR="${PROJECT_DIR}/${processing_method_dir}"
 mkdir -p "$ORIGINAL_DIR/$HORZVERT_DIR"
+{
+    echo "##############################################"
+    echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME ${HV_INVOCATION_CMDLINE}"
+} >> "${ORIGINAL_DIR}/${HORZVERT_DIR}/log"
 
 hv_clean_cached_products() {
     local outdir="$1"
@@ -733,6 +753,10 @@ HV_INGEST_PARALLEL="$ingest_parallel_flag" \
 HV_INGEST_INSARMAPS="$ingest_insarmaps_flag" \
 HV_INGEST_LOS="$ingest_los_flag" \
 HV_SAVE_QGIS="${save_qgis_mode:-off}" \
+HV_UPLOAD="$upload_flag" \
+HV_GEOCODE_LAT_STEP="$GEOCODE_LAT_STEP" \
+HV_GEOCODE_LON_STEP="$GEOCODE_LON_STEP" \
+HV_FORCE="$force_flag" \
 HV_INGEST_WORKERS_OPTS="${ingest_workers_opts[*]}" \
 HV_GEOM_FILE_ARGS="$GEOM_FILE_ARGS" \
 HV_DATASET_OPT1="$(get_ingest_dataset_opt "$FILE1")" \
@@ -741,15 +765,20 @@ hv_write_run_horzvert2timeseries
 
 # On HPC login, always materialize the .job envelope (even without --submit).
 if hv_should_use_slurm_jobfile; then
-    (
-        cd "$HV_RUN_DIR"
-        create_slurm_jobfile.sh --job-name horzvert2timeseries --from-file run_horzvert2timeseries || true
-    )
+    hv_write_horzvert_jobfile "$HV_RUN_FILE" "horzvert_timeseries" || true
 fi
 
 if [[ $submit_flag == "0" ]]; then
     echo ""
     echo "Wrote $HV_RUN_FILE"
+    if [[ $upload_explicit == "1" && $upload_flag == "1" ]]; then
+        if ! compgen -G "$ORIGINAL_DIR/$HORZVERT_DIR"/*vert*.he5 > /dev/null; then
+            echo "Error: --upload: no *vert*.he5 under $HORZVERT_DIR (run with --submit first)" >&2
+            exit 1
+        fi
+        hv_maybe_upload_horzvert_dir "$HORZVERT_DIR"
+        exit 0
+    fi
     echo ""
     echo "Re-run with --submit to execute."
     exit 0
@@ -759,90 +788,4 @@ echo ""
 echo "##############################################"
 echo "Executing run_horzvert2timeseries (--submit)"
 append_hv_to_project_logs "$(date +'%Y%m%d:%H-%M') + bash/run_workflow run_horzvert2timeseries"
-hv_run_or_submit_script "$HV_RUN_FILE" "horzvert2timeseries"
-
-# After successful run: promote paths for HTML bookkeeping, locate outputs, write HTML/urls
-if ! FILE1=$(hv_promote_short_he5_to_corner_filename "$(realpath "$FILE1")"); then exit 1; fi
-if ! FILE2=$(hv_promote_short_he5_to_corner_filename "$(realpath "$FILE2")"); then exit 1; fi
-ORIGINAL_RESOLVED_FILE1="$(realpath "$FILE1")"
-ORIGINAL_RESOLVED_FILE2="$(realpath "$FILE2")"
-
-DATA_FILES_TXT="$ORIGINAL_DIR/$HORZVERT_DIR/data_files.txt"
-{
-    echo "# geocode-lalo-step $GEOCODE_LAT_STEP $GEOCODE_LON_STEP"
-} > "$DATA_FILES_TXT"
-
-VERT_FILE=$(ls -t "$ORIGINAL_DIR/$HORZVERT_DIR"/*vert*.he5 2>/dev/null | head -1 || true)
-HORZ_FILE=$(ls -t "$ORIGINAL_DIR/$HORZVERT_DIR"/*horz*.he5 2>/dev/null | head -1 || true)
-if [[ -z "$VERT_FILE" || -z "$HORZ_FILE" ]]; then
-    echo "Error: missing *vert*/*horz*.he5 under $ORIGINAL_DIR/$HORZVERT_DIR after run" >&2
-    exit 1
-fi
-echo "$VERT_FILE" >> "$DATA_FILES_TXT"
-echo "$HORZ_FILE" >> "$DATA_FILES_TXT"
-[[ $ingest_los_flag == "1" ]] && {
-    echo "$ORIGINAL_RESOLVED_FILE1" >> "$DATA_FILES_TXT"
-    echo "$ORIGINAL_RESOLVED_FILE2" >> "$DATA_FILES_TXT"
-}
-
-GEO_FILE1="$(dirname "$ORIGINAL_RESOLVED_FILE1")/geo_$(basename "$ORIGINAL_RESOLVED_FILE1")"
-GEO_FILE2="$(dirname "$ORIGINAL_RESOLVED_FILE2")/geo_$(basename "$ORIGINAL_RESOLVED_FILE2")"
-
-hv_data_files_contains() {
-    local path="$1"
-    [[ -f "$DATA_FILES_TXT" ]] && grep -qxF "$path" "$DATA_FILES_TXT"
-}
-
-hv_append_gpkg_for_he5() {
-    local he5_path="$1"
-    local gpkg_path="${he5_path%.he5}.gpkg"
-    [[ -z "$he5_path" || "$he5_path" != *.he5 ]] && return 0
-    if [[ ! -f "$he5_path" ]]; then
-        echo "Error: --save-qgis expected .he5 missing: $he5_path" >&2
-        exit 1
-    fi
-    if [[ ! -f "$gpkg_path" ]]; then
-        echo "Error: --save-qgis expected GeoPackage missing: $gpkg_path" >&2
-        exit 1
-    fi
-    hv_data_files_contains "$he5_path" || echo "$he5_path" >> "$DATA_FILES_TXT"
-    hv_data_files_contains "$gpkg_path" || echo "$gpkg_path" >> "$DATA_FILES_TXT"
-}
-
-if [[ -n "$save_qgis_mode" ]]; then
-    hv_append_gpkg_for_he5 "$VERT_FILE"
-    hv_append_gpkg_for_he5 "$HORZ_FILE"
-    hv_append_gpkg_for_he5 "$GEO_FILE1"
-    hv_append_gpkg_for_he5 "$GEO_FILE2"
-    if [[ "$save_qgis_mode" == "all" ]]; then
-        hv_append_gpkg_for_he5 "$ORIGINAL_RESOLVED_FILE1"
-        hv_append_gpkg_for_he5 "$ORIGINAL_RESOLVED_FILE2"
-    fi
-fi
-
-if [[ $ingest_insarmaps_flag == "0" && -z "$save_qgis_mode" ]]; then
-    exit 0
-fi
-
-if [[ $ingest_insarmaps_flag == "0" ]]; then
-    create_data_download_commands.py "$DATA_FILES_TXT"
-    exit 0
-fi
-
-# Normalize log / write HTML (always after ingest when --submit, including --no-ingest-los)
-if [[ -f "$ORIGINAL_DIR/$HORZVERT_DIR/insarmaps.log" ]]; then
-    normalize_insarmaps_coordinates "$ORIGINAL_DIR/$HORZVERT_DIR/insarmaps.log"
-fi
-
-echo ""
-echo "##############################################"
-echo "Write InsarMaps HTML / urls / download commands"
-HTML_SOURCE="${SCRIPT_DIR}/../html"
-cp "$HTML_SOURCE/overlay.html" "$HTML_SOURCE/matrix.html" "$ORIGINAL_DIR/$HORZVERT_DIR/"
-cp "$ORIGINAL_DIR/$HORZVERT_DIR/overlay.html" "$ORIGINAL_DIR/$HORZVERT_DIR/index.html"
-write_insarmaps_framepage_urls.py "$HORZVERT_DIR" --outdir "$HORZVERT_DIR"
-create_data_download_commands.py "$DATA_FILES_TXT"
-if [[ -f "$ORIGINAL_DIR/$HORZVERT_DIR/urls.log" ]]; then
-    echo "insarmaps frames created:"
-    cat "$ORIGINAL_DIR/$HORZVERT_DIR/urls.log"
-fi
+hv_run_or_submit_script "$HV_RUN_FILE" "horzvert_timeseries"

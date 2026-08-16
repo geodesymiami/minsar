@@ -280,10 +280,11 @@ def main(iargs=None):
         print('For known issues see https://github.com/geodesymiami/minsar/tree/master/docs/known_issues.md')
         raise RuntimeError('Error in run_file: ' + run_file_base)
 
-    # move only if there was no error
+    # move only if there was no error (horzvert keeps *.o/*.e next to the .job)
     if len(os.path.dirname(run_file_base))==0:
        run_file = os.getcwd() + '/' + run_file_base
-    putils.move_out_job_files_to_stdout(run_file=run_file_base)
+    if 'horzvert_timeseries' not in job_name:
+        putils.move_out_job_files_to_stdout(run_file=run_file_base)
 
     return
 

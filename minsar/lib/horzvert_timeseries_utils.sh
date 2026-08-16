@@ -250,6 +250,219 @@ hv_should_use_slurm_jobfile() {
     [[ "$status" == "login_node" && -z "${SLURM_JOB_ID:-}" ]]
 }
 
+# True on the Jetstream / insarmaps host that serves HDF5EOS (do not upload to self).
+hv_is_on_data_server() {
+    local host_s host_f remote
+    [[ "${PLATFORM_NAME:-}" == "jetstream" ]] && return 0
+    [[ "${HOSTNAME:-}" == "perfectly-elegant-tapir" ]] && return 0
+    [[ "${HOSTNAME:-}" =~ ^insarmaps[123]$ ]] && return 0
+    host_s=$(hostname -s 2>/dev/null || hostname)
+    host_f=$(hostname -f 2>/dev/null || hostname)
+    [[ "$host_s" == "perfectly-elegant-tapir" ]] && return 0
+    remote="${REMOTEHOST_DATA:-}"
+    if [[ -n "$remote" ]]; then
+        [[ "$host_s" == "$remote" || "$host_f" == "$remote" ]] && return 0
+    fi
+    return 1
+}
+
+# Rewrite insarmaps.log start lat/lon to the vert product and disable flyToDatasetCenter.
+hv_normalize_insarmaps_coordinates() {
+    local log_file="$1"
+    local vert_lat vert_lon
+
+    [[ -f "$log_file" ]] || return 0
+    echo "Normalizing coordinates in insarmaps.log to use vert coordinates..."
+    vert_lat=$(grep "vert" "$log_file" | head -n 1 | cut -d/ -f5)
+    vert_lon=$(grep "vert" "$log_file" | head -n 1 | cut -d/ -f6)
+    echo "Using vert coordinates: $vert_lat, $vert_lon"
+    sed -i.bak -E "s|(/start/)[^/]+/[^/]+/|\1${vert_lat}/${vert_lon}/|" "$log_file"
+    sed -i.bak -E "s|flyToDatasetCenter=true|flyToDatasetCenter=false|g" "$log_file"
+    rm -f "${log_file}.bak"
+    echo "Updated all coordinates in insarmaps.log and disabled flyToDatasetCenter"
+}
+
+hv_data_files_contains() {
+    local data_files="$1"
+    local path="$2"
+    [[ -f "$data_files" ]] && grep -qxF "$path" "$data_files"
+}
+
+# Geometry file for save_qgis.py (-g): geo/vert/horz HDFEOS use self; radar uses inputs/geometryRadar.h5.
+hv_geom_for_save_qgis_he5() {
+    local he5="$1"
+    local dir base
+
+    [[ -n "$he5" && -f "$he5" ]] || return 1
+    dir=$(dirname "$he5")
+    base=$(basename "$he5")
+
+    if [[ "$base" == geo_* || "$base" == *vert* || "$base" == *horz* ]]; then
+        echo "$he5"
+        return 0
+    fi
+    if [[ -f "${dir}/inputs/geometryRadar.h5" ]]; then
+        echo "${dir}/inputs/geometryRadar.h5"
+        return 0
+    fi
+    echo "$he5"
+    return 0
+}
+
+# Ensure MinSAR patched save_qgis (HDFEOS .he5) is linked into MintPy (install_minsar.bash step).
+hv_ensure_minsar_save_qgis_links() {
+    local mh="${MINSAR_HOME:-}"
+    local mod cli mintpy_src
+
+    if [[ -z "$mh" ]]; then
+        mh="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+    fi
+    mod="${mh}/additions/mintpy/save_qgis.py"
+    cli="${mh}/additions/mintpy/cli/save_qgis.py"
+    mintpy_src="${mh}/tools/MintPy/src/mintpy"
+    [[ -f "$mod" && -f "$cli" && -d "${mintpy_src}/cli" ]] || return 1
+    ln -sf "$mod" "${mintpy_src}/save_qgis.py"
+    ln -sf "$cli" "${mintpy_src}/cli/save_qgis.py"
+    return 0
+}
+
+# save_qgis.py wrapper: MinSAR HDFEOS-aware save_qgis; always pass -g.
+hv_save_qgis_he5() {
+    local he5="$1"
+    local geom
+
+    [[ -n "$he5" && -f "$he5" ]] || {
+        echo "hv_save_qgis_he5: missing .he5: $he5" >&2
+        return 1
+    }
+    geom=$(hv_geom_for_save_qgis_he5 "$he5") || return 1
+    if ! hv_ensure_minsar_save_qgis_links; then
+        echo "hv_save_qgis_he5: MinSAR save_qgis additions not found (MINSAR_HOME=$MINSAR_HOME)" >&2
+        return 1
+    fi
+    save_qgis.py "$he5" -g "$geom"
+}
+
+hv_append_gpkg_for_he5() {
+    local data_files="$1"
+    local he5_path="$2"
+    local gpkg_path="${he5_path%.he5}.gpkg"
+    [[ -z "$he5_path" || "$he5_path" != *.he5 ]] && return 0
+    if [[ ! -f "$he5_path" ]]; then
+        echo "Error: --save-qgis expected .he5 missing: $he5_path" >&2
+        return 1
+    fi
+    if [[ ! -f "$gpkg_path" ]]; then
+        echo "Error: --save-qgis expected GeoPackage missing: $gpkg_path" >&2
+        return 1
+    fi
+    hv_data_files_contains "$data_files" "$he5_path" || echo "$he5_path" >> "$data_files"
+    hv_data_files_contains "$data_files" "$gpkg_path" || echo "$gpkg_path" >> "$data_files"
+}
+
+# Upload product dir to Jetstream unless this host is the data server.
+hv_maybe_upload_horzvert_dir() {
+    local product_dir="$1"
+    if hv_is_on_data_server; then
+        echo "Skipping Jetstream upload (on data server)"
+        return 0
+    fi
+    echo ""
+    echo "##############################################"
+    echo "Uploading $product_dir to Jetstream"
+    upload_horzvert.py "$product_dir"
+}
+
+# Write data_files.txt, InsarMaps HTML/urls, download commands; optionally upload.
+# Args: OUTDIR LAT_STEP LON_STEP RADAR1 RADAR2 INGEST_INSARMAPS INGEST_LOS SAVE_QGIS DO_UPLOAD HORZVERT_REL
+hv_finish_horzvert_run() {
+    local outdir="$1"
+    local lat_step="$2"
+    local lon_step="$3"
+    local radar1="$4"
+    local radar2="$5"
+    local ingest_insarmaps="$6"
+    local ingest_los="$7"
+    local save_qgis="$8"
+    local do_upload="$9"
+    local horzvert_rel="${10}"
+    local data_files vert horz geo1 geo2 html_source lib_dir
+
+    outdir=$(realpath "$outdir")
+    if [[ -n "${SCRATCHDIR:-}" && -d "$SCRATCHDIR" ]]; then
+        cd "$SCRATCHDIR"
+    fi
+
+    vert="${VERT:-}"
+    horz="${HORZ:-}"
+    if [[ -z "$vert" || ! -f "$vert" ]]; then
+        vert=$(ls -t "$outdir"/*vert*.he5 2>/dev/null | head -1 || true)
+    fi
+    if [[ -z "$horz" || ! -f "$horz" ]]; then
+        horz=$(ls -t "$outdir"/*horz*.he5 2>/dev/null | head -1 || true)
+    fi
+    if [[ -z "$vert" || -z "$horz" || ! -f "$vert" || ! -f "$horz" ]]; then
+        echo "Error: missing *vert*/*horz*.he5 under $outdir" >&2
+        return 1
+    fi
+    vert=$(realpath "$vert")
+    horz=$(realpath "$horz")
+    if ! radar1=$(hv_promote_short_he5_to_corner_filename "$(realpath "$radar1")"); then return 1; fi
+    if ! radar2=$(hv_promote_short_he5_to_corner_filename "$(realpath "$radar2")"); then return 1; fi
+    radar1=$(realpath "$radar1")
+    radar2=$(realpath "$radar2")
+    geo1="$(dirname "$radar1")/geo_$(basename "$radar1")"
+    geo2="$(dirname "$radar2")/geo_$(basename "$radar2")"
+
+    data_files="$outdir/data_files.txt"
+    {
+        echo "# geocode-lalo-step $lat_step $lon_step"
+        echo "$vert"
+        echo "$horz"
+        echo "$radar1"
+        if [[ "$radar1" != "$radar2" ]]; then
+            echo "$radar2"
+        fi
+        [[ -f "$geo1" ]] && echo "$geo1"
+        if [[ "$geo1" != "$geo2" && -f "$geo2" ]]; then
+            echo "$geo2"
+        fi
+    } > "$data_files"
+    if [[ "$save_qgis" != "off" && -n "$save_qgis" ]]; then
+        hv_append_gpkg_for_he5 "$data_files" "$vert" || return 1
+        hv_append_gpkg_for_he5 "$data_files" "$horz" || return 1
+        hv_append_gpkg_for_he5 "$data_files" "$geo1" || return 1
+        hv_append_gpkg_for_he5 "$data_files" "$geo2" || return 1
+        if [[ "$save_qgis" == "all" ]]; then
+            hv_append_gpkg_for_he5 "$data_files" "$radar1" || return 1
+            hv_append_gpkg_for_he5 "$data_files" "$radar2" || return 1
+        fi
+    fi
+
+    if [[ "$ingest_insarmaps" == "1" ]]; then
+        hv_normalize_insarmaps_coordinates "$outdir/insarmaps.log"
+        echo ""
+        echo "##############################################"
+        echo "Write InsarMaps HTML / urls / download commands"
+        lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+        html_source="${lib_dir}/../html"
+        cp "$html_source/overlay.html" "$outdir/"
+        cp "$outdir/overlay.html" "$outdir/index.html"
+        write_insarmaps_framepage_urls.py "${horzvert_rel:-$outdir}" --outdir "${horzvert_rel:-$outdir}"
+        create_data_download_commands.py "$data_files"
+        if [[ -f "$outdir/urls.log" ]]; then
+            echo "insarmaps frames created:"
+            cat "$outdir/urls.log"
+        fi
+    elif [[ "$save_qgis" != "off" && -n "$save_qgis" ]]; then
+        create_data_download_commands.py "$data_files"
+    fi
+
+    if [[ "$do_upload" == "1" ]]; then
+        hv_maybe_upload_horzvert_dir "${horzvert_rel:-$outdir}"
+    fi
+}
+
 # Path for run_horzvert2timeseries: under $SCRATCHDIR → relative; else absolute.
 hv_runfile_path() {
     local path="$1"
@@ -336,11 +549,43 @@ hv_longest_processing_method_dir() {
     fi
 }
 
-# Exit 0 if radar must be geocoded (no geo file, or radar newer than geo).
+# Exit 0 if radar must be geocoded (missing geo, radar newer, or posting mismatch).
 need_geocode() {
     local radar="$1"
     local geo="$2"
-    [[ ! -f "$geo" || "$radar" -nt "$geo" ]]
+    local lat_step="${3:-}"
+    local lon_step="${4:-}"
+    [[ ! -f "$geo" ]] && return 0
+    [[ "$radar" -nt "$geo" ]] && return 0
+    if [[ -n "$lat_step" && -n "$lon_step" ]]; then
+        hv_he5_posting_matches "$geo" "$lat_step" "$lon_step" && return 1
+        return 0
+    fi
+    return 1
+}
+
+# True when HE5 Y_STEP/X_STEP match lat/lon step (sign ignored).
+hv_he5_posting_matches() {
+    local he5="$1"
+    local lat_step="$2"
+    local lon_step="$3"
+    HV_HE5="$he5" HV_LAT_STEP="$lat_step" HV_LON_STEP="$lon_step" python3 - <<'PY'
+import os
+import sys
+
+from mintpy.utils import readfile
+
+he5 = os.environ["HV_HE5"]
+try:
+    atr = readfile.read_attribute(he5)
+    y_step = abs(float(atr["Y_STEP"]))
+    x_step = abs(float(atr["X_STEP"]))
+    lat_step = abs(float(os.environ["HV_LAT_STEP"]))
+    lon_step = abs(float(os.environ["HV_LON_STEP"]))
+except Exception:
+    sys.exit(1)
+sys.exit(0 if abs(y_step - lat_step) <= 1e-8 and abs(x_step - lon_step) <= 1e-8 else 1)
+PY
 }
 
 # Wait for background PIDs; fail if any exited non-zero (set -e friendly).
@@ -376,7 +621,8 @@ hv_ingest_insarmaps_logged() {
 # Optional: HV_CACHE_HIT=0|1, HV_GEOCODE_ARGS, HV_PY_SUFFIX, HV_COMPUTE_PARALLEL=1|0,
 #           HV_INGEST_PARALLEL=0|1, HV_INGEST_INSARMAPS=1|0, HV_INGEST_LOS=1|0,
 #           HV_INGEST_WORKERS_OPTS (string), HV_GEOM_FILE_ARGS, HV_DATASET_OPT1, HV_DATASET_OPT2,
-#           HV_SAVE_QGIS=off|geo|all  (geo: vert/horz + geo asc/desc; all: + radar asc/desc)
+#           HV_SAVE_QGIS=off|geo|all  (geo: vert/horz + geo asc/desc; all: + radar asc/desc),
+#           HV_UPLOAD=1|0, HV_GEOCODE_LAT_STEP, HV_GEOCODE_LON_STEP, HV_FORCE=0|1
 hv_write_run_horzvert2timeseries() {
     local run_file="${HV_RUN_FILE:?}"
     local radar1="${HV_RADAR1:?}"
@@ -392,6 +638,10 @@ hv_write_run_horzvert2timeseries() {
     local ingest_insarmaps="${HV_INGEST_INSARMAPS:-1}"
     local ingest_los="${HV_INGEST_LOS:-1}"
     local save_qgis="${HV_SAVE_QGIS:-off}"
+    local do_upload="${HV_UPLOAD:-1}"
+    local lat_step="${HV_GEOCODE_LAT_STEP:-}"
+    local lon_step="${HV_GEOCODE_LON_STEP:-}"
+    local force="${HV_FORCE:-0}"
     local workers_opts="${HV_INGEST_WORKERS_OPTS:-}"
     local geom_args="${HV_GEOM_FILE_ARGS:-}"
     local ds1="${HV_DATASET_OPT1:-}"
@@ -462,10 +712,15 @@ hv_write_run_horzvert2timeseries() {
                 fi
             fi
             echo ""
-            echo "need_geocode1=0"
-            echo "need_geocode2=0"
-            echo "need_geocode ${q_radar1} ${q_geo1} && need_geocode1=1"
-            echo "need_geocode ${q_radar2} ${q_geo2} && need_geocode2=1"
+            if [[ "$force" == "1" ]]; then
+                echo "need_geocode1=1"
+                echo "need_geocode2=1"
+            else
+                echo "need_geocode1=0"
+                echo "need_geocode2=0"
+                echo "need_geocode ${q_radar1} ${q_geo1} $(printf '%q' "$lat_step") $(printf '%q' "$lon_step") && need_geocode1=1"
+                echo "need_geocode ${q_radar2} ${q_geo2} $(printf '%q' "$lat_step") $(printf '%q' "$lon_step") && need_geocode2=1"
+            fi
             echo ""
             if [[ "$compute_parallel" == "1" ]]; then
                 echo "pids=()"
@@ -506,21 +761,23 @@ hv_write_run_horzvert2timeseries() {
         fi
 
         if [[ "$save_qgis" != "off" ]]; then
-            echo "save_qgis.py \"\$VERT\""
-            echo "save_qgis.py \"\$HORZ\""
-            echo "save_qgis.py ${q_abs_geo1}"
-            echo "save_qgis.py ${q_abs_geo2}"
+            echo 'hv_save_qgis_he5 "$VERT"'
+            echo 'hv_save_qgis_he5 "$HORZ"'
+            echo "hv_save_qgis_he5 ${q_abs_geo1}"
+            echo "hv_save_qgis_he5 ${q_abs_geo2}"
             if [[ "$save_qgis" == "all" ]]; then
-                echo "save_qgis.py ${q_abs_radar1}"
-                echo "save_qgis.py ${q_abs_radar2}"
+                echo "hv_save_qgis_he5 ${q_abs_radar1}"
+                echo "hv_save_qgis_he5 ${q_abs_radar2}"
             fi
             echo ""
         fi
 
         if [[ "$ingest_insarmaps" == "1" ]]; then
             # Cd into product dir so ingest writes insarmaps.log next to overlay.html.
+            # Truncate first so this run's four URLs are the only entries.
             # Also append command lines to SCRATCHDIR/log via hv_ingest_insarmaps_logged.
             echo "cd ${q_abs_outdir}"
+            echo "rm -f insarmaps.log"
             echo "hv_ingest_insarmaps_logged ${q_scratch_log} \"\$VERT\" ${workers_opts}${amp}"
             echo "hv_ingest_insarmaps_logged ${q_scratch_log} \"\$HORZ\" ${workers_opts}${amp}"
             if [[ "$ingest_los" == "1" ]]; then
@@ -539,15 +796,72 @@ hv_write_run_horzvert2timeseries() {
                 echo "wait"
             fi
         fi
+
+        echo ""
+        echo "hv_finish_horzvert_run ${q_abs_outdir} $(printf '%q' "$lat_step") $(printf '%q' "$lon_step") \\"
+        echo "  ${q_abs_radar1} ${q_abs_radar2} \\"
+        echo "  $(printf '%q' "$ingest_insarmaps") $(printf '%q' "$ingest_los") $(printf '%q' "$save_qgis") \\"
+        echo "  $(printf '%q' "$do_upload") ${q_outdir}"
     } > "$run_file"
 
     chmod +x "$run_file"
 }
 
-# Execute script-style run file: bash locally, or create .job + run_workflow --jobfile on SLURM login.
+# Write horzvert_timeseries.job next to the run file via job_submission.py.
+hv_write_horzvert_jobfile() {
+    local run_file="$1"
+    local job_name="${2:-horzvert_timeseries}"
+    local work_dir
+
+    [[ -f "$run_file" ]] || {
+        echo "hv_write_horzvert_jobfile: missing $run_file" >&2
+        return 1
+    }
+    work_dir=$(dirname "$run_file")
+    (
+        cd "$work_dir"
+        create_horzvert_runfile_job.py --from-file "$(basename "$run_file")" --job-name "$job_name"
+    )
+}
+
+# Print overlay.html URL after horzvert run (urls.log or latest job stdout).
+hv_print_horzvert_overlay_url() {
+    local product_dir="$1"
+    local urls_log url f
+
+    [[ -n "$product_dir" && -d "$product_dir" ]] || return 0
+    product_dir=$(realpath "$product_dir" 2>/dev/null || echo "$product_dir")
+
+    urls_log="${product_dir}/urls.log"
+    if [[ -f "$urls_log" ]]; then
+        url=$(grep -E 'overlay\.html' "$urls_log" | tail -1)
+        if [[ -n "$url" ]]; then
+            echo ""
+            echo "Data at:"
+            echo "$url"
+            return 0
+        fi
+    fi
+
+    for f in \
+        "${product_dir}/horzvert_timeseries_"*.o \
+        "${product_dir}/stdout_horzvert_timeseries/horzvert_timeseries_"*.o; do
+        [[ -f "$f" ]] || continue
+        url=$(grep -E '^https?://' "$f" | grep 'overlay\.html' | tail -1)
+        if [[ -n "$url" ]]; then
+            echo ""
+            echo "Data at:"
+            echo "$url"
+            return 0
+        fi
+    done
+    return 0
+}
+
+# Execute script-style run file: bash locally, or JOB_SUBMIT .job + run_workflow --jobfile on SLURM login.
 hv_run_or_submit_script() {
     local run_file="$1"
-    local job_name="${2:-horzvert2timeseries}"
+    local job_name="${2:-horzvert_timeseries}"
     local job_file work_dir
 
     [[ -f "$run_file" ]] || {
@@ -557,14 +871,15 @@ hv_run_or_submit_script() {
     work_dir=$(dirname "$run_file")
 
     if hv_should_use_slurm_jobfile; then
-        (
-            cd "$work_dir"
-            create_slurm_jobfile.sh --job-name "$job_name" --from-file "$(basename "$run_file")"
-        )
+        hv_write_horzvert_jobfile "$run_file" "$job_name"
         job_file="${work_dir}/${job_name}.job"
-        [[ -f "$job_file" ]] || job_file="${work_dir}/$(basename "$run_file" | sed 's/^run_//').job"
+        [[ -f "$job_file" ]] || {
+            echo "hv_run_or_submit_script: jobfile not created: $job_file" >&2
+            return 1
+        }
         echo "Submitting via run_workflow.bash --jobfile $job_file"
         run_workflow.bash --jobfile "$job_file"
+        hv_print_horzvert_overlay_url "$work_dir"
     else
         echo "Running: bash $run_file"
         bash "$run_file"

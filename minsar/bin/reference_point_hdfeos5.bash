@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Thin wrapper: change reference point in an HDFEOS5 file via reference_point_hdfeos5.py
-# (in-memory date-by-date; no extract/save_hdfeos5 round-trip).
+# (in-memory cube update; no extract/save_hdfeos5 round-trip).
 
 set -eo pipefail
 
@@ -102,5 +102,6 @@ py_args=("$INPUT_FILE" --ref-lalo "${ref_lalo[@]}")
 [[ -n "$lookup_file" ]] && py_args+=(--lookup "$lookup_file")
 [[ $force_flag -eq 1 ]] && py_args+=(--force)
 
+export PYTHONUNBUFFERED=1
 echo "Running: reference_point_hdfeos5.py ${py_args[*]}"
 reference_point_hdfeos5.py "${py_args[@]}"
