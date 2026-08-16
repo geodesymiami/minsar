@@ -36,6 +36,7 @@ Examples:
     $SCRIPT_NAME mintpy --step 1                         # dataset defaults to geo
     $SCRIPT_NAME mintpy --json_mbtiles2insarmaps         # step 2 only (same as --step 2); requires prior step 1
     $SCRIPT_NAME mintpy --dataset geo --suffix thermal
+    $SCRIPT_NAME miaplpy/network_single_reference --suffix auto
     $SCRIPT_NAME mintpy --submit
     $SCRIPT_NAME hvGalapagosSenD128/mintpy --ref-lalo -0.81,-91.190 --submit
 
@@ -43,7 +44,8 @@ Examples:
       --ref-lalo LAT,LON or LAT LON   Reference point (lat,lon or lat lon)
       --dataset {PS,DS,filtDS,filt*DS,geo} or comma-separated {PS,DS,filt*DS}  Dataset to upload (default: geo)
                                           Use comma-separated values to ingest multiple types: --dataset PS,DS or --dataset PS,DS,filt*DS
-      --suffix TAG                    Append _TAG to .he5/.csv basename for ingest (mbtiles/dataset name)
+      --suffix TAG or auto              Append _TAG to .he5/.csv basename for ingest (mbtiles/dataset name)
+                                          auto reads miaplpy.timeseries.minTempCoh from smallbaselineApp.cfg (0.75 -> coh075)
       --hdfeos5_2json_mbtiles         Run only HDFEOS5 → JSON/mbtiles (no insarmaps upload); same as --step 1
                                       For a .csv input, step 1 runs hdfeos5_or_csv_2json_mbtiles.py instead of hdfeos5_2json_mbtiles.py
       --json_mbtiles2insarmaps        Run only insarmaps upload (assumes step 1 succeeded); same as --step 2
@@ -272,9 +274,21 @@ normalize_suffix() {
     fi
     echo "$tag"
 }
-if [[ -n "$suffix" ]]; then
+
+# Resolve --suffix auto and normalize explicit tags (after DATA_DIR is known).
+_resolve_and_normalize_ingest_suffix() {
+    [[ -z "$suffix" ]] && return 0
+    if [[ "$suffix" == "auto" ]]; then
+        local cfg="${DATA_DIR}/smallbaselineApp.cfg"
+        [[ -f "$cfg" ]] || {
+            echo "Error: --suffix auto requires $cfg" >&2
+            exit 1
+        }
+        suffix="$(resolve_ingest_suffix_auto "$cfg")"
+        echo "Ingest suffix (auto from miaplpy.timeseries.minTempCoh): $suffix" | tee -a "$LOG_FILE"
+    fi
     suffix="$(normalize_suffix "$suffix")"
-fi
+}
 
 # Hardlink/symlink to stem_TAG.ext so mbtiles/dataset names include the tag (no file copy).
 apply_ingest_suffix() {
@@ -365,6 +379,7 @@ input_format="he5"
 if [[ -f "$INPUT_PATH" ]]; then
     # Input is a file - use it directly
     DATA_DIR=$(dirname "$INPUT_PATH")
+    _resolve_and_normalize_ingest_suffix
     ingest_files=("$INPUT_PATH")
     ext_lc=$(echo "${INPUT_PATH##*.}" | tr '[:upper:]' '[:lower:]')
     if [[ "$ext_lc" == "csv" ]]; then
@@ -373,6 +388,7 @@ if [[ -f "$INPUT_PATH" ]]; then
 elif [[ -d "$INPUT_PATH" ]]; then
     # Input is a directory - find .he5 files based on dataset option(s)
     DATA_DIR="$INPUT_PATH"
+    _resolve_and_normalize_ingest_suffix
     all_he5_files=($(ls -t "$DATA_DIR"/*.he5 2>/dev/null))
     
     if [[ ${#all_he5_files[@]} -eq 0 ]]; then

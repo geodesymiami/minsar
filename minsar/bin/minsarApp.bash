@@ -25,6 +25,7 @@ helptext="                                                                      
       minsarApp.bash  $TE/GalapagosSenDT128.template --start miaplpy --miaplpy-step 6     \n\
       minsarApp.bash  $TE/GalapagosSenDT128.template --miaplpy-stop 1     \n\
       minsarApp.bash  $TE/GalapagosSenDT128.template --delta-lat 0.1       \n\
+      minsarApp.bash  $TE/GalapagosSenDT128.template --miaplpy --suffix    \n\
       minsarApp.bash  $TE/GalapagosSenDT128.template --clean-start       \n\
                                                                                  \n\
   Processing steps (start/end/dostep): \n\
@@ -44,6 +45,7 @@ helptext="                                                                      
    --dostep STEP         run processing at the named step only                   \n\
    --download-method {slc, burst2safe, burst2stack, ssara-slc, ssara-bash, ssara-python} (default: burst2stack) \n\
    --delta-lat [DEG]     download larger error (default 0; bare --delta-lat: 0.2) \n\
+   --suffix [TAG|auto]   pass --suffix to ingest_insarmaps (bare --suffix: auto from minTempCoh) \n\
                                                                                  \n\
    --mintpy              use smallbaselineApp.py for time series [default]       \n\
    --miaplpy             use miaplpyApp.py                                       \n\
@@ -178,6 +180,8 @@ horzvert_flag=0
 
 download_method="burst2stack"
 delta_lat=0
+ingest_suffix_tag=""
+ingest_suffix_opt=""
 miaplpy_startstep=1
 miaplpy_stopstep=9
 
@@ -352,6 +356,15 @@ do
                 shift
             fi
             ;;
+        --suffix)
+            if [[ $# -ge 2 ]] && [[ "$2" != -* ]]; then
+                ingest_suffix_tag="$2"
+                shift 2
+            else
+                ingest_suffix_tag="auto"
+                shift
+            fi
+            ;;
 
         *)
             POSITIONAL+=("$1") # save it in an array for later
@@ -360,6 +373,9 @@ do
 esac
 done
 set -- "${POSITIONAL[@]}" # restore positional parameters
+
+ingest_suffix_opt=""
+[[ -n "$ingest_suffix_tag" ]] && ingest_suffix_opt="--suffix ${ingest_suffix_tag}"
 
 # Refresh after possible --queue (QUEUENAME may have changed in the parse loop)
 srun_cmd="srun -n1 -N1 -A $JOBSHEDULER_PROJECTNAME -p $QUEUENAME  -t 00:25:00 "
@@ -802,7 +818,7 @@ if [[ $mintpy_flag == "1" ]]; then
 
     ## insarmaps
     if [[ $insarmaps_flag == "1" ]]; then
-        run_command "create_ingest_insarmaps_jobfile.py $mintpy_dir_name --dataset geo --quiet-summary"
+        run_command "create_ingest_insarmaps_jobfile.py $mintpy_dir_name --dataset geo --quiet-summary ${ingest_suffix_opt}"
 
         ingest_insarmaps_jobfile=$(ls -t ingest_insar*job | head -n 1)
         run_command "run_workflow.bash --jobfile $PWD/$ingest_insarmaps_jobfile"
@@ -881,7 +897,7 @@ if [[ $miaplpy_flag == "1" ]]; then
 
     ## insarmaps
     if [[ $insarmaps_flag == "1" && "$miaplpy_stopstep" == "9" ]]; then
-        run_command "create_ingest_insarmaps_jobfile.py $network_dir --dataset $insarmaps_dataset --quiet-summary"
+        run_command "create_ingest_insarmaps_jobfile.py $network_dir --dataset $insarmaps_dataset --quiet-summary ${ingest_suffix_opt}"
 
         # run jobfile
         ingest_insarmaps_jobfile=$(ls -t ingest_insar*job | head -n 1)

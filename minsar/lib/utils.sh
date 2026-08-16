@@ -669,3 +669,17 @@ ingest_print_insarmaps_urls() {
     echo "InsarMaps at:"
     grep -E '^https?://' "$log_file" | sort -u
 }
+
+# resolve_ingest_suffix_auto CFG_FILE  -> prints coh075, coh070, ... from minTempCoh in cfg
+resolve_ingest_suffix_auto() {
+    local cfg="$1" coh
+    [[ -f "$cfg" ]] || { echo "resolve_ingest_suffix_auto: missing $cfg" >&2; return 1; }
+    coh=$(awk -F= '/^[[:space:]]*miaplpy\.timeseries\.minTempCoh[[:space:]]*=/ {
+        gsub(/[[:space:]]/, "", $2); gsub(/#.*/, "", $2); print $2; exit
+    }' "$cfg")
+    [[ -z "$coh" || "$coh" == "auto" ]] && coh=$(awk -F= '/^[[:space:]]*mintpy\.networkInversion\.minTempCoh[[:space:]]*=/ {
+        gsub(/[[:space:]]/, "", $2); gsub(/#.*/, "", $2); print $2; exit
+    }' "$cfg")
+    [[ -z "$coh" || "$coh" == "auto" ]] && coh="0.5"
+    python3 -c "v=float('${coh}'); print(f'coh{int(round(v*100)):03d}')"
+}
