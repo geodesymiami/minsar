@@ -63,6 +63,7 @@ helptext="                                                                      
                                                                                  \n\
 For sarvey:                                                                      \n\
    --miaplpy-stop 1      to only run step 1 (load_slc_geometry.py) of miaplpy    \n\
+   --miaplpy-start N     runs clean_miaplpy_from_step.bash before steps (all N)  \n\
                                                                                  \n\
 Debug options:                                                                   \n\
    --debug           sets set -x                                                 \n\
@@ -132,6 +133,8 @@ if [[ "$clean_start_flag" == "1" ]]; then
 fi
 mkdir -p $WORK_DIR
 cd $WORK_DIR
+MINSAR_RUN_START_EPOCH=$(date +%s)
+export MINSAR_RUN_START_EPOCH
 
 # create name including $TE for concise log file
 template_file_dir=$(dirname "$template_file")          # create name including $TE for concise log file
@@ -849,7 +852,7 @@ if [[ $miaplpy_flag == "1" ]]; then
     if [[ $skip_miaplpy_flag != "1" ]]; then
        # remove slcStack.h5 if exist and create miaplpy jobfiles  (FA 8/25: we may want to remove entire miaplpy folder)
 
-       [[ "$miaplpy_startstep" == 1 ]] &&  rm -f ${miaplpy_dir_name}/inputs/slcStack.h5 ${miaplpy_dir_name}/inputs/geometryRadar.h5
+       run_command "clean_miaplpy_from_step.bash ${network_dir} --step ${miaplpy_startstep}"
        run_command "create_jobfile_to_generate_miaplpy_jobfiles.py $template_file $miaplpy_dir_name"
        run_command "run_workflow.bash $template_file --jobfile $PWD/create_miaplpy_jobfiles.job"
 
@@ -966,7 +969,7 @@ if [[ -n "${cli_command_aoi:-}" ]]; then
 else
     echo "### Command: $cli_command"
 fi
-print_summary "$template_file"
+print_summary "$template_file" "$mintpy_flag" "$miaplpy_flag"
 
 if [[ $opposite_orbit_flag == "1" ]]; then
    if [[ -n "${cli_command_aoi:-}" ]]; then
@@ -974,6 +977,6 @@ if [[ $opposite_orbit_flag == "1" ]]; then
       echo "#################################"
    fi
    echo "### Command: $footer_cmd_opposite"
-   print_summary "$opposite_orbit_template_file"
+   print_summary "$opposite_orbit_template_file" "$mintpy_flag" "$miaplpy_flag"
 fi
 

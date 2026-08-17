@@ -52,6 +52,21 @@ def exclude_season_dir_name(exclude_season: str) -> str:
     return token
 
 
+def exclude_seasons_dir_name(seasons: list[str]) -> str:
+    """Return quarantine dir for one or more windows, e.g. ``ex1101-1215_0315-0430``."""
+    if not seasons:
+        raise ValueError("No exclude seasons given")
+    tokens: list[str] = []
+    for season in seasons:
+        parsed = parse_exclude_season(season)
+        if parsed is None:
+            raise ValueError(f"Empty exclude season: {season!r}")
+        tokens.append(season.strip())
+    if len(tokens) == 1:
+        return exclude_season_dir_name(tokens[0])
+    return "ex" + "_".join(tokens)
+
+
 def iso_date_to_date(iso_date: str) -> _dt.date:
     """Parse YYYY-MM-DD to a date object."""
     return _dt.datetime.strptime(iso_date, "%Y-%m-%d").date()

@@ -631,7 +631,24 @@ minsar_should_use_slurm_jobfile() {
     [[ "$status" == "login_node" && -z "${SLURM_JOB_ID:-}" ]]
 }
 
-# Print InsarMaps URLs after ingest (--submit on any platform).
+# Resolve insarmaps.log path (DATA_DIR pic/, WORK_DIR, or DATA_DIR root).
+minsar_insarmaps_log_path() {
+    local data_dir="$1"
+    local work_dir="$2"
+
+    [[ -n "$data_dir" && -n "$work_dir" ]] || return 1
+    if [[ -d "${data_dir}/pic" && -f "${data_dir}/pic/insarmaps.log" ]]; then
+        echo "${data_dir}/pic/insarmaps.log"
+    elif [[ -f "${work_dir}/insarmaps.log" ]]; then
+        echo "${work_dir}/insarmaps.log"
+    elif [[ -f "${data_dir}/insarmaps.log" ]]; then
+        echo "${data_dir}/insarmaps.log"
+    else
+        return 1
+    fi
+}
+
+# Print the InsarMaps URLs after ingest (--submit on any platform).
 ingest_print_insarmaps_urls() {
     local data_dir="$1"
     local work_dir="$2"
@@ -639,12 +656,8 @@ ingest_print_insarmaps_urls() {
 
     [[ -n "$data_dir" && -n "$work_dir" ]] || return 0
 
-    if [[ -d "${data_dir}/pic" && -f "${data_dir}/pic/insarmaps.log" ]]; then
-        log_file="${data_dir}/pic/insarmaps.log"
-    elif [[ -f "${work_dir}/insarmaps.log" ]]; then
-        log_file="${work_dir}/insarmaps.log"
-    elif [[ -f "${data_dir}/insarmaps.log" ]]; then
-        log_file="${data_dir}/insarmaps.log"
+    if log_file=$(minsar_insarmaps_log_path "$data_dir" "$work_dir" 2>/dev/null); then
+        :
     else
         for f in \
             "${work_dir}/ingest_insarmaps_"*.o \

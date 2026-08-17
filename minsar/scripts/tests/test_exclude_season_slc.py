@@ -25,6 +25,7 @@ class TestListDateDirs(unittest.TestCase):
             (root / "20240115").mkdir()
             (root / "20240601").mkdir()
             (root / "ex0101-0331").mkdir()
+            (root / "ex1101-1215_0315-0430").mkdir()
             (root / "notadate").mkdir()
             (root / "20240115.txt").write_text("x")
             dates = {p.name for p in MOD.list_slc_date_dirs(root)}
@@ -32,6 +33,10 @@ class TestListDateDirs(unittest.TestCase):
 
     def test_exclude_season_dest_name(self):
         self.assertEqual(MOD.exclude_season_dest_name("0101-0331"), "ex0101-0331")
+        self.assertEqual(
+            MOD.exclude_season_dest_name(["1101-1215", "0315-0430"]),
+            "ex1101-1215_0315-0430",
+        )
 
 
 class TestMoveExcludeSeason(unittest.TestCase):
@@ -62,6 +67,38 @@ class TestMoveExcludeSeason(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             with self.assertRaises(ValueError):
                 MOD.move_exclude_season_slc(Path(td), "bad", dry_run=True)
+
+    def test_multiple_windows_one_dest(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for d in ("20231110", "20231210", "20240110", "20240401", "20240601"):
+                (root / d).mkdir()
+            moved = MOD.move_exclude_season_slc(
+                root, ["1101-1215", "0315-0430"], dry_run=False
+            )
+            self.assertEqual(sorted(moved), ["20231110", "20231210", "20240401"])
+            dest = root / "ex1101-1215_0315-0430"
+            self.assertTrue((dest / "20231110").is_dir())
+            self.assertTrue((dest / "20231210").is_dir())
+            self.assertTrue((dest / "20240401").is_dir())
+            self.assertTrue((root / "20240110").is_dir())
+            self.assertTrue((root / "20240601").is_dir())
+            self.assertFalse((root / "ex1101-1215").exists())
+            self.assertFalse((root / "ex0315-0430").exists())
+
+
+class TestMainMultipleSeasons(unittest.TestCase):
+    def test_main_accepts_multiple_season_args(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for d in ("20231110", "20240401", "20240601"):
+                (root / d).mkdir()
+            rc = MOD.main([str(root), "1101-1215", "0315-0430"])
+            self.assertEqual(rc, 0)
+            dest = root / "ex1101-1215_0315-0430"
+            self.assertTrue((dest / "20231110").is_dir())
+            self.assertTrue((dest / "20240401").is_dir())
+            self.assertTrue((root / "20240601").is_dir())
 
 
 if __name__ == "__main__":

@@ -220,6 +220,39 @@ function _minsar_footer_guess_network_dir() {
 }
 
 ###########################################
+# Tail count for upload/insarmaps footer: both pipelines append one URL each.
+function _minsar_summary_log_tail_n() {
+    local mintpy_flag="${1:-0}"
+    local miaplpy_flag="${2:-0}"
+    if [[ "$mintpy_flag" == "1" && "$miaplpy_flag" == "1" ]]; then
+        echo 2
+    else
+        echo 1
+    fi
+}
+
+###########################################
+# Print log tail when the file exists and was updated since minsarApp started.
+function _minsar_print_summary_log_if_updated() {
+    local label="$1"
+    local log_file="$2"
+    local session_start_epoch="${3:-}"
+    local tail_n="$4"
+    local log_mtime
+
+    [[ -f "$log_file" ]] || return 0
+    if [[ -n "$session_start_epoch" ]]; then
+        log_mtime=$(stat -c %Y "$log_file" 2>/dev/null || echo 0)
+        if [[ "$log_mtime" -le "$session_start_epoch" ]]; then
+            return 0
+        fi
+    fi
+    echo "${label}:"
+    tail -n "$tail_n" "$log_file"
+    echo
+}
+
+###########################################
 # Resolve PROJECT WORK_DIR from print_summary argv: directory path, or *.template → $SCRATCHDIR/<basename-project>.
 function _print_summary_work_dir_from_arg() {
     local arg="$1"
@@ -255,12 +288,23 @@ function _print_summary_work_dir_from_arg() {
 #
 # Usage:
 #   print_summary [--help|-h]
-#   print_summary [--filesize] TEMPLATE_OR_WORK_DIR
+#   print_summary --filesize TEMPLATE_OR_WORK_DIR
+#   print_summary TEMPLATE_OR_WORK_DIR [MINTPY_FLAG MIAPLPY_FLAG]
+function _print_summary_is_pipeline_flag() {
+    [[ "$1" == "0" || "$1" == "1" ]]
+}
+
 function print_summary() {
+    local want_filesize=0
+    local mintpy_flag=0
+    local miaplpy_flag=0
+    local target=""
+
     case "${1:-}" in
         --help|-h)
             printf '%s\n' \
-                "Usage: print_summary [--filesize] TEMPLATE_OR_WORK_DIR" \
+                "Usage: print_summary --filesize TEMPLATE_OR_WORK_DIR" \
+                "       print_summary TEMPLATE_OR_WORK_DIR [MINTPY_FLAG MIAPLPY_FLAG]" \
                 "       print_summary [--help|-h]" \
                 "" \
                 "Summarize ONE MinSAR project tree, identified by either:" \
@@ -268,34 +312,46 @@ function print_summary() {
                 "  • path ending in .template → WORK_DIR is \"\$SCRATCHDIR/<name before .template>\" (same as minsarApp.bash)." \
                 "" \
                 "  --filesize   HDF-EOS *.he5 paths and sizes (mintpy/ and inferred miaplpy_*/network_*/)." \
-                "  (no flag)    Full upload.log and insarmaps.log when each exists in that WORK_DIR." \
+                "  MINTPY_FLAG MIAPLPY_FLAG   optional trailing 0/1; both 1 → tail -2 on upload/insarmaps logs, else tail -1." \
+                "                             Omitted → both treated as 0 (tail -1)." \
+                "  Log tails only if updated since MINSAR_RUN_START_EPOCH (when set)." \
                 "" \
                 "Example:" \
                 '  print_summary --filesize "$TE/myproject087.template"' \
-                '  print_summary          "$TE/myproject087.template"' \
+                '  print_summary "$TE/myproject087.template" 1 1' \
+                '  print_summary "$TE/myproject087.template"' \
                 ""
             return 0
             ;;
+        --filesize)
+            want_filesize=1
+            shift
+            if [[ $# -ne 1 ]]; then
+                printf 'print_summary: --filesize requires exactly one TEMPLATE_OR_WORK_DIR argument.\n' >&2
+                return 2
+            fi
+            target="$1"
+            ;;
+        *)
+            if [[ $# -eq 1 ]]; then
+                target="$1"
+            elif [[ $# -eq 3 ]] && _print_summary_is_pipeline_flag "$2" && _print_summary_is_pipeline_flag "$3"; then
+                target="$1"
+                mintpy_flag="$2"
+                miaplpy_flag="$3"
+            else
+                printf 'print_summary: expected TEMPLATE_OR_WORK_DIR, or TEMPLATE_OR_WORK_DIR MINTPY_FLAG MIAPLPY_FLAG (see --help).\n' >&2
+                return 2
+            fi
+            ;;
     esac
 
-    local want_filesize=0
-    if [[ "${1:-}" == "--filesize" ]]; then
-        want_filesize=1
-        shift
-    fi
-
-    if [[ $# -lt 1 ]]; then
-        printf 'print_summary: expected WORK_DIR or *.template argument (see --help).\n' >&2
+    if [[ -z "$target" ]]; then
+        printf 'print_summary: missing TEMPLATE_OR_WORK_DIR argument (see --help).\n' >&2
         return 2
     fi
-    local target="$1"
     if [[ "$target" == --* ]]; then
         printf 'print_summary: unknown option %q (see --help).\n' "$target" >&2
-        return 2
-    fi
-    shift
-    if [[ $# -gt 0 ]]; then
-        printf 'print_summary: unexpected extra arguments: %q\n' "$*" >&2
         return 2
     fi
 
@@ -342,15 +398,21 @@ function print_summary() {
                 echo
             fi
         else
-            if [[ -f upload.log ]]; then
-                echo "upload.log:"
-                cat upload.log
-                [[ ! -f insarmaps.log ]] && echo
+            local session_start_epoch="${MINSAR_RUN_START_EPOCH:-}"
+            local tail_n insarmaps_log ingest_data_dir
+            tail_n=$(_minsar_summary_log_tail_n "$mintpy_flag" "$miaplpy_flag")
+
+            _minsar_print_summary_log_if_updated "upload.log" "upload.log" "$session_start_epoch" "$tail_n"
+
+            ingest_data_dir="$network_dir"
+            [[ -z "$ingest_data_dir" && -d mintpy ]] && ingest_data_dir="mintpy"
+            insarmaps_log=""
+            if [[ -n "$ingest_data_dir" ]]; then
+                insarmaps_log=$(minsar_insarmaps_log_path "$ingest_data_dir" "$wd" 2>/dev/null || true)
             fi
-            if [[ -f insarmaps.log ]]; then
-                echo "insarmaps.log:"
-                cat insarmaps.log
-                echo
+            [[ -z "$insarmaps_log" && -f insarmaps.log ]] && insarmaps_log="insarmaps.log"
+            if [[ -n "$insarmaps_log" ]]; then
+                _minsar_print_summary_log_if_updated "insarmaps.log" "$insarmaps_log" "$session_start_epoch" "$tail_n"
             fi
         fi
     )
