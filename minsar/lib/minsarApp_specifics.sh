@@ -480,20 +480,43 @@ function get_exclude_season_suffix() {
 }
 
 ###########################################
+function list_slcstack_load_dates() {
+# Dates under merged/SLC (or $1) that MiaplPy would load into slcStack.h5.
+# Same window as additions/miaplpy/utils.py: include date if
+#   date >= miaplpy.load.startDate (when set and not auto)
+#   date <= miaplpy.load.endDate   (when set and not auto)
+    local slc_dir="${1:-merged/SLC}"
+    local start_bound="${template[miaplpy.load.startDate]:-}"
+    local end_bound="${template[miaplpy.load.endDate]:-}"
+    local d
+    [[ "$start_bound" == "auto" ]] && start_bound=""
+    [[ "$end_bound" == "auto" ]] && end_bound=""
+    while IFS= read -r d; do
+        [[ -n "$d" ]] || continue
+        if [[ -n "$start_bound" && "$d" -lt "$start_bound" ]]; then
+            continue
+        fi
+        if [[ -n "$end_bound" && "$d" -gt "$end_bound" ]]; then
+            continue
+        fi
+        echo "$d"
+    done < <(list_merged_slc_yyyymmdd_dates "$slc_dir")
+}
+
+###########################################
 function get_date_str() {
-# get string with start and end date
-if  [ ! -z ${template[miaplpy.load.startDate]} ] && [ ! ${template[miaplpy.load.startDate]} == "auto" ]; then
-    start_date=${template[miaplpy.load.startDate]}
-else
-    start_date=$(list_merged_slc_yyyymmdd_dates | head -1)
-fi
-if  [ ! -z ${template[miaplpy.load.endDate]} ] && [ ! ${template[miaplpy.load.endDate]} == "auto" ]; then
-    end_date=${template[miaplpy.load.endDate]}
-else
-    end_date=$(list_merged_slc_yyyymmdd_dates | tail -1)
-fi
-date_str="${start_date:0:6}_${end_date:0:6}"
-echo $date_str
+# YYYYMM_YYYYMM from first/last SLC date that would be loaded into slcStack.h5.
+    local start_date end_date date_str
+    local -a dates=()
+    mapfile -t dates < <(list_slcstack_load_dates)
+    if [[ ${#dates[@]} -eq 0 ]]; then
+        echo "ERROR: no merged/SLC dates in miaplpy.load.startDate/endDate window" >&2
+        return 1
+    fi
+    start_date="${dates[0]}"
+    end_date="${dates[-1]}"
+    date_str="${start_date:0:6}_${end_date:0:6}"
+    echo "$date_str"
 }
 
 ###########################################

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Tests for list_merged_slc_yyyymmdd_dates / get_date_str / exclude-season dir naming
-# in minsarApp_specifics.sh
+# Tests for list_merged_slc_yyyymmdd_dates / list_slcstack_load_dates / get_date_str
+# / exclude-season dir naming in minsarApp_specifics.sh
 #
 
 set -o pipefail
@@ -11,6 +11,8 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
 source "$PROJECT_ROOT/minsar/lib/minsarApp_specifics.sh"
 source "$SCRIPT_DIR/test_helpers.bash"
+
+LOAD_DATES_SCRIPT="$PROJECT_ROOT/minsar/bin/get_slcstack_load_dates.bash"
 
 test_list_ignores_exclude_season() {
     setup_test_workspace
@@ -22,7 +24,7 @@ test_list_ignores_exclude_season() {
 20260630" "$dates" "Only YYYYMMDD dirs listed"
 }
 
-test_get_date_str_ignores_exclude_season() {
+test_get_date_str_auto_uses_first_last_slc() {
     setup_test_workspace
     cd "$TEST_WORKSPACE" || return 1
     mkdir -p merged/SLC/20141123 merged/SLC/20260630 merged/SLC/ex0101-0630
@@ -31,19 +33,33 @@ test_get_date_str_ignores_exclude_season() {
     template[miaplpy.load.endDate]="auto"
     local out
     out=$(get_date_str)
-    assert_equals "201411_202606" "$out" "get_date_str uses first/last YYYYMMDD only"
+    assert_equals "201411_202606" "$out" "auto/auto uses first/last YYYYMMDD in merged/SLC"
 }
 
-test_get_date_str_respects_template_dates() {
+test_get_date_str_clips_to_slcs_in_window() {
     setup_test_workspace
     cd "$TEST_WORKSPACE" || return 1
-    mkdir -p merged/SLC/20141123 merged/SLC/ex0101-0630
+    mkdir -p merged/SLC/20141123 merged/SLC/20200315 merged/SLC/20210630
     declare -gA template=()
     template[miaplpy.load.startDate]="20200101"
     template[miaplpy.load.endDate]="20201231"
+    local out dates
+    dates=$(list_slcstack_load_dates)
+    assert_equals "20200315" "$dates" "Only SLCs inside load window"
+    out=$(get_date_str)
+    assert_equals "202003_202003" "$out" "Dir dates are first/last SLC in window, not template bounds"
+}
+
+test_get_date_str_start_only() {
+    setup_test_workspace
+    cd "$TEST_WORKSPACE" || return 1
+    mkdir -p merged/SLC/20141123 merged/SLC/20200315 merged/SLC/20210630
+    declare -gA template=()
+    template[miaplpy.load.startDate]="20200101"
+    template[miaplpy.load.endDate]="auto"
     local out
     out=$(get_date_str)
-    assert_equals "202001_202012" "$out" "Template load dates override SLC listing"
+    assert_equals "202003_202106" "$out" "startDate clips first SLC; endDate auto keeps last SLC"
 }
 
 test_exclude_season_suffix_empty() {
@@ -124,10 +140,25 @@ test_mintpy_dir_name_date_with_season() {
     assert_equals "mintpy_201411_202606_ex0101-0630" "$out" "mintpy date + season"
 }
 
+test_get_slcstack_load_dates_script() {
+    setup_test_workspace
+    mkdir -p "$TEST_WORKSPACE/merged/SLC/20141123" "$TEST_WORKSPACE/merged/SLC/20200315" "$TEST_WORKSPACE/merged/SLC/20210630"
+    cat > "$TEST_WORKSPACE/proj.template" <<'EOF'
+miaplpy.load.startDate               = 20200101
+miaplpy.load.endDate                 = 20201231
+EOF
+    local out
+    out=$("$LOAD_DATES_SCRIPT" "$TEST_WORKSPACE/proj.template" --slc-dir "$TEST_WORKSPACE/merged/SLC")
+    assert_equals "20200315 20200315" "$out" "CLI prints first last load dates"
+    out=$("$LOAD_DATES_SCRIPT" "$TEST_WORKSPACE/proj.template" --slc-dir "$TEST_WORKSPACE/merged/SLC" --date-str)
+    assert_equals "202003_202003" "$out" "CLI --date-str"
+}
+
 print_header "minsarApp_specifics get_date_str / exclude-season naming tests"
 test_list_ignores_exclude_season
-test_get_date_str_ignores_exclude_season
-test_get_date_str_respects_template_dates
+test_get_date_str_auto_uses_first_last_slc
+test_get_date_str_clips_to_slcs_in_window
+test_get_date_str_start_only
 test_exclude_season_suffix_empty
 test_exclude_season_suffix_set
 test_exclude_season_suffix_invalid
@@ -135,4 +166,5 @@ test_miaplpy_dir_name_auto_with_season
 test_miaplpy_dir_name_date_with_season
 test_miaplpy_dir_name_custom_without_season
 test_mintpy_dir_name_date_with_season
+test_get_slcstack_load_dates_script
 print_summary

@@ -5,6 +5,17 @@
 # Horzvert must re-reference and geocode from radar LOS; geo-only inputs without
 # a sibling are rejected.
 
+# Strip trailing slashes so a file path like foo.he5/ is treated as a file.
+# Bash [[ -f foo.he5/ ]] is false even when foo.he5 exists, which would send
+# the path into directory HE5 selection and fail.
+hv_strip_trailing_slashes() {
+    local p="$1"
+    while [[ -n "$p" && "$p" != "/" && "$p" == */ ]]; do
+        p="${p%/}"
+    done
+    printf '%s' "$p"
+}
+
 # User-facing path: $SCRATCHDIR/relative/... when under SCRATCHDIR, else absolute.
 hv_scratchdir_display_path() {
     local path="$1"

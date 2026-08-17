@@ -3,7 +3,7 @@
 # Resolves paths, writes script-style run_horzvert2timeseries, optionally executes it.
 #
 # Flow:
-#   Step 0: Parse options and resolve file paths (dirs -> radar S1*.he5)
+#   Step 0: Parse options and resolve file paths (files as-is; dirs -> radar S1*.he5)
 #   Step 0b: Cache check (skip compute steps in run file when fresh)
 #   Write: <site>/<mintpy|miaplpy[_YYYYMM_YYYYMM]>/run_horzvert2timeseries
 #          (longer of the two input periods; ref & wait; geocode & wait;
@@ -30,13 +30,14 @@ source ${SCRIPT_DIR}/../lib/horzvert_timeseries_utils.sh
 #   upload_horzvert.py.
 
 # Resolve a path to a specific .he5 file.
-# If path is a file, return it. If a directory, use PlotData's get_eos5_file
-# (selects newest .he5 by mtime; globs path/*.he5 if path contains mintpy or network,
-# otherwise path/mintpy/*.he5).
+# If path is a file (trailing slashes ignored), return it. If a directory, use
+# PlotData's get_eos5_file (selects newest .he5 by mtime; globs path/*.he5 if
+# path contains mintpy or network, otherwise path/mintpy/*.he5).
 # get_eos5_file prints "HDF5EOS file used: ..." then the path; use only the last line.
 # TODO: copy get_eos5_file into minsar to remove PlotData dependency.
 resolve_he5() {
-    local path="$1"
+    local path
+    path=$(hv_strip_trailing_slashes "$1")
     if [[ -f "$path" ]]; then
         echo "$path"
     else
@@ -69,10 +70,13 @@ file_matches_dataset() {
     esac
 }
 
-# Resolve one path to a .he5 file: if --dataset is set and path is a directory, pick the youngest .he5 matching that type; otherwise use resolve_he5.
+# Resolve one path to a .he5 file.
+# File (trailing slashes ignored): use it as-is, even if --dataset is set.
+# Directory: pick the youngest .he5 matching --dataset, or the default newest HE5.
 resolve_he5_or_dataset() {
-    local path="$1"
-    local ds="$2"
+    local path ds
+    path=$(hv_strip_trailing_slashes "$1")
+    ds="$2"
     if [[ -f "$path" ]]; then
         echo "$path"
         return
@@ -239,6 +243,7 @@ Examples:
     $SCRIPT_NAME LaPalmaSenA60/miaplpy/network_delaunay_4 LaPalmaSenD169/miaplpy/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --save-qgis-all --submit
     $SCRIPT_NAME LaPalmaRecentSenA60/miaplpy/network_delaunay_4 LaPalmaRecentSenD169/miaplpy/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --submit --sleep 30
     $SCRIPT_NAME LaPalmaRecentSenA60/miaplpy_202201_202606/network_delaunay_4 LaPalmaRecentSenD169/miaplpy_202501_202606/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --submit --upload
+    $SCRIPT_NAME MyvatnSenA45/miaplpy/network_delaunay_4/S1_asc_045.he5 MyvatnSenD9/miaplpy/network_delaunay_4/S1_desc_009.he5/ --ref-lalo 65.61436 -16.87585 --save_qgis --submit
 
 Options:
       --dataset TYPE                  Select .he5 type in a directory: PS, DS, filtDS, filt*DS, geo
@@ -622,10 +627,14 @@ echo "FILE1 (radar LOS for pipeline): $FILE1"
 echo "FILE2 (radar LOS for pipeline): $FILE2"
 
 # Output directory (used for --clean, cache check, and Step 3).
-# Keep the mintpy/miaplpy dir covering the longer period, e.g.
-#   EtnaSenA44/.../miaplpy_202001_202412 + EtnaSenD124/.../miaplpy_202001_202410
-#   → Etna/miaplpy_202001_202412
-processing_method_dir=$(hv_longest_processing_method_dir "$DIR_OR_FILE1" "$DIR_OR_FILE2")
+# Use the mintpy/miaplpy dir from the first argument (asc/desc may differ).
+#   MyvatnSenA45/.../miaplpy_noWetSnowHverfjall_201505_202606 + MyvatnSenD9/...
+#   → Myvatn/miaplpy_noWetSnowHverfjall_201505_202606
+processing_method_dir=$(hv_extract_processing_method_dir "$DIR_OR_FILE1" || true)
+if [[ -z "$processing_method_dir" ]]; then
+    processing_method_dir=$(hv_extract_processing_method_dir "$DIR_OR_FILE2" || true)
+fi
+[[ -z "$processing_method_dir" ]] && processing_method_dir="mintpy"
 HORZVERT_DIR="${PROJECT_DIR}/${processing_method_dir}"
 mkdir -p "$ORIGINAL_DIR/$HORZVERT_DIR"
 {
