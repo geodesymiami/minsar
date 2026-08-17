@@ -56,7 +56,7 @@ def create_parser():
                         default='geo', 
                         help='Dataset to upload (default: %(default)s). Options: {PS,DS,filtDS,filt*DS,geo} or comma-separated {PS,DS,filt*DS}. '
                              'Use comma-separated values to ingest multiple types: --dataset PS,DS or --dataset PS,DS,filt*DS')
-    parser.add_argument('--suffix', metavar='TAG', default=None, help='Tag appended to .he5/.csv basename before extension (passed to ingest_insarmaps.bash). Use auto to derive from miaplpy.timeseries.minTempCoh in smallbaselineApp.cfg (0.75 -> coh075).')
+    parser.add_argument('--suffix', metavar='TAG', default=None, help='Tag appended to .he5/.csv basename before extension (passed to ingest_insarmaps.bash). Use auto to derive from miaplpy.timeseries.minTempCoh in ../miaplpyApp.cfg (0.85 -> coh085).')
     parser.add_argument('--debug', dest='debug', action='store_true',
                         help='Enable debug mode (set -x)')
     parser.add_argument('--quiet-summary', dest='quiet_summary', action='store_true',

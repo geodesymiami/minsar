@@ -670,16 +670,36 @@ ingest_print_insarmaps_urls() {
     grep -E '^https?://' "$log_file" | sort -u
 }
 
-# resolve_ingest_suffix_auto CFG_FILE  -> prints coh075, coh070, ... from minTempCoh in cfg
+# resolve_ingest_suffix_auto DATA_DIR  -> prints coh075, coh085, ... from minTempCoh
+# MiaplPy ingest (network_*): miaplpy.timeseries.minTempCoh from ../miaplpyApp.cfg
+# MintPy-only fallback: mintpy.networkInversion.minTempCoh in DATA_DIR/smallbaselineApp.cfg
+# Uses the last matching line (cfg files often duplicate keys; last value wins in MintPy).
 resolve_ingest_suffix_auto() {
-    local cfg="$1" coh
-    [[ -f "$cfg" ]] || { echo "resolve_ingest_suffix_auto: missing $cfg" >&2; return 1; }
-    coh=$(awk -F= '/^[[:space:]]*miaplpy\.timeseries\.minTempCoh[[:space:]]*=/ {
-        gsub(/[[:space:]]/, "", $2); gsub(/#.*/, "", $2); print $2; exit
-    }' "$cfg")
-    [[ -z "$coh" || "$coh" == "auto" ]] && coh=$(awk -F= '/^[[:space:]]*mintpy\.networkInversion\.minTempCoh[[:space:]]*=/ {
-        gsub(/[[:space:]]/, "", $2); gsub(/#.*/, "", $2); print $2; exit
-    }' "$cfg")
-    [[ -z "$coh" || "$coh" == "auto" ]] && coh="0.5"
+    local data_dir="$1"
+    local coh=""
+    local miaplpy_cfg mintpy_cfg
+    data_dir="${data_dir%/}"
+    miaplpy_cfg="$(cd "$(dirname "$data_dir")" && pwd)/miaplpyApp.cfg"
+    mintpy_cfg="${data_dir}/smallbaselineApp.cfg"
+
+    if [[ -f "$miaplpy_cfg" ]]; then
+        coh=$(awk -F= '/^[[:space:]]*miaplpy\.timeseries\.minTempCoh[[:space:]]*=/ {
+            gsub(/[[:space:]]/, "", $2); gsub(/#.*/, "", $2); val=$2
+        } END { if (val != "") print val }' "$miaplpy_cfg")
+    fi
+    if [[ -z "$coh" || "$coh" == "auto" ]]; then
+        if [[ -f "$mintpy_cfg" ]]; then
+            coh=$(awk -F= '/^[[:space:]]*mintpy\.networkInversion\.minTempCoh[[:space:]]*=/ {
+                gsub(/[[:space:]]/, "", $2); gsub(/#.*/, "", $2); val=$2
+            } END { if (val != "") print val }' "$mintpy_cfg")
+        fi
+    fi
+    if [[ -z "$coh" || "$coh" == "auto" ]]; then
+        if [[ ! -f "$miaplpy_cfg" && ! -f "$mintpy_cfg" ]]; then
+            echo "resolve_ingest_suffix_auto: need $miaplpy_cfg or $mintpy_cfg" >&2
+            return 1
+        fi
+        coh="0.5"
+    fi
     python3 -c "v=float('${coh}'); print(f'coh{int(round(v*100)):03d}')"
 }

@@ -45,7 +45,7 @@ Examples:
       --dataset {PS,DS,filtDS,filt*DS,geo} or comma-separated {PS,DS,filt*DS}  Dataset to upload (default: geo)
                                           Use comma-separated values to ingest multiple types: --dataset PS,DS or --dataset PS,DS,filt*DS
       --suffix TAG or auto              Append _TAG to .he5/.csv basename for ingest (mbtiles/dataset name)
-                                          auto reads miaplpy.timeseries.minTempCoh from smallbaselineApp.cfg (0.75 -> coh075)
+                                          auto reads miaplpy.timeseries.minTempCoh from ../miaplpyApp.cfg (0.85 -> coh085)
       --hdfeos5_2json_mbtiles         Run only HDFEOS5 → JSON/mbtiles (no insarmaps upload); same as --step 1
                                       For a .csv input, step 1 runs hdfeos5_or_csv_2json_mbtiles.py instead of hdfeos5_2json_mbtiles.py
       --json_mbtiles2insarmaps        Run only insarmaps upload (assumes step 1 succeeded); same as --step 2
@@ -279,15 +279,38 @@ normalize_suffix() {
 _resolve_and_normalize_ingest_suffix() {
     [[ -z "$suffix" ]] && return 0
     if [[ "$suffix" == "auto" ]]; then
-        local cfg="${DATA_DIR}/smallbaselineApp.cfg"
-        [[ -f "$cfg" ]] || {
-            echo "Error: --suffix auto requires $cfg" >&2
-            exit 1
-        }
-        suffix="$(resolve_ingest_suffix_auto "$cfg")"
-        echo "Ingest suffix (auto from miaplpy.timeseries.minTempCoh): $suffix" | tee -a "$LOG_FILE"
+        suffix="$(resolve_ingest_suffix_auto "$DATA_DIR")" || exit 1
+        echo "Ingest suffix (auto from miaplpyApp.cfg or smallbaselineApp.cfg): $suffix" | tee -a "$LOG_FILE"
     fi
     suffix="$(normalize_suffix "$suffix")"
+}
+
+# True for prior ingest hardlinks (..._coh085.he5 or legacy ..._075.he5 after PS/DS tag).
+_is_prior_ingest_tagged_he5() {
+    local base="$1" stem n
+    [[ "$base" =~ _coh[0-9]{3}\.he5$ ]] && return 0
+    [[ "$base" =~ _[0-9]{3}\.he5$ ]] || return 1
+    stem="${base%.he5}"
+    [[ "$stem" =~ _([0-9]{3})$ ]] || return 1
+    n="${BASH_REMATCH[1]}"
+    (( 10#$n >= 50 && 10#$n <= 100 ))
+}
+
+# Remove prior ingest tag from stem before applying a new --suffix tag.
+_strip_prior_ingest_suffix_from_stem() {
+    local stem="$1" n
+    if [[ "$stem" =~ ^(.*)_coh[0-9]{3}$ ]]; then
+        echo "${BASH_REMATCH[1]}"
+        return 0
+    fi
+    if [[ "$stem" =~ ^(.*)_([0-9]{3})$ ]]; then
+        n="${BASH_REMATCH[2]}"
+        if (( 10#$n >= 50 && 10#$n <= 100 )); then
+            echo "${BASH_REMATCH[1]}"
+            return 0
+        fi
+    fi
+    echo "$stem"
 }
 
 # Hardlink/symlink to stem_TAG.ext so mbtiles/dataset names include the tag (no file copy).
@@ -299,6 +322,7 @@ apply_ingest_suffix() {
     base="$(basename "$src")"
     ext="${base##*.}"
     stem="${base%.*}"
+    stem="$(_strip_prior_ingest_suffix_from_stem "$stem")"
     if [[ "$stem" == *"_${tag}" ]]; then
         echo "$src"
         return 0
@@ -407,9 +431,14 @@ elif [[ -d "$INPUT_PATH" ]]; then
         ds_type=$(echo "$ds_type" | xargs)  # Trim whitespace
         # Find the youngest file matching this dataset type
         for file in "${all_he5_files[@]}"; do
-            # Prefer originals when --suffix is set (skip prior stem_TAG.he5 hardlinks)
-            if [[ -n "$suffix" && "$(basename "$file")" == *"_${suffix}.he5" ]]; then
-                continue
+            # Prefer originals when --suffix is set (skip prior ingest hardlinks)
+            if [[ -n "$suffix" ]]; then
+                if [[ "$(basename "$file")" == *"_${suffix}.he5" ]]; then
+                    continue
+                fi
+                if _is_prior_ingest_tagged_he5 "$(basename "$file")"; then
+                    continue
+                fi
             fi
             if file_matches_dataset "$file" "$ds_type"; then
                 ingest_files+=("$file")
