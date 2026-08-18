@@ -34,8 +34,7 @@ export PRECIPPRODUCTS_DIR="${PRECIPPRODUCTS_DIR:-$SCRATCHDIR/precip_products}"
 export TESTDATA_ISCE="${TESTDATA_ISCE:-$WORKDIR/TESTDATA_ISCE}"
 
 ############ FOR PROCESSING  #########
-python_version=$(echo "python3.$(${MINSAR_HOME}/tools/miniforge3/bin/python --version | cut -d. -f2)")        # e.g. python3.10
-python_version=python3.10
+python_version="python$(${MINSAR_HOME}/tools/miniforge3/envs/minsar/bin/python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
 export SSARAHOME=${MINSAR_HOME}/tools/ssara_client
 export ISCE_HOME=${MINSAR_HOME}/tools/miniforge3/envs/minsar/lib/$python_version/site-packages/isce
 export ISCE_STACK=${MINSAR_HOME}/tools/miniforge3/envs/minsar/share/isce2
