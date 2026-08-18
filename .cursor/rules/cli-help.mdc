@@ -1,0 +1,36 @@
+---
+description: All Python and Bash scripts must have concise --help (usage, description+options, examples)
+alwaysApply: true
+---
+
+# CLI `--help`
+
+Every Python (`.py`) and Bash (`.bash`, `.sh`) script must support `--help` (`-h` where conventional).
+
+Keep help text very concise.
+
+## Order
+
+1. **Usage** — command synopsis only
+2. **Description and options** — what it does, then flags/arguments
+3. **Examples** — self-explanatory command lines only
+
+## Examples section
+
+- A single `Examples:` heading, then only example commands
+- No labels, notes, comments, or blank lines between examples
+- No prose explaining the examples; the commands must stand alone
+
+```text
+usage: script.py [-h] [--opt VALUE] FILE
+
+Does one thing. Concise.
+
+options:
+  -h, --help     show this help
+  --opt VALUE    ...
+
+Examples:
+  script.py --opt 1 file.txt
+  script.py file.txt
+```

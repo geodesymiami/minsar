@@ -16,22 +16,26 @@ set -eo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../lib/workflow_utils.sh"
 
-# Help text (required for user-facing scripts)
+# Help text (required; order: usage, description+options, examples)
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     helptext="
-    Description
-    
     usage: script.bash [OPTIONS]
-    
+
+    Short description.
+
+    Options:
+        --option VALUE    ...
+
     Examples:
         script.bash --option value
+        script.bash file
     "
     echo -e "$helptext"
     exit 0
 fi
 ```
 
-**`--help` Examples blocks:** The Examples section lists **only** example command lines (optionally after a single `Examples:` line). Do not put labels, notes, or blank lines **between** example lines. Put purpose and usage prose above or below that block.
+**`--help`:** Follow `.cursor/rules/cli-help.mdc`. Examples are command lines only — no labels, notes, or blank lines between them.
 
 ## Argument Parsing Pattern
 
