@@ -133,10 +133,9 @@ export PATH=${PATH}:${MINSAR_HOME}/tools/MakeTemplate/src/maketemplate/cli
 export PATH=${PATH}:${MINSAR_HOME}/tools/S4I/viewer4falk
 export PATH=${ISCE_HOME}/applications:${ISCE_HOME}/bin:${ISCE_STACK}:${ISCE_STACK}/topsStack:${PATH};
 export PATH=${CONDA_PREFIX}/bin:${PATH}
-export PATH="${MINSAR_HOME}/tools/sarvey/sarvey:$PATH"
 export PATH="${MINSAR_HOME}/tools/sarplotter-main/app:$PATH"
 if [ -d /var/www/VolcDef_web ]; then
-    export PATH=/var/www/VolcDef_we/volcdef_web:${PATH}
+    export PATH=/var/www/VolcDef_web/volcdef_web:${PATH}
 else
     export PATH=${MINSAR_HOME}/tools/VolcDef_web/volcdef_web:${PATH}
 fi
