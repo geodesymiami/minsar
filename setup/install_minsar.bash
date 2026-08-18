@@ -64,6 +64,9 @@ rm -rf tools/miniforge3/pkgs
 wget --no-check-certificate  https://web.stanford.edu/group/radar/softwareandlinks/sw/snaphu/snaphu-v2.0.7.tar.gz  -P tools
 tar -xvf tools/snaphu-v2.0.7.tar.gz -C tools
 perl -pi -e 's/\/usr\/local/\$(PWD)\/snaphu-v2.0.7/g' tools/snaphu-v2.0.7/src/Makefile
+if [[ "$(uname)" == "Linux" ]]; then
+    perl -pi -e 's/-arch\s+\S+\s+//g' tools/snaphu-v2.0.7/src/Makefile
+fi
 cc=tools/miniforge3/bin/cc
 make -C tools/snaphu-v2.0.7/src
 
@@ -95,12 +98,14 @@ ln -sf $MINSAR_HOME/additions/miaplpy/miaplpyApp_auto.cfg $MINSAR_HOME/tools/Mia
 ### Adding ISCE fixes and copying checked-out ISCE version (the latest) into miniforge directory ###
 if [[ "$(uname)" == "Linux" ]]; then
 :
-##cp -p additions/isce/logging.conf tools/miniforge3/envs/minsar/lib/python3.10/site-packages/isce/defaults/logging
+python_version="python$(${MINSAR_HOME}/tools/miniforge3/envs/minsar/bin/python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+ISCE_HOME="$MINSAR_HOME/tools/miniforge3/envs/minsar/lib/$python_version/site-packages/isce"
+##cp -p additions/isce/logging.conf "$ISCE_HOME/defaults/logging"
 ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/topsStack/FilterAndCoherence.py $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/topsStack/FilterAndCoherence.py
 ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/stripmapStack/prepRawCSK.py  $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/stripmapStack/prepRawCSK.py
 ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/stripmapStack/unpackFrame_TSX.py $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/stripmapStack/unpackFrame_TSX.py
-ln -sf $MINSAR_HOME/additions/isce2/contrib/demUtils/demstitcher/DemStitcher.py $MINSAR_HOME/tools/miniforge3/envs/minsar/lib/python3.10/site-packages/isce/components/contrib/demUtils/DemStitcher.py
-ln -sf $MINSAR_HOME/additions/isce2/components/isceobj/Sensor/TOPS/Sentinel1.py $MINSAR_HOME/tools/miniforge3/envs/minsar/lib/python3.10/site-packages/isce/components/isceobj/Sensor/TOPS/Sentinel1.py
+ln -sf $MINSAR_HOME/additions/isce2/contrib/demUtils/demstitcher/DemStitcher.py "$ISCE_HOME/components/contrib/demUtils/DemStitcher.py"
+ln -sf $MINSAR_HOME/additions/isce2/components/isceobj/Sensor/TOPS/Sentinel1.py "$ISCE_HOME/components/isceobj/Sensor/TOPS/Sentinel1.py"
 # patches for single burst:
 ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/topsStack/mergeBursts.py $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/topsStack/mergeBursts.py
 ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/topsStack/generateIgram.py $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/topsStack/generateIgram.py
