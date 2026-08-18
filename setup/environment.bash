@@ -80,16 +80,11 @@ export LAUNCHER_SCHED=block   ## could be one of: dynamic, interleaved, block
 ##############  PYTHON  ##############
 # pixi sweets (s.bs): keep pixi prefix for Python/PROJ/GDAL. minsar conda (s.bw2) otherwise.
 if [[ "${PIXI_IN_SHELL:-}" == "1" && "${PIXI_PROJECT_NAME:-}" == "sweets" ]]; then
-    export PROJ_LIB="${CONDA_PREFIX}/share/proj"
-    export PROJ_DATA="${CONDA_PREFIX}/share/proj"
-    export GDAL_DATA="${CONDA_PREFIX}/share/gdal"
     echo "pixi sweets env detected: PROJ/GDAL from ${CONDA_PREFIX}"
     unset PYTHONPATH
 else
     export CONDA_PREFIX=${MINSAR_HOME}/tools/miniforge3/envs/minsar
     export CONDA_ENVS_PATH=${CONDA_PREFIX}/envs
-    export PROJ_LIB=${CONDA_PREFIX}/share/proj:${CONDA_PREFIX}/lib/python3.??/site-packages/pyproj/proj_dir/share/proj
-    export GDAL_DATA=${CONDA_PREFIX}/share/gdal
     export PYTHONPATH=${PYTHONPATH-""}
     export PYTHONPATH=${MINTPY_HOME}/mintpy:${PYTHONPATH}       # ensures that pip -e installed MintPy is used
     export PYTHONPATH=${PYTHONPATH}:${MIMTPY_HOME}
@@ -106,6 +101,9 @@ else
     export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools/sarplotter-main
     export PYTHONWARNINGS="ignore"
 fi
+export PROJ_LIB="${CONDA_PREFIX}/share/proj"
+export PROJ_DATA="${CONDA_PREFIX}/share/proj"
+export GDAL_DATA="${CONDA_PREFIX}/share/gdal"
 
 #####################################
 ############  PATH  #################
@@ -132,7 +130,6 @@ export PATH=${PATH}:${MINSAR_HOME}/tools/emirhan_insarmaps_utils
 export PATH=${PATH}:${MINSAR_HOME}/tools/autoencoder
 export PATH=${PATH}:${MINSAR_HOME}/tools/etna-slider/comparison/scripts
 export PATH=${PATH}:${MINSAR_HOME}/tools/MakeTemplate/src/maketemplate/cli
-export PATH=${PATH}:${PROJ_LIB}
 export PATH=${PATH}:${MINSAR_HOME}/tools/S4I/viewer4falk
 export PATH=${ISCE_HOME}/applications:${ISCE_HOME}/bin:${ISCE_STACK}:${ISCE_STACK}/topsStack:${PATH};
 export PATH=${CONDA_PREFIX}/bin:${PATH}
