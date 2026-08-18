@@ -2,12 +2,12 @@ name: minsar
 channels:
   - conda-forge
 dependencies:
-  - python=3.10
+  - python=3.12
   - isce2     # [linux]; interim fetchOrbit: docs/ISCE2_UPGRADE.md — remove symlink in install_minsar.bash when isce2=2.6.4
-  - gdal=3.6*
+  - gdal
   - mintpy
   - sardem
-  - numpy<2.0
+  - numpy
   - pandas
   - xarray
   - netcdf4

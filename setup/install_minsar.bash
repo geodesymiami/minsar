@@ -39,7 +39,7 @@ fi
 
 if [[ "$(uname)" == "Linux" ]]; then
     if [[ -f conda-lock.yml ]]; then
-       echo "Lock file conda-lock.yml found. Using it for installation"
+       echo "Lock file conda-lock.yml found. Using it for installation" #8/26: create lockfile using tools/miniforge3/bin/conda-lock -f minsar_env.yml --lockfile conda-lock.yml --platform linux-64
        tools/miniforge3/bin/mamba create --prefix tools/miniforge3/envs/minsar --file conda-lock.yml --yes
     else
        tools/miniforge3/bin/mamba --verbose env create -f minsar_env.yml --yes
