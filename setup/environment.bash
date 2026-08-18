@@ -78,29 +78,34 @@ export LAUNCHER_RMI=${JOBSCHEDULER}
 export LAUNCHER_SCHED=block   ## could be one of: dynamic, interleaved, block
 
 ##############  PYTHON  ##############
-export PYTHON3DIR=${MINSAR_HOME}/tools/miniforge3/envs/minsar
-export CONDA_ENVS_PATH=${PYTHON3DIR}/envs
-export CONDA_PREFIX=${PYTHON3DIR}
-export PROJ_LIB=${PYTHON3DIR}/share/proj:${PYTHON3DIR}/lib/python3.??/site-packages/pyproj/proj_dir/share/proj
-export GDAL_DATA=${PYTHON3DIR}/share/gdal
-
-export PYTHONPATH=${PYTHONPATH-""}
-export PYTHONPATH=${MINTPY_HOME}/mintpy:${PYTHONPATH}       # ensures that pip -e installed MintPy is used
-export PYTHONPATH=${PYTHONPATH}:${MIMTPY_HOME}
-export PYTHONPATH=${PYTHONPATH}:${ISCE_HOME}:${ISCE_HOME}/components
-export PYTHONPATH=${PYTHONPATH}:${ISCE_STACK}
-export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}
-export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools/PyAPS
-export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools/PySolid
-export PYTHONPATH=${PYTHONPATH}:${PLOTDATA_HOME}/src
-export PYTHONPATH=${PYTHONPATH}:${PRECIP_HOME}/src
-export PYTHONPATH=${PYTHONPATH}:${SARVEY_HOME}
-export PYTHONPATH=${PYTHONPATH}:${SARVEY_HOME}/sarvey
-export PYTHONPATH=${SOURCEINVERSION_HOME}/src:${SOURCEINVERSION_HOME}/src/VSM/VSM:$PYTHONPATH
-export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools/sarplotter-main
-#export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools      # needed for mimt. Need to talk to Sara on how to do this smarter
-######### Ignore warnings ############
-export PYTHONWARNINGS="ignore"
+# pixi sweets (s.bs): keep pixi prefix for Python/PROJ/GDAL. minsar conda (s.bw2) otherwise.
+if [[ "${PIXI_IN_SHELL:-}" == "1" && "${PIXI_PROJECT_NAME:-}" == "sweets" ]]; then
+    export PROJ_LIB="${CONDA_PREFIX}/share/proj"
+    export PROJ_DATA="${CONDA_PREFIX}/share/proj"
+    export GDAL_DATA="${CONDA_PREFIX}/share/gdal"
+    echo "pixi sweets env detected: PROJ/GDAL from ${CONDA_PREFIX}"
+    unset PYTHONPATH
+else
+    export CONDA_PREFIX=${MINSAR_HOME}/tools/miniforge3/envs/minsar
+    export CONDA_ENVS_PATH=${CONDA_PREFIX}/envs
+    export PROJ_LIB=${CONDA_PREFIX}/share/proj:${CONDA_PREFIX}/lib/python3.??/site-packages/pyproj/proj_dir/share/proj
+    export GDAL_DATA=${CONDA_PREFIX}/share/gdal
+    export PYTHONPATH=${PYTHONPATH-""}
+    export PYTHONPATH=${MINTPY_HOME}/mintpy:${PYTHONPATH}       # ensures that pip -e installed MintPy is used
+    export PYTHONPATH=${PYTHONPATH}:${MIMTPY_HOME}
+    export PYTHONPATH=${PYTHONPATH}:${ISCE_HOME}:${ISCE_HOME}/components
+    export PYTHONPATH=${PYTHONPATH}:${ISCE_STACK}
+    export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}
+    export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools/PyAPS
+    export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools/PySolid
+    export PYTHONPATH=${PYTHONPATH}:${PLOTDATA_HOME}/src
+    export PYTHONPATH=${PYTHONPATH}:${PRECIP_HOME}/src
+    export PYTHONPATH=${PYTHONPATH}:${SARVEY_HOME}
+    export PYTHONPATH=${PYTHONPATH}:${SARVEY_HOME}/sarvey
+    export PYTHONPATH=${SOURCEINVERSION_HOME}/src:${SOURCEINVERSION_HOME}/src/VSM/VSM:$PYTHONPATH
+    export PYTHONPATH=${PYTHONPATH}:${MINSAR_HOME}/tools/sarplotter-main
+    export PYTHONWARNINGS="ignore"
+fi
 
 #####################################
 ############  PATH  #################
@@ -130,7 +135,7 @@ export PATH=${PATH}:${MINSAR_HOME}/tools/MakeTemplate/src/maketemplate/cli
 export PATH=${PATH}:${PROJ_LIB}
 export PATH=${PATH}:${MINSAR_HOME}/tools/S4I/viewer4falk
 export PATH=${ISCE_HOME}/applications:${ISCE_HOME}/bin:${ISCE_STACK}:${ISCE_STACK}/topsStack:${PATH};
-export PATH=${PYTHON3DIR}/bin:${PATH}
+export PATH=${CONDA_PREFIX}/bin:${PATH}
 export PATH="${MINSAR_HOME}/tools/sarvey/sarvey:$PATH"
 export PATH="${MINSAR_HOME}/tools/sarplotter-main/app:$PATH"
 if [ -d /var/www/VolcDef_web ]; then
@@ -141,10 +146,8 @@ fi
 
 export PATH="${PATH}${MATLAB_HOME:+:${MATLAB_HOME}/bin}"
 
-#export LD_LIBRARY_PATH=${LD_LIBRARY_PATH-""}
-#export LD_LIBRARY_PATH=${PYTHON3DIR}/lib
 unset LD_LIBRARY_PATH
-export LD_RUN_PATH=${PYTHON3DIR}/lib
+export LD_RUN_PATH=${CONDA_PREFIX}/lib
 
 ########## bash functions #########
 source $MINSAR_HOME/minsar/lib/minsarApp_specifics.sh
@@ -152,7 +155,7 @@ source $MINSAR_HOME/minsar/lib/common_helpers.sh
 
 if [ -n "${prompt:-}" ]; then
     echo "MINSAR_HOME:" ${MINSAR_HOME}
-    echo "PYTHON3DIR:     " ${PYTHON3DIR}
+    echo "CONDA_PREFIX:   " ${CONDA_PREFIX}
     echo "SSARAHOME:      " ${SSARAHOME}
 fi
 ########## Your personal aliasses/functions #########
