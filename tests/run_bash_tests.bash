@@ -36,7 +36,11 @@ TEST_SUITES=(
     "test_sbatch_conditional.bash"
     "test_save_miaplpy_hdfeos5_bash.bash"
     "test_get_date_str.bash"
-    # "test_minsarApp_options.bash"  # temporarily disabled for pre-push
+)
+
+# Long-running; included in the full suite, skipped by --fast (pre-push)
+SLOW_TEST_SUITES=(
+    "test_minsarApp_options.bash"
 )
 
 # Results tracking
@@ -152,15 +156,17 @@ show_usage() {
     echo ""
     echo "Options:"
     echo "  --help, -h      Show this help message"
+    echo "  --fast          Skip long-running suites (test_minsarApp_options.bash)"
     echo "  --list          List available test suites"
     echo "  --quiet, -q     Only show summary (suppress individual test output)"
     echo ""
     echo "If no SUITE_NAME is provided, all test suites are run."
     echo ""
     echo "Examples:"
-    echo "  $0                              # Run all tests"
-    echo "  $0 test_run_workflow.bash       # Run specific test suite"
-    echo "  $0 --list                       # List available suites"
+    echo "  $0"
+    echo "  $0 --fast"
+    echo "  $0 test_run_workflow.bash"
+    echo "  $0 --list"
     echo ""
 }
 
@@ -168,6 +174,17 @@ list_suites() {
     echo "Available test suites:"
     echo ""
     for suite in "${TEST_SUITES[@]}"; do
+        local suite_path="$SCRIPT_DIR/$suite"
+        if [[ -f "$suite_path" ]]; then
+            echo -e "  ${GREEN}✓${NC} $suite"
+        else
+            echo -e "  ${RED}✗${NC} $suite (not found)"
+        fi
+    done
+    echo ""
+    echo "Long-running (skipped by --fast):"
+    echo ""
+    for suite in "${SLOW_TEST_SUITES[@]}"; do
         local suite_path="$SCRIPT_DIR/$suite"
         if [[ -f "$suite_path" ]]; then
             echo -e "  ${GREEN}✓${NC} $suite"
@@ -185,6 +202,7 @@ list_suites() {
 main() {
     local suites_to_run=()
     local quiet_mode=false
+    local fast_mode=false
     
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -192,6 +210,10 @@ main() {
             --help|-h)
                 show_usage
                 exit 0
+                ;;
+            --fast)
+                fast_mode=true
+                shift
                 ;;
             --list)
                 list_suites
@@ -208,9 +230,12 @@ main() {
         esac
     done
     
-    # If no specific suites requested, run all
+    # If no specific suites requested, run the default set (plus slow suites unless --fast)
     if [[ ${#suites_to_run[@]} -eq 0 ]]; then
         suites_to_run=("${TEST_SUITES[@]}")
+        if ! $fast_mode; then
+            suites_to_run+=("${SLOW_TEST_SUITES[@]}")
+        fi
     fi
     
     print_banner

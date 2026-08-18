@@ -7,6 +7,7 @@
 #
 # Options:
 #   --help, -h        Show this help message
+#   --fast            Skip long-running tests (used by pre-push)
 #   --python-only     Run only Python tests
 #   --bash-only       Run only Bash tests
 #   --verbose, -v     Verbose output
@@ -36,6 +37,7 @@ NC='\033[0m' # No Color
 RUN_PYTHON=true
 RUN_BASH=true
 VERBOSE=false
+FAST=false
 
 # Results tracking
 PYTHON_RESULT=0
@@ -56,15 +58,17 @@ Runs both Python (unittest) and Bash test suites.
 
 Options:
   --help, -h        Show this help message
+  --fast            Skip long-running tests (additions/mintpy, test_minsarApp_options.bash)
   --python-only     Run only Python tests
   --bash-only       Run only Bash tests
   --verbose, -v     Verbose output
 
 Examples:
-  ./run_all_tests.bash                # Run all tests
-  ./run_all_tests.bash --python-only  # Run only Python tests
-  ./run_all_tests.bash --bash-only    # Run only Bash tests
-  ./run_all_tests.bash -v             # Run all tests with verbose output
+  ./run_all_tests.bash
+  ./run_all_tests.bash --fast
+  ./run_all_tests.bash --python-only
+  ./run_all_tests.bash --bash-only
+  ./run_all_tests.bash -v
 
 Exit codes:
   0 = All tests passed
@@ -81,6 +85,9 @@ print_banner() {
     echo -e "${BOLD}╚══════════════════════════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo "Project root: $SCRIPT_DIR"
+    if $FAST; then
+        echo "Mode: fast (skipping long-running tests; run ./run_all_tests.bash for the full suite)"
+    fi
     echo ""
 }
 
@@ -109,7 +116,7 @@ run_python_tests() {
     
     # Define test locations (add more as colocated tests are created)
     # Pattern: minsar/<module>/tests/ for colocated tests
-    # additions/mintpy/tests is long-running; pre-push skips it unless additions/mintpy/ changed (MINSAR_SKIP_MINTPY_ADDITIONS_TESTS=1)
+    # additions/mintpy/tests is long-running; skipped by --fast / MINSAR_SKIP_MINTPY_ADDITIONS_TESTS=1
     local test_locations=(
         "tests"                    # Integration tests
         "minsar/utils/tests"       # Utils unit tests
@@ -118,7 +125,9 @@ run_python_tests() {
         "minsar/src/minsar/cli/tests"  # CLI jobfile creators
         "minsar/insarmaps_utils/tests"  # EGMS / Insarmaps helpers
     )
-    if [[ "${MINSAR_SKIP_MINTPY_ADDITIONS_TESTS:-0}" != "1" ]]; then
+    if $FAST || [[ "${MINSAR_SKIP_MINTPY_ADDITIONS_TESTS:-0}" == "1" ]]; then
+        echo -e "${BLUE}Skipping long-running tests in: additions/mintpy/tests/${NC}"
+    else
         test_locations+=("additions/mintpy/tests")   # MintPy additions (geocode wrapper, etc.)
     fi
     
@@ -199,6 +208,7 @@ print_failure_rerun_hints() {
     fi
 
     echo "  (full suite) \"$SCRIPT_DIR/run_all_tests.bash\" -v"
+    echo "  (fast suite) \"$SCRIPT_DIR/run_all_tests.bash\" --fast -v"
     echo ""
 }
 
@@ -215,7 +225,11 @@ run_bash_tests() {
         return 1
     fi
     
-    bash "$bash_runner"
+    local bash_args=()
+    if $FAST; then
+        bash_args+=(--fast)
+    fi
+    bash "$bash_runner" "${bash_args[@]}"
     local exit_code=$?
     
     return $exit_code
@@ -278,6 +292,10 @@ main() {
             --help|-h)
                 show_help
                 exit 0
+                ;;
+            --fast)
+                FAST=true
+                shift
                 ;;
             --python-only)
                 RUN_PYTHON=true

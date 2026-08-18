@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 #
-# Pre-push hook: runs all tests before allowing a push
-# If tests fail, the push is aborted
+# Pre-push hook: runs the fast test suite before allowing a push.
+# If tests fail, the push is aborted.
+#
+# Long-running tests are skipped here. Run them occasionally with:
+#   ./run_all_tests.bash
 #
 # To bypass this hook (use sparingly!): git push --no-verify
 #
@@ -12,42 +15,23 @@ set -e
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
 
-# Check if additions/mintpy has changes in this push; if not, skip its long-running tests
-RUN_MINTPY_ADDITIONS=0
-SEEN_REF=0
-while read -r local_ref local_sha remote_ref remote_sha; do
-    [[ -z "$local_sha" ]] && continue
-    SEEN_REF=1
-    if [[ "$remote_sha" == "0"* ]] && [[ "${#remote_sha}" -eq 40 ]]; then
-        RUN_MINTPY_ADDITIONS=1
-        break
-    fi
-    changed=$(git diff --name-only "$remote_sha" "$local_sha" 2>/dev/null || true)
-    if echo "$changed" | grep -q '^additions/mintpy/'; then
-        RUN_MINTPY_ADDITIONS=1
-        break
-    fi
-    RUN_MINTPY_ADDITIONS=0
-done
-
-if [[ "$SEEN_REF" -eq 1 ]] && [[ "$RUN_MINTPY_ADDITIONS" -eq 0 ]]; then
-    export MINSAR_SKIP_MINTPY_ADDITIONS_TESTS=1
-    echo "Skipping additions/mintpy tests (no changes in additions/mintpy in this push)"
-    echo ""
-fi
+# Drain push refs so git does not block on unused stdin
+cat >/dev/null
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════════════════════╗"
-echo "║                     PRE-PUSH HOOK: Running tests...                      ║"
+echo "║              PRE-PUSH HOOK: Running fast tests...                        ║"
+echo "║  Full suite (occasional): ./run_all_tests.bash                           ║"
 echo "╚══════════════════════════════════════════════════════════════════════════╝"
 echo ""
 
-# Run the test suite
-if ! bash "$REPO_ROOT/run_all_tests.bash"; then
+# Run the fast test suite (skips additions/mintpy tests and test_minsarApp_options.bash)
+if ! bash "$REPO_ROOT/run_all_tests.bash" --fast; then
     echo ""
     echo "╔══════════════════════════════════════════════════════════════════════════╗"
     echo "║  PUSH BLOCKED: Tests failed. Fix the issues and try again.              ║"
-    echo "║  Rerun: bash \"$REPO_ROOT/run_all_tests.bash\" -v                         ║"
+    echo "║  Rerun: bash \"$REPO_ROOT/run_all_tests.bash\" --fast -v                  ║"
+    echo "║  Full suite: bash \"$REPO_ROOT/run_all_tests.bash\"                       ║"
     echo "║  To bypass (use sparingly!): git push --no-verify                       ║"
     echo "╚══════════════════════════════════════════════════════════════════════════╝"
     echo ""
