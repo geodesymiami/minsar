@@ -39,7 +39,7 @@ Only continue after receiving approval.
 
 ### 3. Tests — not for every script
 
-**Do not add a new test file for every new script** (e.g. do not auto-create `tests/test_<name>.bash`).
+**Do not add a new test file for every new script** (do not auto-create `tests/test_<name>.bash` or `minsar/*/tests/test_<name>.py`).
 
 Add or extend tests only when:
 - The user asks for them, or
@@ -119,6 +119,7 @@ For `run_workflow.bash` internals: `minsar/bin/ARCHITECTURE.md`
 | `minsar/bin/run_workflow.bash` | Job orchestration |
 | `minsar/bin/submit_jobs.bash` | Batch submission |
 | `minsar/bin/sbatch_conditional.bash` | Resource-checked sbatch |
+| `minsar/utils/generate_sweets_config.py` | Write `sweets.bash` (`sweets config` + `sweets run`) |
 
 ## Coding Conventions
 

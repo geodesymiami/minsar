@@ -1,0 +1,28 @@
+---
+description: generate_sweets_config.py writes sweets.bash (config + run). Use when editing sweets config generation.
+globs: "**/generate_sweets_config.py"
+alwaysApply: false
+---
+
+# generate_sweets_config.py
+
+`minsar/utils/generate_sweets_config.py` writes `sweets.bash` from a MinSAR template.
+
+```bash
+generate_sweets_config.py $TE/HawaiiPunaSweetsSenA124.template
+generate_sweets_config.py $TE/HawaiiPunaSweetsSenA124.template --source cslc
+generate_sweets_config.py $TE/HawaiiPunaSweetsSenA124.template --source burst
+```
+
+`sweets.bash` is exactly two lines: a one-line `sweets config`, then `sweets run`:
+
+```bash
+sweets config --bbox -155.02 19.44 -154.80 19.50 --start 2018-10-01 --end 2026-08-17 --source opera-cslc --track 124 --out-dir ./data --work-dir . --output sweets_config.yaml
+sweets run sweets_config.yaml
+```
+
+- `--bbox` is space-separated (`--bbox west south east north`). Do **not** use `--bbox=`.
+- Default source is `opera-cslc`. If no CSLC exists, use bursts (`--source safe`) and add `--swaths`.
+- `--source cslc` or `--source burst` skips the CSLC availability check.
+- Track/swath come from the template (`ssaraopt.relativeOrbit`, `topsStack.subswath`). If missing, compute them with `get_sar_coverage.py` helpers (same as `create_template.py`).
+- Do not add a new test file for this script unless the user asks.
