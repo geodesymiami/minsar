@@ -1,0 +1,16 @@
+---
+description: Put commands and copy-paste snippets on one long line in chat
+alwaysApply: true
+---
+
+# Chat copy-paste
+
+In Cursor chat, put shell commands and other copy-paste snippets on **one line**.
+
+- Do not wrap with `\` or break flags onto following lines
+- A fenced code block may contain several commands; each command is still one line
+- Prefer a long line over a “pretty” multiline command
+
+```bash
+sweets config --bbox -155.02 19.44 -154.80 19.50 --start 2025-01-01 --end 2026-08-17 --source opera-cslc --track 124 --out-dir ./data --work-dir . --output sweets_config.yaml --overwrite
+```

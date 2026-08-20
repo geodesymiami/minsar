@@ -1,0 +1,25 @@
+---
+description: Plans are written as a first draft; never refer to earlier plan versions
+alwaysApply: true
+---
+
+# Plan style
+
+A plan must read as if it was just written. State only the current design.
+
+- No references to earlier drafts: "previously", "in the last plan", "as discussed above", "changed from", "instead of X".
+- No change logs, revision notes, or "updated:" markers inside the plan.
+- When the user revises a plan, rewrite the affected sections in place so the result reads as one coherent first version.
+
+**Avoid:**
+
+```text
+Earlier we had subdirs per repo; now the layout is flat.
+Renamed `work/` to `nb_runs/` (see previous plan).
+```
+
+**Prefer:**
+
+```text
+Notebooks are staged flat in `$SCRATCHDIR/notebooks/`; run data goes to `$SCRATCHDIR/nb_runs/<stem>/`.
+```
