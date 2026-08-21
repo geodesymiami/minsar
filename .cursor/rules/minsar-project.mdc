@@ -37,12 +37,12 @@ Present a short plan in chat (or the Cursor plan UI) covering: summary, files af
 
 Only continue after receiving approval.
 
-### 3. Tests — not for every script
+### 3. Tests — do not create test scripts
 
-**Do not add a new test file for every new script** (do not auto-create `tests/test_<name>.bash` or `minsar/*/tests/test_<name>.py`).
+**Do not create test scripts** for new utils/scripts (no `tests/test_<name>.bash`, no `minsar/*/tests/test_<name>.py`, no `tests/test_<name>.py`).
 
 Add or extend tests only when:
-- The user asks for them, or
+- The user **explicitly asks** for them, or
 - You are changing core workflow/orchestration (e.g. `run_workflow`, `minsarApp`, job submission) where regressions are costly
 
 For admin/utils CLIs, prefer a quick manual smoke (`--help`, `--dry-run`) unless asked to add tests.
