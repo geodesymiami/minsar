@@ -7,7 +7,7 @@
 #
 # Options:
 #   --help, -h        Show this help message
-#   --fast            Skip long-running tests (used by pre-push)
+#   --fast            Skip long-running tests
 #   --python-only     Run only Python tests
 #   --bash-only       Run only Bash tests
 #   --verbose, -v     Verbose output

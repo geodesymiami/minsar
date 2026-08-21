@@ -38,7 +38,7 @@ TEST_SUITES=(
     "test_get_date_str.bash"
 )
 
-# Long-running; included in the full suite, skipped by --fast (pre-push)
+# Long-running; included in the full suite, skipped by --fast
 SLOW_TEST_SUITES=(
     "test_minsarApp_options.bash"
 )

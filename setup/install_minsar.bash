@@ -120,9 +120,6 @@ ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/stripmapStack/unpackFrame_ENV.
 ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/stripmapStack/referenceStackCopy.py $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/stripmapStack
 fi
 
-###  Install git hooks (pre-push runs tests) #################
-bash "$MINSAR_HOME/setup/install_git_hooks.bash"
-
 echo ""
 echo "Running of install_minsar.bash DONE"
 echo ""
