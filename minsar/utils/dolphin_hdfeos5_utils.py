@@ -454,13 +454,14 @@ def latlon_grids(grid: dict) -> tuple[np.ndarray, np.ndarray]:
     transform = grid["transform"]
     rows, cols = np.meshgrid(np.arange(length), np.arange(width), indexing="ij")
     xs, ys = rasterio_xy(transform, rows, cols, offset="center")
-    xs = np.asarray(xs, dtype=np.float64)
-    ys = np.asarray(ys, dtype=np.float64)
+    # rasterio 1.4+ and pyproj flatten 2-D inputs; restore (length, width)
+    xs = np.asarray(xs, dtype=np.float64).reshape(length, width)
+    ys = np.asarray(ys, dtype=np.float64).reshape(length, width)
     crs = grid["crs"]
     if crs is None or crs.to_epsg() == 4326 or (crs.is_geographic if hasattr(crs, "is_geographic") else False):
         return ys.astype(np.float32), xs.astype(np.float32)
     lon, lat = utm_to_lonlat(xs, ys, crs)
-    return np.asarray(lat, dtype=np.float32), np.asarray(lon, dtype=np.float32)
+    return np.asarray(lat, dtype=np.float32).reshape(length, width), np.asarray(lon, dtype=np.float32).reshape(length, width)
 
 
 def snwe_wkt(south, north, west, east) -> str:

@@ -1,0 +1,14 @@
+---
+description: Notebook questions mean the currently open notebook unless named
+alwaysApply: true
+---
+
+# Active notebook
+
+When the user asks about “this notebook”, “the notebook”, “a notebook”, or similar without naming a path or filename:
+
+1. Treat that as the **currently open / active** notebook in the editor (or Jupyter).
+2. Do **not** guess from chat history, recently modified files under `scratch/notebooks/`, or a different notebook from an earlier turn.
+3. If no notebook is open or the active one cannot be determined, ask which notebook — do not pick one.
+
+Only use a different notebook when the user **explicitly** names it (path, `@` mention, or filename).

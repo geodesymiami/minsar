@@ -17,9 +17,9 @@ from pathlib import Path
 
 EXAMPLE = """Examples:
   stage_notebooks.py
+  stage_notebooks.py opera-disp-01-explore.ipynb
+  stage_notebooks.py --force opera-disp-01-explore.ipynb
   stage_notebooks.py --dry-run
-  stage_notebooks.py --force
-  stage_notebooks.py --list ~/my_notebooks.list --dest ~/scratch/notebooks
 """
 
 VAR = r"(?P<indent>[ \t]*)(?P<var>WORK_DIR|work_dir)\s*=\s*"
@@ -125,10 +125,11 @@ NOTEBOOK_REPLACEMENTS = {
 
 def create_parser():
     parser = argparse.ArgumentParser(
-        description="Copy listed tutorial notebooks to a flat $SCRATCHDIR/notebooks and redirect their output to $SCRATCHDIR/nb_runs/<name>.",
+        description="Copy notebooks to $SCRATCHDIR/notebooks (redirect output to $SCRATCHDIR/nb_runs/<name>). Missing notebooks will be replaced.",
         formatter_class=argparse.RawTextHelpFormatter,
         epilog=EXAMPLE,
     )
+    parser.add_argument("notebook", nargs="?", metavar="NOTEBOOK", help="optional .ipynb to stage (basename, path under tools/, or absolute path)")
     parser.add_argument("--list", dest="list_file", metavar="FILE", help="notebook list (default: $MINSAR_HOME/notebooks/notebooks.list)")
     parser.add_argument("--dest", metavar="DIR", help="staging directory (default: $SCRATCHDIR/notebooks)")
     parser.add_argument("--runs", metavar="DIR", help="run-data directory (default: $SCRATCHDIR/nb_runs)")
@@ -152,6 +153,39 @@ def read_list(list_file):
         if line:
             entries.append(line)
     return entries
+
+
+def resolve_notebook(notebook_arg, tools_dir, notebooks_dir, list_entries):
+    """Resolve NOTEBOOK to (src Path, is_fa bool). Exit on error."""
+    raw = Path(notebook_arg).expanduser()
+    if raw.suffix != ".ipynb":
+        sys.exit(f"ERROR: NOTEBOOK must be a .ipynb file: {notebook_arg}")
+
+    # Absolute / explicit path
+    if raw.is_file():
+        return raw.resolve(), raw.name.startswith("FA_")
+
+    # Basename match in notebooks.list
+    matches = [e for e in list_entries if Path(e).name == raw.name]
+    if len(matches) == 1:
+        src = tools_dir / matches[0]
+        if not src.is_file():
+            sys.exit(f"ERROR: listed notebook not found: {src}")
+        return src.resolve(), False
+    if len(matches) > 1:
+        sys.exit(f"ERROR: ambiguous notebook name {raw.name}: {', '.join(matches)}")
+
+    # Path relative to tools/
+    under_tools = tools_dir / notebook_arg
+    if under_tools.is_file():
+        return under_tools.resolve(), False
+
+    # FA_ under $MINSAR_HOME/notebooks/
+    fa = notebooks_dir / raw.name
+    if raw.name.startswith("FA_") and fa.is_file():
+        return fa.resolve(), True
+
+    sys.exit(f"ERROR: notebook not found: {notebook_arg}")
 
 
 def cell_lines(cell):
@@ -296,6 +330,31 @@ def main(argv=None):
             print(f"ERROR: duplicate notebook name {name}: {', '.join(paths)}", file=sys.stderr)
         sys.exit("ERROR: notebook names must be unique (staging is flat)")
 
+    if not inps.dry_run:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+    # Stage a single NOTEBOOK
+    if inps.notebook:
+        src, is_fa = resolve_notebook(inps.notebook, tools_dir, notebooks_dir, entries)
+        dest = dest_dir / src.name
+        run_dir = run_dir_for(src.name, runs_dir)
+        if dest.exists() and not inps.force:
+            print(f"skipped existing {dest} (use --force to refresh)")
+            return 0
+        print(f"{src} -> {dest}  [run {run_dir}]")
+        if inps.dry_run:
+            if not is_fa:
+                copy_sidecars(src, run_dir, force=True, dry_run=True)
+            return 0
+        if is_fa:
+            shutil.copyfile(src, dest)
+        else:
+            patch_notebook(src, dest, run_dir)
+            copy_sidecars(src, run_dir, force=inps.force, dry_run=False)
+        print(f"\nstaged 1 notebook in {dest_dir}")
+        print(f"run data goes to {runs_dir}/<name>; remove with: rm -rf {runs_dir}")
+        return 0
+
     missing = [entry for entry in entries if not (tools_dir / entry).is_file()]
     present = [entry for entry in entries if (tools_dir / entry).is_file()]
     if missing:
@@ -304,9 +363,6 @@ def main(argv=None):
         print(f"WARNING: skipped {len(missing)} of {len(entries)} notebooks not found under {tools_dir}", file=sys.stderr)
     if not present:
         sys.exit(f"ERROR: none of {len(entries)} listed notebooks found under {tools_dir}")
-
-    if not inps.dry_run:
-        dest_dir.mkdir(parents=True, exist_ok=True)
 
     n_copied = n_skipped = n_sidecars = 0
     for entry in present:
