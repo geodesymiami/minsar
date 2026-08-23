@@ -222,6 +222,8 @@ function changequeuedev() {
          sed -i 's/^#SBATCH -p \s*icx/#SBATCH -p skx-dev/' "$f"
       elif grep -q '^#SBATCH -p skx ' "$f"; then
          sed -i 's/^#SBATCH -p \s*skx/#SBATCH -p skx-dev/' "$f"
+      elif grep -q '^#SBATCH -p pvc ' "$f"; then
+         sed -i 's/^#SBATCH -p \s*skx/#SBATCH -p skx-dev/' "$f"
       fi
 
       sed -i "s/^#SBATCH -n \s*[0-9]\+/#SBATCH -n ${cpus_per_node_skx_dev}/" "$f"
