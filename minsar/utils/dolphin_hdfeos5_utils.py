@@ -6,18 +6,22 @@ Used by ``dolphin2hdfeos5.py``. Independent of
 
 from __future__ import annotations
 
+import argparse
 import glob
 import importlib.util
 import inspect
 import os
 import re
-from datetime import date
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
+import h5py
 import numpy as np
 import rasterio
+from affine import Affine
 from rasterio.transform import xy as rasterio_xy
 from mintpy.utils import writefile
+from pyproj import CRS
 
 from minsar.src.minsar.helper_functions import utm_to_lonlat
 
@@ -48,6 +52,129 @@ SKIP_DIR_NAMES = {
     "unwrapped",
 }
 S1_WAVELENGTH = 0.05546576
+MASK_SOURCES = ("recommended", "tc", "similarity", "tc+sim", "recommendedDensity")
+RECOMMENDED_VMIN = 0.6
+RECOMMENDED_VMIN_SIM = 0.4
+TC_VMIN = 0.6
+SIMILARITY_VMIN = 0.4
+RECOMMENDED_DENSITY_VMIN = 0.9
+DOLPHIN2HDFEOS5_EXAMPLES = """Examples:
+  dolphin2hdfeos5.py dolphin
+  dolphin2hdfeos5.py dolphin -m recommended
+  dolphin2hdfeos5.py dolphin -m tc --vmin 0.7
+  dolphin2hdfeos5.py dolphin -m similarity --vmin 0.5
+  dolphin2hdfeos5.py dolphin -m tc+sim --vmin 0.7 --vmin-sim 0.5
+  dolphin2hdfeos5.py dolphin -m recommendedDensity
+  dolphin2hdfeos5.py dolphin -m recommendedDensity --vmin 0.95
+"""
+REMASK_HDFEOS5_EXAMPLES = """Examples:
+  remask_hdfeos5.py S1_….he5 -m tc --vmin 0.7
+  remask_hdfeos5.py S1_….he5 -m similarity --vmin 0.5
+  remask_hdfeos5.py S1_….he5 -m tc+sim --vmin 0.7 --vmin-sim 0.5
+  remask_hdfeos5.py S1_….he5 -m recommendedDensity
+  remask_hdfeos5.py S1_….he5 -m recommendedDensity --vmin 0.95
+  remask_hdfeos5.py S1_…_tc070_sim050.he5 -m recommended
+"""
+MASK_SUFFIX_RE = re.compile(
+    r"_(?:tc\d{3}_sim\d{3}|tc\d{3}|sim\d{3}|dens\d{3}|rec\d{3}(?:_\d{3})?|coh\d{3}(?:_sim\d{3})?)$"
+)
+HE5_QUALITY = "HDFEOS/GRIDS/timeseries/quality"
+HE5_OBS = "HDFEOS/GRIDS/timeseries/observation"
+HE5_GEOM = "HDFEOS/GRIDS/timeseries/geometry"
+
+
+def add_mask_arguments(parser: argparse.ArgumentParser) -> None:
+    """Shared -m / --vmin / --vmin-sim (MintPy mask.py style)."""
+    parser.add_argument(
+        "-m",
+        "--mask-source",
+        choices=MASK_SOURCES,
+        default="recommended",
+        metavar="MASK",
+        help=(
+            "{recommended,tc,similarity,tc+sim,recommendedDensity} (default: recommended). "
+            "recommended: fixed OPERA 0.6/0.4 (no --vmin/--vmin-sim). "
+            "tc+sim: same OR rule with --vmin/--vmin-sim. "
+            "recommendedDensity: keep if good in >= --vmin of dates (needs OPERA density)"
+        ),
+    )
+    parser.add_argument(
+        "--vmin",
+        type=float,
+        default=None,
+        help="Cutoff for -m (defaults: tc+sim/tc 0.6, similarity 0.4, recommendedDensity 0.9; not for recommended)",
+    )
+    parser.add_argument(
+        "--vmin-sim",
+        type=float,
+        default=None,
+        dest="vmin_sim",
+        help="Similarity cutoff for -m tc+sim (default: 0.4)",
+    )
+
+
+def resolve_mask_thresholds(source: str, vmin: float | None, vmin_sim: float | None) -> tuple[float, float | None]:
+    """Fill defaults for -m / --vmin / --vmin-sim."""
+    if source == "recommended":
+        if vmin is not None or vmin_sim is not None:
+            raise ValueError(
+                "-m recommended uses fixed OPERA cutoffs 0.6/0.4; "
+                "use -m tc+sim --vmin … --vmin-sim … to change them"
+            )
+        return RECOMMENDED_VMIN, RECOMMENDED_VMIN_SIM
+    if source == "tc+sim":
+        return (
+            RECOMMENDED_VMIN if vmin is None else vmin,
+            RECOMMENDED_VMIN_SIM if vmin_sim is None else vmin_sim,
+        )
+    if source == "tc":
+        return (TC_VMIN if vmin is None else vmin), vmin_sim
+    if source == "similarity":
+        if vmin is not None and vmin_sim is not None and vmin != vmin_sim:
+            raise ValueError("for -m similarity, --vmin and --vmin-sim must match when both are set")
+        cutoff = SIMILARITY_VMIN
+        if vmin is not None:
+            cutoff = vmin
+        elif vmin_sim is not None:
+            cutoff = vmin_sim
+        return cutoff, cutoff
+    if source == "recommendedDensity":
+        return (RECOMMENDED_DENSITY_VMIN if vmin is None else vmin), vmin_sim
+    raise ValueError(f"unknown mask source: {source}")
+
+
+def _pct3(value: float) -> str:
+    return f"{int(round(float(value) * 100)):03d}"
+
+
+def mask_filename_suffix(source: str, vmin: float, vmin_sim: float | None) -> str | None:
+    """Filename suffix from mask cutoffs. None only for -m recommended (fixed 0.6/0.4)."""
+    if source == "recommended":
+        return None
+    if source == "tc+sim":
+        sim = RECOMMENDED_VMIN_SIM if vmin_sim is None else vmin_sim
+        return f"tc{_pct3(vmin)}_sim{_pct3(sim)}"
+    if source == "tc":
+        return f"tc{_pct3(vmin)}"
+    if source == "similarity":
+        return f"sim{_pct3(vmin)}"
+    if source == "recommendedDensity":
+        return f"dens{_pct3(vmin)}"
+    raise ValueError(f"unknown mask source: {source}")
+
+
+def strip_mask_suffix(stem: str) -> str:
+    """Remove trailing mask suffix from an HE5 stem."""
+    return MASK_SUFFIX_RE.sub("", stem)
+
+
+def apply_mask_suffix(path: Path, suffix: str | None) -> Path:
+    """New HE5 path with mask suffix (strips a previous mask suffix). No suffix → stripped stem only."""
+    path = Path(path)
+    stem = strip_mask_suffix(path.stem)
+    if not suffix:
+        return path.with_name(f"{stem}.he5")
+    return path.with_name(f"{stem}_{suffix}.he5")
 
 
 def _iso_date(ymd):
@@ -74,10 +201,10 @@ def _load_save_hdfeos5():
     return mod
 
 
-def he5_output_filename(metadata, update_mode=True, subset_mode=True):
+def he5_output_filename(metadata, update_mode=True, subset_mode=True, suffix=None):
     """MintPy/MiaplPy HE5 name via save_hdfeos5.get_output_filename."""
     mod = _load_save_hdfeos5()
-    kwargs = {"update_mode": update_mode, "subset_mode": subset_mode}
+    kwargs = {"update_mode": update_mode, "subset_mode": subset_mode, "suffix": suffix}
     if "template" in inspect.signature(mod.get_output_filename).parameters:
         return mod.get_output_filename(metadata, {}, **kwargs)
     return mod.get_output_filename(metadata, **kwargs)
@@ -325,6 +452,11 @@ def resolve_required_files(dataset_dir: Path, dolphin_dir: Path, ts_dir: Path) -
     files["shadow"] = shadow_path if shadow_path.is_file() else None
     avg_paths = _glob_existing(dolphin_dir / "interferograms" / "*.int.cor.tif")
     files["avg_spatial"] = avg_paths or None
+    sim_paths = _glob_existing(dolphin_dir / "interferograms" / "similarity_full_*.tif")
+    if not sim_paths:
+        sim_paths = _glob_existing(dolphin_dir / "interferograms" / "similarity_*.tif")
+        sim_paths = [p for p in sim_paths if "full" not in p.name]
+    files["similarity"] = sim_paths or None
     ref_path = ts_dir / "reference_point.txt"
     files["reference_point"] = ref_path if ref_path.is_file() else None
 
@@ -390,12 +522,20 @@ def load_quality_layers(
     avg_coh = None
     if files["avg_spatial"]:
         avg_coh = _mean_matching_tif(files["avg_spatial"], shape, required=False)
+    phase_sim = None
+    if files.get("similarity"):
+        if len(files["similarity"]) == 1:
+            phase_sim = same_shape(_read_geotiff(files["similarity"][0]), shape)
+        else:
+            phase_sim = _mean_matching_tif(files["similarity"], shape, required=False)
 
     return {
         "temporal_coherence": temp_coh,
         "avg_spatial_coherence": avg_coh,
+        "phase_similarity": phase_sim,
         "watermask": watermask,
         "conncomp": conncomp,
+        "recommended_density": None,
         "shadow": shadow,
         "height": height,
         "incidence": incidence,
@@ -414,21 +554,61 @@ def same_shape(arr, shape):
     return arr
 
 
-def build_mask(shape, stack, quality, temp_coh_thresh=0.65) -> np.ndarray:
+def build_mask(
+    shape,
+    stack,
+    quality,
+    source="recommended",
+    vmin=0.6,
+    vmin_sim=0.4,
+) -> np.ndarray:
+    """Build quality/mask from base layers (water, finite) plus -m rule."""
     mask = np.ones(shape, dtype=bool)
     watermask = quality.get("watermask")
-    if watermask is not None and watermask.shape == shape:
-        mask &= watermask != 0
-    conncomp = quality.get("conncomp")
-    if conncomp is not None and conncomp.shape == shape:
-        mask &= conncomp != 0
-    temp_coh = quality.get("temporal_coherence")
-    if temp_coh is not None and temp_coh.shape == shape:
-        mask &= np.isfinite(temp_coh) & (temp_coh > temp_coh_thresh)
-    if stack.shape[0] > 1:
-        mask &= np.isfinite(stack[1])
+    if watermask is not None and np.asarray(watermask).shape == shape:
+        mask &= np.asarray(watermask) != 0
+
+    if stack is not None:
+        if stack.shape[0] > 1:
+            mask &= np.isfinite(stack[1])
+        else:
+            mask &= np.isfinite(stack[0])
+
+    if source in ("recommended", "tc+sim"):
+        tc = quality.get("temporal_coherence")
+        sim = quality.get("phase_similarity")
+        if tc is None or np.asarray(tc).shape != shape:
+            raise ValueError(f"-m {source} requires temporal coherence")
+        if sim is None or np.asarray(sim).shape != shape:
+            raise ValueError(f"-m {source} requires phase similarity")
+        tc = np.asarray(tc)
+        sim = np.asarray(sim)
+        sim_cut = RECOMMENDED_VMIN_SIM if vmin_sim is None else vmin_sim
+        # OPERA: keep unless both are below cutoffs (TC high OR similarity high)
+        mask &= ~((tc < vmin) & (sim < sim_cut))
+    elif source == "tc":
+        tc = quality.get("temporal_coherence")
+        if tc is None or np.asarray(tc).shape != shape:
+            raise ValueError("-m tc requires temporal coherence")
+        tc = np.asarray(tc)
+        mask &= np.isfinite(tc) & (tc > vmin)
+    elif source == "similarity":
+        sim = quality.get("phase_similarity")
+        if sim is None or np.asarray(sim).shape != shape:
+            raise ValueError("-m similarity requires phase similarity")
+        sim = np.asarray(sim)
+        mask &= np.isfinite(sim) & (sim > vmin)
+    elif source == "recommendedDensity":
+        dens = quality.get("recommended_density")
+        if dens is None or np.asarray(dens).shape != shape:
+            raise ValueError(
+                "-m recommendedDensity requires quality/recommendedDensity "
+                "(OPERA DISP per-date recommended_mask; not available for sweets/dolphin)"
+            )
+        dens = np.asarray(dens)
+        mask &= np.isfinite(dens) & (dens >= vmin)
     else:
-        mask &= np.isfinite(stack[0])
+        raise ValueError(f"unknown mask source: {source}")
     return mask
 
 
@@ -579,9 +759,13 @@ def create_hdfeos_output(
     bperp: np.ndarray = None,
     shadow_mask: np.ndarray = None,
     avg_spatial_coherence: np.ndarray = None,
+    watermask: np.ndarray = None,
+    conncomp: np.ndarray = None,
+    phase_similarity: np.ndarray = None,
+    recommended_density: np.ndarray = None,
     metadata: dict = None,
 ):
-    """Write a MintPy-style HDF-EOS5 file from Dolphin arrays."""
+    """Write a MintPy-style HDF-EOS5 file from Dolphin/OPERA arrays."""
     if metadata is None:
         metadata = {}
     if not output_path.endswith(".he5"):
@@ -605,48 +789,56 @@ def create_hdfeos_output(
         bperp = np.zeros(len(date_list))
 
     hdfeos_dict = {
-        "HDFEOS/GRIDS/timeseries/geometry/latitude": lat_grid.astype("float32"),
-        "HDFEOS/GRIDS/timeseries/geometry/longitude": lon_grid.astype("float32"),
-        "HDFEOS/GRIDS/timeseries/geometry/shadowMask": (
+        f"{HE5_GEOM}/latitude": lat_grid.astype("float32"),
+        f"{HE5_GEOM}/longitude": lon_grid.astype("float32"),
+        f"{HE5_GEOM}/shadowMask": (
             np.zeros((length, width), dtype="uint8")
             if shadow_mask is None
             else np.asarray(shadow_mask).astype("uint8")
         ),
-        "HDFEOS/GRIDS/timeseries/geometry/height": (
+        f"{HE5_GEOM}/height": (
             np.full((length, width), np.nan, dtype="float32")
             if height is None
             else height.astype("float32")
         ),
-        "HDFEOS/GRIDS/timeseries/geometry/azimuthAngle": (
+        f"{HE5_GEOM}/azimuthAngle": (
             np.full((length, width), np.nan, dtype="float32")
             if azimuth is None
             else azimuth.astype("float32")
         ),
-        "HDFEOS/GRIDS/timeseries/geometry/incidenceAngle": (
+        f"{HE5_GEOM}/incidenceAngle": (
             np.full((length, width), np.nan, dtype="float32")
             if incidence is None
             else incidence.astype("float32")
         ),
-        "HDFEOS/GRIDS/timeseries/geometry/slantRangeDistance": (
+        f"{HE5_GEOM}/slantRangeDistance": (
             np.full((length, width), np.nan, dtype="float32")
             if slant_range is None
             else slant_range.astype("float32")
         ),
-        "HDFEOS/GRIDS/timeseries/observation/bperp": bperp.astype("float32"),
-        "HDFEOS/GRIDS/timeseries/observation/date": np.asarray(date_list).astype("S8"),
-        "HDFEOS/GRIDS/timeseries/observation/displacement": ts_data.astype("float32"),
-        "HDFEOS/GRIDS/timeseries/quality/avgSpatialCoherence": (
+        f"{HE5_OBS}/bperp": bperp.astype("float32"),
+        f"{HE5_OBS}/date": np.asarray(date_list).astype("S8"),
+        f"{HE5_OBS}/displacement": ts_data.astype("float32"),
+        f"{HE5_QUALITY}/avgSpatialCoherence": (
             np.full((length, width), np.nan, dtype="float32")
             if avg_spatial_coherence is None
             else np.asarray(avg_spatial_coherence).astype("float32")
         ),
-        "HDFEOS/GRIDS/timeseries/quality/mask": mask.astype("bool"),
-        "HDFEOS/GRIDS/timeseries/quality/temporalCoherence": (
+        f"{HE5_QUALITY}/mask": mask.astype("bool"),
+        f"{HE5_QUALITY}/temporalCoherence": (
             np.full((length, width), np.nan, dtype="float32")
             if temporal_coherence is None
             else temporal_coherence.astype("float32")
         ),
     }
+    if watermask is not None:
+        hdfeos_dict[f"{HE5_QUALITY}/waterMask"] = np.asarray(watermask).astype("float32")
+    if conncomp is not None:
+        hdfeos_dict[f"{HE5_QUALITY}/conncomp"] = np.asarray(conncomp).astype("float32")
+    if phase_similarity is not None:
+        hdfeos_dict[f"{HE5_QUALITY}/phaseSimilarity"] = np.asarray(phase_similarity).astype("float32")
+    if recommended_density is not None:
+        hdfeos_dict[f"{HE5_QUALITY}/recommendedDensity"] = np.asarray(recommended_density).astype("float32")
 
     if "vert" in output_path:
         metadata["displacementType"] = "VERTICAL"
@@ -680,8 +872,10 @@ def build_metadata(
     longitude,
     ref_y,
     ref_x,
+    processor: str = "dolphin",
+    require_orbit: bool = True,
 ) -> dict:
-    """Build HE5 metadata from the dataset directory name and dolphin outputs."""
+    """Build HE5 metadata from the dataset directory name and dolphin/OPERA outputs."""
     dataset_name = infer_dataset_name(dataset_dir)
     parsed = parse_dataset_name(dataset_name)
     dates_str = [
@@ -711,10 +905,12 @@ def build_metadata(
 
     orbit_direction = parsed.get("ORBIT_DIRECTION")
     if not orbit_direction:
-        raise ValueError(
-            f"Cannot determine ORBIT_DIRECTION from dataset name {dataset_name!r} "
-            "(expected e.g. HawaiiPunaSenA124)."
-        )
+        if require_orbit:
+            raise ValueError(
+                f"Cannot determine ORBIT_DIRECTION from dataset name {dataset_name!r} "
+                "(expected e.g. HawaiiPunaSenA124)."
+            )
+        orbit_direction = "ASCENDING"
     flight = parsed.get("flight_direction")
     if not flight and orbit_direction:
         flight = "A" if str(orbit_direction).upper().startswith("A") else "D"
@@ -729,9 +925,9 @@ def build_metadata(
     metadata = {
         "FILE_TYPE": "HDFEOS",
         "UNIT": "m",
-        "PROCESSOR": "dolphin",
-        "processing_software": "dolphin",
-        "post_processing_method": "dolphin",
+        "PROCESSOR": processor,
+        "processing_software": processor,
+        "post_processing_method": processor,
         "processing_type": "LOS_TIMESERIES",
         "PROJECT_NAME": project_name,
         "mission": mission,
@@ -771,9 +967,200 @@ def build_metadata(
     metadata["PROJECT_NAME"] = project_name
     metadata["mission"] = mission
     metadata["relative_orbit"] = int(relative_orbit)
-    metadata["post_processing_method"] = "dolphin"
+    metadata["post_processing_method"] = processor
+    metadata["PROCESSOR"] = processor
     metadata["ORBIT_DIRECTION"] = orbit_direction
     metadata["flight_direction"] = metadata.get("flight_direction") or flight
     metadata["data_footprint"] = footprint
     metadata["scene_footprint"] = footprint
     return metadata
+
+
+def detect_input_kind(input_path: Path) -> str:
+    """Return 'dolphin' or 'opera-disp' from path layout."""
+    path = input_path.expanduser().resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"Input path does not exist: {path}")
+    if path.is_file() and path.suffix.lower() == ".nc":
+        return "opera-disp"
+    if path.is_dir():
+        stacks = sorted(path.glob("*-stack.nc")) or sorted(path.glob("*stack*.nc"))
+        if stacks:
+            return "opera-disp"
+        try:
+            resolve_run_paths(path)
+            return "dolphin"
+        except FileNotFoundError:
+            pass
+        if any(path.glob("*.nc")):
+            return "opera-disp"
+    raise FileNotFoundError(
+        f"Unrecognized input {path} (need dolphin/timeseries/*.tif or OPERA *-stack.nc)"
+    )
+
+
+def find_opera_stack_nc(input_path: Path) -> Path:
+    """Locate OPERA reformatted stack NetCDF."""
+    path = input_path.expanduser().resolve()
+    if path.is_file() and path.suffix.lower() == ".nc":
+        return path
+    if not path.is_dir():
+        raise FileNotFoundError(f"OPERA stack path not found: {path}")
+    for pattern in ("*-stack.nc", "*stack*.nc", "*.nc"):
+        matches = sorted(path.glob(pattern))
+        if matches:
+            return matches[0]
+    raise FileNotFoundError(f"No *.nc stack in {path}")
+
+
+def _cf_seconds_to_yyyymmdd(values: np.ndarray, units: str) -> np.ndarray:
+    """Convert CF 'seconds since …' to YYYYMMDD strings."""
+    if " since " not in units:
+        raise ValueError(f"Unrecognized time units: {units}")
+    base_s = units.split(" since ", 1)[1].strip()
+    if "T" in base_s:
+        base = datetime.fromisoformat(base_s.replace("Z", ""))
+    else:
+        base = datetime.strptime(base_s[:19], "%Y-%m-%d %H:%M:%S")
+    out = []
+    for sec in np.asarray(values, dtype=np.float64):
+        dt = base + timedelta(seconds=float(sec))
+        out.append(dt.strftime("%Y%m%d"))
+    return np.array(out)
+
+
+def _opera_geometry_from_dir(geom_dir: Path | None, shape: tuple[int, int]):
+    """Load DEM / LOS / shadow from OPERA STATIC geometry TIFFs if present."""
+    height = incidence = azimuth = shadow = None
+    if geom_dir is None or not geom_dir.is_dir():
+        return height, incidence, azimuth, shadow
+    dem = next(iter(sorted(geom_dir.glob("*dem.tif"))), None)
+    los = next(iter(sorted(geom_dir.glob("*los_enu.tif"))), None)
+    sh = next(iter(sorted(geom_dir.glob("*layover_shadow_mask.tif"))), None)
+    if dem is not None:
+        height = same_shape(_read_geotiff(dem), shape)
+    if los is not None:
+        with rasterio.open(los) as src:
+            if src.count >= 3 and src.shape == shape:
+                east = src.read(1).astype(np.float32)
+                north = src.read(2).astype(np.float32)
+                up = src.read(3).astype(np.float32)
+                azimuth = np.rad2deg(np.arctan2(east, north)).astype(np.float32)
+                incidence = np.rad2deg(np.arccos(np.clip(up, -1.0, 1.0))).astype(np.float32)
+    if sh is not None:
+        shadow = same_shape(_read_geotiff(sh), shape)
+    return height, incidence, azimuth, shadow
+
+
+def load_opera_stack(stack_nc: Path, run_dir: Path | None = None):
+    """Load displacement + quality layers from an OPERA reformatted stack NetCDF."""
+    stack_nc = Path(stack_nc).expanduser().resolve()
+    run_dir = Path(run_dir).expanduser().resolve() if run_dir else stack_nc.parent
+    with h5py.File(stack_nc, "r") as f:
+        disp = np.asarray(f["displacement"][:], dtype=np.float32)
+        length, width = int(disp.shape[1]), int(disp.shape[2])
+        shape = (length, width)
+        time_ds = f["time"]
+        units = time_ds.attrs.get("units", b"")
+        if isinstance(units, (bytes, np.bytes_)):
+            units = units.decode("utf-8")
+        date_list = _cf_seconds_to_yyyymmdd(time_ds[:], str(units))
+        x = np.asarray(f["x"][:], dtype=np.float64)
+        y = np.asarray(f["y"][:], dtype=np.float64)
+        crs_wkt = f["spatial_ref"].attrs.get("crs_wkt", None)
+        if isinstance(crs_wkt, (bytes, np.bytes_)):
+            crs_wkt = crs_wkt.decode("utf-8")
+        if "average_temporal_coherence" in f:
+            temp_coh = np.asarray(f["average_temporal_coherence"][:], dtype=np.float32)
+        else:
+            temp_coh = np.nanmean(np.asarray(f["temporal_coherence"][:], dtype=np.float32), axis=0)
+        phase_sim = np.nanmean(np.asarray(f["phase_similarity"][:], dtype=np.float32), axis=0)
+        watermask = np.asarray(f["water_mask"][:], dtype=np.float32) if "water_mask" in f else None
+        rec = np.asarray(f["recommended_mask"][:], dtype=np.float32)
+        recommended_density = np.mean(np.isfinite(rec) & (rec > 0.5), axis=0).astype(np.float32)
+        conncomp = None
+        if "connected_component_labels" in f:
+            cc = np.asarray(f["connected_component_labels"][:], dtype=np.float32)
+            # intersection-like: nonzero on all epochs where finite
+            conncomp = np.min(np.where(np.isfinite(cc), cc, 0), axis=0).astype(np.float32)
+        bperp = (
+            np.asarray(f["perpendicular_baseline"][:], dtype=np.float32)
+            if "perpendicular_baseline" in f
+            else np.zeros(disp.shape[0], dtype=np.float32)
+        )
+
+    # Fallback MintPy density file
+    mintpy_dens = run_dir / "mintpy" / "recommended_mask_90thresh.h5"
+    if not np.any(np.isfinite(recommended_density)) and mintpy_dens.is_file():
+        with h5py.File(mintpy_dens, "r") as mf:
+            key = "recommendedMask" if "recommendedMask" in mf else list(mf.keys())[0]
+            recommended_density = np.asarray(mf[key][:], dtype=np.float32)
+
+    dx = float(x[1] - x[0]) if len(x) > 1 else 30.0
+    dy = float(y[1] - y[0]) if len(y) > 1 else -30.0
+    transform = Affine.translation(x[0] - dx / 2.0, y[0] - dy / 2.0) * Affine.scale(dx, dy)
+    crs = CRS.from_wkt(crs_wkt) if crs_wkt else CRS.from_epsg(4326)
+    grid = {"LENGTH": length, "WIDTH": width, "transform": transform, "crs": crs, "bbox": None}
+    geom_dir = run_dir / "geometry" if (run_dir / "geometry").is_dir() else None
+    height, incidence, azimuth, shadow = _opera_geometry_from_dir(geom_dir, shape)
+    quality = {
+        "temporal_coherence": temp_coh,
+        "avg_spatial_coherence": None,
+        "phase_similarity": phase_sim,
+        "watermask": watermask,
+        "conncomp": conncomp,
+        "recommended_density": recommended_density,
+        "shadow": shadow,
+        "height": height,
+        "incidence": incidence,
+        "azimuth": azimuth,
+        "geometry_dir": geom_dir,
+        "files": {"stack_nc": stack_nc},
+    }
+    return disp, date_list, grid, quality, bperp
+
+
+def quality_from_he5(he5_path: Path) -> tuple[np.ndarray, np.ndarray, dict]:
+    """Load displacement stack and quality layers from an existing HE5."""
+    he5_path = Path(he5_path)
+    with h5py.File(he5_path, "r") as f:
+        stack = np.asarray(f[f"{HE5_OBS}/displacement"][:], dtype=np.float32)
+        shape = stack.shape[1:]
+        quality = {
+            "temporal_coherence": _he5_get(f, f"{HE5_QUALITY}/temporalCoherence"),
+            "phase_similarity": _he5_get(f, f"{HE5_QUALITY}/phaseSimilarity"),
+            "watermask": _he5_get(f, f"{HE5_QUALITY}/waterMask"),
+            "conncomp": _he5_get(f, f"{HE5_QUALITY}/conncomp"),
+            "recommended_density": _he5_get(f, f"{HE5_QUALITY}/recommendedDensity"),
+            "avg_spatial_coherence": _he5_get(f, f"{HE5_QUALITY}/avgSpatialCoherence"),
+        }
+    return stack, shape, quality
+
+
+def _he5_get(h5f, path: str):
+    if path not in h5f:
+        return None
+    return np.asarray(h5f[path][:])
+
+
+def remask_he5_file(
+    in_path: Path,
+    out_path: Path,
+    source: str,
+    vmin: float,
+    vmin_sim: float | None,
+) -> Path:
+    """Copy HE5, replace quality/mask in memory, write to out_path."""
+    import shutil
+
+    in_path = Path(in_path).expanduser().resolve()
+    out_path = Path(out_path).expanduser().resolve()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    stack, shape, quality = quality_from_he5(in_path)
+    mask = build_mask(shape, stack, quality, source=source, vmin=vmin, vmin_sim=vmin_sim)
+    shutil.copy2(in_path, out_path)
+    with h5py.File(out_path, "r+") as f:
+        dset = f[f"{HE5_QUALITY}/mask"]
+        dset[...] = mask.astype(dset.dtype)
+    print(f"\n HDFEOS file remasked: {out_path}")
+    return out_path
