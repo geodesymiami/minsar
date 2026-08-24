@@ -182,25 +182,6 @@ def prune_metadata_for_hdfeos(metadata):
     return {k: metadata[k] for k in keep if k in metadata}
 
 
-def _debug_log(location, message, data=None, hypothesis_id=""):
-    """#region agent log"""
-    payload = {
-        "sessionId": "cd3173",
-        "location": location,
-        "message": message,
-        "data": data or {},
-        "timestamp": int(datetime.now().timestamp() * 1000),
-        "runId": "chiles-patch",
-        "hypothesisId": hypothesis_id,
-    }
-    try:
-        with open("/home/exouser/code/minsar/.cursor/debug-cd3173.log", "a") as f:
-            f.write(json.dumps(payload) + "\n")
-    except OSError:
-        pass
-    """#endregion"""
-
-
 def _normalize_attr_value(v):
     if isinstance(v, (bytes, bytearray)):
         return v.decode(errors="ignore")
@@ -239,18 +220,6 @@ def patch_hdfeos_insarmaps_attrs(he5_path, project_name=None):
     patched["FILE_TYPE"] = "HDFEOS"
     patched["FILE_PATH"] = he5_path
     after_keys = {k for k in INSARMAPS_ESSENTIAL_ATTRS if k in patched}
-    _debug_log(
-        "create_dolphin_files.py:patch_hdfeos_insarmaps_attrs",
-        "patching he5 metadata",
-        {
-            "he5_path": he5_path,
-            "project_name": patched.get("PROJECT_NAME"),
-            "essential_before": sorted(before_keys),
-            "essential_after": sorted(after_keys),
-            "added": sorted(after_keys - before_keys),
-        },
-        hypothesis_id="H1-H3",
-    )
     with h5py.File(he5_path, "r+") as f:
         for k, v in patched.items():
             if isinstance(v, (float, int, np.floating, np.integer)):

@@ -638,38 +638,11 @@ def latlon_grids(grid: dict) -> tuple[np.ndarray, np.ndarray]:
     xs = np.asarray(xs, dtype=np.float64).reshape(length, width)
     ys = np.asarray(ys, dtype=np.float64).reshape(length, width)
     crs = grid["crs"]
-    # #region agent log
-    try:
-        import json as _json, time as _time
-        _logp = "/Users/famelung/code/minsar/.cursor/debug-1cb7ef.log"
-        _epsg = crs.to_epsg() if crs is not None else None
-        _geo = bool(getattr(crs, "is_geographic", False)) if crs is not None else None
-        with open(_logp, "a") as _lf:
-            _lf.write(_json.dumps({"sessionId": "1cb7ef", "runId": "conv", "hypothesisId": "H", "location": "dolphin_hdfeos5_utils.py:latlon_grids", "message": "latlon_grids_inputs", "data": {"length": length, "width": width, "transform": [float(transform.a), float(transform.b), float(transform.c), float(transform.d), float(transform.e), float(transform.f)], "crs": str(crs), "epsg": _epsg, "is_geographic": _geo, "xs00": float(xs[0, 0]), "ys00": float(ys[0, 0]), "xs0m1": float(xs[0, -1]), "ysm10": float(ys[-1, 0])}, "timestamp": int(_time.time() * 1000)}) + "\n")
-    except Exception:
-        pass
-    # #endregion
     if crs is None or crs.to_epsg() == 4326 or (crs.is_geographic if hasattr(crs, "is_geographic") else False):
-        # #region agent log
-        try:
-            import json as _json, time as _time
-            with open("/Users/famelung/code/minsar/.cursor/debug-1cb7ef.log", "a") as _lf:
-                _lf.write(_json.dumps({"sessionId": "1cb7ef", "runId": "conv", "hypothesisId": "H", "location": "dolphin_hdfeos5_utils.py:latlon_grids", "message": "branch_geographic_passthrough", "data": {}, "timestamp": int(_time.time() * 1000)}) + "\n")
-        except Exception:
-            pass
-        # #endregion
         return ys.astype(np.float32), xs.astype(np.float32)
     lon, lat = utm_to_lonlat(xs, ys, crs)
     lat_a = np.asarray(lat, dtype=np.float32).reshape(length, width)
     lon_a = np.asarray(lon, dtype=np.float32).reshape(length, width)
-    # #region agent log
-    try:
-        import json as _json, time as _time
-        with open("/Users/famelung/code/minsar/.cursor/debug-1cb7ef.log", "a") as _lf:
-            _lf.write(_json.dumps({"sessionId": "1cb7ef", "runId": "conv", "hypothesisId": "C", "location": "dolphin_hdfeos5_utils.py:latlon_grids", "message": "utm_to_lonlat_result", "data": {"lat00": float(lat_a[0, 0]), "lon00": float(lon_a[0, 0]), "lat0m1": float(lat_a[0, -1]), "lon0m1": float(lon_a[0, -1]), "latm10": float(lat_a[-1, 0]), "lonm10": float(lon_a[-1, 0]), "dlat_row": float(lat_a[0, 1] - lat_a[0, 0]), "dlon_row": float(lon_a[0, 1] - lon_a[0, 0]), "dlat_col": float(lat_a[1, 0] - lat_a[0, 0]), "dlon_col": float(lon_a[1, 0] - lon_a[0, 0]), "lat_shape": list(lat_a.shape)}, "timestamp": int(_time.time() * 1000)}) + "\n")
-    except Exception:
-        pass
-    # #endregion
     return lat_a, lon_a
 
 
@@ -1132,14 +1105,6 @@ def load_opera_stack(stack_nc: Path, run_dir: Path | None = None):
     dy = float(y[1] - y[0]) if len(y) > 1 else -30.0
     transform = Affine.translation(x[0] - dx / 2.0, y[0] - dy / 2.0) * Affine.scale(dx, dy)
     crs = CRS.from_wkt(crs_wkt) if crs_wkt else CRS.from_epsg(4326)
-    # #region agent log
-    try:
-        import json as _json, time as _time
-        with open("/Users/famelung/code/minsar/.cursor/debug-1cb7ef.log", "a") as _lf:
-            _lf.write(_json.dumps({"sessionId": "1cb7ef", "runId": "conv", "hypothesisId": "B", "location": "dolphin_hdfeos5_utils.py:load_opera_stack", "message": "opera_native_grid", "data": {"disp_shape": list(disp.shape), "nx": int(len(x)), "ny": int(len(y)), "x0": float(x[0]), "dx": dx, "y0": float(y[0]), "dy": dy, "y_decreasing": bool(dy < 0), "crs_head": (crs_wkt[:100] if crs_wkt else None), "transform": [float(transform.a), float(transform.e), float(transform.c), float(transform.f)]}, "timestamp": int(_time.time() * 1000)}) + "\n")
-    except Exception:
-        pass
-    # #endregion
     grid = {"LENGTH": length, "WIDTH": width, "transform": transform, "crs": crs, "bbox": None}
     geom_dir = run_dir / "geometry" if (run_dir / "geometry").is_dir() else None
     height, incidence, azimuth, shadow = _opera_geometry_from_dir(geom_dir, shape)
