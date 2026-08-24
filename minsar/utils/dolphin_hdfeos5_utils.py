@@ -1017,11 +1017,14 @@ def _cf_seconds_to_yyyymmdd(values: np.ndarray, units: str) -> np.ndarray:
     """Convert CF 'seconds since …' to YYYYMMDD strings."""
     if " since " not in units:
         raise ValueError(f"Unrecognized time units: {units}")
-    base_s = units.split(" since ", 1)[1].strip()
+    base_s = units.split(" since ", 1)[1].strip().replace("Z", "")
     if "T" in base_s:
-        base = datetime.fromisoformat(base_s.replace("Z", ""))
+        base = datetime.fromisoformat(base_s)
     else:
-        base = datetime.strptime(base_s[:19], "%Y-%m-%d %H:%M:%S")
+        try:
+            base = datetime.strptime(base_s[:19], "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            base = datetime.strptime(base_s[:10], "%Y-%m-%d")
     out = []
     for sec in np.asarray(values, dtype=np.float64):
         dt = base + timedelta(seconds=float(sec))
