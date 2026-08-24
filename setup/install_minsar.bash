@@ -22,6 +22,7 @@ git clone git@github.com:scottstanie/sardem tools/sardem
 git clone git@github.com:luhipi/sarvey tools/sarvey
 git clone git@github.com:falkamelung/sarplotter-main.git tools/sarplotter-main
 git clone git@github.com:isce-framework/dolphin.git tools/dolphin
+git clone git@github.com:geodesymiami/notebooks tools/notebooks
 #git clone https://github.com/JavieraAlvarez/etna-slider tools/etna-slider
 
 #git clone git@github.com:geodesymiami/SourceInversion.git tools/SourceInversion

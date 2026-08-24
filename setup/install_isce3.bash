@@ -10,7 +10,7 @@ git clone git@github.com:OPERA-Cal-Val/OPERA_Applications.git tools/OPERA_Applic
 git clone https://github.com/isce-framework/sweets.git tools/sweets && cd tools/sweets
 pixi install
 pixi upgrade asf_search
-pixi shell
+###pixi shell
 
 echo "sweets installation DONE"
 

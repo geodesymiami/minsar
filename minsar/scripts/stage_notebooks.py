@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Stage tutorial notebooks into $SCRATCHDIR/notebooks and point their output at $SCRATCHDIR/nb_runs.
 
-Sources are listed in notebooks/notebooks.list (paths relative to $MINSAR_HOME/tools).
-Annotated FA_*.ipynb from $MINSAR_HOME/notebooks/ are copied alongside them. Staged copies are
-disposable; $MINSAR_HOME/notebooks/ is never modified.
+Sources are listed in tools/notebooks/notebooks.list (paths relative to $MINSAR_HOME/tools/notebooks).
+Annotated FA_*.ipynb from $MINSAR_HOME/tools/notebooks/ are copied alongside them. Staged copies are
+disposable; $MINSAR_HOME/tools/notebooks/ is never modified.
 """
 
 import argparse
@@ -129,8 +129,8 @@ def create_parser():
         formatter_class=argparse.RawTextHelpFormatter,
         epilog=EXAMPLE,
     )
-    parser.add_argument("notebook", nargs="?", metavar="NOTEBOOK", help="optional .ipynb to stage (basename, path under tools/, or absolute path)")
-    parser.add_argument("--list", dest="list_file", metavar="FILE", help="notebook list (default: $MINSAR_HOME/notebooks/notebooks.list)")
+    parser.add_argument("notebook", nargs="?", metavar="NOTEBOOK", help="optional .ipynb to stage (basename, path under tools/notebooks/, or absolute path)")
+    parser.add_argument("--list", dest="list_file", metavar="FILE", help="notebook list (default: $MINSAR_HOME/tools/notebooks/notebooks.list)")
     parser.add_argument("--dest", metavar="DIR", help="staging directory (default: $SCRATCHDIR/notebooks)")
     parser.add_argument("--runs", metavar="DIR", help="run-data directory (default: $SCRATCHDIR/nb_runs)")
     parser.add_argument("--force", action="store_true", help="overwrite existing staged copies (FA_*.ipynb are always kept)")
@@ -146,7 +146,7 @@ def minsar_home():
 
 
 def read_list(list_file):
-    """Return notebook paths relative to tools/, ignoring blank lines and comments."""
+    """Return notebook paths relative to tools/notebooks/, ignoring blank lines and comments."""
     entries = []
     for line in list_file.read_text().splitlines():
         line = line.split("#", 1)[0].strip()
@@ -155,7 +155,7 @@ def read_list(list_file):
     return entries
 
 
-def resolve_notebook(notebook_arg, tools_dir, notebooks_dir, list_entries):
+def resolve_notebook(notebook_arg, notebooks_dir, list_entries):
     """Resolve NOTEBOOK to (src Path, is_fa bool). Exit on error."""
     raw = Path(notebook_arg).expanduser()
     if raw.suffix != ".ipynb":
@@ -168,19 +168,19 @@ def resolve_notebook(notebook_arg, tools_dir, notebooks_dir, list_entries):
     # Basename match in notebooks.list
     matches = [e for e in list_entries if Path(e).name == raw.name]
     if len(matches) == 1:
-        src = tools_dir / matches[0]
+        src = notebooks_dir / matches[0]
         if not src.is_file():
             sys.exit(f"ERROR: listed notebook not found: {src}")
         return src.resolve(), False
     if len(matches) > 1:
         sys.exit(f"ERROR: ambiguous notebook name {raw.name}: {', '.join(matches)}")
 
-    # Path relative to tools/
-    under_tools = tools_dir / notebook_arg
-    if under_tools.is_file():
-        return under_tools.resolve(), False
+    # Path relative to tools/notebooks/
+    under_notebooks = notebooks_dir / notebook_arg
+    if under_notebooks.is_file():
+        return under_notebooks.resolve(), False
 
-    # FA_ under $MINSAR_HOME/notebooks/
+    # FA_ under $MINSAR_HOME/tools/notebooks/
     fa = notebooks_dir / raw.name
     if raw.name.startswith("FA_") and fa.is_file():
         return fa.resolve(), True
@@ -310,8 +310,7 @@ def main(argv=None):
         sys.exit("ERROR: SCRATCHDIR is not set")
 
     home = minsar_home()
-    tools_dir = home / "tools"
-    notebooks_dir = home / "notebooks"
+    notebooks_dir = home / "tools" / "notebooks"
     list_file = Path(inps.list_file).expanduser() if inps.list_file else notebooks_dir / "notebooks.list"
     dest_dir = Path(inps.dest).expanduser() if inps.dest else Path(scratch) / "notebooks"
     runs_dir = Path(inps.runs).expanduser() if inps.runs else Path(scratch) / "nb_runs"
@@ -335,7 +334,7 @@ def main(argv=None):
 
     # Stage a single NOTEBOOK
     if inps.notebook:
-        src, is_fa = resolve_notebook(inps.notebook, tools_dir, notebooks_dir, entries)
+        src, is_fa = resolve_notebook(inps.notebook, notebooks_dir, entries)
         dest = dest_dir / src.name
         run_dir = run_dir_for(src.name, runs_dir)
         if dest.exists() and not inps.force:
@@ -355,18 +354,18 @@ def main(argv=None):
         print(f"run data goes to {runs_dir}/<name>; remove with: rm -rf {runs_dir}")
         return 0
 
-    missing = [entry for entry in entries if not (tools_dir / entry).is_file()]
-    present = [entry for entry in entries if (tools_dir / entry).is_file()]
+    missing = [entry for entry in entries if not (notebooks_dir / entry).is_file()]
+    present = [entry for entry in entries if (notebooks_dir / entry).is_file()]
     if missing:
         for entry in missing:
-            print(f"WARNING: missing source (skipped): {tools_dir / entry}", file=sys.stderr)
-        print(f"WARNING: skipped {len(missing)} of {len(entries)} notebooks not found under {tools_dir}", file=sys.stderr)
+            print(f"WARNING: missing source (skipped): {notebooks_dir / entry}", file=sys.stderr)
+        print(f"WARNING: skipped {len(missing)} of {len(entries)} notebooks not found under {notebooks_dir}", file=sys.stderr)
     if not present:
-        sys.exit(f"ERROR: none of {len(entries)} listed notebooks found under {tools_dir}")
+        sys.exit(f"ERROR: none of {len(entries)} listed notebooks found under {notebooks_dir}")
 
     n_copied = n_skipped = n_sidecars = 0
     for entry in present:
-        src = tools_dir / entry
+        src = notebooks_dir / entry
         dest = dest_dir / src.name
         run_dir = run_dir_for(src.name, runs_dir)
         if dest.exists() and not inps.force:
