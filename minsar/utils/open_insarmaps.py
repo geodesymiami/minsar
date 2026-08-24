@@ -100,6 +100,47 @@ CLI_STATE_KEYS = (
 )
 
 
+_LAT_LON_OPTIONS = frozenset(("--ref-lalo", "--lalo"))
+
+
+def _looks_like_number(token: str) -> bool:
+    try:
+        float(token)
+        return True
+    except ValueError:
+        return False
+
+
+def normalize_lat_lon_argv(argv: list[str]) -> list[str]:
+    """Rewrite '--ref-lalo LAT LON' / '--lalo LAT LON' to one LAT,LON token.
+
+    argparse nargs='+' would otherwise swallow a following positional (e.g. a URL).
+    """
+    out: list[str] = []
+    i = 0
+    n = len(argv)
+    while i < n:
+        arg = argv[i]
+        if arg in _LAT_LON_OPTIONS:
+            out.append(arg)
+            i += 1
+            if i >= n:
+                break
+            first = argv[i]
+            i += 1
+            if "," in first:
+                out.append(first)
+            elif i < n and _looks_like_number(first) and _looks_like_number(argv[i]):
+                out.append(f"{first},{argv[i]}")
+                i += 1
+            else:
+                out.append(first)
+            continue
+        out.append(arg)
+        i += 1
+    return out
+
+
 def parse_lat_lon(tokens, option):
     """Return (lat, lon) floats from ['lat,lon'] or ['lat', 'lon']."""
     if len(tokens) == 1 and "," in tokens[0]:
@@ -203,10 +244,10 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--startDataset", help="InsarMaps startDataset name")
     parser.add_argument("--refPointLat", metavar="LAT", help="Reference-point latitude")
     parser.add_argument("--refPointLon", metavar="LON", help="Reference-point longitude")
-    parser.add_argument("--ref-lalo", nargs="+", metavar="LAT LON", help="MintPy alias for --refPointLat/--refPointLon (LAT,LON or LAT LON)")
+    parser.add_argument("--ref-lalo", metavar="LAT,LON", help="MintPy alias for --refPointLat/--refPointLon (LAT,LON or LAT LON)")
     parser.add_argument("--pointLat", metavar="LAT", help="Clicked-point latitude")
     parser.add_argument("--pointLon", metavar="LON", help="Clicked-point longitude")
-    parser.add_argument("--lalo", nargs="+", metavar="LAT LON", help="MintPy alias for --pointLat/--pointLon (LAT,LON or LAT LON)")
+    parser.add_argument("--lalo", metavar="LAT,LON", help="MintPy alias for --pointLat/--pointLon (LAT,LON or LAT LON)")
     parser.add_argument("--vlim", nargs=2, type=float, metavar=("MIN", "MAX"), help="MintPy alias for --minScale/--maxScale")
     parser.add_argument("--minScale", metavar="MIN", help="Color-scale minimum")
     parser.add_argument("--maxScale", metavar="MAX", help="Color-scale maximum")
@@ -276,11 +317,11 @@ def apply_cli_overrides(state: dict, args: argparse.Namespace) -> None:
         state["maxScale"] = _fmt(args.vlim[1])
         state["autoColorScale"] = "false"
     if args.ref_lalo is not None:
-        lat, lon = parse_lat_lon(args.ref_lalo, "--ref-lalo")
+        lat, lon = parse_lat_lon([args.ref_lalo], "--ref-lalo")
         state["refPointLat"] = _fmt(lat)
         state["refPointLon"] = _fmt(lon)
     if args.lalo is not None:
-        lat, lon = parse_lat_lon(args.lalo, "--lalo")
+        lat, lon = parse_lat_lon([args.lalo], "--lalo")
         state["pointLat"] = _fmt(lat)
         state["pointLon"] = _fmt(lon)
     if args.start_date is not None:
@@ -372,7 +413,8 @@ def compile_and_run_applescript(script: str) -> None:
 
 def main(argv=None) -> int:
     parser = create_parser()
-    args = parser.parse_args(argv)
+    argv = list(sys.argv[1:] if argv is None else argv)
+    args = parser.parse_args(normalize_lat_lon_argv(argv))
     if args.print_bounds:
         try:
             left, top, right, bottom = query_front_window_bounds(args.browser)
