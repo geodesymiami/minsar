@@ -20,24 +20,16 @@ When the user asks to create or place a file in **`scripts`** or **`utils`** (wi
 
 **Always follow this workflow for any non-trivial changes:**
 
-### 1. Plan First (chat / Cursor plan only — no `PLAN.md`)
+### 1. Plan vs Agent (no `PLAN.md`)
 
 **Do not create or update `PLAN.md`.** It causes merge conflicts across servers.
 
-Present a short plan in chat (or the Cursor plan UI) covering: summary, files affected, steps, and risks. Wait for explicit approval before coding.
+- **Agent mode:** Implement the requested work. Do not ask whether to implement, and do not wait for plan approval. A short plan in chat is optional when it helps execution; it is not a gate. Do not switch to Plan mode only to ask.
+- **Plan mode:** Present a short plan covering summary, files affected, steps, and risks. Wait for approval before coding. Address feedback and update the plan in chat if requested.
 
-### 2. STOP - Get Human Approval
+If the user wants a plan-first loop, they will switch to Plan mode.
 
-**Do NOT proceed until the human reviews and approves the plan.**
-
-- Present the plan to the user
-- Wait for explicit approval before proceeding
-- Address any feedback or concerns
-- Update the plan in chat if requested
-
-Only continue after receiving approval.
-
-### 3. Tests — do not create test scripts
+### 2. Tests — do not create test scripts
 
 **Do not create test scripts** for new utils/scripts (no `tests/test_<name>.bash`, no `minsar/*/tests/test_<name>.py`, no `tests/test_<name>.py`).
 
@@ -51,7 +43,7 @@ If you *are* changing existing tested behavior and unit tests already exist for 
 - Prefer updating those tests when needed
 - Focus on substantive cases (edge cases, error paths), not trivial coverage
 
-### 4. Implement Feature
+### 3. Implement Feature
 
 Make the planned changes following the execution plan.
 
@@ -66,7 +58,7 @@ Make the planned changes following the execution plan.
 - Changes are localized (not "refactoring the world")
 - You're extracting functions, not rewriting architecture
 
-### 5. Verify
+### 4. Verify
 
 When tests exist for the area you changed, run the relevant suite. Do not invent a full new test harness for a one-off util unless requested.
 
@@ -75,7 +67,7 @@ bash tests/test_run_workflow.bash  # Workflow tests (when relevant)
 bash tests/run_all_tests.bash      # Full suite (when appropriate)
 ```
 
-### 6. Architecture Docs — do not always update
+### 5. Architecture Docs — do not always update
 
 **Do not routinely edit `architecture_docs/`.** Touching shared docs (especially `FILE_STRUCTURE.md`) on every small util/script change causes merge conflicts across servers.
 

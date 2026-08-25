@@ -62,6 +62,13 @@ die() {
     exit 1
 }
 
+print_step_banner() {
+    local title="$1"
+    echo "######################"
+    echo "$title"
+    echo "######################"
+}
+
 require_value() {
     local option="$1"
     local value="${2:-}"
@@ -323,27 +330,42 @@ run_task_list() {
     return "$failed"
 }
 
+run_isce3_runfile() {
+    local run_file="$1"
+    local stage_name="$2"
+    if [[ "$stage_name" == "download_disp" || "$stage_name" == "reformat_disp" || "$stage_name" == "download_cslc" || "$stage_name" == "download_safe" || "$stage_name" == "run_dolphin" ]]; then
+        command -v pixi >/dev/null 2>&1 || die "pixi is not available; required for ${stage_name}"
+        pixi run --manifest-path "${MINSAR_HOME}/tools/sweets/pyproject.toml" -- bash -c '
+            export PATH="$MINSAR_HOME/minsar/utils:$MINSAR_HOME/minsar/bin:$MINSAR_HOME/minsar/scripts:$PATH"
+            export PYTHONPATH="$MINSAR_HOME${PYTHONPATH:+:$PYTHONPATH}"
+            exec bash "$1"
+        ' _ "$run_file"
+    else
+        bash "$run_file"
+    fi
+}
+
 run_local_stage() {
     local index="$1"
     local job_file
     local run_file
     local validation_command=(validate_isce3_outputs.py --step "${stage_names[$index]}")
 
+    cd "$work_dir" || die "cannot cd to $work_dir"
     while IFS= read -r job_file; do
         run_file="${job_file%.job}"
         [[ -f "$run_file" ]] || die "run file not found: $run_file"
+        print_step_banner "Running:    $(basename "$run_file")"
         if job_uses_launcher "$job_file"; then
             run_task_list "$run_file" || die "task list failed: $run_file"
         else
-            echo "$run_file"
             if [[ "$dry_run" != "true" ]]; then
-                "$run_file" || die "step failed: ${stage_names[$index]}"
+                run_isce3_runfile "$run_file" "${stage_names[$index]}" || die "step failed: ${stage_names[$index]}"
             fi
         fi
     done < <(jobs_for_step "${stage_numbers[$index]}")
 
-    printf '%q ' "${validation_command[@]}"
-    printf '\n'
+    print_step_banner "Checking:   ${validation_command[*]}"
     if [[ "$dry_run" != "true" ]]; then
         "${validation_command[@]}" || die "validation failed: ${stage_names[$index]}"
     fi
@@ -451,15 +473,15 @@ check_step_outputs() {
     local exit_status
 
     cmd="check_job_outputs.py ${files[*]}"
-    echo "$cmd"
+    print_step_banner "Checking:   $cmd"
     if [[ "$dry_run" == "true" ]]; then
-        echo "validate_isce3_outputs.py --step ${stage_names[$index]}"
+        print_step_banner "Checking:   validate_isce3_outputs.py --step ${stage_names[$index]}"
         return 0
     fi
     check_job_outputs.py "${files[@]}"
     exit_status="$?"
     [[ "$exit_status" -eq 0 ]] || die "check_job_outputs.py exited with code ($exit_status)"
-    echo "validate_isce3_outputs.py --step ${stage_names[$index]}"
+    print_step_banner "Checking:   validate_isce3_outputs.py --step ${stage_names[$index]}"
     validate_isce3_outputs.py --step "${stage_names[$index]}" || die "validation failed: ${stage_names[$index]}"
     echo
 }
@@ -469,7 +491,6 @@ if [[ "$backend" == "slurm" && "$dry_run" != "true" ]]; then
 fi
 
 for ((index = start_index; index <= end_index; index++)); do
-    printf '[%02d] %s\n' "${stage_numbers[$index]}" "${stage_names[$index]}"
     if [[ "$backend" == "local" ]]; then
         run_local_stage "$index"
     else
@@ -478,6 +499,9 @@ for ((index = start_index; index <= end_index; index++)); do
             files+=("$job_file")
         done < <(list_jobs_for_pattern "${stage_patterns[$index]}")
         [[ "${#files[@]}" -gt 0 ]] || die "no job files for step ${stage_names[$index]}"
+        for job_file in "${files[@]}"; do
+            print_step_banner "Running:    $(basename "$job_file" .job)"
+        done
         wait_for_slurm_jobs "${stage_names[$index]}" "${stage_patterns[$index]}" "${files[@]}"
         check_step_outputs "$index" "${files[@]}"
     fi

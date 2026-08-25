@@ -11,9 +11,9 @@ description: >-
 Command: `minsar/utils/generate_sweets_config.py` (on `PATH` via `minsar/utils`).
 
 ```bash
-generate_sweets_config.py $TE/HawaiiPunaSweetsSenA124.template
-generate_sweets_config.py $TE/HawaiiPunaSweetsSenA124.template --source cslc
-generate_sweets_config.py $TE/HawaiiPunaSweetsSenA124.template --source burst
+generate_sweets_config.py $TE/HawaiiPunaSweetsSenA124.template --flight-dir asc
+generate_sweets_config.py $TE/HawaiiPunaSweetsSenA124.template --source cslc --start 20200101 --end 20201231
+generate_sweets_config.py $TE/HawaiiPunaSweetsSenA124.template --source burst --track 87 --flight-dir desc
 ```
 
 Writes `sweets.bash` (two lines only):
@@ -28,16 +28,17 @@ sweets run sweets_config.yaml
 - One-line `sweets config`, then one-line `sweets run <output>`.
 - `--bbox west south east north` with spaces. Never `--bbox=`.
 - `--source opera-cslc` or `--source safe` (bursts). Include `--swaths IW1 …` only for `safe`.
-- `--track` from `ssaraopt.relativeOrbit` when present.
+
+## What comes from where
+
+- Template: **only** `miaplpy.subset.lalo` (AOI → `--bbox`).
+- CLI: `--start`/`--end`, `--track`, `--flight-dir`, `--source`.
+- Track and IW swaths: `opera_utils.get_burst_geodataframe()` footprints intersecting the AOI (`bursts_covering_aoi()`). Filter with `--flight-dir` / `--track` when given. Do not read `topsStack.subswath` or `ssaraopt.*` from the template.
 
 ## Source selection
 
 - Default: OPERA CSLC if any products exist for the AOI/dates; otherwise bursts (`safe`).
 - `--source cslc` → `opera-cslc`. `--source burst` → `safe`. If `--source` is given, do not check CSLC availability.
-
-## Track and swath
-
-If the template omits track or swath, fill them with functions in `minsar/scripts/get_sar_coverage.py` (same helpers `create_template.py` uses). Map `topsStack.subswath` `1 2 3` to `IW1 IW2 IW3`. Infer flight direction from the template name (`SenA124` / `SenDT87`).
 
 ## Hygiene
 

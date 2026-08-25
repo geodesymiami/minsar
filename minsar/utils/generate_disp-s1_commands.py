@@ -14,6 +14,7 @@ import os
 import re
 import sys
 from datetime import date, datetime
+from typing import NamedTuple
 
 from minsar.objects import message_rsmas
 from minsar.objects.auto_defaults import PathFind
@@ -180,7 +181,7 @@ def resolve_frame_id(
     return int(best["id"])
 
 
-def format_disp_s1_bash(
+def format_disp_stage_commands(
     *,
     frame_id: int,
     bbox: tuple[str, str, str, str],
@@ -190,7 +191,8 @@ def format_disp_s1_bash(
     stack_name: str,
     num_workers: int = NUM_WORKERS_DEFAULT,
     output_dir: str = OUTPUT_DIR_DEFAULT,
-) -> str:
+) -> dict[str, str]:
+    """Return DISP-S1 run-file bodies keyed by ISCE3 stage name."""
     west, south, east, north = bbox
     download = (
         f"opera-utils disp-s1-download --frame-id {frame_id} "
@@ -208,18 +210,48 @@ def format_disp_s1_bash(
         f"--output-name {stack_name} --reference-method BORDER "
         f"--quality-datasets None --drop-vars shp_counts estimated_phase_quality"
     )
+    return {
+        "download_disp": (
+            "#!/usr/bin/env bash\n"
+            "set -e\n"
+            f"mkdir -p {output_dir}\n"
+            f"{download}\n"
+            f"{check} --delete\n"
+            f"{download}\n"
+            f"{check}\n"
+        ),
+        "reformat_disp": reformat,
+        "create_hdfeos5": f"dolphin2hdfeos5.py {stack_name}",
+        "ingest_insarmaps": "ingest_insarmaps.bash timeseries",
+    }
+
+
+def format_disp_s1_bash(
+    *,
+    frame_id: int,
+    bbox: tuple[str, str, str, str],
+    start: str,
+    end: str,
+    url_type: str,
+    stack_name: str,
+    num_workers: int = NUM_WORKERS_DEFAULT,
+    output_dir: str = OUTPUT_DIR_DEFAULT,
+) -> str:
+    stages = format_disp_stage_commands(
+        frame_id=frame_id,
+        bbox=bbox,
+        start=start,
+        end=end,
+        url_type=url_type,
+        stack_name=stack_name,
+        num_workers=num_workers,
+        output_dir=output_dir,
+    )
     return (
-        "#!/usr/bin/env bash\n"
-        "set -e\n"
-        f"mkdir -p {output_dir}\n"
-        f"{download}\n"
-        f"{check} --delete\n"
-        f"{download}\n"
-        f"{check}\n"
-        "\n"
-        f"{reformat}\n"
-        f"dolphin2hdfeos5.py {stack_name}\n"
-        "ingest_insarmaps.bash timeseries\n"
+        stages["download_disp"].rstrip("\n") + "\n\n"
+        + stages["reformat_disp"] + "\n"
+        + stages["create_hdfeos5"] + "\n"
+        + stages["ingest_insarmaps"] + "\n"
     )
 
 
@@ -233,14 +265,27 @@ def write_disp_s1_bash(command: str, work_dir: str, filename: str = DISP_S1_BASH
     return path
 
 
-def build_from_template(
+class DispS1Params(NamedTuple):
+    """Resolved DISP-S1 download/reformat parameters from a MinSAR template."""
+
+    frame_id: int
+    bbox: tuple[str, str, str, str]
+    start: str
+    end: str
+    url_type: str
+    stack_name: str
+    work_dir: str
+
+
+def _params_from_template(
     template_file: str,
     *,
     start_date: str | None,
     end_date: str | None,
     frame_id: int | None,
     url_type: str,
-) -> tuple[str, str]:
+) -> DispS1Params:
+    """Resolve bbox, dates, frame, stack name, and work dir from a MinSAR template."""
     dataset_template = Template(template_file)
     options = dataset_template.get_options()
     options.update(pathObj.correct_for_ssara_date_format(dict(options)))
@@ -258,7 +303,6 @@ def build_from_template(
 
     dataset = options.get("dataset") or os.path.splitext(os.path.basename(template_file))[0]
     stack_name = f"{dataset}-stack.nc"
-    require_disp_s1_cli()
 
     if frame_id is None:
         track = parse_track(options)
@@ -266,16 +310,60 @@ def build_from_template(
         print("Querying DISP-S1 frames for AOI ...", file=sys.stderr)
         frame_id = resolve_frame_id(bbox, track=track, flight_direction=flight_direction)
 
-    command = format_disp_s1_bash(
-        frame_id=int(frame_id),
-        bbox=bbox,
-        start=start,
-        end=end,
+    return DispS1Params(int(frame_id), bbox, start, end, url_type, stack_name, resolve_work_dir(options))
+
+
+def build_from_template(
+    template_file: str,
+    *,
+    start_date: str | None,
+    end_date: str | None,
+    frame_id: int | None,
+    url_type: str,
+) -> tuple[str, str]:
+    params = _params_from_template(
+        template_file,
+        start_date=start_date,
+        end_date=end_date,
+        frame_id=frame_id,
         url_type=url_type,
-        stack_name=stack_name,
     )
-    work_dir = resolve_work_dir(options)
-    return command, work_dir
+    require_disp_s1_cli()
+    command = format_disp_s1_bash(
+        frame_id=params.frame_id,
+        bbox=params.bbox,
+        start=params.start,
+        end=params.end,
+        url_type=params.url_type,
+        stack_name=params.stack_name,
+    )
+    return command, params.work_dir
+
+
+def build_stage_commands_from_template(
+    template_file: str,
+    *,
+    start_date: str | None,
+    end_date: str | None,
+    frame_id: int | None,
+    url_type: str,
+) -> dict[str, str]:
+    """Return ISCE3 DISP-S1 run-file bodies from a MinSAR template."""
+    params = _params_from_template(
+        template_file,
+        start_date=start_date,
+        end_date=end_date,
+        frame_id=frame_id,
+        url_type=url_type,
+    )
+    return format_disp_stage_commands(
+        frame_id=params.frame_id,
+        bbox=params.bbox,
+        start=params.start,
+        end=params.end,
+        url_type=params.url_type,
+        stack_name=params.stack_name,
+    )
 
 
 def main(iargs=None):

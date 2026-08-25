@@ -1,0 +1,12 @@
+---
+description: In Agent mode implement without asking; Plan mode is for approval
+alwaysApply: true
+---
+
+# Agent vs Plan mode
+
+**Agent mode:** Implement the request. Do not ask whether to implement, and do not wait for plan approval. Do not switch to Plan mode only to ask.
+
+**Plan mode:** Present a short plan and wait for approval before coding.
+
+If the user wants to be asked first, they will switch to Plan mode.
