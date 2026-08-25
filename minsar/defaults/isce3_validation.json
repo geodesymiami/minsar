@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "workflows": {
+    "safe": {
+      "download_safe": [
+        "sweets_config.yaml",
+        "data/**/*.SAFE",
+        "run_files/run_02_create_cslc"
+      ],
+      "create_cslc": [
+        "gslcs/**/t*.h5",
+        "gslcs/**/static_*.h5"
+      ],
+      "run_dolphin": [
+        "dolphin/**/*.tif",
+        "dolphin/**/*.nc"
+      ],
+      "create_hdfeos5": [
+        "timeseries/*.he5"
+      ],
+      "ingest_insarmaps": [
+        "timeseries/JSON*/*.mbtiles"
+      ]
+    },
+    "cslc": {
+      "download_cslc": [
+        "sweets_config.yaml",
+        "data/**/*CSLC*.h5"
+      ],
+      "run_dolphin": [
+        "dolphin/**/*.tif",
+        "dolphin/**/*.nc"
+      ],
+      "create_hdfeos5": [
+        "timeseries/*.he5"
+      ],
+      "ingest_insarmaps": [
+        "timeseries/JSON*/*.mbtiles"
+      ]
+    },
+    "disp": {
+      "download_disp": [
+        "subsets/OPERA*.nc"
+      ],
+      "reformat_disp": [
+        "*stack.nc"
+      ],
+      "create_hdfeos5": [
+        "timeseries/*.he5"
+      ],
+      "ingest_insarmaps": [
+        "timeseries/JSON*/*.mbtiles"
+      ]
+    }
+  }
+}

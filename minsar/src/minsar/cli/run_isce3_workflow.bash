@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run an ISCE3 workflow manifest locally or submit its generated SLURM jobs.
+# Run generated ISCE3 workflow files locally or submit their SLURM jobs.
 
 set -o pipefail
 
@@ -15,9 +15,9 @@ source "$MINSAR_UTILS" >/dev/null
 
 print_help() {
     cat <<EOF
-usage: ${SCRIPT_NAME} MANIFEST [OPTIONS]
+usage: ${SCRIPT_NAME} [OPTIONS]
 
-Run generated ISCE3 steps locally or submit their SLURM job files.
+Run ISCE3 steps from the current processing directory.
 
 options:
   -h, --help            show this help
@@ -36,13 +36,13 @@ CSLC steps:    download_cslc, run_dolphin, create_hdfeos5, ingest_insarmaps
 DISP-S1 steps: download_disp, reformat_disp, create_hdfeos5, ingest_insarmaps
 
 Examples:
-  ${SCRIPT_NAME} isce3_workflow.json
-  ${SCRIPT_NAME} isce3_workflow.json --start 2
-  ${SCRIPT_NAME} isce3_workflow.json --start 2 --stop 3
-  ${SCRIPT_NAME} isce3_workflow.json --dostep 3
-  ${SCRIPT_NAME} isce3_workflow.json --start run_dolphin --end create_hdfeos5
-  ${SCRIPT_NAME} isce3_workflow.json --dostep ingest_insarmaps
-  ${SCRIPT_NAME} isce3_workflow.json --backend local
+  ${SCRIPT_NAME}
+  ${SCRIPT_NAME} --start 2
+  ${SCRIPT_NAME} --start 2 --stop 3
+  ${SCRIPT_NAME} --dostep 3
+  ${SCRIPT_NAME} --start run_dolphin --end create_hdfeos5
+  ${SCRIPT_NAME} --dostep ingest_insarmaps
+  ${SCRIPT_NAME} --backend local
 EOF
 }
 
@@ -57,7 +57,6 @@ require_value() {
     [[ -n "$value" && "$value" != --* ]] || die "$option requires a value"
 }
 
-manifest=""
 backend="auto"
 start_step=""
 end_step=""
@@ -104,19 +103,14 @@ while [[ $# -gt 0 ]]; do
             die "unknown option: $1"
             ;;
         *)
-            [[ -z "$manifest" ]] || die "unexpected positional argument: $1"
-            manifest="$1"
-            shift
+            die "unexpected positional argument: $1"
             ;;
     esac
 done
 
-[[ -n "$manifest" ]] || die "MANIFEST is required"
-[[ -f "$manifest" ]] || die "manifest not found: $manifest"
 [[ "$backend" == "auto" || "$backend" == "local" || "$backend" == "slurm" ]] || die "--backend must be auto, local, or slurm"
 [[ "$max_parallel" =~ ^[1-9][0-9]*$ ]] || die "--max-parallel must be a positive integer"
 [[ -z "$do_step" || ( -z "$start_step" && -z "$end_step" ) ]] || die "--dostep cannot be combined with --start or --end"
-command -v jq >/dev/null 2>&1 || die "jq is required to read $manifest"
 
 if [[ "$backend" == "auto" ]]; then
     slurm_status="$(minsar_are_we_on_slurm_system 2>/dev/null)" || die "automatic SLURM detection failed; use --backend local or --backend slurm"
@@ -138,29 +132,45 @@ if [[ "$backend" == "auto" ]]; then
 fi
 echo "Backend: $backend"
 
-schema_version="$(jq -er '.schema_version' "$manifest")" || die "invalid manifest: $manifest"
-[[ "$schema_version" == "1" ]] || die "unsupported manifest schema: $schema_version"
-work_dir="$(jq -er '.work_dir | strings' "$manifest")" || die "manifest is missing work_dir"
-[[ -d "$work_dir" ]] || die "workflow directory not found: $work_dir"
+work_dir="$(pwd -P)"
+run_dir="$work_dir/run_files"
+[[ -d "$run_dir" ]] || die "run_files directory not found under $work_dir"
 
 stage_numbers=()
 stage_names=()
-stage_titles=()
 stage_modes=()
 stage_run_files=()
 stage_job_files=()
 
-while IFS=$'\t' read -r number name title mode run_file job_file; do
-    stage_numbers+=("$number")
-    stage_names+=("$name")
-    stage_titles+=("$title")
-    stage_modes+=("$mode")
-    stage_run_files+=("$run_file")
+job_uses_launcher() {
+    local job_file="$1"
+    local line
+    while IFS= read -r line; do
+        [[ "$line" == "export LAUNCHER_JOB_FILE="* ]] && return 0
+    done < "$job_file"
+    return 1
+}
+
+shopt -s nullglob
+job_files=("$run_dir"/run_[0-9][0-9]_*.job)
+shopt -u nullglob
+for job_file in "${job_files[@]}"; do
+    job_basename="$(basename "$job_file" .job)"
+    [[ "$job_basename" =~ ^run_([0-9][0-9])_(.+)$ ]] || die "invalid job filename: $job_file"
+    number_token="${BASH_REMATCH[1]}"
+    stage_numbers+=("$((10#$number_token))")
+    stage_names+=("${BASH_REMATCH[2]}")
+    stage_run_files+=("$run_dir/$job_basename")
     stage_job_files+=("$job_file")
-done < <(jq -er '.stages[] | [.number, .name, .title, .execution_mode, .run_file, .job_file] | @tsv' "$manifest")
+    if job_uses_launcher "$job_file"; then
+        stage_modes+=("launcher-task-list")
+    else
+        stage_modes+=("sequential")
+    fi
+done
 
 stage_count="${#stage_names[@]}"
-[[ "$stage_count" -gt 0 ]] || die "manifest contains no stages"
+[[ "$stage_count" -gt 0 ]] || die "no run_NN_*.job files found in $run_dir"
 
 resolve_step() {
     local value="$1"
@@ -180,14 +190,14 @@ start_index=0
 end_index=$((stage_count - 1))
 
 if [[ -n "$do_step" ]]; then
-    start_index="$(resolve_step "$do_step")" || die "unknown stage: $do_step"
+    start_index="$(resolve_step "$do_step")" || die "unknown step: $do_step"
     end_index="$start_index"
 else
     if [[ -n "$start_step" ]]; then
-        start_index="$(resolve_step "$start_step")" || die "unknown stage: $start_step"
+        start_index="$(resolve_step "$start_step")" || die "unknown step: $start_step"
     fi
     if [[ -n "$end_step" ]]; then
-        end_index="$(resolve_step "$end_step")" || die "unknown stage: $end_step"
+        end_index="$(resolve_step "$end_step")" || die "unknown step: $end_step"
     fi
 fi
 
@@ -228,24 +238,30 @@ run_task_list() {
 
 run_local_stage() {
     local index="$1"
-    local run_file="$work_dir/${stage_run_files[$index]}"
+    local run_file="${stage_run_files[$index]}"
+    local validation_command=(validate_isce3_outputs.py --step "${stage_names[$index]}")
     [[ -f "$run_file" ]] || die "run file not found: $run_file"
 
     if [[ "${stage_modes[$index]}" == "launcher-task-list" ]]; then
         run_task_list "$run_file" || die "task list failed: $run_file"
-        return
+    else
+        echo "$run_file"
+        if [[ "$dry_run" != "true" ]]; then
+            "$run_file" || die "step failed: ${stage_names[$index]}"
+        fi
     fi
 
-    echo "$run_file"
+    printf '%q ' "${validation_command[@]}"
+    printf '\n'
     if [[ "$dry_run" != "true" ]]; then
-        "$run_file" || die "stage failed: ${stage_names[$index]}"
+        "${validation_command[@]}" || die "validation failed: ${stage_names[$index]}"
     fi
 }
 
 submit_slurm_stage() {
     local index="$1"
     local dependency="$2"
-    local job_file="$work_dir/${stage_job_files[$index]}"
+    local job_file="${stage_job_files[$index]}"
     local command=(sbatch)
     local result
     local job_id
@@ -276,7 +292,7 @@ fi
 
 dependency=""
 for ((index = start_index; index <= end_index; index++)); do
-    printf '[%02d] %s: %s\n' "${stage_numbers[$index]}" "${stage_names[$index]}" "${stage_titles[$index]}"
+    printf '[%02d] %s\n' "${stage_numbers[$index]}" "${stage_names[$index]}"
     if [[ "$backend" == "local" ]]; then
         run_local_stage "$index"
     else

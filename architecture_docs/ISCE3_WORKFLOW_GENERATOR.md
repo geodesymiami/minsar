@@ -14,9 +14,9 @@ The implementation is intentionally separate from the existing ISCE2 workflow. I
 
 The workflow consists of three command-line programs:
 
-- `create_isce3_runfiles.py` creates the manifest, run files, and SLURM job files.
-- `run_isce3_workflow.bash` runs selected stages locally or submits them to SLURM.
-- `validate_isce3_outputs.py` checks the expected outputs recorded in the manifest.
+- `create_isce3_runfiles.py` creates run files and SLURM job files.
+- `run_isce3_workflow.bash` runs selected steps locally or submits them to SLURM.
+- `validate_isce3_outputs.py` checks outputs using repository validation defaults.
 
 ## Required environment
 
@@ -43,7 +43,6 @@ The local and SLURM runners therefore require:
 - `$MINSAR_HOME` and the normal MinSAR paths
 - `pixi` on `PATH`
 - the installed SWEETS default environment
-- `jq` for `run_isce3_workflow.bash`
 - `sbatch` when the auto-detected or explicitly selected backend is SLURM
 - TACC LAUNCHER only for generated `launcher-task-list` SLURM jobs
 
@@ -70,21 +69,23 @@ The generator reads the AOI, dates, track, and available DISP frame information 
 The generator also accepts an AOI followed by a project name:
 
 ```bash
-create_isce3_runfiles.py 19.4:19.54,-155.02:-154.80 HawaiiSenD87 --flight-dir desc --disp
+create_isce3_runfiles.py 19.4:19.54,-155.02:-154.80 HawaiiPuna --flight-dir desc --disp
 create_isce3_runfiles.py -23.3:-23.1,-68.4:-68.2 ChileTest --flight-dir asc --safe
 ```
 
-AOI mode uses `create_template.py` to resolve the standard MinSAR template before generating the workflow. It supports negative southern latitudes through the shared bounding-box argument handling. `--flight-dir asc` or `--flight-dir desc` is required in AOI mode.
+AOI mode uses `create_template.py` to resolve the standard MinSAR template before generating the workflow. The generated `.template` is always written in the directory where `create_isce3_runfiles.py` was invoked, while processing files are written under `$SCRATCHDIR`. AOI mode supports negative southern latitudes through the shared bounding-box argument handling. `--flight-dir asc` or `--flight-dir desc` is required.
 
 ### Output location and regeneration
 
-The default workflow directory is:
+The workflow directory is always:
 
 ```text
-<current-directory>/<project-name>/
+$SCRATCHDIR/<project-name>/
 ```
 
-Use `--work-dir DIR` to choose another location. Existing generated run or job files are not replaced unless `--overwrite` is supplied.
+The generator changes into `$SCRATCHDIR` before creating the project processing directory. An existing template may be read from any path; AOI-generated templates remain in the invocation directory. Run files and job files are always replaced, and stale numbered files from another workflow are removed. There is no `--overwrite` option.
+
+Downloaded source products are retained and reused. Generated configuration and command files are rebuilt, while processing stages replace their derived stack, Dolphin, HDF-EOS5, and local ingest outputs.
 
 `--dry-run` prints the workflow stages without writing files or querying remote services.
 
@@ -94,7 +95,6 @@ A generated project has the following central files:
 
 ```text
 PROJECT/
-├── isce3_workflow.json
 ├── run_files/
 │   ├── run_01_<stage>
 │   ├── run_01_<stage>.job
@@ -108,23 +108,11 @@ PROJECT/
 
 The exact stage names depend on the starting dataset.
 
-### Manifest
+### Validation definitions
 
-`isce3_workflow.json` is the source of truth shared by generation, execution, and validation. It records:
+`minsar/defaults/isce3_validation.json` is part of the repository and contains the expected output patterns for every step in each workflow. No validation configuration is copied into project directories.
 
-- schema version
-- selected workflow and platform
-- absolute workflow directory
-- template, AOI, dates, track, frame, and flight-direction context
-- short and long SLURM queues
-- ordered stage numbers and names
-- execution mode for each stage
-- run-file and job-file paths
-- expected output patterns
-- restart policy
-- walltime, memory, node count, and tasks per node
-
-The runner currently accepts manifest schema version 1.
+The validator runs from the processing directory, discovers its ordered steps from `run_files/run_NN_*.job`, and infers SAFE, CSLC, or DISP-S1 from those step names. `--data-type` can select the workflow explicitly.
 
 ### Run files
 
@@ -139,7 +127,9 @@ The files are deliberately readable so an operator can inspect or run an individ
 
 `run_files/run_NN_<stage>.job` wraps the corresponding run file for SLURM. On a configured MinSAR SLURM system, the generator reuses the existing `JOB_SUBMIT` header rendering through a localized adapter. A generic SLURM header is used when that environment is unavailable.
 
-Task-list jobs export LAUNCHER settings and execute `$LAUNCHER_DIR/paramrun`. Script and single-multicore jobs execute their run file directly.
+Task-list jobs export LAUNCHER settings and execute `$LAUNCHER_DIR/paramrun`. Script and single-multicore jobs execute their run file directly. Every job validates its step after processing; a validation failure makes the job fail and prevents dependent `afterok` jobs from starting.
+
+The numbered `.job` files are the runner's source of truth. Their filenames define step order and names, their SLURM directives define resources, and `LAUNCHER_JOB_FILE` identifies task-list jobs. Generated run files contain the concrete processing parameters needed by their commands.
 
 ## Workflow stages
 
@@ -222,10 +212,11 @@ Locally, task lists are sequential by default. `--max-parallel N` runs up to `N`
 
 ## Running locally
 
-Run all stages:
+Change to the generated processing directory and run all steps:
 
 ```bash
-run_isce3_workflow.bash isce3_workflow.json
+cd "$SCRATCHDIR/HawaiiSenD87"
+run_isce3_workflow.bash
 ```
 
 The default backend is `auto`. The runner uses the shared MinSAR `minsar_are_we_on_slurm_system` function, backed by `are_we_on_slurm_system()` in `system_utils.py`, to select the backend:
@@ -239,42 +230,42 @@ The selected backend is printed before execution. `$JOBSCHEDULER` is not used fo
 Use an explicit override when testing or when local execution is desired on a SLURM login node:
 
 ```bash
-run_isce3_workflow.bash isce3_workflow.json --backend local
-run_isce3_workflow.bash isce3_workflow.json --backend slurm
+run_isce3_workflow.bash --backend local
+run_isce3_workflow.bash --backend slurm
 ```
 
-Run an inclusive stage range:
+Run an inclusive step range:
 
 ```bash
-run_isce3_workflow.bash isce3_workflow.json --start download_disp --end reformat_disp
-run_isce3_workflow.bash isce3_workflow.json --start 2 --end 4
+run_isce3_workflow.bash --start download_disp --end reformat_disp
+run_isce3_workflow.bash --start 2 --end 4
 ```
 
-Run exactly one stage:
+Run exactly one step:
 
 ```bash
-run_isce3_workflow.bash isce3_workflow.json --dostep download_disp
-run_isce3_workflow.bash isce3_workflow.json --dostep 3
+run_isce3_workflow.bash --dostep download_disp
+run_isce3_workflow.bash --dostep 3
 ```
 
 A `STEP` can be:
 
-- the manifest stage number, such as `3`
-- the manifest stage name, such as `reformat_disp`
+- the step number, such as `3`
+- the step name, such as `reformat_disp`
 - the run-file basename, such as `run_03_reformat_disp`
 
-`--start` and `--end` are inclusive. `--dostep` cannot be combined with either range option. An unknown stage or a start stage after the end stage is rejected before execution.
+`--start` and `--end` are inclusive. `--dostep` cannot be combined with either range option. An unknown step or a start step after the end step is rejected before execution.
 
 Use a dry run to inspect the selected files and commands:
 
 ```bash
-run_isce3_workflow.bash isce3_workflow.json --start 2 --end 4 --dry-run
+run_isce3_workflow.bash --start 2 --end 4 --dry-run
 ```
 
 For a local SAFE task list:
 
 ```bash
-run_isce3_workflow.bash isce3_workflow.json --dostep create_cslc --max-parallel 4
+run_isce3_workflow.bash --dostep create_cslc --max-parallel 4
 ```
 
 The output from a successfully completed preceding stage remains on disk. A failed restart-safe stage can therefore be rerun with `--dostep` or used as the first stage of a range.
@@ -284,13 +275,13 @@ The output from a successfully completed preceding stage remains on disk. A fail
 On a SLURM login node, submit all stages with the default auto backend:
 
 ```bash
-run_isce3_workflow.bash isce3_workflow.json
+run_isce3_workflow.bash
 ```
 
 Submit a selected range, with an explicit backend shown for clarity:
 
 ```bash
-run_isce3_workflow.bash isce3_workflow.json --backend slurm --start create_cslc --end create_hdfeos5
+run_isce3_workflow.bash --backend slurm --start create_cslc --end create_hdfeos5
 ```
 
 The first selected job is submitted normally. Each later job is submitted with `afterok:<previous-job-id>`, so it becomes eligible only after the preceding stage succeeds. The Bash runner submits the chain and returns; it does not monitor jobs to completion or automatically resubmit failures.
@@ -298,16 +289,20 @@ The first selected job is submitted normally. Each later job is submitted with `
 SLURM dry-run mode prints the commands and synthetic dependency IDs without calling `sbatch`:
 
 ```bash
-run_isce3_workflow.bash isce3_workflow.json --backend slurm --start 2 --end 4 --dry-run
+run_isce3_workflow.bash --backend slurm --start 2 --end 4 --dry-run
 ```
 
 ## Resources and restart policy
 
-`minsar/defaults/job_defaults_isce3.cfg` is independent of the ISCE2 defaults. Its seven columns are:
+`minsar/defaults/job_defaults_isce3.cfg` is independent of the ISCE2 defaults. It starts with the same columns and header names as `job_defaults.cfg`:
 
 ```text
-job_name execution_mode walltime memory_mb nodes tasks_per_node restart_policy
+jobname c_walltime s_walltime seconds_factor c_memory s_memory num_threads io_load rerun_walltime_factor switch_queue rerun_walltime_factor_switch
 ```
+
+ISCE3 appends only `execution_mode` and `queue_class`. `queue_class` selects the generator's short or long queue option. All current jobs use one node; node count is not stored in the defaults.
+
+For a LAUNCHER task list, `num_threads` is the number of threads used by one task. `LAUNCHER_PPN` is calculated from the selected queue's CPU and memory capacity using the existing JOB_SUBMIT limits: the smaller of tasks allowed by CPU and tasks allowed by memory. It is not copied directly from `num_threads` and is not stored as a separate defaults column.
 
 Current default policies are:
 
@@ -328,26 +323,27 @@ These classifications describe retry policy, not output validation. Operators sh
 
 ## Output validation
 
-Validation is independent of the execution backend:
+Each local step is validated by the runner after its run file completes. Each SLURM job performs the same validation at the end of the job. Validation failure produces a nonzero status, so dependent jobs are not started.
+
+Validation can also be run manually from the processing directory:
 
 ```bash
-validate_isce3_outputs.py isce3_workflow.json
-validate_isce3_outputs.py isce3_workflow.json --stage run_dolphin
-validate_isce3_outputs.py isce3_workflow.json --json validation.json
+validate_isce3_outputs.py
+validate_isce3_outputs.py --step run_dolphin
+validate_isce3_outputs.py --data-type disp --step 2
+validate_isce3_outputs.py --json validation_report.json
 ```
 
-The validator expands each selected stage's `expected_outputs` patterns under the workflow directory. It reports match counts and returns failure if a required pattern has no matches. `--allow-empty` is intended for diagnostics and dry workflow checks.
-
-The runner does not call the validator automatically. This keeps scheduler submission, local execution, and output inspection separate and allows the same validation command after either backend.
+The validator loads `minsar/defaults/isce3_validation.json`, expands each selected step's output patterns under the current processing directory, reports match counts, and fails if a required pattern has no matches. `--allow-empty` is intended for diagnostics.
 
 ## Failure recovery
 
 Useful recovery patterns include:
 
 ```bash
-run_isce3_workflow.bash isce3_workflow.json --dostep download_disp
-run_isce3_workflow.bash isce3_workflow.json --start reformat_disp
-validate_isce3_outputs.py isce3_workflow.json --stage reformat_disp
+run_isce3_workflow.bash --dostep download_disp
+run_isce3_workflow.bash --start reformat_disp
+validate_isce3_outputs.py --step reformat_disp
 ```
 
 When a stage fails:
@@ -370,10 +366,10 @@ NISAR support should add explicit source acquisition, product discovery, Dolphin
 
 The ISCE2 workflow remains the production path for `minsarApp.bash --isce2`. The ISCE3 tools currently operate as standalone entry points. Future `minsarApp.bash --isce3` integration should invoke the generator and runner without duplicating stage definitions.
 
-The manifest is the intended boundary:
+The generated-file boundary is:
 
-- the generator owns stage construction and job creation
-- the Bash runner owns stage selection and execution/submission
-- the validator owns expected-output checks
+- the generator owns step construction and job creation
+- the Bash runner discovers `.job` files and owns step selection and execution/submission
+- the validator reads `minsar/defaults/isce3_validation.json` and owns expected-output checks
 
 Keeping those responsibilities separate avoids extending the current ISCE2 orchestration with ISCE3-specific conditionals before the new workflows are operationally mature.

@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-"""Create transparent run files, SLURM job files, and a manifest for ISCE3 workflows."""
+"""Create transparent run files, SLURM job files, and output checks for ISCE3 workflows."""
 
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import shlex
 import stat
 import subprocess
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 
 from minsar.utils.bbox_cli_argv import fix_argv_for_negative_bbox_sn_we
@@ -26,13 +25,12 @@ ARGV_FIX_KW = {
         "--end-date",
         "--track",
         "--frame-id",
-        "--work-dir",
         "--queue",
         "--long-queue",
         "--config",
     ),
     "consume_two": (),
-    "flags": ("--safe", "--cslc", "--disp", "--overwrite", "--dry-run"),
+    "flags": ("--safe", "--cslc", "--disp", "--dry-run"),
 }
 
 
@@ -43,14 +41,13 @@ class ResourceProfile:
     execution_mode: str
     walltime: str
     memory_mb: int
-    nodes: int
-    tasks_per_node: int
-    restart_policy: str
+    num_threads: int
+    queue_class: str
 
 
 @dataclass
 class Stage:
-    """One ordered workflow stage recorded in the manifest."""
+    """One ordered workflow stage used to generate run and job files."""
 
     number: int
     name: str
@@ -59,13 +56,10 @@ class Stage:
     run_file: str
     job_file: str
     command: str
-    expected_outputs: list[str]
-    restart_policy: str
     queue: str
     walltime: str
     memory_mb: int
-    nodes: int
-    tasks_per_node: int
+    num_threads: int
 
 
 class Isce3JobAdapter:
@@ -73,6 +67,11 @@ class Isce3JobAdapter:
 
     def __init__(self, work_dir: Path, queue: str, profile: ResourceProfile) -> None:
         self.queue = queue
+        self.cpus_per_node, self.memory_per_node_mb = _queue_resources(queue)
+        self.launcher_ppn = min(
+            max(1, self.cpus_per_node // profile.num_threads),
+            max(1, self.memory_per_node_mb // profile.memory_mb),
+        )
         self.job_submit = None
         if os.getenv("JOBSHEDULER_PROJECTNAME"):
             try:
@@ -86,9 +85,10 @@ class Isce3JobAdapter:
             "queue": queue,
             "default_wall_time": profile.walltime,
             "default_memory": profile.memory_mb,
-            "default_num_threads": max(1, profile.tasks_per_node),
-            "number_of_cores_per_node": max(1, profile.tasks_per_node),
-            "number_of_parallel_tasks_per_node": max(1, profile.tasks_per_node),
+            "default_num_threads": profile.num_threads,
+            "number_of_cores_per_node": self.cpus_per_node,
+            "number_of_parallel_tasks_per_node": self.launcher_ppn,
+            "max_memory_per_node": self.memory_per_node_mb,
             "submission_scheme": "launcher_multiTask_singleNode",
             "copy_to_tmp": False,
             "remora": False,
@@ -99,13 +99,13 @@ class Isce3JobAdapter:
             for name, value in values.items():
                 setattr(self.job_submit, name, value)
 
-    def render(self, stage: Stage, run_file: Path, job_file: Path) -> None:
+    def render(self, stage: Stage, run_file: Path, job_file: Path, workflow: str) -> None:
         """Render a script or LAUNCHER job using JOB_SUBMIT's existing methods."""
         if self.job_submit is not None:
             lines = self.job_submit.get_job_file_lines(
                 stage.name,
                 job_file.stem,
-                number_of_nodes=stage.nodes,
+                number_of_nodes=1,
                 work_dir=str(job_file.parent),
             )
         else:
@@ -113,8 +113,8 @@ class Isce3JobAdapter:
             lines = [
                 "#!/bin/bash\n",
                 f"#SBATCH -J {stage.name}\n",
-                f"#SBATCH -N {stage.nodes}\n",
-                f"#SBATCH -n {stage.nodes * stage.tasks_per_node}\n",
+                "#SBATCH -N 1\n",
+                f"#SBATCH -n {self.launcher_ppn if stage.execution_mode == 'launcher-task-list' else 1}\n",
                 f"#SBATCH -p {self.queue}\n",
                 f"#SBATCH -t {stage.walltime}\n",
                 f"#SBATCH -o {output_prefix}_%J.o\n",
@@ -124,9 +124,9 @@ class Isce3JobAdapter:
             lines.extend(
                 [
                     "\nset -euo pipefail\n",
-                    f"export OMP_NUM_THREADS={stage.tasks_per_node}\n",
-                    f"export LAUNCHER_PPN={stage.tasks_per_node}\n",
-                    f"export LAUNCHER_NHOSTS={stage.nodes}\n",
+                    f"export OMP_NUM_THREADS={stage.num_threads}\n",
+                    f"export LAUNCHER_PPN={self.launcher_ppn}\n",
+                    "export LAUNCHER_NHOSTS=1\n",
                     f"export LAUNCHER_JOB_FILE={shlex.quote(str(run_file.resolve()))}\n",
                     "export LAUNCHER_WORKDIR=/dev/shm\n",
                     'cd "$LAUNCHER_WORKDIR"\n',
@@ -136,6 +136,12 @@ class Isce3JobAdapter:
             )
         else:
             lines.extend(["\nset -euo pipefail\n", f"{shlex.quote(str(run_file.resolve()))}\n"])
+        lines.extend(
+            [
+                f"cd {shlex.quote(str(run_file.parent.parent.resolve()))}\n",
+                f"validate_isce3_outputs.py --data-type {shlex.quote(workflow)} --step {shlex.quote(stage.name)}\n",
+            ]
+        )
         job_file.write_text("".join(lines))
         _make_executable(job_file)
 
@@ -146,7 +152,7 @@ def create_parser() -> argparse.ArgumentParser:
  create_isce3_runfiles.py HawaiiSenD87.template
  create_isce3_runfiles.py HawaiiSenD87.template --cslc
  create_isce3_runfiles.py HawaiiSenD87.template --disp
- create_isce3_runfiles.py 19.4:19.54,-155.02:-154.80 HawaiiSenD87 --flight-dir desc --disp"""
+ create_isce3_runfiles.py 19.4:19.54,-155.02:-154.80 HawaiiPuna --flight-dir desc --disp"""
     parser = argparse.ArgumentParser(
         description="Create run files and SLURM job files for SAFE, CSLC, or DISP-S1 processing.",
         epilog=epilog,
@@ -165,11 +171,9 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--end-date", help="last acquisition date (YYYYMMDD)")
     parser.add_argument("--track", type=int, help="relative orbit/track number")
     parser.add_argument("--frame-id", type=int, help="OPERA DISP-S1 frame ID")
-    parser.add_argument("--work-dir", type=Path, help="workflow directory (default: current directory/NAME)")
     parser.add_argument("--queue", default="skx-dev", help="SLURM partition for restart-safe jobs")
     parser.add_argument("--long-queue", default="skx", help="SLURM partition for unsafe or unknown restart behavior")
     parser.add_argument("--config", type=Path, help="ISCE3 job defaults file")
-    parser.add_argument("--overwrite", action="store_true", help="replace generated workflow files")
     parser.add_argument("--dry-run", action="store_true", help="print the workflow without writing files or querying services")
     return parser
 
@@ -180,6 +184,21 @@ def _make_executable(path: Path) -> None:
 
 def _q(value: str | Path) -> str:
     return shlex.quote(str(value))
+
+
+def _queue_resources(queue: str) -> tuple[int, int]:
+    """Return CPU and memory capacity for a queue from queues.cfg."""
+    config = Path(__file__).resolve().parents[3] / "defaults/queues.cfg"
+    lines = [line.split() for line in config.read_text().splitlines() if line.strip() and not line.startswith("#")]
+    header = lines[0]
+    rows = [dict(zip(header, fields)) for fields in lines[1:]]
+    platform = os.getenv("PLATFORM_NAME", "stampede3")
+    matches = [row for row in rows if row["PLATFORM_NAME"] == platform and row["QUEUENAME"] == queue]
+    if not matches:
+        matches = [row for row in rows if row["PLATFORM_NAME"] == "stampede3" and row["QUEUENAME"] == queue]
+    if not matches:
+        raise ValueError(f"queues.cfg contains no resources for PLATFORM_NAME={platform}, QUEUENAME={queue}")
+    return int(matches[0]["CPUS_PER_NODE"]), int(matches[0]["MEM_PER_NODE"])
 
 
 def _workflow_name(args: argparse.Namespace) -> str:
@@ -199,18 +218,54 @@ def _normalize_platform(value: str) -> str:
 
 
 def _read_profiles(path: Path) -> dict[str, ResourceProfile]:
+    columns = [
+        "jobname",
+        "c_walltime",
+        "s_walltime",
+        "seconds_factor",
+        "c_memory",
+        "s_memory",
+        "num_threads",
+        "io_load",
+        "rerun_walltime_factor",
+        "switch_queue",
+        "rerun_walltime_factor_switch",
+        "execution_mode",
+        "queue_class",
+    ]
     profiles: dict[str, ResourceProfile] = {}
+    header_found = False
     for line_number, line in enumerate(path.read_text().splitlines(), 1):
         text = line.strip()
-        if not text or text.startswith("#"):
+        if not text or text.startswith("#") or text.startswith("-"):
             continue
         fields = text.split()
-        if len(fields) != 7:
-            raise ValueError(f"{path}:{line_number}: expected 7 columns, found {len(fields)}")
-        name, mode, walltime, memory, nodes, tasks, restart = fields
+        if fields[0] == "jobname":
+            if fields != columns:
+                raise ValueError(f"{path}:{line_number}: unexpected column header")
+            header_found = True
+            continue
+        if not header_found:
+            raise ValueError(f"{path}:{line_number}: data found before jobname header")
+        if len(fields) != len(columns):
+            raise ValueError(f"{path}:{line_number}: expected {len(columns)} columns, found {len(fields)}")
+        values = dict(zip(columns, fields))
+        name = values["jobname"]
+        mode = values["execution_mode"]
         if mode not in {"sequential", "single-multicore", "launcher-task-list"}:
             raise ValueError(f"{path}:{line_number}: unsupported execution mode {mode!r}")
-        profiles[name] = ResourceProfile(mode, walltime, int(memory), int(nodes), int(tasks), restart)
+        queue_class = values["queue_class"]
+        if queue_class not in {"short", "long"}:
+            raise ValueError(f"{path}:{line_number}: unsupported queue class {queue_class!r}")
+        profiles[name] = ResourceProfile(
+            mode,
+            values["c_walltime"],
+            int(values["c_memory"]),
+            int(values["num_threads"]),
+            queue_class,
+        )
+    if not header_found:
+        raise ValueError(f"{path}: missing jobname header")
     if "default" not in profiles:
         raise ValueError(f"{path}: missing default profile")
     return profiles
@@ -279,7 +334,7 @@ def _create_template_from_aoi(args: argparse.Namespace) -> Path:
 def _sweets_config_command(context: dict[str, object], source: str) -> str:
     template = str(context["template"])
     if not template:
-        return "# Generate a MinSAR template first; AOI resolution is recorded in the manifest."
+        return "# Generate a MinSAR template before creating this workflow."
     return f"# The download action creates sweets_config.yaml from {_q(template)} with source={source}."
 
 
@@ -287,15 +342,30 @@ def _runner_command(command: str) -> str:
     return f'pixi run --manifest-path "$MINSAR_HOME/tools/sweets/pyproject.toml" {command}'
 
 
-def _stage_command(action: str, manifest: Path, delete: bool = False, allow_failure: bool = False) -> str:
-    command = f"create_isce3_runfiles.py --execute-stage {action} --manifest {_q(manifest)}"
+def _stage_command(
+    action: str,
+    workflow: str,
+    context: dict[str, object],
+    delete: bool = False,
+    allow_failure: bool = False,
+) -> str:
+    parts = ["create_isce3_runfiles.py", "--execute-stage", action, "--workflow", workflow]
+    for option, key in (
+        ("--template", "template"),
+        ("--start-date", "start_date"),
+        ("--end-date", "end_date"),
+        ("--frame-id", "frame_id"),
+    ):
+        value = str(context[key])
+        if value:
+            parts.extend([option, value])
+    command = " ".join(_q(part) for part in parts)
     if delete:
         command = f"{command} --delete"
     return f"{command} || true" if allow_failure else command
 
 
-def _build_stage_specs(workflow: str, context: dict[str, object], work_dir: Path) -> list[tuple[str, str, str, list[str]]]:
-    manifest = work_dir / "isce3_workflow.json"
+def _build_stage_specs(workflow: str, context: dict[str, object]) -> list[tuple[str, str, str]]:
     if workflow == "safe":
         return [
             (
@@ -304,24 +374,22 @@ def _build_stage_specs(workflow: str, context: dict[str, object], work_dir: Path
                 "\n".join(
                     [
                         _sweets_config_command(context, "burst"),
-                        _stage_command("download-safe", manifest, allow_failure=True),
-                        _stage_command("check-safe", manifest, delete=True),
-                        _stage_command("download-safe", manifest, allow_failure=True),
-                        _stage_command("check-safe", manifest),
-                        _stage_command("prepare-safe-runconfigs", manifest),
+                        _stage_command("download-safe", workflow, context, allow_failure=True),
+                        _stage_command("check-safe", workflow, context, delete=True),
+                        _stage_command("download-safe", workflow, context, allow_failure=True),
+                        _stage_command("check-safe", workflow, context),
+                        _stage_command("prepare-safe-runconfigs", workflow, context),
                     ]
                 ),
-                ["sweets_config.yaml", "data/**/*.SAFE", "run_files/run_02_create_cslc"],
             ),
             (
                 "create_cslc",
                 "Create CSLCs and static layers with COMPASS",
                 "# Tasks are materialized by run_01_download_safe.",
-                ["gslcs/**/t*.h5", "gslcs/**/static_*.h5"],
             ),
-            ("run_dolphin", "Run Dolphin displacement processing", _stage_command("run-dolphin", manifest), ["dolphin/**/*.tif", "dolphin/**/*.nc"]),
-            ("create_hdfeos5", "Create HDF-EOS5 product", _stage_command("create-hdfeos5", manifest), ["timeseries/*.he5"]),
-            ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", _stage_command("ingest-insarmaps", manifest), ["timeseries/JSON*/*.mbtiles"]),
+            ("run_dolphin", "Run Dolphin displacement processing", _stage_command("run-dolphin", workflow, context)),
+            ("create_hdfeos5", "Create HDF-EOS5 product", _stage_command("create-hdfeos5", workflow, context)),
+            ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", _stage_command("ingest-insarmaps", workflow, context)),
         ]
     if workflow == "cslc":
         return [
@@ -331,22 +399,21 @@ def _build_stage_specs(workflow: str, context: dict[str, object], work_dir: Path
                 "\n".join(
                     [
                         _sweets_config_command(context, "cslc"),
-                        _stage_command("download-cslc", manifest, allow_failure=True),
-                        _stage_command("check-cslc", manifest, delete=True),
-                        _stage_command("download-cslc", manifest, allow_failure=True),
-                        _stage_command("check-cslc", manifest),
-                        _stage_command("prepare-cslc-geometry", manifest),
+                        _stage_command("download-cslc", workflow, context, allow_failure=True),
+                        _stage_command("check-cslc", workflow, context, delete=True),
+                        _stage_command("download-cslc", workflow, context, allow_failure=True),
+                        _stage_command("check-cslc", workflow, context),
+                        _stage_command("prepare-cslc-geometry", workflow, context),
                     ]
                 ),
-                ["sweets_config.yaml", "data/**/*CSLC*.h5"],
             ),
-            ("run_dolphin", "Run Dolphin displacement processing", _stage_command("run-dolphin", manifest), ["dolphin/**/*.tif", "dolphin/**/*.nc"]),
-            ("create_hdfeos5", "Create HDF-EOS5 product", _stage_command("create-hdfeos5", manifest), ["timeseries/*.he5"]),
-            ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", _stage_command("ingest-insarmaps", manifest), ["timeseries/JSON*/*.mbtiles"]),
+            ("run_dolphin", "Run Dolphin displacement processing", _stage_command("run-dolphin", workflow, context)),
+            ("create_hdfeos5", "Create HDF-EOS5 product", _stage_command("create-hdfeos5", workflow, context)),
+            ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", _stage_command("ingest-insarmaps", workflow, context)),
         ]
     template = str(context["template"])
     if not template:
-        generate = "# Generate a MinSAR template first; AOI resolution is recorded in the manifest."
+        generate = "# Generate a MinSAR template before creating this workflow."
     else:
         generate = f"# DISP-S1 commands are derived from {_q(template)} and saved in disp-s1_commands.bash."
     return [
@@ -356,17 +423,16 @@ def _build_stage_specs(workflow: str, context: dict[str, object], work_dir: Path
             "\n".join(
                 [
                     generate,
-                    _stage_command("download-disp", manifest, allow_failure=True),
-                    _stage_command("check-disp", manifest, delete=True),
-                    _stage_command("download-disp", manifest, allow_failure=True),
-                    _stage_command("check-disp", manifest),
+                    _stage_command("download-disp", workflow, context, allow_failure=True),
+                    _stage_command("check-disp", workflow, context, delete=True),
+                    _stage_command("download-disp", workflow, context, allow_failure=True),
+                    _stage_command("check-disp", workflow, context),
                 ]
             ),
-            ["subsets/OPERA*.nc"],
         ),
-        ("reformat_disp", "Reformat DISP-S1 products into a stack", _stage_command("reformat-disp", manifest), ["*stack.nc"]),
-        ("create_hdfeos5", "Create HDF-EOS5 product", _stage_command("create-hdfeos5", manifest), ["timeseries/*.he5"]),
-        ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", _stage_command("ingest-insarmaps", manifest), ["timeseries/JSON*/*.mbtiles"]),
+        ("reformat_disp", "Reformat DISP-S1 products into a stack", _stage_command("reformat-disp", workflow, context)),
+        ("create_hdfeos5", "Create HDF-EOS5 product", _stage_command("create-hdfeos5", workflow, context)),
+        ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", _stage_command("ingest-insarmaps", workflow, context)),
     ]
 
 
@@ -393,22 +459,32 @@ def _write_run_file(path: Path, title: str, command: str, task_list: bool = Fals
 def _create_files(
     args: argparse.Namespace,
     workflow: str,
-    platform: str,
     context: dict[str, object],
     profiles: dict[str, ResourceProfile],
     work_dir: Path,
 ) -> list[Stage]:
     run_dir = work_dir / "run_files"
     run_dir.mkdir(parents=True, exist_ok=True)
+    specs = _build_stage_specs(workflow, context)
+    expected_names = {
+        filename
+        for number, (name, _, _) in enumerate(specs, 1)
+        for filename in (f"run_{number:02d}_{name}", f"run_{number:02d}_{name}.job")
+    }
+    stale_files = sorted(
+        path
+        for path in run_dir.glob("run_[0-9][0-9]_*")
+        if path.suffix in {"", ".job"} and path.name not in expected_names
+    )
+    for path in stale_files:
+        path.unlink()
     stages: list[Stage] = []
-    for number, (name, title, command, outputs) in enumerate(_build_stage_specs(workflow, context, work_dir), 1):
+    for number, (name, title, command) in enumerate(specs, 1):
         profile = _profile_for(name, profiles)
         run_name = f"run_{number:02d}_{name}"
         job_name = f"{run_name}.job"
         run_file = run_dir / run_name
         job_file = run_dir / job_name
-        if not args.overwrite and (run_file.exists() or job_file.exists()):
-            raise FileExistsError(f"{run_file} or {job_file} exists; use --overwrite")
         stage = Stage(
             number,
             name,
@@ -417,49 +493,26 @@ def _create_files(
             str(run_file.relative_to(work_dir)),
             str(job_file.relative_to(work_dir)),
             command,
-            outputs,
-            profile.restart_policy,
-            args.queue if profile.restart_policy == "safe" else args.long_queue,
+            args.queue if profile.queue_class == "short" else args.long_queue,
             profile.walltime,
             profile.memory_mb,
-            profile.nodes,
-            profile.tasks_per_node,
+            profile.num_threads,
         )
         _write_run_file(run_file, title, command, profile.execution_mode == "launcher-task-list")
-        Isce3JobAdapter(run_dir, stage.queue, profile).render(stage, run_file, job_file)
+        Isce3JobAdapter(run_dir, stage.queue, profile).render(stage, run_file, job_file, workflow)
         stages.append(stage)
-    manifest = {
-        "schema_version": 1,
-        "generator": "create_isce3_runfiles.py",
-        "workflow": workflow,
-        "platform": platform,
-        "work_dir": str(work_dir.resolve()),
-        "context": context,
-        "queue": args.queue,
-        "long_queue": args.long_queue,
-        "stages": [asdict(stage) for stage in stages],
-    }
-    (work_dir / "isce3_workflow.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return stages
 
 
-def _print_plan(workflow: str, platform: str, context: dict[str, object], stages: list[Stage] | None, specs: list[tuple[str, str, str, list[str]]] | None = None) -> None:
+def _print_plan(workflow: str, platform: str, context: dict[str, object], stages: list[Stage] | None, specs: list[tuple[str, str, str]] | None = None) -> None:
     print(f"Workflow: {workflow.upper()} ({platform})")
     print(f"Project:  {context['project']}")
-    items = stages or [
-        Stage(i, name, title, "", "", "", command, outputs, "", "", "", 0, 0, 0)
-        for i, (name, title, command, outputs) in enumerate(specs or [], 1)
-    ]
-    for stage in items:
-        mode = f" [{stage.execution_mode}]" if stage.execution_mode else ""
-        print(f"  {stage.number:02d}. {stage.name}{mode}: {stage.title}")
-
-
-def _load_manifest(path: Path) -> dict[str, object]:
-    data = json.loads(path.read_text())
-    if data.get("schema_version") != 1:
-        raise ValueError(f"unsupported manifest schema in {path}")
-    return data
+    if stages is not None:
+        run_files = [Path(stage.run_file).name for stage in stages]
+        print(f"run_files created: {', '.join(run_files)}")
+    else:
+        run_files = [f"run_{number:02d}_{name}" for number, (name, _, _) in enumerate(specs or [], 1)]
+        print(f"run_files to create: {', '.join(run_files)}")
 
 
 def _run_in_sweets(work_dir: Path, command: list[str]) -> None:
@@ -482,15 +535,13 @@ def _run_sweets_snippet(work_dir: Path, code: str) -> None:
     _run_in_sweets(work_dir, ["python", "-c", code])
 
 
-def _configure_sweets(manifest: dict[str, object], work_dir: Path) -> None:
+def _configure_sweets(workflow: str, template: Path, work_dir: Path) -> None:
     """Build and run only the SWEETS config command, leaving processing split by stage."""
     from minsar.utils.generate_sweets_config import build_from_template
 
-    context = manifest["context"]
-    template = str(context["template"])  # type: ignore[index]
-    source = "burst" if str(manifest["workflow"]) == "safe" else "cslc"
-    command, _ = build_from_template(template, source)
-    config_command = command.splitlines()[0]
+    source = "burst" if workflow == "safe" else "cslc"
+    command, _ = build_from_template(str(template), source)
+    config_command = command.splitlines()[0] + " --overwrite"
     transparent_command = _runner_command(config_command)
     config_script = work_dir / "sweets_config_command.bash"
     config_script.write_text("#!/usr/bin/env bash\nset -euo pipefail\n" + transparent_command + "\n")
@@ -498,13 +549,21 @@ def _configure_sweets(manifest: dict[str, object], work_dir: Path) -> None:
     subprocess.run([str(config_script)], cwd=work_dir, check=True)
 
 
-def _disp_script(manifest: dict[str, object], work_dir: Path) -> Path:
+def _disp_script(
+    template: Path | None,
+    start_date: str,
+    end_date: str,
+    frame_id: int | None,
+    work_dir: Path,
+    force: bool = False,
+) -> Path:
     """Create or return the transparent combined DISP-S1 command source."""
     path = work_dir / "disp-s1_commands.bash"
-    if path.exists():
+    if path.exists() and not force:
         return path
-    context = manifest["context"]
-    frame = str(context["frame_id"])  # type: ignore[index]
+    if template is None:
+        raise ValueError("--template is required to create disp-s1_commands.bash")
+    frame = str(frame_id or "")
     minsar_home = Path(os.environ.get("MINSAR_HOME", Path(__file__).resolve().parents[4]))
     module_path = minsar_home / "minsar/utils/generate_disp-s1_commands.py"
     code = (
@@ -522,9 +581,9 @@ def _disp_script(manifest: dict[str, object], work_dir: Path) -> Path:
             "-c",
             code,
             str(module_path),
-            str(context["template"]),  # type: ignore[index]
-            str(context["start_date"]),  # type: ignore[index]
-            str(context["end_date"]),  # type: ignore[index]
+            str(template),
+            start_date,
+            end_date,
             frame,
             str(path),
         ],
@@ -533,10 +592,19 @@ def _disp_script(manifest: dict[str, object], work_dir: Path) -> Path:
     return path
 
 
-def _run_disp_action(action: str, manifest: dict[str, object], work_dir: Path, delete: bool = False) -> None:
+def _run_disp_action(
+    action: str,
+    work_dir: Path,
+    template: Path | None,
+    start_date: str,
+    end_date: str,
+    frame_id: int | None,
+    delete: bool = False,
+) -> None:
+    force_script = action in {"download-disp", "reformat-disp"}
     lines = [
         line.strip()
-        for line in _disp_script(manifest, work_dir).read_text().splitlines()
+        for line in _disp_script(template, start_date, end_date, frame_id, work_dir, force=force_script).read_text().splitlines()
         if line.strip() and not line.startswith("#") and not line.startswith("set ")
     ]
     if action == "download-disp":
@@ -549,6 +617,8 @@ def _run_disp_action(action: str, manifest: dict[str, object], work_dir: Path, d
             if "check_opera_download.py" in line and (("--delete" in line) == delete)
         ]
     elif action == "reformat-disp":
+        for path in work_dir.glob("*stack.nc"):
+            path.unlink()
         selected = [line for line in lines if "disp-s1-reformat" in line]
     else:
         raise ValueError(f"unknown DISP-S1 action {action!r}")
@@ -560,7 +630,7 @@ def _run_disp_action(action: str, manifest: dict[str, object], work_dir: Path, d
     _run_in_sweets(work_dir, ["bash", "-c", "set -euo pipefail\n" + "\n".join(selected)])
 
 
-def _materialize_compass_tasks(work_dir: Path, stage: dict[str, object]) -> None:
+def _materialize_compass_tasks(work_dir: Path) -> None:
     cslc = sorted(work_dir.rglob("runconfigs/*.yaml"))
     if not cslc:
         raise RuntimeError("SWEETS did not create COMPASS CSLC runconfigs")
@@ -572,7 +642,10 @@ def _materialize_compass_tasks(work_dir: Path, stage: dict[str, object]) -> None
         key = "_".join(parts[3:]) if len(parts) > 3 else path.stem
         first_per_burst.setdefault(key, path)
     commands.extend(f"{sweets_bin}/s1_static_layers.py {_q(path)}" for path in first_per_burst.values())
-    run_file = work_dir / str(stage["run_file"])
+    run_files = sorted((work_dir / "run_files").glob("run_*_create_cslc"))
+    if len(run_files) != 1:
+        raise RuntimeError("expected exactly one create_cslc run file")
+    run_file = run_files[0]
     run_file.write_text("\n".join(commands) + "\n")
 
 
@@ -752,40 +825,39 @@ def _check_cslc_download(work_dir: Path, delete: bool) -> int:
     return 0
 
 
-def _run_sweets_check(action: str, manifest_file: Path, delete: bool) -> int:
+def _run_sweets_check(action: str, work_dir: Path, delete: bool) -> int:
     """Run a SAFE or CSLC checker inside the SWEETS environment."""
-    work_dir = Path(str(_load_manifest(manifest_file)["work_dir"]))
     return _check_safe_download(work_dir, delete) if action == "check-safe" else _check_cslc_download(work_dir, delete)
 
 
-def _execute_stage(action: str, manifest_file: Path, delete: bool = False) -> int:
-    manifest = _load_manifest(manifest_file)
-    work_dir = Path(str(manifest["work_dir"]))
-    stages = {str(stage["name"]): stage for stage in manifest["stages"]}  # type: ignore[index]
+def _execute_stage(
+    action: str,
+    workflow: str,
+    template: Path | None,
+    start_date: str,
+    end_date: str,
+    frame_id: int | None,
+    delete: bool = False,
+) -> int:
+    work_dir = Path.cwd().resolve()
     if action in {"check-safe", "check-cslc"}:
         command = [
             "python",
             str(Path(__file__).resolve()),
             "--run-sweets-check",
             action,
-            "--manifest",
-            str(manifest_file.resolve()),
         ]
         if delete:
             command.append("--delete")
         _run_in_sweets(work_dir, command)
         return 0
     if action in {"download-disp", "check-disp", "reformat-disp"}:
-        if action == "download-disp" and "check_disp" in stages:
-            _run_disp_action("download-disp", manifest, work_dir)
-            _run_disp_action("check-disp", manifest, work_dir, delete=True)
-            _run_disp_action("download-disp", manifest, work_dir)
-            return 0
-        _run_disp_action(action, manifest, work_dir, delete=delete)
+        _run_disp_action(action, work_dir, template, start_date, end_date, frame_id, delete=delete)
         return 0
     if action in {"download-safe", "download-cslc"}:
-        if not (work_dir / "sweets_config.yaml").exists():
-            _configure_sweets(manifest, work_dir)
+        if template is None:
+            raise ValueError(f"--template is required for {action}")
+        _configure_sweets(workflow, template, work_dir)
         needs_burst_db = ";get_burst_db()" if action == "download-safe" else ""
         code = (
             "from sweets.core import Workflow,setup_nasa_netrc,get_burst_db,create_dem,create_water_mask;"
@@ -803,10 +875,10 @@ def _execute_stage(action: str, manifest_file: Path, delete: bool = False) -> in
             "download_orbits(w.search.out_dir,w.orbit_dir);"
             "create_config_files(slc_dir=s[0].parent,burst_db_file=db,dem_file=w.dem_filename,orbit_dir=w.orbit_dir,"
             "bbox=w.bbox,y_posting=w.slc_posting[0],x_posting=w.slc_posting[1],pol_type=w.pol_type,"
-            "out_dir=w.gslc_dir,overwrite=w.overwrite,using_zipped=s[0].suffix=='.zip',gpu_enabled=w.gpu_enabled)"
+            "out_dir=w.gslc_dir,overwrite=True,using_zipped=s[0].suffix=='.zip',gpu_enabled=w.gpu_enabled)"
         )
         _run_sweets_snippet(work_dir, code)
-        _materialize_compass_tasks(work_dir, stages["create_cslc"])
+        _materialize_compass_tasks(work_dir)
         return 0
     if action == "prepare-cslc-geometry":
         code = (
@@ -816,18 +888,22 @@ def _execute_stage(action: str, manifest_file: Path, delete: bool = False) -> in
         _run_sweets_snippet(work_dir, code)
         return 0
     if action == "run-dolphin":
-        if str(manifest["workflow"]) == "safe":
+        if workflow == "safe":
             code = (
                 "from sweets.core import Workflow;"
-                "w=Workflow.from_yaml('sweets_config.yaml');w._stitch_geometry(w._existing_static_layers());w.run(starting_step=3)"
+                "w=Workflow.from_yaml('sweets_config.yaml');w.overwrite=True;"
+                "w._stitch_geometry(w._existing_static_layers());w.run(starting_step=3)"
             )
         else:
-            code = "from sweets.core import Workflow;w=Workflow.from_yaml('sweets_config.yaml');w.run(starting_step=3)"
+            code = "from sweets.core import Workflow;w=Workflow.from_yaml('sweets_config.yaml');w.overwrite=True;w.run(starting_step=3)"
         _run_sweets_snippet(work_dir, code)
         return 0
     if action == "create-hdfeos5":
+        timeseries_dir = work_dir / "timeseries"
+        for path in timeseries_dir.glob("*.he5"):
+            path.unlink()
         command = ["dolphin2hdfeos5.py"]
-        if str(manifest["workflow"]) == "disp":
+        if workflow == "disp":
             stacks = sorted(work_dir.glob("*stack.nc"))
             if not stacks:
                 raise RuntimeError("no *stack.nc input found")
@@ -850,27 +926,39 @@ def main(iargs: list[str] | None = None) -> int:
     internal = argparse.ArgumentParser(add_help=False)
     internal.add_argument("--execute-stage")
     internal.add_argument("--run-sweets-check")
-    internal.add_argument("--manifest", type=Path)
+    internal.add_argument("--workflow", choices=WORKFLOW_CHOICES)
+    internal.add_argument("--template", type=Path)
+    internal.add_argument("--start-date", default="")
+    internal.add_argument("--end-date", default="")
+    internal.add_argument("--frame-id", type=int)
     internal.add_argument("--delete", action="store_true")
     internal_args, _ = internal.parse_known_args(argv)
     if internal_args.run_sweets_check:
-        if not internal_args.manifest:
-            raise ValueError("--run-sweets-check requires --manifest")
-        return _run_sweets_check(internal_args.run_sweets_check, internal_args.manifest, internal_args.delete)
+        return _run_sweets_check(internal_args.run_sweets_check, Path.cwd().resolve(), internal_args.delete)
     if internal_args.execute_stage:
-        if not internal_args.manifest:
-            raise ValueError("--execute-stage requires --manifest")
-        return _execute_stage(internal_args.execute_stage, internal_args.manifest, delete=internal_args.delete)
+        if not internal_args.workflow:
+            raise ValueError("--execute-stage requires --workflow")
+        return _execute_stage(
+            internal_args.execute_stage,
+            internal_args.workflow,
+            internal_args.template,
+            internal_args.start_date,
+            internal_args.end_date,
+            internal_args.frame_id,
+            delete=internal_args.delete,
+        )
 
     argv = fix_argv_for_negative_bbox_sn_we(argv, **ARGV_FIX_KW, multiple_initial_positionals=True)
     args = create_parser().parse_args(argv)
     try:
+        invocation_dir = Path.cwd().resolve()
         workflow = _workflow_name(args)
         platform = _normalize_platform(args.platform)
         if platform == "NISAR":
             raise ValueError("NISAR is accepted but processing is not implemented until RSLC/GSLC commands are defined")
         input_path = Path(args.input).expanduser()
-        if input_path.is_file():
+        input_is_template = input_path.is_file()
+        if input_is_template:
             context = _template_context(input_path.resolve(), args)
         elif args.dry_run:
             context = _aoi_context(args)
@@ -878,17 +966,20 @@ def main(iargs: list[str] | None = None) -> int:
             context = _template_context(_create_template_from_aoi(args).resolve(), args)
         config = args.config or Path(__file__).resolve().parents[3] / "defaults/job_defaults_isce3.cfg"
         profiles = _read_profiles(config)
-        work_dir = (args.work_dir or Path.cwd() / str(context["project"])).expanduser().resolve()
-        specs = _build_stage_specs(workflow, context, work_dir)
+        scratch_dir = Path(os.environ["SCRATCHDIR"]).expanduser().resolve()
+        work_dir = scratch_dir / str(context["project"])
+        specs = _build_stage_specs(workflow, context)
         if args.dry_run:
             _print_plan(workflow, platform, context, None, specs)
             return 0
+        os.chdir(scratch_dir)
         work_dir.mkdir(parents=True, exist_ok=True)
-        stages = _create_files(args, workflow, platform, context, profiles, work_dir)
+        stages = _create_files(args, workflow, context, profiles, work_dir)
         _print_plan(workflow, platform, context, stages)
-        print(f"Manifest: {work_dir / 'isce3_workflow.json'}")
+        if not input_is_template:
+            print(f"Template: {invocation_dir / Path(str(context['template'])).name}")
         return 0
-    except (FileExistsError, OSError, RuntimeError, ValueError) as exc:
+    except (OSError, RuntimeError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
