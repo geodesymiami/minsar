@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import os
 import shlex
 import stat
@@ -32,6 +33,27 @@ ARGV_FIX_KW = {
     "consume_two": (),
     "flags": ("--safe", "--cslc", "--disp", "--dry-run"),
 }
+
+
+def _log_command_line(log_dir: Path, script_name: str, argv: list[str]) -> None:
+    """Append the invocation to log_dir/log as run_workflow.bash does."""
+    simplified = []
+    for arg in argv:
+        if os.environ.get("SCRATCHDIR") and arg.startswith(os.environ["SCRATCHDIR"]):
+            simplified.append("$SCRATCHDIR" + arg[len(os.environ["SCRATCHDIR"]):])
+        elif os.environ.get("SAMPLESDIR") and arg.startswith(os.environ["SAMPLESDIR"]):
+            simplified.append("$SAMPLESDIR" + arg[len(os.environ["SAMPLESDIR"]):])
+        elif os.environ.get("TE") and arg.startswith(os.environ["TE"]):
+            simplified.append("$TE" + arg[len(os.environ["TE"]):])
+        else:
+            simplified.append(arg)
+    stamp = datetime.datetime.now().strftime("%Y%m%d:%H-%M")
+    line = f"{stamp} + {script_name}"
+    if simplified:
+        line += " " + " ".join(simplified)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    with (log_dir / "log").open("a", encoding="utf-8") as handle:
+        handle.write(line + "\n")
 
 
 @dataclass(frozen=True)
@@ -970,10 +992,12 @@ def main(iargs: list[str] | None = None) -> int:
         work_dir = scratch_dir / str(context["project"])
         specs = _build_stage_specs(workflow, context)
         if args.dry_run:
+            _log_command_line(invocation_dir if not work_dir.is_dir() else work_dir, Path(__file__).name, argv)
             _print_plan(workflow, platform, context, None, specs)
             return 0
         os.chdir(scratch_dir)
         work_dir.mkdir(parents=True, exist_ok=True)
+        _log_command_line(work_dir, Path(__file__).name, argv)
         stages = _create_files(args, workflow, context, profiles, work_dir)
         _print_plan(workflow, platform, context, stages)
         if not input_is_template:

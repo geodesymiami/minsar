@@ -75,6 +75,7 @@ do_step=""
 max_parallel=1
 dry_run=false
 wait_time=30
+original_args=("$@")
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -149,6 +150,20 @@ fi
 echo "Backend: $backend"
 
 work_dir="$(pwd -P)"
+# Log the full command line with SCRATCHDIR/SAMPLESDIR/TE simplified (as in run_workflow.bash)
+simplified_args=()
+for arg in "${original_args[@]}"; do
+    if [[ -n "${SCRATCHDIR:-}" && "$arg" == "$SCRATCHDIR"* ]]; then
+        simplified_args+=("\$SCRATCHDIR${arg#$SCRATCHDIR}")
+    elif [[ -n "${SAMPLESDIR:-}" && "$arg" == "$SAMPLESDIR"* ]]; then
+        simplified_args+=("\$SAMPLESDIR${arg#$SAMPLESDIR}")
+    elif [[ -n "${TE:-}" && "$arg" == "$TE"* ]]; then
+        simplified_args+=("\$TE${arg#$TE}")
+    else
+        simplified_args+=("$arg")
+    fi
+done
+echo "$(date +"%Y%m%d:%H-%M") + ${SCRIPT_NAME} ${simplified_args[*]}" >> "${work_dir}"/log
 run_dir="$work_dir/run_files"
 project_name="$(basename "$work_dir")"
 [[ -d "$run_dir" ]] || die "run_files directory not found under $work_dir"
