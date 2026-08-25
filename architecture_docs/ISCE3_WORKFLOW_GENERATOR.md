@@ -272,11 +272,13 @@ The output from a successfully completed preceding stage remains on disk. A fail
 
 ## Running with SLURM
 
-On a SLURM login node, submit all stages with the default auto backend:
+On a SLURM login node, submit all steps with the default auto backend:
 
 ```bash
 run_isce3_workflow.bash
 ```
+
+Each step is submitted with `submit_jobs.bash`, which calls `sbatch_conditional.bash` so multiple job files for the same step can be submitted under the queue limits. The runner waits for that step, prints COMPLETED/RUNNING/PENDING/WAITING counts, and then runs `check_job_outputs.py` on the step's `run*.o` and `run*.e` files before starting the next step. Timeout and node-failure jobs are resubmitted the same way as `run_workflow.bash`.
 
 Submit a selected range, with an explicit backend shown for clarity:
 
@@ -284,9 +286,7 @@ Submit a selected range, with an explicit backend shown for clarity:
 run_isce3_workflow.bash --backend slurm --start create_cslc --end create_hdfeos5
 ```
 
-The first selected job is submitted normally. Each later job is submitted with `afterok:<previous-job-id>`, so it becomes eligible only after the preceding stage succeeds. The Bash runner submits the chain and returns; it does not monitor jobs to completion or automatically resubmit failures.
-
-SLURM dry-run mode prints the commands and synthetic dependency IDs without calling `sbatch`:
+SLURM dry-run mode prints the `submit_jobs.bash` and `check_job_outputs.py` commands without submitting:
 
 ```bash
 run_isce3_workflow.bash --backend slurm --start 2 --end 4 --dry-run
@@ -323,7 +323,7 @@ These classifications describe retry policy, not output validation. Operators sh
 
 ## Output validation
 
-Each local step is validated by the runner after its run file completes. Each SLURM job performs the same validation at the end of the job. Validation failure produces a nonzero status, so dependent jobs are not started.
+Each local step is validated by the runner after its run file completes. Each SLURM step is checked with `check_job_outputs.py` after the jobs complete, then `validate_isce3_outputs.py`. Validation failure inside a job produces a nonzero SLURM status.
 
 Validation can also be run manually from the processing directory:
 

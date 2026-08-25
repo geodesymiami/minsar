@@ -7,11 +7,22 @@ SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export MINSAR_HOME="${MINSAR_HOME:-$(cd "${SCRIPT_DIR}/../../../.." && pwd)}"
 MINSAR_UTILS="${MINSAR_HOME}/minsar/lib/utils.sh"
+WORKFLOW_UTILS="${MINSAR_HOME}/minsar/lib/workflow_utils.sh"
+SUBMIT_JOBS="${MINSAR_HOME}/minsar/bin/submit_jobs.bash"
 [[ -f "$MINSAR_UTILS" ]] || {
     echo "Error: MinSAR utilities not found: $MINSAR_UTILS" >&2
     exit 1
 }
+[[ -f "$WORKFLOW_UTILS" ]] || {
+    echo "Error: workflow utilities not found: $WORKFLOW_UTILS" >&2
+    exit 1
+}
+[[ -f "$SUBMIT_JOBS" ]] || {
+    echo "Error: submit_jobs.bash not found: $SUBMIT_JOBS" >&2
+    exit 1
+}
 source "$MINSAR_UTILS" >/dev/null
+source "$WORKFLOW_UTILS"
 
 print_help() {
     cat <<EOF
@@ -63,6 +74,7 @@ end_step=""
 do_step=""
 max_parallel=1
 dry_run=false
+wait_time=30
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -112,6 +124,10 @@ done
 [[ "$max_parallel" =~ ^[1-9][0-9]*$ ]] || die "--max-parallel must be a positive integer"
 [[ -z "$do_step" || ( -z "$start_step" && -z "$end_step" ) ]] || die "--dostep cannot be combined with --start or --end"
 
+if [[ "${SHORT_JOB_COMPLETION_WAITTIME:-}" == [Tt]rue ]]; then
+    wait_time=10
+fi
+
 if [[ "$backend" == "auto" ]]; then
     slurm_status="$(minsar_are_we_on_slurm_system 2>/dev/null)" || die "automatic SLURM detection failed; use --backend local or --backend slurm"
     case "$slurm_status" in
@@ -134,13 +150,8 @@ echo "Backend: $backend"
 
 work_dir="$(pwd -P)"
 run_dir="$work_dir/run_files"
+project_name="$(basename "$work_dir")"
 [[ -d "$run_dir" ]] || die "run_files directory not found under $work_dir"
-
-stage_numbers=()
-stage_names=()
-stage_modes=()
-stage_run_files=()
-stage_job_files=()
 
 job_uses_launcher() {
     local job_file="$1"
@@ -151,21 +162,75 @@ job_uses_launcher() {
     return 1
 }
 
+step_prefix() {
+    local stem="$1"
+    if [[ "$stem" =~ ^(run_[0-9][0-9]_.+)_[0-9]+$ ]]; then
+        echo "${BASH_REMATCH[1]}"
+    else
+        echo "$stem"
+    fi
+}
+
+list_jobs_for_pattern() {
+    local pattern="$1"
+    if ls -1v "${pattern}"*.job >/dev/null 2>&1; then
+        ls -1v "${pattern}"*.job
+        return 0
+    fi
+    local job
+    local nullglob_state
+    nullglob_state="$(shopt -p nullglob)"
+    shopt -s nullglob
+    for job in "${pattern}"*.job; do
+        printf '%s\n' "$job"
+    done
+    eval "$nullglob_state"
+}
+
+jobs_for_step() {
+    local number="$1"
+    local nn
+    local job
+    local nullglob_state
+    printf -v nn '%02d' "$number"
+    nullglob_state="$(shopt -p nullglob)"
+    shopt -s nullglob
+    for job in "$run_dir"/run_"${nn}"_*.job; do
+        printf '%s\n' "$job"
+    done
+    eval "$nullglob_state"
+}
+
+stage_numbers=()
+stage_names=()
+stage_patterns=()
+
 shopt -s nullglob
-job_files=("$run_dir"/run_[0-9][0-9]_*.job)
+all_job_files=("$run_dir"/run_[0-9][0-9]_*.job)
 shopt -u nullglob
-for job_file in "${job_files[@]}"; do
+[[ "${#all_job_files[@]}" -gt 0 ]] || die "no run_NN_*.job files found in $run_dir"
+
+for job_file in "${all_job_files[@]}"; do
     job_basename="$(basename "$job_file" .job)"
     [[ "$job_basename" =~ ^run_([0-9][0-9])_(.+)$ ]] || die "invalid job filename: $job_file"
     number_token="${BASH_REMATCH[1]}"
-    stage_numbers+=("$((10#$number_token))")
-    stage_names+=("${BASH_REMATCH[2]}")
-    stage_run_files+=("$run_dir/$job_basename")
-    stage_job_files+=("$job_file")
-    if job_uses_launcher "$job_file"; then
-        stage_modes+=("launcher-task-list")
-    else
-        stage_modes+=("sequential")
+    rest="${BASH_REMATCH[2]}"
+    number="$((10#$number_token))"
+    name="$rest"
+    if [[ "$name" =~ ^(.+)_([0-9]+)$ ]]; then
+        name="${BASH_REMATCH[1]}"
+    fi
+    already=false
+    for existing in "${stage_numbers[@]}"; do
+        if [[ "$existing" == "$number" ]]; then
+            already=true
+            break
+        fi
+    done
+    if [[ "$already" != "true" ]]; then
+        stage_numbers+=("$number")
+        stage_names+=("$name")
+        stage_patterns+=("$run_dir/$(step_prefix "$job_basename")")
     fi
 done
 
@@ -175,13 +240,20 @@ stage_count="${#stage_names[@]}"
 resolve_step() {
     local value="$1"
     local index
-    local run_basename
+    local job
+    local stem
     for ((index = 0; index < stage_count; index++)); do
-        run_basename="$(basename "${stage_run_files[$index]}")"
-        if [[ "$value" == "${stage_numbers[$index]}" || "$value" == "${stage_names[$index]}" || "$value" == "$run_basename" ]]; then
+        if [[ "$value" == "${stage_numbers[$index]}" || "$value" == "${stage_names[$index]}" ]]; then
             echo "$index"
             return 0
         fi
+        while IFS= read -r job; do
+            stem="$(basename "$job" .job)"
+            if [[ "$value" == "$stem" || "$value" == "$(step_prefix "$stem")" ]]; then
+                echo "$index"
+                return 0
+            fi
+        done < <(jobs_for_step "${stage_numbers[$index]}")
     done
     return 1
 }
@@ -238,18 +310,22 @@ run_task_list() {
 
 run_local_stage() {
     local index="$1"
-    local run_file="${stage_run_files[$index]}"
+    local job_file
+    local run_file
     local validation_command=(validate_isce3_outputs.py --step "${stage_names[$index]}")
-    [[ -f "$run_file" ]] || die "run file not found: $run_file"
 
-    if [[ "${stage_modes[$index]}" == "launcher-task-list" ]]; then
-        run_task_list "$run_file" || die "task list failed: $run_file"
-    else
-        echo "$run_file"
-        if [[ "$dry_run" != "true" ]]; then
-            "$run_file" || die "step failed: ${stage_names[$index]}"
+    while IFS= read -r job_file; do
+        run_file="${job_file%.job}"
+        [[ -f "$run_file" ]] || die "run file not found: $run_file"
+        if job_uses_launcher "$job_file"; then
+            run_task_list "$run_file" || die "task list failed: $run_file"
+        else
+            echo "$run_file"
+            if [[ "$dry_run" != "true" ]]; then
+                "$run_file" || die "step failed: ${stage_names[$index]}"
+            fi
         fi
-    fi
+    done < <(jobs_for_step "${stage_numbers[$index]}")
 
     printf '%q ' "${validation_command[@]}"
     printf '\n'
@@ -258,44 +334,136 @@ run_local_stage() {
     fi
 }
 
-submit_slurm_stage() {
-    local index="$1"
-    local dependency="$2"
-    local job_file="${stage_job_files[$index]}"
-    local command=(sbatch)
-    local result
-    local job_id
+wait_for_slurm_jobs() {
+    local step_name="$1"
+    local file_pattern="$2"
+    shift 2
+    local files=("$@")
+    local jobnumbers=()
+    local jns
+    local exit_status
+    local sbc_command
+    local num_jobs num_complete num_running num_pending num_timeout num_waiting
+    local j file jobnumber state
+    local init_walltime init_queue updated_walltime updated_queue datetime rerun_line
 
-    [[ -f "$job_file" ]] || die "job file not found: $job_file"
-    if [[ -n "$dependency" ]]; then
-        command+=(--dependency "afterok:$dependency")
-    fi
-    command+=("$job_file")
-    printf '%q ' "${command[@]}" >&2
-    printf '\n' >&2
+    sbc_command="$SUBMIT_JOBS $file_pattern"
+    echo "Jobfiles to submit:"
+    printf '%s\n' "${files[@]}"
+    echo "Job submission command:"
+    echo "$sbc_command"
 
     if [[ "$dry_run" == "true" ]]; then
-        echo "DRYRUN_${stage_numbers[$index]}"
-        return
+        return 0
     fi
 
-    result="$("${command[@]}")" || die "SLURM submission failed: $job_file"
-    echo "$result" >&2
-    job_id="${result##* }"
-    [[ "$job_id" =~ ^[0-9]+$ ]] || die "could not parse job ID from: $result"
-    echo "$job_id"
+    jns="$("$SUBMIT_JOBS" "$file_pattern")"
+    exit_status="$?"
+    [[ "$exit_status" -eq 0 ]] || die "submit_jobs.bash failed for $file_pattern"
+    jobnumbers=($jns)
+    echo "Jobs submitted: $(convert_array_to_comma_separated_string "${jobnumbers[@]}")"
+    sleep 5
+
+    num_jobs="${#jobnumbers[@]}"
+    num_complete=0
+    command -v sacct >/dev/null 2>&1 || die "sacct is not available; use --backend local"
+
+    while [[ "$num_complete" -lt "$num_jobs" ]]; do
+        num_complete=0
+        num_running=0
+        num_pending=0
+        num_timeout=0
+        num_waiting=0
+        sleep "$wait_time"
+
+        for ((j = 0; j < "${#jobnumbers[@]}"; j++)); do
+            file="${files[$j]}"
+            jobnumber="${jobnumbers[$j]}"
+            state="$(sacct --format="State" -j "$jobnumber" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | head -3 | tail -1)"
+            if [[ "$state" == *"COMPLETED"* ]]; then
+                num_complete=$((num_complete + 1))
+            elif [[ "$state" == *"RUNNING"* ]]; then
+                num_running=$((num_running + 1))
+            elif [[ "$state" == *"PENDING"* ]]; then
+                num_pending=$((num_pending + 1))
+            elif [[ "$state" == *"TIMEOUT"* || "$state" == *"NODE_FAIL"* ]]; then
+                num_timeout=$((num_timeout + 1))
+                if [[ "$state" == *"TIMEOUT"* ]]; then
+                    init_walltime="$(grep -oE '#SBATCH -t [0-9]+:[0-9]+:[0-9]+' "$file" | awk '{print $3}')"
+                    init_queue="$(grep -oE '#SBATCH -p [^[:space:]]+' "$file" | awk '{print $3}')"
+                    echo "Job file ${file} timed out with walltime of ${init_walltime}."
+                    update_walltime_queuename.py "$file" &>/dev/null
+                    updated_walltime="$(grep -oE '#SBATCH -t [0-9]+:[0-9]+:[0-9]+' "$file" | awk '{print $3}')"
+                    updated_queue="$(grep -oE '#SBATCH -p [^[:space:]]+' "$file" | awk '{print $3}')"
+                    datetime="$(date +"%Y-%m-%d:%H-%M")"
+                    rerun_line="${datetime}: re-running: ${file}: ${init_walltime} --> ${updated_walltime}"
+                    if [[ -n "$init_queue" && -n "$updated_queue" && "$init_queue" != "$updated_queue" ]]; then
+                        rerun_line="${rerun_line}   ${init_queue} --> ${updated_queue}"
+                    fi
+                    echo "$rerun_line" >> "${run_dir}/rerun.log"
+                    echo "Resubmitting file (${file}) with new walltime of ${updated_walltime}"
+                fi
+                jobnumbers=($(remove_from_list "$jobnumber" "${jobnumbers[@]}"))
+                files=($(remove_from_list "$file" "${files[@]}"))
+                jobnumber="$($SUBMIT_JOBS "${file%.*}")"
+                exit_status="$?"
+                if [[ "$exit_status" -eq 0 ]]; then
+                    jobnumbers+=("$jobnumber")
+                    files+=("$file")
+                    j=$((j - 1))
+                    echo "Resubmitted as jobnumber: ${jobnumber}."
+                else
+                    die "resubmit failed for $file"
+                fi
+            elif [[ "$state" == *"FAILED"* || "$state" == *"CANCELLED"* ]]; then
+                die "job $file: state $state"
+            else
+                echo "Strange job state: $state, encountered."
+                continue
+            fi
+        done
+
+        num_waiting=$((num_jobs - num_complete - num_running - num_pending))
+        printf "%s, %s, %-7s: %-12s, %-10s, %-10s, %-12s.\n" "$project_name" "$step_name" "$num_jobs jobs" "$num_complete COMPLETED" "$num_running RUNNING" "$num_pending PENDING" "$num_waiting WAITING"
+    done
+}
+
+check_step_outputs() {
+    local index="$1"
+    shift
+    local files=("$@")
+    local cmd
+    local exit_status
+
+    cmd="check_job_outputs.py ${files[*]}"
+    echo "$cmd"
+    if [[ "$dry_run" == "true" ]]; then
+        echo "validate_isce3_outputs.py --step ${stage_names[$index]}"
+        return 0
+    fi
+    check_job_outputs.py "${files[@]}"
+    exit_status="$?"
+    [[ "$exit_status" -eq 0 ]] || die "check_job_outputs.py exited with code ($exit_status)"
+    echo "validate_isce3_outputs.py --step ${stage_names[$index]}"
+    validate_isce3_outputs.py --step "${stage_names[$index]}" || die "validation failed: ${stage_names[$index]}"
+    echo
 }
 
 if [[ "$backend" == "slurm" && "$dry_run" != "true" ]]; then
     command -v sbatch >/dev/null 2>&1 || die "sbatch is not available; use --backend local"
 fi
 
-dependency=""
 for ((index = start_index; index <= end_index; index++)); do
     printf '[%02d] %s\n' "${stage_numbers[$index]}" "${stage_names[$index]}"
     if [[ "$backend" == "local" ]]; then
         run_local_stage "$index"
     else
-        dependency="$(submit_slurm_stage "$index" "$dependency")" || exit 1
+        files=()
+        while IFS= read -r job_file; do
+            files+=("$job_file")
+        done < <(list_jobs_for_pattern "${stage_patterns[$index]}")
+        [[ "${#files[@]}" -gt 0 ]] || die "no job files for step ${stage_names[$index]}"
+        wait_for_slurm_jobs "${stage_names[$index]}" "${stage_patterns[$index]}" "${files[@]}"
+        check_step_outputs "$index" "${files[@]}"
     fi
 done
