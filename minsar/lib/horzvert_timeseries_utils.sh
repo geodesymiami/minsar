@@ -637,7 +637,8 @@ hv_ingest_insarmaps_logged() {
 #           HV_INGEST_PARALLEL=0|1, HV_INGEST_INSARMAPS=1|0, HV_INGEST_LOS=1|0,
 #           HV_INGEST_WORKERS_OPTS (string), HV_GEOM_FILE_ARGS, HV_DATASET_OPT1, HV_DATASET_OPT2,
 #           HV_SAVE_QGIS=off|geo|all  (geo: vert/horz + geo asc/desc; all: + radar asc/desc),
-#           HV_UPLOAD=1|0, HV_GEOCODE_LAT_STEP, HV_GEOCODE_LON_STEP, HV_FORCE=0|1
+#           HV_UPLOAD=0 (upload deferred to login node after job; do not set 1),
+#           HV_GEOCODE_LAT_STEP, HV_GEOCODE_LON_STEP, HV_FORCE=0|1
 hv_write_run_horzvert2timeseries() {
     local run_file="${HV_RUN_FILE:?}"
     local radar1="${HV_RADAR1:?}"
@@ -653,7 +654,7 @@ hv_write_run_horzvert2timeseries() {
     local ingest_insarmaps="${HV_INGEST_INSARMAPS:-1}"
     local ingest_los="${HV_INGEST_LOS:-1}"
     local save_qgis="${HV_SAVE_QGIS:-off}"
-    local do_upload="${HV_UPLOAD:-1}"
+    local do_upload="${HV_UPLOAD:-0}"
     local lat_step="${HV_GEOCODE_LAT_STEP:-}"
     local lon_step="${HV_GEOCODE_LON_STEP:-}"
     local force="${HV_FORCE:-0}"
@@ -881,12 +882,15 @@ hv_print_horzvert_overlay_url() {
 }
 
 # Execute script-style run file: bash locally, or JOB_SUBMIT .job + run_workflow --jobfile on SLURM login.
-# Optional: $3=queue, $4=walltime (or HV_QUEUE / HV_WALLTIME).
+# Optional: $3=queue, $4=walltime, $5=product_dir, $6=do_upload (or HV_* env vars).
+# Jetstream upload (upload_horzvert.py) runs here after success, not inside the SLURM job body.
 hv_run_or_submit_script() {
     local run_file="$1"
     local job_name="${2:-horzvert_timeseries}"
     local queue="${3:-${HV_QUEUE:-}}"
     local walltime="${4:-${HV_WALLTIME:-}}"
+    local product_dir="${5:-${HV_HORZVERT_DIR:-}}"
+    local do_upload="${6:-${HV_DO_UPLOAD:-0}}"
     local job_file work_dir
 
     [[ -f "$run_file" ]] || {
@@ -903,10 +907,14 @@ hv_run_or_submit_script() {
             return 1
         }
         echo "Submitting via run_workflow.bash --jobfile $job_file"
-        run_workflow.bash --jobfile "$job_file"
+        run_workflow.bash --jobfile "$job_file" || return 1
         hv_print_horzvert_overlay_url "$work_dir"
     else
         echo "Running: bash $run_file"
-        bash "$run_file"
+        bash "$run_file" || return 1
+    fi
+
+    if [[ "$do_upload" == "1" && -n "$product_dir" ]]; then
+        hv_maybe_upload_horzvert_dir "$product_dir"
     fi
 }

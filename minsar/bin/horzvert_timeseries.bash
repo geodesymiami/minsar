@@ -8,9 +8,9 @@
 #   Write: <site>/<mintpy|miaplpy[_YYYYMM_YYYYMM]>/run_horzvert2timeseries
 #          (longer of the two input periods; ref & wait; geocode & wait;
 #          horzvert_timeseries.py; wait; ingest). Default stops here.
-#   --submit: bash run file (Mac/Jetstream/in-job) or job_submission.py
-#             + run_workflow.bash --jobfile (HPC login). The run file writes
-#             HTML/urls/data_files and uploads to Jetstream unless on the data server.
+#   --submit: bash run file (Mac/Jetstream) or run_workflow.bash --jobfile (HPC login).
+#             The run file writes HTML/urls/data_files; upload_horzvert.py runs on the
+#             login node after the job completes (not inside the SLURM job).
 #
 # Run file may contain & / wait — not for LAUNCHER (script-style, like smallbaseline_wrapper.job).
 
@@ -259,8 +259,8 @@ Options:
       --save-qgis-all, --save_qgis_all  Like --save-qgis plus radar asc/desc LOS .he5 (six products total)
       --queue NAME                    SLURM queue for .job (default: \$QUEUENAME)
       --walltime HH:MM[:SS]           SLURM walltime for .job (default: from job_defaults.cfg)
-      --submit                        Execute now (bash, or job_submission.py + run_workflow on SLURM login)
-      --upload                        Upload created product dir to Jetstream (default on Stampede/Mac; skipped on Jetstream)
+      --submit                        Execute now (bash, or run_workflow --jobfile on SLURM login)
+      --upload                        Upload to Jetstream after --submit completes (login node; default on Stampede/Mac)
       --no-upload                     Skip Jetstream upload
       --sleep SECS                    sleep seconds before running
       --num-workers N                 ingest_insarmaps hdfeos5_2json workers (default: 1)
@@ -785,7 +785,7 @@ HV_INGEST_PARALLEL="$ingest_parallel_flag" \
 HV_INGEST_INSARMAPS="$ingest_insarmaps_flag" \
 HV_INGEST_LOS="$ingest_los_flag" \
 HV_SAVE_QGIS="${save_qgis_mode:-off}" \
-HV_UPLOAD="$upload_flag" \
+HV_UPLOAD="0" \
 HV_GEOCODE_LAT_STEP="$GEOCODE_LAT_STEP" \
 HV_GEOCODE_LON_STEP="$GEOCODE_LON_STEP" \
 HV_FORCE="$force_flag" \
@@ -820,4 +820,4 @@ echo ""
 echo "##############################################"
 echo "Executing run_horzvert2timeseries (--submit)"
 append_hv_to_project_logs "$(date +'%Y%m%d:%H-%M') + bash/run_workflow run_horzvert2timeseries"
-hv_run_or_submit_script "$HV_RUN_FILE" "horzvert_timeseries" "$queue" "$walltime"
+hv_run_or_submit_script "$HV_RUN_FILE" "horzvert_timeseries" "$queue" "$walltime" "$HORZVERT_DIR" "$upload_flag"
