@@ -45,7 +45,7 @@ Execution modes in `job_defaults_isce3.cfg`: **sequential**, **single-multicore*
 |----------|------|------------|--------------------|----------------------|
 | SAFE | `download_safe` | sequential | Weak (I/O) | No |
 | SAFE | `create_cslc` | launcher-task-list | Yes (many independent `s1_cslc.py` lines) | **Yes — primary type-A target** |
-| SAFE/CSLC | `run_dolphin` | single-multicore | **Yes** (ProcessPool/ThreadPool on one host) | **No** (stock dolphin) |
+| SAFE/CSLC | `dolphin` | single-multicore | **Yes** (ProcessPool/ThreadPool on one host) | **No** (stock dolphin) |
 | CSLC | `download_cslc` | sequential | Weak | No |
 | DISP | `download_disp` / `reformat_disp` | sequential | Modest (download `--num-workers`) | No |
 | all | `create_hdfeos5` / `ingest_insarmaps` | single-multicore / sequential | Modest / no | No |
@@ -63,7 +63,7 @@ flowchart TD
   tasks[run_NN_create_cslc task list]
   launcher[LAUNCHER on N nodes]
   cslcOut[GSLC HDF5s]
-  dolphin[run_dolphin]
+  dolphin[dolphin]
   download --> prep --> tasks --> launcher --> cslcOut --> dolphin
 ```
 
@@ -100,7 +100,7 @@ flowchart TD
 
 ### 5.2 Temporal separation (type C)
 
-Internally dolphin is four stages; MinSAR exposes one `run_dolphin` SLURM step and one CLI (`dolphin run`).
+Internally dolphin is four stages; MinSAR exposes one `dolphin` SLURM step and one CLI (`dolphin run`).
 
 | Boundary | What must finish first | What can wait | How to stop / resume today |
 |----------|------------------------|---------------|----------------------------|
@@ -191,7 +191,7 @@ Worth a dedicated spike: ministack batches → per-batch products → reformat, 
 |-------|-------------------|------------------------------|
 | Downloads | Partial files on disk | Often yes via check/delete/redownload helpers |
 | `create_cslc` | Completed burst HDF5s remain | Yes if tasks skip existing outputs |
-| `run_dolphin` | Partial `dolphin/` tree | Partial; mid-snaphu may need cleanup of that ifg |
+| `dolphin` | Partial `dolphin/` tree | Partial; mid-snaphu may need cleanup of that ifg |
 | hdfeos5 / ingest | Usually all-or-nothing | Rerun whole step |
 
 ---
@@ -213,7 +213,7 @@ Index: [plans/README.md](./plans/README.md).
 
 ### Explore later (checklist, not separate plans yet)
 
-- Burst-count-aware dolphin worker auto-tune on 1 node (CSLC `run_dolphin` counts OPERA burst IDs at run time).
+- Burst-count-aware dolphin worker auto-tune on 1 node (CSLC `dolphin` stage counts OPERA burst IDs at runfile generation).
 - Multi-frame DISP download fan-out (only if users run many frames).
 - Whether COMPASS static-layers should be a separate short job after CSLC.
 - Hybrid schedule: GPU node for linking → CPU multi-node LAUNCHER for unwrap (plans 3+4).

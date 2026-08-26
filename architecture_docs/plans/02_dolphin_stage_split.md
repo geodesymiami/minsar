@@ -4,7 +4,7 @@ Background: [ISCE3_HPC_opportunities.md](../ISCE3_HPC_opportunities.md) type **C
 
 ## Goal
 
-Replace the single `run_dolphin` SLURM step with sequential MinSAR stages that match dolphin’s internal pipeline boundaries, so skx-dev 2h (and queue switches) work without losing finished work.
+Replace the single `dolphin` SLURM step with sequential MinSAR stages that match dolphin’s internal pipeline boundaries, so skx-dev 2h (and queue switches) work without losing finished work.
 
 Each stage gets its own queue/walltime profile from [job_defaults_isce3.cfg](../../minsar/defaults/job_defaults_isce3.cfg) and [queues.cfg](../../minsar/defaults/queues.cfg).
 
@@ -59,7 +59,7 @@ n_parallel_jobs = min(mem_cap, cpu_cap)
 
 4. **Helper placement** — add something like `_dolphin_unwrap_parallel_jobs(length, width, cpus, mem_mb, unwrap_method, unwrap_options) -> int` next to `_dolphin_worker_counts` in [create_isce3_runfiles.py](../../minsar/src/minsar/cli/create_isce3_runfiles.py), or a small shared util if miaplpy and dolphin should share `mem_per_task_mib` / bytes-per-pixel constants.
 
-Monolithic `run_dolphin` (no stage split) can adopt the same runtime sizing once stitch completes inside one job; stage split makes the probe point explicit and allows a **memory-tuned unwrap queue** separate from linking.
+Monolithic `dolphin` (no stage split) can adopt the same runtime sizing once stitch completes inside one job; stage split makes the probe point explicit and allows a **memory-tuned unwrap queue** separate from linking.
 
 ## Scope
 

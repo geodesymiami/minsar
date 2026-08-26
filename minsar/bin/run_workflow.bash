@@ -29,6 +29,7 @@ usage: run_workflow.bash [custom_template_file] [OPTIONS]\n\
       run_workflow.bash --dostep insarmaps                                        \n\
       run_workflow.bash --jobfile insarmaps.job                                   \n\
       run_workflow.bash --append                                                  \n\
+      run_workflow.bash --backend local --start 2 --stop 3                        \n\
                                                                                     \n\
   Examples (with template file - REQUIRED for miaplpy):                           \n\
       run_workflow.bash \$SAMPLESDIR/unittestGalapagosSenDT128.template --miaplpy    \n\
@@ -51,6 +52,8 @@ usage: run_workflow.bash [custom_template_file] [OPTIONS]\n\
    --end STEP, --stop STEP                                                       \n\
                          end processing at the named step [default: upload]      \n\
    --dostep STEP         run processing at the named step only                   \n\
+   --backend BACKEND     auto, local, or slurm (default: auto)                   \n\
+   --max-parallel N      local parallel tasks for launcher task lists (default: 1) \n\
                                                                                  \n\
    --miaplpy:  requires template file; the run_files directory is determined by the *template file       \n\
    --dir:      for --miaplpy only (see  miaplpyApp.py --help)                    \n\
@@ -113,6 +116,8 @@ miaplpy_flag=false
 jobfile_flag=0
 check_job_outputs_flag=true
 jobfiles=()
+backend="auto"
+max_parallel=1
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]
@@ -125,7 +130,7 @@ do
             shift # past argument
             shift # past value
             ;;
-        --stop)
+        --stop|--end)
             stopstep="$2"
             shift
             shift
@@ -133,6 +138,16 @@ do
         --dostep)
             startstep="$2"
             stopstep="$2"
+            shift
+            shift
+            ;;
+        --backend)
+            backend="$2"
+            shift
+            shift
+            ;;
+        --max-parallel)
+            max_parallel="$2"
             shift
             shift
             ;;
@@ -175,6 +190,11 @@ do
             shift
             shift
             ;;
+        -?*|--*)
+            echo "ERROR: Unknown option: $1"
+            echo "Use run_workflow.bash --help for available options"
+            exit 1
+            ;;
         *)
             POSITIONAL+=("$1") # save it in an array for later
             shift # past argument
@@ -183,10 +203,43 @@ esac
 done
 set -- "${POSITIONAL[@]}" # restore positional parameters
 
+if [[ "$backend" != "auto" && "$backend" != "local" && "$backend" != "slurm" ]]; then
+    echo "ERROR: --backend must be auto, local, or slurm"
+    exit 1
+fi
+if [[ ! "$max_parallel" =~ ^[1-9][0-9]*$ ]]; then
+    echo "ERROR: --max-parallel must be a positive integer"
+    exit 1
+fi
+
 # SHORT_JOB_COMPLETION_WAITTIME=TRUE/True → 10 sec poll interval
 if [[ "${SHORT_JOB_COMPLETION_WAITTIME:-}" == [Tt]rue ]]; then
     wait_time=10
 fi
+
+if [[ "$backend" == "auto" ]]; then
+    slurm_status="$(python3 -c 'from minsar.utils.system_utils import are_we_on_slurm_system; r = are_we_on_slurm_system(); print(r if r else "False")' 2>/dev/null)" || {
+        echo "ERROR: automatic SLURM detection failed; use --backend local or --backend slurm"
+        exit 1
+    }
+    case "$slurm_status" in
+        login_node)
+            if [[ -z "${SLURM_JOB_ID:-}" ]]; then
+                backend="slurm"
+            else
+                backend="local"
+            fi
+            ;;
+        compute_node|False)
+            backend="local"
+            ;;
+        *)
+            echo "ERROR: automatic SLURM detection returned unexpected status: $slurm_status"
+            exit 1
+            ;;
+    esac
+fi
+echo "Backend: $backend"
 
 if [[ $startstep == "miaplpy" ]]; then
    miaplpy_flag=true
@@ -397,6 +450,81 @@ declare -p globlist
 #    [[ -n $item ]] && globlist+=("$item")
 #done
 
+job_uses_launcher() {
+    local job_file="$1"
+    local line
+    while IFS= read -r line; do
+        [[ "$line" == "export LAUNCHER_JOB_FILE="* ]] && return 0
+    done < "$job_file"
+    return 1
+}
+
+run_task_list() {
+    local run_file="$1"
+    local task
+    local pid
+    local failed=0
+    local pids=()
+    local task_index=0
+
+    while IFS= read -r task || [[ -n "$task" ]]; do
+        [[ -n "${task//[[:space:]]/}" ]] || continue
+        [[ "$task" != \#* ]] || continue
+        [[ "$task" != wait && "$task" != wait\;* ]] || continue
+        task_index=$((task_index + 1))
+        export LAUNCHER_JID="$task_index"
+        bash -c "$task" &
+        pids+=("$!")
+        if [[ "${#pids[@]}" -ge "$max_parallel" ]]; then
+            if ! wait "${pids[0]}"; then
+                failed=1
+            fi
+            pids=("${pids[@]:1}")
+            [[ "$failed" -eq 0 ]] || break
+        fi
+    done < "$run_file"
+
+    for pid in "${pids[@]}"; do
+        if ! wait "$pid"; then
+            failed=1
+        fi
+    done
+    return "$failed"
+}
+
+run_local_jobfile() {
+    local job_file="$1"
+    local run_file="${job_file%.job}"
+
+    echo "######################"
+    echo "Running:    $(basename "$run_file")"
+    echo "######################"
+
+    if job_uses_launcher "$job_file"; then
+        [[ -f "$run_file" ]] || {
+            echo "ERROR: launcher task list not found: $run_file"
+            return 1
+        }
+        run_task_list "$run_file"
+        return $?
+    fi
+
+    if [[ -f "$run_file" && "$run_file" != "$job_file" ]]; then
+        bash "$run_file"
+        return $?
+    fi
+
+    bash "$job_file"
+    return $?
+}
+
+if [[ "$backend" == "slurm" ]]; then
+    if ! command -v sbatch >/dev/null 2>&1; then
+        echo "ERROR: sbatch is not available; use --backend local"
+        exit 1
+    fi
+fi
+
 for g in "${globlist[@]}"; do
     if [[ -n $g ]]; then
         files=($(ls -1v $g))
@@ -408,6 +536,28 @@ for g in "${globlist[@]}"; do
 
     echo "Jobfiles to submit:"
     printf "%s\n" "${files[@]}"
+
+    if [[ "$backend" == "local" ]]; then
+        for file in "${files[@]}"; do
+            run_local_jobfile "$file" || {
+                echo "ERROR: local run failed for $file"
+                exit 1
+            }
+        done
+
+        if [[ "$check_job_outputs_flag" == "true" ]]; then
+           cmd="check_job_outputs.py  ${files[@]}"
+           echo "$cmd"
+           $cmd
+           exit_status="$?"
+           if [[ $exit_status -ne 0 ]]; then
+               echo "Error in run_workflow.bash: check_job_outputs.py exited with code ($exit_status)."
+               exit 1
+           fi
+           echo
+        fi
+        continue
+    fi
 
     jobnumbers=()
     file_pattern=$(echo "${files[0]}" | grep -oP "(.*)(?=_\d{1,}.job)|insarmaps|smallbaseline_wrapper")

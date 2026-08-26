@@ -42,8 +42,8 @@ options:
 
 STEP may be a step number, step name, or run-file basename.
 
-SAFE steps:    download_safe, create_cslc, run_dolphin, create_hdfeos5, ingest_insarmaps
-CSLC steps:    download_cslc, run_dolphin, create_hdfeos5, ingest_insarmaps
+SAFE steps:    download_safe, create_cslc, dolphin, create_hdfeos5, ingest_insarmaps
+CSLC steps:    download_cslc, dolphin, create_hdfeos5, ingest_insarmaps
 DISP-S1 steps: download_disp, reformat_disp, create_hdfeos5, ingest_insarmaps
 
 Examples:
@@ -51,7 +51,7 @@ Examples:
   ${SCRIPT_NAME} --start 2
   ${SCRIPT_NAME} --start 2 --stop 3
   ${SCRIPT_NAME} --dostep 3
-  ${SCRIPT_NAME} --start run_dolphin --end create_hdfeos5
+  ${SCRIPT_NAME} --start dolphin --end create_hdfeos5
   ${SCRIPT_NAME} --dostep ingest_insarmaps
   ${SCRIPT_NAME} --backend local
 EOF
@@ -331,18 +331,7 @@ run_task_list() {
 }
 
 run_isce3_runfile() {
-    local run_file="$1"
-    local stage_name="$2"
-    if [[ "$stage_name" == "download_disp" || "$stage_name" == "reformat_disp" || "$stage_name" == "download_cslc" || "$stage_name" == "download_safe" || "$stage_name" == "run_dolphin" ]]; then
-        command -v pixi >/dev/null 2>&1 || die "pixi is not available; required for ${stage_name}"
-        pixi run --manifest-path "${MINSAR_HOME}/tools/sweets/pyproject.toml" -- bash -c '
-            export PATH="$MINSAR_HOME/minsar/utils:$MINSAR_HOME/minsar/bin:$MINSAR_HOME/minsar/scripts:$PATH"
-            export PYTHONPATH="$MINSAR_HOME${PYTHONPATH:+:$PYTHONPATH}"
-            exec bash "$1"
-        ' _ "$run_file"
-    else
-        bash "$run_file"
-    fi
+    bash "$1"
 }
 
 run_local_stage() {
@@ -360,7 +349,7 @@ run_local_stage() {
             run_task_list "$run_file" || die "task list failed: $run_file"
         else
             if [[ "$dry_run" != "true" ]]; then
-                run_isce3_runfile "$run_file" "${stage_names[$index]}" || die "step failed: ${stage_names[$index]}"
+                run_isce3_runfile "$run_file" || die "step failed: ${stage_names[$index]}"
             fi
         fi
     done < <(jobs_for_step "${stage_numbers[$index]}")

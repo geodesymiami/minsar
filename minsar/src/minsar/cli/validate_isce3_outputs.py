@@ -18,7 +18,7 @@ def create_parser() -> argparse.ArgumentParser:
     """Create the command-line parser."""
     epilog = """Examples:
  validate_isce3_outputs.py
- validate_isce3_outputs.py --step run_dolphin
+ validate_isce3_outputs.py --step dolphin
  validate_isce3_outputs.py --data-type disp --step 2
  validate_isce3_outputs.py --json validation_report.json"""
     parser = argparse.ArgumentParser(

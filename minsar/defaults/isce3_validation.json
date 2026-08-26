@@ -11,7 +11,7 @@
         "gslcs/**/t*.h5",
         "gslcs/**/static_*.h5"
       ],
-      "run_dolphin": [
+      "dolphin": [
         "dolphin/**/*.tif",
         "dolphin/**/*.nc"
       ],
@@ -27,7 +27,7 @@
         "sweets_config.yaml",
         "data/**/*CSLC*.h5"
       ],
-      "run_dolphin": [
+      "dolphin": [
         "dolphin/**/*.tif",
         "dolphin/**/*.nc"
       ],

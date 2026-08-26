@@ -149,7 +149,7 @@ The SAFE path contains five stages:
    - Runs one `s1_cslc.py` command for each CSLC runconfig.
    - Runs one `s1_static_layers.py` command per burst.
    - Uses a LAUNCHER task list on SLURM.
-3. `run_dolphin`
+3. `dolphin`
    - Stitches the static-layer geometry.
    - Runs SWEETS starting at its Dolphin stage.
 4. `create_hdfeos5`
@@ -169,7 +169,7 @@ The OPERA CSLC path contains four stages:
    - Runs `check-cslc --delete`, downloads again, and runs a final strict `check-cslc`.
    - Compares local filenames with ASF search results and verifies the HDF5 datasets needed by Dolphin and geometry stitching.
    - Creates the stitched geometry needed by Dolphin.
-2. `run_dolphin`
+2. `dolphin`
    - Runs SWEETS starting at Dolphin and reuses the downloaded geocoded inputs.
 3. `create_hdfeos5`
    - Converts the Dolphin output into HDF-EOS5.
@@ -309,7 +309,7 @@ Current default policies are:
 - `download_safe`: sequential, 2 hours, restart-safe
 - `create_cslc`: LAUNCHER task list, 2 hours, restart-safe
 - `download_cslc`: sequential, 2 hours, restart-safe
-- `run_dolphin`: single-multicore, 2 hours, restart-safe
+- `dolphin`: single-multicore, 2 hours, restart-safe
 - `download_disp`: sequential, 2 hours, restart-safe
 - `reformat_disp`: sequential, 2 hours, restart-safe
 - `create_hdfeos5`: single-multicore, 8 hours, restart behavior unknown
@@ -329,7 +329,7 @@ Validation can also be run manually from the processing directory:
 
 ```bash
 validate_isce3_outputs.py
-validate_isce3_outputs.py --step run_dolphin
+validate_isce3_outputs.py --step dolphin
 validate_isce3_outputs.py --data-type disp --step 2
 validate_isce3_outputs.py --json validation_report.json
 ```

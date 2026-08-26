@@ -30,7 +30,7 @@ DATA_TYPE_ALIASES = {
     "disp-ni": "disp-ni",
     "dispni": "disp-ni",
 }
-PIXI_STAGES = frozenset({"download_disp", "reformat_disp", "download_cslc", "download_safe", "run_dolphin"})
+PIXI_STAGES = frozenset({"download_disp", "reformat_disp", "download_cslc", "download_safe", "dolphin"})
 _OPERA_BURST_ID_RE = re.compile(r"(T\d{3}-\d+-IW\d)")
 
 ARGV_FIX_KW = {
@@ -208,17 +208,45 @@ def _count_opera_cslc_bursts(data_dir: Path) -> tuple[int, bool]:
     return len(burst_ids), True
 
 
+def _strip_bash_script_header(text: str) -> str:
+    """Return command body without shebang or leading set -e lines."""
+    body: list[str] = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not body:
+            if not stripped or stripped.startswith("#!"):
+                continue
+            if stripped.startswith("set -"):
+                continue
+        body.append(line)
+    return "\n".join(body).strip()
+
+
+def _pixi_run_script(commands: str) -> str:
+    """Executable run file that runs stage commands inside the SWEETS pixi environment."""
+    body = _strip_bash_script_header(commands)
+    if not body:
+        body = "true"
+    return (
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'export PATH="$MINSAR_HOME/minsar/utils:$MINSAR_HOME/minsar/bin:$MINSAR_HOME/minsar/scripts:$PATH"\n'
+        'export PYTHONPATH="$MINSAR_HOME${PYTHONPATH:+:$PYTHONPATH}"\n'
+        'pixi run --manifest-path "$MINSAR_HOME/tools/sweets/pyproject.toml" -- bash <<\'ISCE3_PIXI_BODY\'\n'
+        "set -euo pipefail\n"
+        "\n"
+        f"{body}\n"
+        "\n"
+        "ISCE3_PIXI_BODY\n"
+    )
+
+
 def _cslc_dolphin_commands(config_line: str, cpus_per_node: int, n_bursts_aoi: int) -> list[str]:
     """Shell commands for CSLC dolphin config + run with worker flags baked in."""
-    n_parallel, threads, n_unwrap = _dolphin_worker_counts(cpus_per_node, n_bursts_aoi)
     west, south, east, north = _bbox_wsene_from_sweets_line(config_line)
     cpus = max(1, int(cpus_per_node))
     worker_flags = _dolphin_worker_cli_flags(cpus, n_bursts_aoi)
     return [
-        (
-            f'echo "dolphin workers: bursts={n_bursts_aoi} n_parallel={n_parallel} '
-            f'threads={threads} n_unwrap={n_unwrap} (cpus={cpus})"'
-        ),
         (
             "dolphin config --slc-files data/OPERA_L2_CSLC-S1_*.h5 --subdataset /data/VV "
             "--work-directory dolphin --mask-file watermask.tif "
@@ -248,22 +276,11 @@ class Isce3JobAdapter:
             work_dir=str(job_file.parent),
         )
         work_dir = run_file.parent.parent.resolve()
-        run_banner = (
-            'echo "######################"\n'
-            f'echo "Running:    {run_file.name}"\n'
-            'echo "######################"\n'
-        )
         validate_cmd = f"validate_isce3_outputs.py --data-type {shlex.quote(workflow)} --step {shlex.quote(stage.name)}"
-        check_banner = (
-            'echo "######################"\n'
-            f'echo "Checking:   {validate_cmd}"\n'
-            'echo "######################"\n'
-        )
         if stage.execution_mode == "launcher-task-list":
             lines.extend(
                 [
                     "\nset -euo pipefail\n",
-                    run_banner,
                     f"export OMP_NUM_THREADS={stage.num_threads}\n",
                     f"export LAUNCHER_PPN={self.launcher_ppn}\n",
                     "export LAUNCHER_NHOSTS=1\n",
@@ -276,12 +293,8 @@ class Isce3JobAdapter:
                 ]
             )
         else:
-            lines.extend(["\nset -euo pipefail\n", f"cd {shlex.quote(str(work_dir))}\n", run_banner])
-            if stage.name in PIXI_STAGES:
-                lines.append(_pixi_bash_runfile(run_file))
-            else:
-                lines.append(f"bash {shlex.quote(str(run_file.resolve()))}\n")
-        lines.append(check_banner)
+            lines.extend(["\nset -euo pipefail\n", f"cd {shlex.quote(str(work_dir))}\n"])
+            lines.append(f"bash {shlex.quote(str(run_file.relative_to(work_dir)))}\n")
         lines.append(f"{validate_cmd}\n")
         job_file.write_text("".join(lines))
         _make_executable(job_file)
@@ -324,7 +337,11 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--end-date", "--end", dest="end_date", help="last date YYYYMMDD (default: ssaraopt.endDate from template)")
     parser.add_argument("--track", type=int, help="relative orbit/track number")
     parser.add_argument("--frame-id", type=int, help="OPERA DISP-S1 frame ID")
-    parser.add_argument("--queue", default="skx-dev", help="SLURM partition for restart-safe jobs")
+    parser.add_argument(
+        "--queue",
+        default=os.getenv("QUEUENAME"),
+        help="SLURM partition for restart-safe jobs (default: $QUEUENAME)",
+    )
     parser.add_argument("--long-queue", default="skx", help="SLURM partition for unsafe or unknown restart behavior")
     parser.add_argument("--config", type=Path, help="ISCE3 job defaults file")
     parser.add_argument("--dry-run", action="store_true", help="print the workflow without writing files or querying services")
@@ -338,16 +355,6 @@ def _make_executable(path: Path) -> None:
 
 def _q(value: str | Path) -> str:
     return shlex.quote(str(value))
-
-
-def _pixi_bash_runfile(run_file: Path) -> str:
-    """Run a SWEETS/opera-utils stage run file in the SWEETS Pixi environment."""
-    inner = (
-        'export PATH="$MINSAR_HOME/minsar/utils:$MINSAR_HOME/minsar/bin:$MINSAR_HOME/minsar/scripts:$PATH"; '
-        'export PYTHONPATH="$MINSAR_HOME${PYTHONPATH:+:$PYTHONPATH}"; '
-        f"exec bash {_q(run_file.resolve())}"
-    )
-    return f'pixi run --manifest-path "$MINSAR_HOME/tools/sweets/pyproject.toml" -- bash -c {_q(inner)}\n'
 
 
 def _workflow_name(args: argparse.Namespace) -> str:
@@ -516,22 +523,19 @@ def _build_stage_specs(workflow: str, context: dict[str, object]) -> list[tuple[
         return [
             ("download_safe", "Download and verify SAFE data, then prepare COMPASS runconfigs", ""),
             ("create_cslc", "Create CSLCs and static layers with COMPASS", ""),
-            ("run_dolphin", "Run Dolphin displacement processing", ""),
+            ("dolphin", "Run Dolphin displacement processing", ""),
             ("create_hdfeos5", "Create HDF-EOS5 product", ""),
             ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", ""),
         ]
     if workflow == "cslc":
         return [
             ("download_cslc", "Download and verify OPERA CSLCs, then prepare geometry", ""),
-            ("run_dolphin", "Run Dolphin displacement processing", ""),
+            ("dolphin", "Run Dolphin displacement processing", ""),
             ("create_hdfeos5", "Create HDF-EOS5 product", ""),
             ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", ""),
         ]
     template = str(context["template"])
-    if not template:
-        generate = "# Generate a MinSAR template before creating this workflow."
-    else:
-        generate = f"# DISP-S1 commands are derived from {_q(template)}."
+    generate = "" if template else "true"
     return [
         ("download_disp", "Download and verify OPERA DISP-S1 products", generate),
         ("reformat_disp", "Reformat DISP-S1 products into a stack", generate),
@@ -558,10 +562,6 @@ def _write_run_file(path: Path, title: str, command: str, task_list: bool = Fals
     path.write_text(
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
-        f"# {title}\n"
-        'SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\n'
-        'WORK_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"\n'
-        'cd "$WORK_DIR"\n'
         f"{command}\n"
     )
     _make_executable(path)
@@ -577,7 +577,7 @@ def _create_files(
     run_dir = work_dir / "run_files"
     run_dir.mkdir(parents=True, exist_ok=True)
     specs = _build_stage_specs(workflow, context)
-    dolphin_profile = _profile_for("run_dolphin", profiles)
+    dolphin_profile = _profile_for("dolphin", profiles)
     dolphin_queue = args.queue if dolphin_profile.queue_class == "short" else args.long_queue
     dolphin_cpus = int(_make_job_submit(work_dir, run_dir, dolphin_queue, dolphin_profile).number_of_cores_per_node)
     if workflow == "disp":
@@ -623,10 +623,13 @@ def _create_files(
             profile.memory_mb,
             profile.num_threads,
         )
+        run_command = command
+        if name in PIXI_STAGES and profile.execution_mode != "launcher-task-list":
+            run_command = _pixi_run_script(command)
         _write_run_file(
             run_file,
             title,
-            command,
+            run_command,
             task_list=profile.execution_mode == "launcher-task-list",
             raw=True,
         )
@@ -635,9 +638,19 @@ def _create_files(
     return stages
 
 
-def _print_plan(workflow: str, platform: str, context: dict[str, object], stages: list[Stage] | None, specs: list[tuple[str, str, str]] | None = None) -> None:
+def _print_plan(
+    workflow: str,
+    platform: str,
+    context: dict[str, object],
+    stages: list[Stage] | None,
+    specs: list[tuple[str, str, str]] | None = None,
+    queue: str | None = None,
+    long_queue: str | None = None,
+) -> None:
     print(f"Workflow: {workflow.upper()} ({platform})")
     print(f"Project:  {context['project']}")
+    if queue is not None:
+        print(f"Queue:    {queue} (long: {long_queue})")
     if stages is not None:
         run_files = [Path(stage.run_file).name for stage in stages]
         print(f"run_files created: {', '.join(run_files)}")
@@ -719,9 +732,8 @@ def _bbox_wsene_from_sweets_line(line: str) -> tuple[str, str, str, str]:
 
 
 def _cslc_dolphin_script(config_line: str, cpus_per_node: int, n_bursts_aoi: int) -> str:
-    """Write dolphin config from OPERA CSLCs, then run dolphin."""
-    commands = _cslc_dolphin_commands(config_line, cpus_per_node, n_bursts_aoi)
-    return "#!/usr/bin/env bash\nset -euo pipefail\n" + "".join(f"{command}\n" for command in commands)
+    """Commands for CSLC dolphin config + run with worker flags baked in."""
+    return "\n".join(_cslc_dolphin_commands(config_line, cpus_per_node, n_bursts_aoi)) + "\n"
 
 
 def _sweets_download_script(config_line: str, kind: str) -> str:
@@ -751,8 +763,8 @@ def _sweets_stage_bodies(
     if workflow == "safe":
         return {
             "download_safe": download.rstrip("\n") + f"\nprepare_compass_runconfigs.py --config {cfg}\n",
-            "create_cslc": "# Tasks are materialized by run_01_download_safe.\n",
-            "run_dolphin": _bash_script(
+            "create_cslc": "",
+            "dolphin": _bash_script(
                 f"stitch_sweets_geometry.py --config {cfg}",
                 f"sweets run {cfg} --starting-step 3",
             ),
@@ -763,12 +775,12 @@ def _sweets_stage_bodies(
     if not from_files:
         print(
             f"Warning: no OPERA CSLC under {work_dir / 'data'}; "
-            f"run_dolphin worker flags assume n_bursts=1 (re-run create_isce3_runfiles after download)",
+            f"dolphin worker flags assume n_bursts=1 (re-run create_isce3_runfiles after download)",
             file=sys.stderr,
         )
     return {
         "download_cslc": download.rstrip("\n") + f"\nstitch_sweets_geometry.py --config {cfg}\n",
-        "run_dolphin": _cslc_dolphin_script(config_line, cpus_per_node, n_bursts),
+        "dolphin": _cslc_dolphin_script(config_line, cpus_per_node, n_bursts),
         "create_hdfeos5": hdfeos5,
         "ingest_insarmaps": ingest,
     }
@@ -972,7 +984,7 @@ def _execute_stage(
             ["python", "-m", "minsar.utils.stitch_sweets_geometry", "--config", SWEETS_CONFIG],
         )
         return 0
-    if action == "run-dolphin":
+    if action == "dolphin":
         if workflow == "safe":
             _run_in_sweets(
                 work_dir,
@@ -980,13 +992,13 @@ def _execute_stage(
             )
             _run_in_sweets(work_dir, ["sweets", "run", SWEETS_CONFIG, "--starting-step", "3"])
         else:
-            run_dolphin_files = sorted((work_dir / "run_files").glob("run_*_run_dolphin"))
-            if not run_dolphin_files:
+            dolphin_files = sorted((work_dir / "run_files").glob("run_*_dolphin"))
+            if not dolphin_files:
                 raise RuntimeError(
-                    "run_dolphin run file not found under run_files/; "
+                    "dolphin run file not found under run_files/; "
                     "run create_isce3_runfiles.py first"
                 )
-            _run_in_sweets(work_dir, ["bash", str(run_dolphin_files[-1])])
+            subprocess.run(["bash", str(dolphin_files[-1])], cwd=work_dir, check=True)
         return 0
     if action == "create-hdfeos5":
         timeseries_dir = work_dir / "timeseries"
@@ -1041,6 +1053,8 @@ def main(iargs: list[str] | None = None) -> int:
     argv = fix_argv_for_negative_bbox_sn_we(argv, **ARGV_FIX_KW, multiple_initial_positionals=True)
     args = create_parser().parse_args(argv)
     try:
+        if not args.queue:
+            raise ValueError("No queue: set QUEUENAME or pass --queue")
         if args.run and args.dry_run:
             raise ValueError("--run cannot be combined with --dry-run")
         invocation_dir = Path.cwd().resolve()
@@ -1063,12 +1077,12 @@ def main(iargs: list[str] | None = None) -> int:
         specs = _build_stage_specs(workflow, context)
         _log_command_line(invocation_dir, Path(__file__).name, argv)
         if args.dry_run:
-            _print_plan(workflow, platform, context, None, specs)
+            _print_plan(workflow, platform, context, None, specs, args.queue, args.long_queue)
             return 0
         os.chdir(scratch_dir)
         work_dir.mkdir(parents=True, exist_ok=True)
         stages = _create_files(args, workflow, context, profiles, work_dir)
-        _print_plan(workflow, platform, context, stages)
+        _print_plan(workflow, platform, context, stages, queue=args.queue, long_queue=args.long_queue)
         if not input_is_template:
             print(f"Template: {invocation_dir / Path(str(context['template'])).name}")
         if args.run:
