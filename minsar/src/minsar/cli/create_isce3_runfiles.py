@@ -99,64 +99,106 @@ class Stage:
     num_threads: int
 
 
-class Isce3JobAdapter:
-    """Use JOB_SUBMIT job rendering without changing the ISCE2 configuration path."""
-
-    def __init__(self, work_dir: Path, queue: str, profile: ResourceProfile) -> None:
-        self.queue = queue
-        self.cpus_per_node, self.memory_per_node_mb = _queue_resources(queue)
-        self.launcher_ppn = min(
-            max(1, self.cpus_per_node // profile.num_threads),
-            max(1, self.memory_per_node_mb // profile.memory_mb),
+def _require_job_env() -> None:
+    """Fail early when MinSAR job-submission environment is incomplete."""
+    missing = [
+        name
+        for name in ("JOBSHEDULER_PROJECTNAME", "JOBSCHEDULER", "PLATFORM_NAME", "MINSAR_HOME")
+        if not os.getenv(name)
+    ]
+    if missing:
+        raise RuntimeError(
+            "MinSAR job environment incomplete (missing "
+            + ", ".join(missing)
+            + "); source setup/environment.bash (or equivalent) before creating job files"
         )
-        self.job_submit = None
-        if os.getenv("JOBSHEDULER_PROJECTNAME"):
-            try:
-                from minsar.job_submission import JOB_SUBMIT
+    if not os.getenv("ISCE_STACK"):
+        # JOB_SUBMIT always builds a topsStack/stripmapStack path; a placeholder is enough for headers.
+        os.environ["ISCE_STACK"] = str(Path(os.environ["MINSAR_HOME"]) / "tools" / "isce2" / "contrib" / "stack")
 
-                self.job_submit = JOB_SUBMIT.__new__(JOB_SUBMIT)
-            except ImportError:
-                pass
-        values = {
-            "scheduler": "SLURM",
-            "queue": queue,
-            "default_wall_time": profile.walltime,
-            "default_memory": profile.memory_mb,
-            "default_num_threads": profile.num_threads,
-            "number_of_cores_per_node": self.cpus_per_node,
-            "number_of_parallel_tasks_per_node": self.launcher_ppn,
-            "max_memory_per_node": self.memory_per_node_mb,
-            "submission_scheme": "launcher_multiTask_singleNode",
-            "copy_to_tmp": False,
-            "remora": False,
-            "email_notif": bool(os.getenv("NOTIFICATIONEMAIL")),
-            "out_dir": str(work_dir),
-        }
-        if self.job_submit is not None:
-            for name, value in values.items():
-                setattr(self.job_submit, name, value)
+
+def _cap_walltime_for_queue(walltime: str, queue: str, wall_time_factor: float) -> str:
+    """Apply queues.cfg WALLTIME_FACTOR then cap at MAX_WALLTIME for the queue."""
+    import minsar.utils.process_utilities as putils
+
+    scaled = putils.multiply_walltime(walltime, factor=wall_time_factor)
+    platform = os.getenv("PLATFORM_NAME", "stampede3")
+    queue_params = putils.get_queue_rerun_params(platform, queue)
+    max_wt = queue_params["MAX_WALLTIME"]
+    if max_wt.lower() in ("n/a", "na", ""):
+        return scaled
+    max_sec = putils.walltime_to_seconds(max_wt)
+    cur_sec = putils.walltime_to_seconds(scaled)
+    if cur_sec <= max_sec:
+        return scaled
+    hours = max_sec // 3600
+    minutes = (max_sec % 3600) // 60
+    seconds = max_sec % 60
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+
+
+def _make_job_submit(project_dir: Path, run_dir: Path, queue: str, profile: ResourceProfile):
+    """Construct JOB_SUBMIT so set_job_queue_values loads queues.cfg for this queue."""
+    _require_job_env()
+    from minsar.job_submission import JOB_SUBMIT
+
+    inps = argparse.Namespace(
+        queue=queue,
+        work_dir=str(project_dir),
+        out_dir=str(run_dir),
+        num_data=1,
+        wall_time=profile.walltime,
+        memory=str(profile.memory_mb),
+        num_memory_units=None,
+        copy_to_tmp=False,
+        remora=False,
+        custom_template_file=None,
+        reserve_node=1,
+    )
+    job = JOB_SUBMIT(inps)
+    job.default_wall_time = _cap_walltime_for_queue(profile.walltime, queue, float(job.wall_time_factor))
+    job.default_memory = profile.memory_mb
+    job.default_num_threads = profile.num_threads
+    job.number_of_parallel_tasks_per_node = min(
+        max(1, int(job.number_of_cores_per_node) // max(1, profile.num_threads)),
+        max(1, int(job.max_memory_per_node) // max(1, profile.memory_mb)),
+    )
+    job.email_notif = bool(os.getenv("NOTIFICATIONEMAIL"))
+    job.queue = queue
+    return job
+
+
+def _dolphin_worker_cli_flags(cpus_per_node: int) -> str:
+    """CLI flags so dolphin uses most of a 1-node allocation (type B defaults)."""
+    cpus = max(1, int(cpus_per_node))
+    n_bursts = min(8, max(1, cpus // 12))
+    threads = max(1, cpus // n_bursts)
+    n_unwrap = max(1, cpus // 4)
+    return (
+        f"--n-parallel-bursts {n_bursts} "
+        f"--worker-settings.threads-per-worker {threads} "
+        f"--unwrap-options.n-parallel-jobs {n_unwrap}"
+    )
+
+
+class Isce3JobAdapter:
+    """Render ISCE3 job files via JOB_SUBMIT (queues.cfg-backed resources)."""
+
+    def __init__(self, project_dir: Path, run_dir: Path, queue: str, profile: ResourceProfile) -> None:
+        self.queue = queue
+        self.job_submit = _make_job_submit(project_dir, run_dir, queue, profile)
+        self.launcher_ppn = int(self.job_submit.number_of_parallel_tasks_per_node)
+        self.cpus_per_node = int(self.job_submit.number_of_cores_per_node)
 
     def render(self, stage: Stage, run_file: Path, job_file: Path, workflow: str) -> None:
         """Render a script or LAUNCHER job using JOB_SUBMIT's existing methods."""
-        if self.job_submit is not None:
-            lines = self.job_submit.get_job_file_lines(
-                stage.name,
-                job_file.stem,
-                number_of_nodes=1,
-                work_dir=str(job_file.parent),
-            )
-        else:
-            output_prefix = job_file.parent.resolve() / job_file.stem
-            lines = [
-                "#!/bin/bash\n",
-                f"#SBATCH -J {stage.name}\n",
-                "#SBATCH -N 1\n",
-                f"#SBATCH -n {self.launcher_ppn if stage.execution_mode == 'launcher-task-list' else 1}\n",
-                f"#SBATCH -p {self.queue}\n",
-                f"#SBATCH -t {stage.walltime}\n",
-                f"#SBATCH -o {output_prefix}_%J.o\n",
-                f"#SBATCH -e {output_prefix}_%J.e\n",
-            ]
+        stage.walltime = self.job_submit.default_wall_time
+        lines = self.job_submit.get_job_file_lines(
+            stage.name,
+            job_file.stem,
+            number_of_nodes=1,
+            work_dir=str(job_file.parent),
+        )
         work_dir = run_file.parent.parent.resolve()
         run_banner = (
             'echo "######################"\n'
@@ -230,8 +272,8 @@ def create_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--platform", default="S1", help="platform: S1 or NISAR/NI")
     parser.add_argument("--flight-dir", choices=("asc", "desc"), help="flight direction for AOI input")
-    parser.add_argument("--start-date", "--start", dest="start_date", help="first acquisition date (YYYYMMDD)")
-    parser.add_argument("--end-date", "--end", dest="end_date", help="last acquisition date (YYYYMMDD)")
+    parser.add_argument("--start-date", "--start", dest="start_date", help="first date YYYYMMDD (default: ssaraopt.startDate from template)")
+    parser.add_argument("--end-date", "--end", dest="end_date", help="last date YYYYMMDD (default: ssaraopt.endDate from template)")
     parser.add_argument("--track", type=int, help="relative orbit/track number")
     parser.add_argument("--frame-id", type=int, help="OPERA DISP-S1 frame ID")
     parser.add_argument("--queue", default="skx-dev", help="SLURM partition for restart-safe jobs")
@@ -258,21 +300,6 @@ def _pixi_bash_runfile(run_file: Path) -> str:
         f"exec bash {_q(run_file.resolve())}"
     )
     return f'pixi run --manifest-path "$MINSAR_HOME/tools/sweets/pyproject.toml" -- bash -c {_q(inner)}\n'
-
-
-def _queue_resources(queue: str) -> tuple[int, int]:
-    """Return CPU and memory capacity for a queue from queues.cfg."""
-    config = Path(__file__).resolve().parents[3] / "defaults/queues.cfg"
-    lines = [line.split() for line in config.read_text().splitlines() if line.strip() and not line.startswith("#")]
-    header = lines[0]
-    rows = [dict(zip(header, fields)) for fields in lines[1:]]
-    platform = os.getenv("PLATFORM_NAME", "stampede3")
-    matches = [row for row in rows if row["PLATFORM_NAME"] == platform and row["QUEUENAME"] == queue]
-    if not matches:
-        matches = [row for row in rows if row["PLATFORM_NAME"] == "stampede3" and row["QUEUENAME"] == queue]
-    if not matches:
-        raise ValueError(f"queues.cfg contains no resources for PLATFORM_NAME={platform}, QUEUENAME={queue}")
-    return int(matches[0]["CPUS_PER_NODE"]), int(matches[0]["MEM_PER_NODE"])
 
 
 def _workflow_name(args: argparse.Namespace) -> str:
@@ -362,6 +389,16 @@ def _read_profiles(path: Path) -> dict[str, ResourceProfile]:
     return profiles
 
 
+def _ssaraopt_date_yyyymmdd(options: dict, key: str) -> str:
+    """Return template ssaraopt date as YYYYMMDD, or '' if missing/invalid."""
+    from minsar.utils.ssaraopt_to_mintpy_plot import parse_ssaraopt_date
+
+    parsed = parse_ssaraopt_date(options.get(key))
+    if parsed is None:
+        return ""
+    return parsed.strftime("%Y%m%d")
+
+
 def _template_context(template_file: Path, args: argparse.Namespace) -> dict[str, object]:
     from minsar.objects.dataset_template import Template
 
@@ -372,12 +409,14 @@ def _template_context(template_file: Path, args: argparse.Namespace) -> dict[str
     subset = options.get("miaplpy.subset.lalo", "")
     if not subset:
         raise ValueError(f"template requires miaplpy.subset.lalo: {template_file}")
+    start_date = args.start_date or _ssaraopt_date_yyyymmdd(options, "ssaraopt.startDate")
+    end_date = args.end_date or _ssaraopt_date_yyyymmdd(options, "ssaraopt.endDate")
     return {
         "project": project,
         "template": str(template_file.resolve()),
         "aoi": str(subset).strip().strip("'\""),
-        "start_date": args.start_date or "",
-        "end_date": args.end_date or "",
+        "start_date": start_date or "",
+        "end_date": end_date or "",
         "track": str(args.track or ""),
         "frame_id": str(args.frame_id or ""),
         "flight_direction": args.flight_dir or "",
@@ -490,10 +529,13 @@ def _create_files(
     run_dir = work_dir / "run_files"
     run_dir.mkdir(parents=True, exist_ok=True)
     specs = _build_stage_specs(workflow, context)
+    dolphin_profile = _profile_for("run_dolphin", profiles)
+    dolphin_queue = args.queue if dolphin_profile.queue_class == "short" else args.long_queue
+    dolphin_cpus = int(_make_job_submit(work_dir, run_dir, dolphin_queue, dolphin_profile).number_of_cores_per_node)
     if workflow == "disp":
         bodies = _disp_stage_bodies(context, work_dir)
     elif workflow in {"safe", "cslc"}:
-        bodies = _sweets_stage_bodies(workflow, context)
+        bodies = _sweets_stage_bodies(workflow, context, dolphin_cpus)
     else:
         bodies = None
     if bodies is not None:
@@ -540,7 +582,7 @@ def _create_files(
             task_list=profile.execution_mode == "launcher-task-list",
             raw=True,
         )
-        Isce3JobAdapter(run_dir, stage.queue, profile).render(stage, run_file, job_file, workflow)
+        Isce3JobAdapter(work_dir, run_dir, stage.queue, profile).render(stage, run_file, job_file, workflow)
         stages.append(stage)
     return stages
 
@@ -628,14 +670,15 @@ def _bbox_wsene_from_sweets_line(line: str) -> tuple[str, str, str, str]:
         raise RuntimeError("sweets config command is missing --bbox") from exc
 
 
-def _cslc_dolphin_script(config_line: str) -> str:
+def _cslc_dolphin_script(config_line: str, cpus_per_node: int) -> str:
     """Write dolphin config from OPERA CSLCs, then run dolphin."""
     west, south, east, north = _bbox_wsene_from_sweets_line(config_line)
+    worker_flags = _dolphin_worker_cli_flags(cpus_per_node)
     return _bash_script(
         (
             "dolphin config --slc-files data/OPERA_L2_CSLC-S1_*.h5 --subdataset /data/VV "
             "--work-directory dolphin --mask-file watermask.tif "
-            f"--output-options.bounds {west} {south} {east} {north} --outfile dolphin_config.yaml"
+            f"--output-options.bounds {west} {south} {east} {north} {worker_flags} --outfile dolphin_config.yaml"
         ),
         "dolphin run dolphin_config.yaml",
     )
@@ -652,7 +695,7 @@ def _sweets_download_script(config_line: str, kind: str) -> str:
     )
 
 
-def _sweets_stage_bodies(workflow: str, context: dict[str, object]) -> dict[str, str]:
+def _sweets_stage_bodies(workflow: str, context: dict[str, object], cpus_per_node: int) -> dict[str, str]:
     """Resolve concrete SAFE or CSLC run-file bodies at generate time."""
     config_line = _sweets_config_line(workflow, context)
     kind = "safe" if workflow == "safe" else "cslc"
@@ -673,7 +716,7 @@ def _sweets_stage_bodies(workflow: str, context: dict[str, object]) -> dict[str,
         }
     return {
         "download_cslc": download.rstrip("\n") + f"\nstitch_sweets_geometry.py --config {cfg}\n",
-        "run_dolphin": _cslc_dolphin_script(config_line),
+        "run_dolphin": _cslc_dolphin_script(config_line, cpus_per_node),
         "create_hdfeos5": hdfeos5,
         "ingest_insarmaps": ingest,
     }

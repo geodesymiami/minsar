@@ -80,7 +80,7 @@ export LAUNCHER_SCHED=block   ## could be one of: dynamic, interleaved, block
 # pixi sweets (s.bs): keep pixi prefix for Python/PROJ/GDAL. minsar conda (s.bw2) otherwise.
 if [[ "${PIXI_IN_SHELL:-}" == "1" && "${PIXI_PROJECT_NAME:-}" == "sweets" ]]; then
     echo "pixi sweets env detected: PROJ/GDAL from ${CONDA_PREFIX}"
-    unset PYTHONPATH
+    export PYTHONPATH="${MINSAR_HOME}"
 else
     export CONDA_PREFIX=${MINSAR_HOME}/tools/miniforge3/envs/minsar
     export CONDA_ENVS_PATH=${CONDA_PREFIX}/envs
