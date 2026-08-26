@@ -234,16 +234,7 @@ if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     helptext="
 Usage: $SCRIPT_NAME <file_or_dir1> <file_or_dir2> --ref-lalo LAT LON [options]
 
-Examples:
-    $SCRIPT_NAME ChilesSenD142/mintpy ChilesSenA120/mintpy --ref-lalo 0.649 -77.878
-    $SCRIPT_NAME hvGalapagosSenD128/mintpy hvGalapagosSenA106/mintpy --ref-lalo -0.81 -91.190 --no-insarmaps
-    $SCRIPT_NAME hvGalapagosSenD128/miaplpy/network_single_reference hvGalapagosSenA106/miaplpy/network_single_reference --ref-lalo -0.81 -91.190 --no-ingest-los
-    $SCRIPT_NAME FernandinaSenD128/miaplpy/network_delaunay_4 FernandinaSenA106/miaplpy/network_delaunay_4 --ref-lalo -0.415 -91.543 --submit
-    $SCRIPT_NAME LaPalmaSenA60/miaplpy/network_delaunay_4 LaPalmaSenD169/miaplpy/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --save-qgis --submit
-    $SCRIPT_NAME LaPalmaSenA60/miaplpy/network_delaunay_4 LaPalmaSenD169/miaplpy/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --save-qgis-all --submit
-    $SCRIPT_NAME LaPalmaRecentSenA60/miaplpy/network_delaunay_4 LaPalmaRecentSenD169/miaplpy/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --submit --sleep 30
-    $SCRIPT_NAME LaPalmaRecentSenA60/miaplpy_202201_202606/network_delaunay_4 LaPalmaRecentSenD169/miaplpy_202501_202606/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --submit --upload
-    $SCRIPT_NAME MyvatnSenA45/miaplpy/network_delaunay_4/S1_asc_045.he5 MyvatnSenD9/miaplpy/network_delaunay_4/S1_desc_009.he5/ --ref-lalo 65.61436 -16.87585 --save_qgis --submit
+Write run_horzvert2timeseries (and on SLURM login, horzvert_timeseries.job). With --submit, run or submit.
 
 Options:
       --dataset TYPE                  Select .he5 type in a directory: PS, DS, filtDS, filt*DS, geo
@@ -266,6 +257,8 @@ Options:
       --ingest-parallel               Run ingest lines in parallel (& / wait)
       --save-qgis, --save_qgis        Export GeoPackage for geo asc/desc + vert/horz (.he5); add to download_commands.txt
       --save-qgis-all, --save_qgis_all  Like --save-qgis plus radar asc/desc LOS .he5 (six products total)
+      --queue NAME                    SLURM queue for .job (default: \$QUEUENAME)
+      --walltime HH:MM[:SS]           SLURM walltime for .job (default: from job_defaults.cfg)
       --submit                        Execute now (bash, or job_submission.py + run_workflow on SLURM login)
       --upload                        Upload created product dir to Jetstream (default on Stampede/Mac; skipped on Jetstream)
       --no-upload                     Skip Jetstream upload
@@ -273,6 +266,18 @@ Options:
       --num-workers N                 ingest_insarmaps hdfeos5_2json workers (default: 1)
       --mbtiles-num-workers N         ingest_insarmaps mbtiles workers (default: 6)
       --debug                         set -x
+
+Examples:
+$SCRIPT_NAME ChilesSenD142/mintpy ChilesSenA120/mintpy --ref-lalo 0.649 -77.878
+$SCRIPT_NAME hvGalapagosSenD128/mintpy hvGalapagosSenA106/mintpy --ref-lalo -0.81 -91.190 --no-insarmaps
+$SCRIPT_NAME hvGalapagosSenD128/miaplpy/network_single_reference hvGalapagosSenA106/miaplpy/network_single_reference --ref-lalo -0.81 -91.190 --no-ingest-los
+$SCRIPT_NAME FernandinaSenD128/miaplpy/network_delaunay_4 FernandinaSenA106/miaplpy/network_delaunay_4 --ref-lalo -0.415 -91.543 --submit
+$SCRIPT_NAME LaPalmaSenA60/miaplpy/network_delaunay_4 LaPalmaSenD169/miaplpy/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --save-qgis --submit
+$SCRIPT_NAME LaPalmaSenA60/miaplpy/network_delaunay_4 LaPalmaSenD169/miaplpy/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --save-qgis-all --submit
+$SCRIPT_NAME LaPalmaRecentSenA60/miaplpy/network_delaunay_4 LaPalmaRecentSenD169/miaplpy/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --submit --sleep 30
+$SCRIPT_NAME LaPalmaRecentSenA60/miaplpy_202201_202606/network_delaunay_4 LaPalmaRecentSenD169/miaplpy_202501_202606/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --submit --upload
+$SCRIPT_NAME MyvatnSenA45/miaplpy/network_delaunay_4/S1_asc_045.he5 MyvatnSenD9/miaplpy/network_delaunay_4/S1_desc_009.he5/ --ref-lalo 65.61436 -16.87585 --save_qgis --submit
+$SCRIPT_NAME EtnaSenA44/miaplpy_Big1_202001_202412/network_delaunay_4/ EtnaSenD124/miaplpy_Big1_202001_202412/network_delaunay_4/ --ref-lalo 37.807 15.179 --lat-step 0.0004 --dataset filt*DS --save_qgis --queue pvc --walltime 4:00:00 --submit
     "
     printf "$helptext"
     exit 0
@@ -317,6 +322,8 @@ period=""
 num_workers=1
 mbtiles_num_workers=6
 sleep_time=""
+queue=""
+walltime=""
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]
@@ -427,6 +434,16 @@ do
             submit_flag=1
             shift
             ;;
+        --queue)
+            [[ $# -lt 2 ]] && { echo "Error: --queue requires a queue name" >&2; exit 1; }
+            queue="$2"
+            shift 2
+            ;;
+        --walltime)
+            [[ $# -lt 2 ]] && { echo "Error: --walltime requires HH:MM or HH:MM:SS" >&2; exit 1; }
+            walltime="$2"
+            shift 2
+            ;;
         --upload)
             [[ $upload_flag == "0" && $upload_explicit == "1" ]] && {
                 echo "Error: use only one of --upload or --no-upload" >&2
@@ -507,6 +524,12 @@ _validate_nonneg_int_opt() {
 _validate_positive_int_opt "--num-workers" "$num_workers"
 _validate_positive_int_opt "--mbtiles-num-workers" "$mbtiles_num_workers"
 [[ -n "$sleep_time" ]] && _validate_nonneg_int_opt "--sleep" "$sleep_time"
+if [[ -n "$walltime" ]]; then
+    if ! [[ "$walltime" =~ ^[0-9]+:[0-9]{2}(:[0-9]{2})?$ ]]; then
+        echo "Error: --walltime must be HH:MM or HH:MM:SS (got '$walltime')" >&2
+        exit 1
+    fi
+fi
 ingest_workers_opts=(--num-workers "$num_workers" --mbtiles-num-workers "$mbtiles_num_workers")
 
 if [[ -n "$sleep_time" ]]; then
@@ -774,7 +797,7 @@ hv_write_run_horzvert2timeseries
 
 # On HPC login, always materialize the .job envelope (even without --submit).
 if hv_should_use_slurm_jobfile; then
-    hv_write_horzvert_jobfile "$HV_RUN_FILE" "horzvert_timeseries" || true
+    hv_write_horzvert_jobfile "$HV_RUN_FILE" "horzvert_timeseries" "$queue" "$walltime" || true
 fi
 
 if [[ $submit_flag == "0" ]]; then
@@ -797,4 +820,4 @@ echo ""
 echo "##############################################"
 echo "Executing run_horzvert2timeseries (--submit)"
 append_hv_to_project_logs "$(date +'%Y%m%d:%H-%M') + bash/run_workflow run_horzvert2timeseries"
-hv_run_or_submit_script "$HV_RUN_FILE" "horzvert_timeseries"
+hv_run_or_submit_script "$HV_RUN_FILE" "horzvert_timeseries" "$queue" "$walltime"

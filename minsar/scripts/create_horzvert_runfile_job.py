@@ -42,7 +42,7 @@ def create_parser():
         "--walltime",
         dest="wall_time",
         default=None,
-        metavar="HH:MM",
+        metavar="HH:MM[:SS]",
         help="Walltime override (default: job_defaults.cfg)",
     )
     return parser

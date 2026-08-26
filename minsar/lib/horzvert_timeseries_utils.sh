@@ -823,19 +823,26 @@ hv_write_run_horzvert2timeseries() {
 }
 
 # Write horzvert_timeseries.job next to the run file via job_submission.py.
+# Optional: $3=queue, $4=walltime (or HV_QUEUE / HV_WALLTIME).
 hv_write_horzvert_jobfile() {
     local run_file="$1"
     local job_name="${2:-horzvert_timeseries}"
+    local queue="${3:-${HV_QUEUE:-}}"
+    local walltime="${4:-${HV_WALLTIME:-}}"
     local work_dir
+    local cmd_args
 
     [[ -f "$run_file" ]] || {
         echo "hv_write_horzvert_jobfile: missing $run_file" >&2
         return 1
     }
     work_dir=$(dirname "$run_file")
+    cmd_args=(--from-file "$(basename "$run_file")" --job-name "$job_name")
+    [[ -n "$queue" ]] && cmd_args+=(--queue "$queue")
+    [[ -n "$walltime" ]] && cmd_args+=(--walltime "$walltime")
     (
         cd "$work_dir"
-        create_horzvert_runfile_job.py --from-file "$(basename "$run_file")" --job-name "$job_name"
+        create_horzvert_runfile_job.py "${cmd_args[@]}"
     )
 }
 
@@ -874,9 +881,12 @@ hv_print_horzvert_overlay_url() {
 }
 
 # Execute script-style run file: bash locally, or JOB_SUBMIT .job + run_workflow --jobfile on SLURM login.
+# Optional: $3=queue, $4=walltime (or HV_QUEUE / HV_WALLTIME).
 hv_run_or_submit_script() {
     local run_file="$1"
     local job_name="${2:-horzvert_timeseries}"
+    local queue="${3:-${HV_QUEUE:-}}"
+    local walltime="${4:-${HV_WALLTIME:-}}"
     local job_file work_dir
 
     [[ -f "$run_file" ]] || {
@@ -886,7 +896,7 @@ hv_run_or_submit_script() {
     work_dir=$(dirname "$run_file")
 
     if hv_should_use_slurm_jobfile; then
-        hv_write_horzvert_jobfile "$run_file" "$job_name"
+        hv_write_horzvert_jobfile "$run_file" "$job_name" "$queue" "$walltime"
         job_file="${work_dir}/${job_name}.job"
         [[ -f "$job_file" ]] || {
             echo "hv_run_or_submit_script: jobfile not created: $job_file" >&2
