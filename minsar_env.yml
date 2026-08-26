@@ -51,6 +51,7 @@ dependencies:
   - gmt
   - pygmt
   - geopandas
+  - pyogrio
 # insarmaps_scripts
   - tippecanoe
   - libpq

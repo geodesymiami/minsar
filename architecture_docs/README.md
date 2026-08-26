@@ -71,6 +71,8 @@ minsarApp.bash
 | [GEocode_HE5.md](./GEocode_HE5.md) | Geocode S1*.he5 (HDFEOS5) via thin wrapper over MintPy | Geocoding radar .he5 to geographic |
 | [HE5_NAMING.md](./HE5_NAMING.md) | `.he5` filename pattern for MintPy and MiaplPy (`save_hdfeos5.py`, suffixes, corners, update mode) | Understanding or predicting HE5 output names |
 | [tools/sarvey/docs/ARCHITECTURE.md](../tools/sarvey/docs/ARCHITECTURE.md) | SARvey: MTI time series tool (tools/sarvey), CLI, workflow, inputs | Using or integrating SARvey; displacement from SLC stack |
+| [ISCE3_HPC_opportunities.md](./ISCE3_HPC_opportunities.md) | ISCE3 parallelization types, walltime levers, OPERA-DISP vs local produce, ordered opportunity plans | Shortening SAFE/CSLC/dolphin walltime on Stampede |
+| [plans/](./plans/README.md) | Ordered ISCE3 HPC opportunity implementation plans (00–05) | Implementing one HPC opportunity at a time |
 
 ## Quick Lookup Tables
 
