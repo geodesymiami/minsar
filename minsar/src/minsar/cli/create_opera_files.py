@@ -29,7 +29,7 @@ def create_parser():
         formatter_class=argparse.RawTextHelpFormatter
     )
 
-    parser.add_argument('--dir', default=os.path.join(os.getcwd(), 'CSLC'), help='Output directory for downloads')
+    parser.add_argument('--dir', default=os.path.join(os.getcwd()), help='Output directory')
     parser.add_argument('--dem-file', default=None, help='DEM file to download (optional)')
 
     inps = parser.parse_args()
@@ -40,117 +40,6 @@ def create_parser():
         inps.dem_file = os.path.join(os.getcwd(), inps.dem_file)
 
     return inps
-
-
-def temporal_inversion(aggregated_time_1, aggregated_time_2, aggregated_displacement):
-    # ============================================
-    # Build cumulative displacement time series
-    # from pairwise (t1 -> t2) aggregated data
-    # ============================================
-    # --------------------------------------------------
-    # INPUT (assumed structure)
-    # --------------------------------------------------
-    # aggregated_time_1: list of start dates (len = n_obs)
-    # aggregated_time_2: list of end dates   (len = n_obs)
-    # aggregated_displacement: list of 2D arrays (ny, nx)
-    # Each entry i represents:
-    #   D_i = displacement from t1_i to t2_i
-    # --------------------------------------------------
-
-    # --------------------------------------------------
-    # 1. Build global time axis
-    # --------------------------------------------------
-    # Collect all unique times and sort them
-    times = np.unique(np.array(aggregated_time_1 + aggregated_time_2))
-    times = np.sort(times)
-    nt = len(times)
-
-    # Map each time to an index
-    time_to_idx = {t: i for i, t in enumerate(times)}
-
-    # --------------------------------------------------
-    # 2. Build design matrix A
-    # --------------------------------------------------
-    # A encodes: X(t2) - X(t1) = D
-    # We add +1 row for reference constraint: X(t0) = 0
-    n_obs = len(aggregated_time_1)
-    A = np.zeros((n_obs + 1, nt))
-
-    for i in range(n_obs):
-        i1 = time_to_idx[aggregated_time_1[i]]
-        i2 = time_to_idx[aggregated_time_2[i]]
-
-        A[i, i2] = 1     # +X(t2)
-        A[i, i1] = -1    # -X(t1)
-
-    # Reference constraint (fix solution uniqueness)
-    # Set displacement at earliest time to 0
-    A[-1, 0] = 1
-
-    # --------------------------------------------------
-    # 3. Prepare output array
-    # --------------------------------------------------
-    # Assume all displacement arrays share same shape
-    ny, nx = aggregated_displacement[0].shape
-
-    # Output: cumulative displacement time series
-    # shape = (nt, ny, nx)
-    X = np.zeros((nt, ny, nx))
-
-    # --------------------------------------------------
-    # 4. Solve per pixel (least squares)
-    # --------------------------------------------------
-    for y in tqdm.tqdm(range(ny), desc="Inverting pixels", unit="row"):
-        for xpix in range(nx):
-
-            # Build observation vector b for this pixel
-            # b = [D_1, D_2, ..., D_n, 0]
-            b = np.zeros(n_obs + 1)
-
-            for i in range(n_obs):
-                b[i] = aggregated_displacement[i][y, xpix]
-
-            # reference constraint
-            b[-1] = 0.0
-
-            # ------------------------------------------
-            # Handle missing data (NaNs)
-            # ------------------------------------------
-            valid = ~np.isnan(b[:-1])  # ignore reference row
-
-            # If no valid observations → skip
-            if np.sum(valid) == 0:
-                X[:, y, xpix] = np.nan
-                continue
-
-            # Select valid rows
-            A_valid = A[:-1][valid]
-            b_valid = b[:-1][valid]
-
-            # Add back reference constraint
-            A_valid = np.vstack([A_valid, A[-1]])
-            b_valid = np.concatenate([b_valid, [0.0]])
-
-            # ------------------------------------------
-            # Solve least squares: A x = b
-            # ------------------------------------------
-            sol, *_ = np.linalg.lstsq(A_valid, b_valid, rcond=None)
-
-            # Store result
-            X[:, y, xpix] = sol
-
-    # --------------------------------------------------
-    # 5. Output
-    # --------------------------------------------------
-    # times → time axis
-    # X     → cumulative displacement (time, y, x)
-
-    print("Done.")
-    print("Time steps:", nt)
-    print("Output shape:", X.shape)
-
-    return times, X
-
 
 def main():
     inps = create_parser()
@@ -204,13 +93,13 @@ def main():
         sec_date = netCDF4.num2date(sec_time[:], units=sec_time.units, calendar=getattr(sec_time, "calendar", "standard"), only_use_cftime_datetimes=False)[0].date()
         meta = extract_identification_metadata(nc)
 
-        if hasattr(meta, 'bounding_polygon'):
-            if prev_polygon and meta.bounding_polygon != prev_polygon:
+        if 'bounding_polygon' in meta:
+            if prev_polygon and meta['bounding_polygon'] != prev_polygon:
                 mismatch_folder = os.path.join(inps.dir, "mismatched_polygons")
                 os.makedirs(mismatch_folder, exist_ok=True)
                 shutil.move(f, mismatch_folder)
                 continue
-            prev_polygon = meta.bounding_polygon
+            prev_polygon = meta['bounding_polygon']
 
         ref = np.nanmean(displacement_data[0:10,0:10])
         pair_dict[sec_date] = {
@@ -222,7 +111,7 @@ def main():
         }
 
         if not centroid:
-            wkt_str = meta.bounding_polygon if hasattr(meta, 'bounding_polygon') else meta.data_footprint
+            wkt_str = meta.get('bounding_polygon', meta.get('data_footprint', ''))
             geom = wkt.loads(wkt_str)
             centroid = geom.centroid
         nc.close()
@@ -231,22 +120,18 @@ def main():
     pair_dict = {k: pair_dict[k] for k in sorted(pair_dict)}
     date_list = [d.strftime("%Y%m%d") for d in pair_dict]
 
-    if not np.all(ref_time == ref_time[0]):
-        time, X = temporal_inversion([pair_dict[d]['ref_date'] for d in pair_dict.keys()],  list(pair_dict.keys()), [pair_dict[d]['displacement'] for d in pair_dict.keys()])
-    else:
-        time = list(pair_dict.keys())
-        X = np.stack([pair_dict[d]['displacement'] for d in pair_dict], axis=0)
+    time = list(pair_dict.keys())
+    X = np.stack([pair_dict[d]['displacement'] for d in pair_dict], axis=0)
 
     meta = merge_metadata([pair_dict[d]['meta'] for d in pair_dict.keys()])
 
-    if not hasattr(meta, 'reference_datetime'):
-        setattr(meta, 'reference_datetime', pair_dict[datetime.datetime.strptime(date_list[0], '%Y%m%d').date()]['ref_date'].strftime("%Y-%m-%d"))
-    if not hasattr(meta, 'last_date'):
-        setattr(meta, 'last_date', date_list[-1])
-    if hasattr(meta, 'source_data_file_list'):
-        delattr(meta, 'source_data_file_list')
-    if not hasattr(meta, 'PROJECT_NAME'):
-        setattr(meta, 'PROJECT_NAME', 'OPERA')
+    if 'reference_datetime' not in meta:
+        meta['reference_datetime'] = pair_dict[datetime.datetime.strptime(date_list[0], '%Y%m%d').date()]['ref_date'].strftime("%Y-%m-%d")
+    if 'last_date' not in meta:
+        meta['last_date'] = date_list[-1]
+    meta.pop('source_data_file_list', None)
+    if 'PROJECT_NAME' not in meta:
+        meta['PROJECT_NAME'] = 'OPERA'
 
     longitude, latitude = convert_to_coord(x, y, (centroid.x, centroid.y))
 
@@ -254,12 +139,8 @@ def main():
 
     # Format date_list as YYYYMMDD strings for MintPy compatibility
     date_list = [d.strftime("%Y%m%d") if hasattr(d, 'strftime') else str(d).replace('-', '') for d in time]
-    if True:
-        # Right one
-        mask_2d = np.multiply.reduce([pair_dict[d]['mask'] for d in pair_dict.keys()])
-    else:
-        # First mask
-        mask_2d = pair_dict[list(pair_dict.keys())[0]]['mask']
+
+    mask_2d = np.multiply.reduce([pair_dict[d]['mask'] for d in pair_dict.keys()])
     temporal_2d = np.nanmean(np.stack([pair_dict[d]['temporal_coherence'] for d in pair_dict.keys()], axis=0), axis=0)
 
     with netCDF4.Dataset(os.path.join(inps.dir, out_file), "w", format="NETCDF4") as f:
@@ -307,7 +188,7 @@ def main():
 
         # Add meta attributes if available
         if meta is not None:
-            meta_attrs = vars(meta)
+            meta_attrs = meta if isinstance(meta, dict) else vars(meta)
             for key, value in meta_attrs.items():
                 if value is None:
                     continue
