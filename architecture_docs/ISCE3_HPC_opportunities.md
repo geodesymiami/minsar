@@ -50,7 +50,7 @@ Execution modes in `job_defaults_isce3.cfg`: **sequential**, **single-multicore*
 | DISP | `download_disp` / `reformat_disp` | sequential | Modest (download `--num-workers`) | No |
 | all | `create_hdfeos5` / `ingest_insarmaps` | single-multicore / sequential | Modest / no | No |
 
-Gap today: `Isce3JobAdapter` in `create_isce3_runfiles.py` still forces `number_of_nodes=1` for `create_cslc`, so the COMPASS task list is LAUNCHER-shaped but not yet multi-node.
+Job headers and CSLC dolphin worker flags use `JOB_SUBMIT` / `queues.cfg` (opportunity 0). Gap remaining: `Isce3JobAdapter` still forces `number_of_nodes=1` for `create_cslc`, so the COMPASS task list is LAUNCHER-shaped but not yet multi-node (opportunity 1).
 
 ---
 
@@ -213,7 +213,7 @@ Index: [plans/README.md](./plans/README.md).
 
 ### Explore later (checklist, not separate plans yet)
 
-- Burst-count-aware dolphin worker auto-tune on 1 node (quick win inside plan 0 or 2).
+- Burst-count-aware dolphin worker auto-tune on 1 node (CSLC `run_dolphin` counts OPERA burst IDs at run time).
 - Multi-frame DISP download fan-out (only if users run many frames).
 - Whether COMPASS static-layers should be a separate short job after CSLC.
 - Hybrid schedule: GPU node for linking → CPU multi-node LAUNCHER for unwrap (plans 3+4).

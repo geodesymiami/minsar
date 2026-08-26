@@ -1,26 +1,34 @@
-# ISCE3 job resources foundation (opportunity 0)
+# ISCE3 job resources foundation (opportunity 0) — done
 
 Background: [ISCE3_HPC_opportunities.md](../ISCE3_HPC_opportunities.md) type **F** (+ type **B** defaults).
 
 ## Goal
 
-Make all ISCE3 SLURM job headers use `minsar.job_submission.JOB_SUBMIT` so `set_job_queue_values` reads [queues.cfg](../../minsar/defaults/queues.cfg) for the selected queue (`CPUS_PER_NODE`, `MEM_PER_NODE`, `WALLTIME_FACTOR`, `MAX_NODES_PJ`, etc.). Cap walltime with `MAX_WALLTIME`. Set dolphin worker/unwrap parallel flags so a full-node `#SBATCH -n` is actually used on 1-node jobs.
+All ISCE3 SLURM job headers use `minsar.job_submission.JOB_SUBMIT` so `set_job_queue_values` reads [queues.cfg](../../minsar/defaults/queues.cfg). Cap walltime with `MAX_WALLTIME`. CSLC `run_dolphin` sets worker/unwrap flags from node CPUs (and, as a follow-on, from burst count at run time).
 
-## Scope
+## Implemented in
 
-- [create_isce3_runfiles.py](../../minsar/src/minsar/cli/create_isce3_runfiles.py) `Isce3JobAdapter` only (plus dolphin `config` CLI flags in generated run files).
-- Stage walltime/memory/threads still from [job_defaults_isce3.cfg](../../minsar/defaults/job_defaults_isce3.cfg).
+[create_isce3_runfiles.py](../../minsar/src/minsar/cli/create_isce3_runfiles.py):
+
+- `_require_job_env`, `_make_job_submit`, `_cap_walltime_for_queue`
+- `Isce3JobAdapter` → `JOB_SUBMIT(inps)` (not `__new__`)
+- CSLC `_cslc_dolphin_script`: runtime burst count → `n_parallel_bursts` / `threads_per_worker` / `n_parallel_jobs`
+
+Stage walltime/memory/threads still from [job_defaults_isce3.cfg](../../minsar/defaults/job_defaults_isce3.cfg).
+
+## Verify (skx-dev vs pvc)
+
+| | skx-dev | pvc |
+|--|---------|-----|
+| `#SBATCH -n` | 48 | 96 |
+| `#SBATCH -p` | skx-dev | pvc |
+| `#SBATCH -t` (`run_dolphin` profile 2h) | capped 02:00:00 | 02:00:00 under 48h max |
+| Worker flags (after burst-aware) | depend on `n_bursts` and 48 CPUs | depend on `n_bursts` and 96 CPUs |
+
+Grep `run_files/*run_dolphin.job` for `#SBATCH -[npt]` and the run script for `dolphin workers:` / `n-parallel-bursts`.
 
 ## Out of scope
 
-- Multi-node LAUNCHER for `create_cslc` (opportunity 1).
-- Splitting dolphin into multiple SLURM steps (opportunity 2).
-- GPU pixi env / GPU queues (opportunity 4).
-
-## Steps
-
-1. Build proper `inps` and call `JOB_SUBMIT(inps)` (not `__new__` + setattr).
-2. Set `default_wall_time` / memory / threads from ISCE3 profiles; apply `wall_time_factor`; cap with `putils.get_queue_rerun_params`.
-3. Delete `_queue_resources`; fail clearly if MinSAR job env is missing.
-4. Extend `dolphin config` lines with worker/unwrap knobs derived from `CPUS_PER_NODE` (and burst count when known).
-5. Smoke: regenerate project jobfiles on `skx-dev` and `pvc`; check `-n`, `-p`, `-t`.
+- Multi-node LAUNCHER for `create_cslc` (opportunity 1)
+- Splitting dolphin into multiple SLURM steps (opportunity 2)
+- GPU pixi env / GPU queues (opportunity 4)

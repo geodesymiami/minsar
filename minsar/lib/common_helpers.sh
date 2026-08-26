@@ -287,6 +287,25 @@ function check_matplotlib_pyplot(){
    return 0
 }
 ###########################################
+# Show YAML keys/values only (no comments or blank lines).
+showy() {
+if [[ "$1" == "--help" || "$1" == "-h" || $# -eq 0 ]]; then
+    echo "usage: showy FILE.yaml"
+    echo
+    echo "Print YAML without comment or blank lines."
+    echo
+    echo "Examples:"
+    echo "  showy dolphin_config.yaml"
+    echo "  showy /scratch/\$USER/proj/sweets_config.yaml"
+    return 0
+fi
+if [[ ! -f "$1" ]]; then
+    echo "Error: file not found: $1" >&2
+    return 1
+fi
+grep -vE '^[[:space:]]*(#|$)' "$1"
+}
+###########################################
 function listc() {
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
 helptext="                                       \n\

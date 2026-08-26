@@ -7,6 +7,7 @@ import argparse
 import datetime
 import json
 import os
+import re
 import runpy
 import shlex
 import stat
@@ -30,6 +31,8 @@ DATA_TYPE_ALIASES = {
     "dispni": "disp-ni",
 }
 PIXI_STAGES = frozenset({"download_disp", "reformat_disp", "download_cslc", "download_safe", "run_dolphin"})
+_OPERA_BURST_ID_RE = re.compile(r"(T\d{3}-\d+-IW\d)")
+
 ARGV_FIX_KW = {
     "consume_one": (
         "--data-type",
@@ -168,17 +171,62 @@ def _make_job_submit(project_dir: Path, run_dir: Path, queue: str, profile: Reso
     return job
 
 
-def _dolphin_worker_cli_flags(cpus_per_node: int) -> str:
-    """CLI flags so dolphin uses most of a 1-node allocation (type B defaults)."""
+def _dolphin_worker_counts(cpus_per_node: int, n_bursts_aoi: int) -> tuple[int, int, int]:
+    """Choose dolphin parallel knobs from node CPUs and distinct burst count.
+
+    Returns (n_parallel_bursts, threads_per_worker, n_parallel_jobs).
+    Linking: fill the node with min(bursts, cpus//4) workers and the rest as threads.
+    Unwrap: ~cpus/4 concurrent snaphu jobs (unchanged by burst count).
+    """
     cpus = max(1, int(cpus_per_node))
-    n_bursts = min(8, max(1, cpus // 12))
-    threads = max(1, cpus // n_bursts)
+    n_bursts = max(1, int(n_bursts_aoi))
+    n_parallel = max(1, min(n_bursts, cpus // 4))
+    threads = max(1, cpus // n_parallel)
     n_unwrap = max(1, cpus // 4)
+    return n_parallel, threads, n_unwrap
+
+
+def _dolphin_worker_cli_flags(cpus_per_node: int, n_bursts_aoi: int) -> str:
+    """CLI flags so dolphin uses most of a 1-node allocation (type B defaults)."""
+    n_parallel, threads, n_unwrap = _dolphin_worker_counts(cpus_per_node, n_bursts_aoi)
     return (
-        f"--n-parallel-bursts {n_bursts} "
+        f"--n-parallel-bursts {n_parallel} "
         f"--worker-settings.threads-per-worker {threads} "
         f"--unwrap-options.n-parallel-jobs {n_unwrap}"
     )
+
+
+def _count_opera_cslc_bursts(data_dir: Path) -> tuple[int, bool]:
+    """Return distinct OPERA burst count under data/ and whether files were found."""
+    burst_ids: set[str] = set()
+    for path in sorted(data_dir.glob("OPERA_L2_CSLC-S1_*.h5")):
+        match = _OPERA_BURST_ID_RE.search(path.name)
+        if match:
+            burst_ids.add(match.group(1))
+    if not burst_ids:
+        return 1, False
+    return len(burst_ids), True
+
+
+def _cslc_dolphin_commands(config_line: str, cpus_per_node: int, n_bursts_aoi: int) -> list[str]:
+    """Shell commands for CSLC dolphin config + run with worker flags baked in."""
+    n_parallel, threads, n_unwrap = _dolphin_worker_counts(cpus_per_node, n_bursts_aoi)
+    west, south, east, north = _bbox_wsene_from_sweets_line(config_line)
+    cpus = max(1, int(cpus_per_node))
+    worker_flags = _dolphin_worker_cli_flags(cpus, n_bursts_aoi)
+    return [
+        (
+            f'echo "dolphin workers: bursts={n_bursts_aoi} n_parallel={n_parallel} '
+            f'threads={threads} n_unwrap={n_unwrap} (cpus={cpus})"'
+        ),
+        (
+            "dolphin config --slc-files data/OPERA_L2_CSLC-S1_*.h5 --subdataset /data/VV "
+            "--work-directory dolphin --mask-file watermask.tif "
+            f"--output-options.bounds {west} {south} {east} {north} "
+            f"{worker_flags} --outfile dolphin_config.yaml"
+        ),
+        "dolphin run dolphin_config.yaml",
+    ]
 
 
 class Isce3JobAdapter:
@@ -535,7 +583,7 @@ def _create_files(
     if workflow == "disp":
         bodies = _disp_stage_bodies(context, work_dir)
     elif workflow in {"safe", "cslc"}:
-        bodies = _sweets_stage_bodies(workflow, context, dolphin_cpus)
+        bodies = _sweets_stage_bodies(workflow, context, dolphin_cpus, work_dir)
     else:
         bodies = None
     if bodies is not None:
@@ -670,18 +718,10 @@ def _bbox_wsene_from_sweets_line(line: str) -> tuple[str, str, str, str]:
         raise RuntimeError("sweets config command is missing --bbox") from exc
 
 
-def _cslc_dolphin_script(config_line: str, cpus_per_node: int) -> str:
+def _cslc_dolphin_script(config_line: str, cpus_per_node: int, n_bursts_aoi: int) -> str:
     """Write dolphin config from OPERA CSLCs, then run dolphin."""
-    west, south, east, north = _bbox_wsene_from_sweets_line(config_line)
-    worker_flags = _dolphin_worker_cli_flags(cpus_per_node)
-    return _bash_script(
-        (
-            "dolphin config --slc-files data/OPERA_L2_CSLC-S1_*.h5 --subdataset /data/VV "
-            "--work-directory dolphin --mask-file watermask.tif "
-            f"--output-options.bounds {west} {south} {east} {north} {worker_flags} --outfile dolphin_config.yaml"
-        ),
-        "dolphin run dolphin_config.yaml",
-    )
+    commands = _cslc_dolphin_commands(config_line, cpus_per_node, n_bursts_aoi)
+    return "#!/usr/bin/env bash\nset -euo pipefail\n" + "".join(f"{command}\n" for command in commands)
 
 
 def _sweets_download_script(config_line: str, kind: str) -> str:
@@ -695,7 +735,12 @@ def _sweets_download_script(config_line: str, kind: str) -> str:
     )
 
 
-def _sweets_stage_bodies(workflow: str, context: dict[str, object], cpus_per_node: int) -> dict[str, str]:
+def _sweets_stage_bodies(
+    workflow: str,
+    context: dict[str, object],
+    cpus_per_node: int,
+    work_dir: Path,
+) -> dict[str, str]:
     """Resolve concrete SAFE or CSLC run-file bodies at generate time."""
     config_line = _sweets_config_line(workflow, context)
     kind = "safe" if workflow == "safe" else "cslc"
@@ -714,9 +759,16 @@ def _sweets_stage_bodies(workflow: str, context: dict[str, object], cpus_per_nod
             "create_hdfeos5": hdfeos5,
             "ingest_insarmaps": ingest,
         }
+    n_bursts, from_files = _count_opera_cslc_bursts(work_dir / "data")
+    if not from_files:
+        print(
+            f"Warning: no OPERA CSLC under {work_dir / 'data'}; "
+            f"run_dolphin worker flags assume n_bursts=1 (re-run create_isce3_runfiles after download)",
+            file=sys.stderr,
+        )
     return {
         "download_cslc": download.rstrip("\n") + f"\nstitch_sweets_geometry.py --config {cfg}\n",
-        "run_dolphin": _cslc_dolphin_script(config_line, cpus_per_node),
+        "run_dolphin": _cslc_dolphin_script(config_line, cpus_per_node, n_bursts),
         "create_hdfeos5": hdfeos5,
         "ingest_insarmaps": ingest,
     }
@@ -928,16 +980,13 @@ def _execute_stage(
             )
             _run_in_sweets(work_dir, ["sweets", "run", SWEETS_CONFIG, "--starting-step", "3"])
         else:
-            _run_in_sweets(
-                work_dir,
-                [
-                    "bash",
-                    "-c",
-                    "dolphin config --slc-files data/OPERA_L2_CSLC-S1_*.h5 --subdataset /data/VV "
-                    "--work-directory dolphin --mask-file watermask.tif --outfile dolphin_config.yaml && "
-                    "dolphin run dolphin_config.yaml",
-                ],
-            )
+            run_dolphin_files = sorted((work_dir / "run_files").glob("run_*_run_dolphin"))
+            if not run_dolphin_files:
+                raise RuntimeError(
+                    "run_dolphin run file not found under run_files/; "
+                    "run create_isce3_runfiles.py first"
+                )
+            _run_in_sweets(work_dir, ["bash", str(run_dolphin_files[-1])])
         return 0
     if action == "create-hdfeos5":
         timeseries_dir = work_dir / "timeseries"
