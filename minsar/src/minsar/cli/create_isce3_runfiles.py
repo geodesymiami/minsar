@@ -13,6 +13,7 @@ import shlex
 import stat
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,7 +31,28 @@ DATA_TYPE_ALIASES = {
     "disp-ni": "disp-ni",
     "dispni": "disp-ni",
 }
-PIXI_STAGES = frozenset({"download_disp", "reformat_disp", "download_cslc", "download_safe", "dolphin"})
+PIXI_STAGES = frozenset({
+    "download_disp",
+    "reformat_disp",
+    "download_cslc",
+    "download_safe",
+    "dolphin",
+    "dolphin_wrapped",
+    "dolphin_unwrap",
+    "dolphin_timeseries",
+})
+DOLPHIN_SPLIT_STAGES = ("dolphin_wrapped", "dolphin_unwrap", "dolphin_timeseries")
+# Named dolphin parameter sets for CSLC (strides + half-window).
+# half_window is (y, x); strides is (y, x). Non-dolphin presets use OPERA 30 m posting.
+# User-facing half-window sizes are given as x×y (range × azimuth).
+DOLPHIN_PRESETS: dict[str, dict[str, tuple[int, int] | None]] = {
+    "dolphin": {"strides": None, "half_window": None},  # package defaults (1×1, hwy=7,hwx=14)
+    "standard": {"strides": (3, 6), "half_window": (8, 16)},
+    "dry": {"strides": (3, 6), "half_window": (6, 12)},
+    "wet": {"strides": (3, 6), "half_window": (9, 18)},
+    "arctic": {"strides": (3, 6), "half_window": (9, 19)},
+}
+DOLPHIN_PRESET_CHOICES = tuple(DOLPHIN_PRESETS)
 _OPERA_BURST_ID_RE = re.compile(r"(T\d{3}-\d+-IW\d)")
 
 ARGV_FIX_KW = {
@@ -47,9 +69,11 @@ ARGV_FIX_KW = {
         "--queue",
         "--long-queue",
         "--config",
+        "--sleep",
+        "--preset",
     ),
     "consume_two": (),
-    "flags": ("--safe", "--cslc", "--disp", "--disp-S1", "--dry-run", "--run"),
+    "flags": ("--safe", "--cslc", "--disp", "--disp-S1", "--dry-run", "--run", "--no-dolphin-split"),
 }
 
 
@@ -241,30 +265,152 @@ def _pixi_run_script(commands: str) -> str:
     )
 
 
-def _cslc_dolphin_commands(config_line: str, cpus_per_node: int, n_bursts_aoi: int) -> list[str]:
-    """Shell commands for CSLC dolphin config + run with worker flags baked in."""
+def _dolphin_stop_after_stitch_flags() -> str:
+    """Dolphin config flags for wrapped + stitch only (no unwrap or timeseries)."""
+    return (
+        "--unwrap-options.no-run-unwrap "
+        "--timeseries-options.no-run-inversion "
+        "--timeseries-options.no-run-velocity"
+    )
+
+
+def _normalize_dolphin_preset(value: str) -> str:
+    token = value.strip().lower().replace("_", "-")
+    if token in {"disp", "disp-s1", "disps1"}:
+        raise argparse.ArgumentTypeError(
+            f"preset {value!r} is not defined; use one of {', '.join(DOLPHIN_PRESET_CHOICES)}"
+        )
+    if token not in DOLPHIN_PRESETS:
+        raise argparse.ArgumentTypeError(
+            f"invalid preset {value!r}; use {', '.join(DOLPHIN_PRESET_CHOICES)}"
+        )
+    return token
+
+
+def _dolphin_preset_cli_flags(preset: str) -> str:
+    """CLI flags for strides and half-window; empty string for dolphin package defaults."""
+    spec = DOLPHIN_PRESETS[preset]
+    strides = spec["strides"]
+    half_window = spec["half_window"]
+    if strides is None and half_window is None:
+        return ""
+    parts: list[str] = []
+    if strides is not None:
+        sy, sx = strides
+        parts.append(f"--sy {sy} --sx {sx}")
+    if half_window is not None:
+        hwy, hwx = half_window
+        parts.append(f"--hwy {hwy} --hwx {hwx}")
+    return " ".join(parts)
+
+
+def _geometry_stitch_command(preset: str, config_name: str = SWEETS_CONFIG) -> str:
+    """stitch_sweets_geometry command with strides matching the dolphin preset."""
+    spec = DOLPHIN_PRESETS[preset]
+    strides = spec["strides"]
+    if strides is None:
+        # dolphin preset: native CSLC posting (match dolphin package strides 1×1)
+        sy, sx = 1, 1
+    else:
+        sy, sx = strides
+    return f"stitch_sweets_geometry.py --config {config_name} --sy {sy} --sx {sx} --overwrite"
+
+
+def _cslc_dolphin_config_line(
+    config_line: str,
+    cpus_per_node: int,
+    n_bursts_aoi: int,
+    extra_flags: str = "",
+    outfile: str = "dolphin_config.yaml",
+    preset: str = "dolphin",
+) -> str:
+    """One-line dolphin config command with worker and preset flags baked in."""
     west, south, east, north = _bbox_wsene_from_sweets_line(config_line)
-    cpus = max(1, int(cpus_per_node))
-    worker_flags = _dolphin_worker_cli_flags(cpus, n_bursts_aoi)
+    worker_flags = _dolphin_worker_cli_flags(cpus_per_node, n_bursts_aoi)
+    preset_flags = _dolphin_preset_cli_flags(preset)
+    parts = [
+        "dolphin config --slc-files data/OPERA_L2_CSLC-S1_*.h5 --subdataset /data/VV "
+        "--work-directory dolphin --mask-file watermask.tif "
+        f"--output-options.bounds {west} {south} {east} {north} "
+        f"{worker_flags}"
+    ]
+    if preset_flags:
+        parts.append(f" {preset_flags}")
+    if extra_flags:
+        parts.append(f" {extra_flags}")
+    parts.append(f" --outfile {outfile}")
+    return "".join(parts)
+
+
+def _cslc_dolphin_commands(
+    config_line: str,
+    cpus_per_node: int,
+    n_bursts_aoi: int,
+    preset: str = "dolphin",
+) -> list[str]:
+    """Shell commands for CSLC dolphin config + run with worker flags baked in."""
     return [
-        (
-            "dolphin config --slc-files data/OPERA_L2_CSLC-S1_*.h5 --subdataset /data/VV "
-            "--work-directory dolphin --mask-file watermask.tif "
-            f"--output-options.bounds {west} {south} {east} {north} "
-            f"{worker_flags} --outfile dolphin_config.yaml"
+        _cslc_dolphin_config_line(config_line, cpus_per_node, n_bursts_aoi, preset=preset),
+        "dolphin run dolphin_config.yaml",
+    ]
+
+
+def _cslc_dolphin_wrapped_commands(
+    config_line: str,
+    cpus_per_node: int,
+    n_bursts_aoi: int,
+    preset: str = "dolphin",
+) -> list[str]:
+    """CSLC dolphin_wrapped: phase linking + stitch; writes dolphin_config.yaml."""
+    return [
+        _cslc_dolphin_config_line(
+            config_line,
+            cpus_per_node,
+            n_bursts_aoi,
+            extra_flags=_dolphin_stop_after_stitch_flags(),
+            preset=preset,
         ),
         "dolphin run dolphin_config.yaml",
     ]
 
 
+def _cslc_dolphin_unwrap_commands() -> list[str]:
+    """CSLC dolphin_unwrap: memory-aware n_parallel_jobs then unwrap-only."""
+    return [
+        'N_UNWRAP=$(resize_dolphin_unwrap_jobfile.py .)',
+        'run_dolphin_unwrap.py --n-parallel-jobs "$N_UNWRAP"',
+    ]
+
+
+def _cslc_dolphin_timeseries_commands() -> list[str]:
+    """CSLC dolphin_timeseries: inversion/velocity only."""
+    return ["run_dolphin_timeseries.py"]
+
+
 class Isce3JobAdapter:
     """Render ISCE3 job files via JOB_SUBMIT (queues.cfg-backed resources)."""
 
-    def __init__(self, project_dir: Path, run_dir: Path, queue: str, profile: ResourceProfile) -> None:
+    def __init__(
+        self,
+        project_dir: Path,
+        run_dir: Path,
+        queue: str,
+        profile: ResourceProfile,
+        sleep_secs: int | None = None,
+    ) -> None:
         self.queue = queue
+        self.sleep_secs = sleep_secs
         self.job_submit = _make_job_submit(project_dir, run_dir, queue, profile)
         self.launcher_ppn = int(self.job_submit.number_of_parallel_tasks_per_node)
         self.cpus_per_node = int(self.job_submit.number_of_cores_per_node)
+
+    def _sleep_lines(self) -> list[str]:
+        if not self.sleep_secs:
+            return []
+        return [
+            f"echo Sleeping {self.sleep_secs} seconds before starting...\n",
+            f"sleep {self.sleep_secs}\n",
+        ]
 
     def render(self, stage: Stage, run_file: Path, job_file: Path, workflow: str) -> None:
         """Render a script or LAUNCHER job using JOB_SUBMIT's existing methods."""
@@ -277,10 +423,12 @@ class Isce3JobAdapter:
         )
         work_dir = run_file.parent.parent.resolve()
         validate_cmd = f"validate_isce3_outputs.py --data-type {shlex.quote(workflow)} --step {shlex.quote(stage.name)}"
+        sleep_lines = self._sleep_lines()
         if stage.execution_mode == "launcher-task-list":
             lines.extend(
                 [
                     "\nset -euo pipefail\n",
+                    *sleep_lines,
                     f"export OMP_NUM_THREADS={stage.num_threads}\n",
                     f"export LAUNCHER_PPN={self.launcher_ppn}\n",
                     "export LAUNCHER_NHOSTS=1\n",
@@ -293,7 +441,7 @@ class Isce3JobAdapter:
                 ]
             )
         else:
-            lines.extend(["\nset -euo pipefail\n", f"cd {shlex.quote(str(work_dir))}\n"])
+            lines.extend(["\nset -euo pipefail\n", *sleep_lines, f"cd {shlex.quote(str(work_dir))}\n"])
             lines.append(f"bash {shlex.quote(str(run_file.relative_to(work_dir)))}\n")
         lines.append(f"{validate_cmd}\n")
         job_file.write_text("".join(lines))
@@ -313,7 +461,10 @@ def create_parser() -> argparse.ArgumentParser:
     epilog = """Examples:
  create_isce3_runfiles.py HawaiiSenD87.template
  create_isce3_runfiles.py HawaiiSenD87.template --data-type cslc
+ create_isce3_runfiles.py HawaiiSenD87.template --data-type cslc --no-dolphin-split
  create_isce3_runfiles.py HawaiiSenD87.template --data-type dispS1 --run
+ create_isce3_runfiles.py HawaiiSenD87.template --data-type cslc --preset standard
+ create_isce3_runfiles.py HawaiiSenD87.template --data-type cslc --sleep 3600
  create_isce3_runfiles.py 19.4:19.54,-155.02:-154.80 HawaiiPuna --flight-dir desc --disp-S1"""
     parser = argparse.ArgumentParser(
         description="Create run files and SLURM job files for SAFE, CSLC, or DISP-S1 processing.",
@@ -344,7 +495,29 @@ def create_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--long-queue", default="skx", help="SLURM partition for unsafe or unknown restart behavior")
     parser.add_argument("--config", type=Path, help="ISCE3 job defaults file")
+    parser.add_argument(
+        "--preset",
+        type=_normalize_dolphin_preset,
+        default="dolphin",
+        metavar="NAME",
+        help=(
+            "dolphin strides/half-window preset for CSLC: "
+            f"{', '.join(DOLPHIN_PRESET_CHOICES)} (default: dolphin)"
+        ),
+    )
     parser.add_argument("--dry-run", action="store_true", help="print the workflow without writing files or querying services")
+    parser.add_argument(
+        "--no-dolphin-split",
+        action="store_true",
+        help="CSLC only: one dolphin stage instead of dolphin_wrapped, dolphin_unwrap, dolphin_timeseries",
+    )
+    parser.add_argument(
+        "--sleep",
+        type=int,
+        metavar="SECS",
+        default=None,
+        help="sleep seconds in each SLURM job file before the stage runs",
+    )
     parser.add_argument("--run", action="store_true", help="after creating files, run run_isce3_workflow.bash --start 1 --end N")
     return parser
 
@@ -518,19 +691,35 @@ def _runner_command(command: str) -> str:
     return f'pixi run --manifest-path "$MINSAR_HOME/tools/sweets/pyproject.toml" {command}'
 
 
-def _build_stage_specs(workflow: str, context: dict[str, object]) -> list[tuple[str, str, str]]:
+def _use_dolphin_split(workflow: str, no_dolphin_split: bool) -> bool:
+    """Return True when CSLC workflow should use split dolphin stages (default)."""
+    return workflow == "cslc" and not no_dolphin_split
+
+
+def _dolphin_stage_specs(split_dolphin: bool) -> list[tuple[str, str]]:
+    if split_dolphin:
+        return [
+            ("dolphin_wrapped", "Run Dolphin phase linking and stitch"),
+            ("dolphin_unwrap", "Unwrap stitched interferograms"),
+            ("dolphin_timeseries", "Run Dolphin timeseries inversion"),
+        ]
+    return [("dolphin", "Run Dolphin displacement processing")]
+
+
+def _build_stage_specs(workflow: str, context: dict[str, object], split_dolphin: bool = False) -> list[tuple[str, str, str]]:
+    dolphin_specs = [(name, title, "") for name, title in _dolphin_stage_specs(split_dolphin)]
     if workflow == "safe":
         return [
             ("download_safe", "Download and verify SAFE data, then prepare COMPASS runconfigs", ""),
             ("create_cslc", "Create CSLCs and static layers with COMPASS", ""),
-            ("dolphin", "Run Dolphin displacement processing", ""),
+            *dolphin_specs,
             ("create_hdfeos5", "Create HDF-EOS5 product", ""),
             ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", ""),
         ]
     if workflow == "cslc":
         return [
             ("download_cslc", "Download and verify OPERA CSLCs, then prepare geometry", ""),
-            ("dolphin", "Run Dolphin displacement processing", ""),
+            *dolphin_specs,
             ("create_hdfeos5", "Create HDF-EOS5 product", ""),
             ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", ""),
         ]
@@ -576,14 +765,25 @@ def _create_files(
 ) -> list[Stage]:
     run_dir = work_dir / "run_files"
     run_dir.mkdir(parents=True, exist_ok=True)
-    specs = _build_stage_specs(workflow, context)
-    dolphin_profile = _profile_for("dolphin", profiles)
+    specs = _build_stage_specs(
+        workflow, context, split_dolphin=_use_dolphin_split(workflow, args.no_dolphin_split)
+    )
+    split_dolphin = _use_dolphin_split(workflow, args.no_dolphin_split)
+    dolphin_profile_name = "dolphin_wrapped" if split_dolphin else "dolphin"
+    dolphin_profile = _profile_for(dolphin_profile_name, profiles)
     dolphin_queue = args.queue if dolphin_profile.queue_class == "short" else args.long_queue
     dolphin_cpus = int(_make_job_submit(work_dir, run_dir, dolphin_queue, dolphin_profile).number_of_cores_per_node)
     if workflow == "disp":
         bodies = _disp_stage_bodies(context, work_dir)
     elif workflow in {"safe", "cslc"}:
-        bodies = _sweets_stage_bodies(workflow, context, dolphin_cpus, work_dir)
+        bodies = _sweets_stage_bodies(
+            workflow,
+            context,
+            dolphin_cpus,
+            work_dir,
+            split_dolphin=split_dolphin,
+            preset=args.preset,
+        )
     else:
         bodies = None
     if bodies is not None:
@@ -633,7 +833,9 @@ def _create_files(
             task_list=profile.execution_mode == "launcher-task-list",
             raw=True,
         )
-        Isce3JobAdapter(work_dir, run_dir, stage.queue, profile).render(stage, run_file, job_file, workflow)
+        Isce3JobAdapter(
+            work_dir, run_dir, stage.queue, profile, sleep_secs=args.sleep
+        ).render(stage, run_file, job_file, workflow)
         stages.append(stage)
     return stages
 
@@ -646,9 +848,12 @@ def _print_plan(
     specs: list[tuple[str, str, str]] | None = None,
     queue: str | None = None,
     long_queue: str | None = None,
+    preset: str | None = None,
 ) -> None:
     print(f"Workflow: {workflow.upper()} ({platform})")
     print(f"Project:  {context['project']}")
+    if preset is not None and workflow in {"cslc", "safe"}:
+        print(f"Preset:   {preset}")
     if queue is not None:
         print(f"Queue:    {queue} (long: {long_queue})")
     if stages is not None:
@@ -731,9 +936,19 @@ def _bbox_wsene_from_sweets_line(line: str) -> tuple[str, str, str, str]:
         raise RuntimeError("sweets config command is missing --bbox") from exc
 
 
-def _cslc_dolphin_script(config_line: str, cpus_per_node: int, n_bursts_aoi: int) -> str:
+def _cslc_dolphin_script(
+    config_line: str,
+    cpus_per_node: int,
+    n_bursts_aoi: int,
+    preset: str = "dolphin",
+) -> str:
     """Commands for CSLC dolphin config + run with worker flags baked in."""
-    return "\n".join(_cslc_dolphin_commands(config_line, cpus_per_node, n_bursts_aoi)) + "\n"
+    return (
+        "\n".join(
+            _cslc_dolphin_commands(config_line, cpus_per_node, n_bursts_aoi, preset=preset)
+        )
+        + "\n"
+    )
 
 
 def _sweets_download_script(config_line: str, kind: str) -> str:
@@ -752,6 +967,8 @@ def _sweets_stage_bodies(
     context: dict[str, object],
     cpus_per_node: int,
     work_dir: Path,
+    split_dolphin: bool = False,
+    preset: str = "dolphin",
 ) -> dict[str, str]:
     """Resolve concrete SAFE or CSLC run-file bodies at generate time."""
     config_line = _sweets_config_line(workflow, context)
@@ -759,13 +976,14 @@ def _sweets_stage_bodies(
     cfg = SWEETS_CONFIG
     download = _sweets_download_script(config_line, kind)
     hdfeos5 = "dolphin2hdfeos5.py dolphin"
-    ingest = "ingest_insarmaps.bash timeseries"
+    ingest = "ingest_insarmaps.bash dolphin/timeseries"
+    geom = _geometry_stitch_command(preset, cfg)
     if workflow == "safe":
         return {
             "download_safe": download.rstrip("\n") + f"\nprepare_compass_runconfigs.py --config {cfg}\n",
             "create_cslc": "",
             "dolphin": _bash_script(
-                f"stitch_sweets_geometry.py --config {cfg}",
+                geom,
                 f"sweets run {cfg} --starting-step 3",
             ),
             "create_hdfeos5": hdfeos5,
@@ -778,9 +996,25 @@ def _sweets_stage_bodies(
             f"dolphin worker flags assume n_bursts=1 (re-run create_isce3_runfiles after download)",
             file=sys.stderr,
         )
+    if split_dolphin:
+        return {
+            "download_cslc": download.rstrip("\n") + f"\n{geom}\n",
+            "dolphin_wrapped": "\n".join(
+                _cslc_dolphin_wrapped_commands(
+                    config_line, cpus_per_node, n_bursts, preset=preset
+                )
+            )
+            + "\n",
+            "dolphin_unwrap": "\n".join(_cslc_dolphin_unwrap_commands()) + "\n",
+            "dolphin_timeseries": "\n".join(_cslc_dolphin_timeseries_commands()) + "\n",
+            "create_hdfeos5": hdfeos5,
+            "ingest_insarmaps": ingest,
+        }
     return {
-        "download_cslc": download.rstrip("\n") + f"\nstitch_sweets_geometry.py --config {cfg}\n",
-        "dolphin": _cslc_dolphin_script(config_line, cpus_per_node, n_bursts),
+        "download_cslc": download.rstrip("\n") + f"\n{geom}\n",
+        "dolphin": _cslc_dolphin_script(
+            config_line, cpus_per_node, n_bursts, preset=preset
+        ),
         "create_hdfeos5": hdfeos5,
         "ingest_insarmaps": ingest,
     }
@@ -1000,10 +1234,23 @@ def _execute_stage(
                 )
             subprocess.run(["bash", str(dolphin_files[-1])], cwd=work_dir, check=True)
         return 0
+    if action in DOLPHIN_SPLIT_STAGES:
+        stage_files = sorted((work_dir / "run_files").glob(f"run_*_{action}"))
+        if not stage_files:
+            raise RuntimeError(
+                f"{action} run file not found under run_files/; "
+                "run create_isce3_runfiles.py first"
+            )
+        subprocess.run(["bash", str(stage_files[-1])], cwd=work_dir, check=True)
+        return 0
     if action == "create-hdfeos5":
-        timeseries_dir = work_dir / "timeseries"
-        for path in timeseries_dir.glob("*.he5"):
-            path.unlink()
+        if workflow == "disp":
+            he5_dirs = [work_dir / "timeseries"]
+        else:
+            he5_dirs = [work_dir / "dolphin" / "timeseries"]
+        for he5_dir in he5_dirs:
+            for path in he5_dir.glob("*.he5"):
+                path.unlink()
         command = ["dolphin2hdfeos5.py"]
         if workflow == "disp":
             stacks = sorted(work_dir.glob("*stack.nc"))
@@ -1015,10 +1262,14 @@ def _execute_stage(
         subprocess.run(command, cwd=work_dir, check=True)
         return 0
     if action == "ingest-insarmaps":
-        products = sorted((work_dir / "timeseries").glob("*.he5"))
-        if not products:
-            raise RuntimeError("no timeseries/*.he5 product found")
-        subprocess.run(["ingest_insarmaps.bash", str(products[-1])], cwd=work_dir, check=True)
+        if workflow == "disp":
+            ingest_dir = "timeseries"
+        else:
+            ingest_dir = "dolphin/timeseries"
+        he5_glob = work_dir / ingest_dir
+        if not any(he5_glob.glob("*.he5")):
+            raise RuntimeError(f"no {ingest_dir}/*.he5 product found")
+        subprocess.run(["ingest_insarmaps.bash", ingest_dir], cwd=work_dir, check=True)
         return 0
     raise ValueError(f"unknown internal stage action {action!r}")
 
@@ -1057,8 +1308,11 @@ def main(iargs: list[str] | None = None) -> int:
             raise ValueError("No queue: set QUEUENAME or pass --queue")
         if args.run and args.dry_run:
             raise ValueError("--run cannot be combined with --dry-run")
+        if args.sleep is not None and args.sleep < 0:
+            raise ValueError("--sleep must be a non-negative integer")
         invocation_dir = Path.cwd().resolve()
         workflow = _workflow_name(args)
+        split_dolphin = _use_dolphin_split(workflow, args.no_dolphin_split)
         platform = _normalize_platform(args.platform)
         if platform == "NISAR":
             raise ValueError("NISAR is accepted but processing is not implemented until RSLC/GSLC commands are defined")
@@ -1074,18 +1328,25 @@ def main(iargs: list[str] | None = None) -> int:
         profiles = _read_profiles(config)
         scratch_dir = Path(os.environ["SCRATCHDIR"]).expanduser().resolve()
         work_dir = scratch_dir / str(context["project"])
-        specs = _build_stage_specs(workflow, context)
+        specs = _build_stage_specs(workflow, context, split_dolphin=split_dolphin)
         _log_command_line(invocation_dir, Path(__file__).name, argv)
         if args.dry_run:
-            _print_plan(workflow, platform, context, None, specs, args.queue, args.long_queue)
+            _print_plan(
+                workflow, platform, context, None, specs, args.queue, args.long_queue, preset=args.preset
+            )
             return 0
         os.chdir(scratch_dir)
         work_dir.mkdir(parents=True, exist_ok=True)
         stages = _create_files(args, workflow, context, profiles, work_dir)
-        _print_plan(workflow, platform, context, stages, queue=args.queue, long_queue=args.long_queue)
+        _print_plan(
+            workflow, platform, context, stages, queue=args.queue, long_queue=args.long_queue, preset=args.preset
+        )
         if not input_is_template:
             print(f"Template: {invocation_dir / Path(str(context['template'])).name}")
         if args.run:
+            if args.sleep:
+                print(f"Sleeping {args.sleep} seconds before starting ...")
+                time.sleep(args.sleep)
             return _run_isce3_workflow(work_dir, stages[-1].number)
         return 0
     except (OSError, RuntimeError, ValueError) as exc:

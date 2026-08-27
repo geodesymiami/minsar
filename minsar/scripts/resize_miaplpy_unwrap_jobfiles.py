@@ -53,11 +53,14 @@ except ImportError as exc:  # pragma: no cover
     print(f'Error: h5py is required ({exc})', file=sys.stderr)
     sys.exit(1)
 
-BYTES_PER_PIXEL = 420
-# Reserve slots below floor(mem/node) so concurrent snaphu startups
-# (many large mallocs at once) do not fail at the node memory cliff.
-# Margin 1 was still too thin for Etna Big1 (PPN=25 → 1/64 OOM); use 2.
-PPN_SAFETY_MARGIN = 2
+from minsar.utils.unwrap_memory import (
+    BYTES_PER_PIXEL,
+    compute_ppn,
+    load_queue_row,
+    max_width_for_ppn48,
+    mem_per_task_mib,
+)
+
 RUN05_BASE = 'run_05_miaplpy_unwrap_ifgram'
 
 
@@ -129,37 +132,6 @@ def read_slc_stack_size(miaplpy_dir: Path) -> tuple[int, int]:
             raise RuntimeError(f'Unexpected /slc shape {shape} in {h5_path}')
         length, width = int(shape[1]), int(shape[2])
     return length, width
-
-
-def load_queue_row(queue_name: str) -> dict:
-    minsar_home = os.getenv('MINSAR_HOME') or os.getenv('RSMASINSAR_HOME')
-    if minsar_home:
-        cfg = Path(minsar_home) / 'minsar' / 'defaults' / 'queues.cfg'
-    else:
-        cfg = Path(__file__).resolve().parents[1] / 'defaults' / 'queues.cfg'
-    if not cfg.is_file():
-        raise FileNotFoundError(f'queues.cfg not found: {cfg}')
-
-    platform = os.getenv('PLATFORM_NAME', 'stampede3')
-    with open(cfg, 'r') as f:
-        lines = [ln.strip() for ln in f if ln.strip() and not ln.startswith('#')]
-    header = lines[0].split()
-    for line in lines[1:]:
-        parts = line.split()
-        if len(parts) < len(header):
-            continue
-        row = dict(zip(header, parts))
-        if row.get('PLATFORM_NAME') == platform and row.get('QUEUENAME') == queue_name:
-            return {
-                'queue': queue_name,
-                'cpus_per_node': int(row['CPUS_PER_NODE']),
-                'mem_per_node_mb': int(row['MEM_PER_NODE']),
-                'max_nodes_pj': int(row['MAX_NODES_PJ']),
-                'max_walltime': row.get('MAX_WALLTIME', 'n/a'),
-            }
-    raise RuntimeError(
-        f'No queues.cfg row for PLATFORM_NAME={platform} QUEUENAME={queue_name} in {cfg}'
-    )
 
 
 def infer_queue_from_jobfiles(run_files_dir: Path) -> str | None:
@@ -274,50 +246,6 @@ def parse_num_tiles_from_tasks(tasks: list[str]) -> int:
     if not tasks:
         return 1
     return max(parse_num_tiles_from_command(cmd) for cmd in tasks)
-
-
-def mem_per_task_mib(length: int, width: int, bytes_per_pixel: float,
-                     num_tiles: int = 1) -> float:
-    """Estimate snaphu RSS per unwrap task (MiB).
-
-    Single-tile: LENGTH*WIDTH*bytes_per_pixel.
-    Tiled (num_tiles>1): divide by num_tiles (tile-local optimization; SNAPHU
-    ``--nproc`` may run several tiles, but peak is far below full-scene single-tile).
-    """
-    full = length * width * bytes_per_pixel / (1024.0 ** 2)
-    ntiles = max(1, int(num_tiles))
-    if ntiles <= 1:
-        return full
-    return full / float(ntiles)
-
-
-def compute_ppn(mem_mib: float, mem_per_node_mb: int, cpus_per_node: int,
-                num_tiles: int = 1) -> int:
-    """LAUNCHER_PPN from memory, capped by tile parallelism when num_tiles>1.
-
-    MiaplPy sets SNAPHU ``--nproc = num_tiles``, so each concurrent unwrap can use
-    that many cores. PPN is limited by both memory and ``cpus // num_tiles``.
-    """
-    if mem_mib <= 0:
-        mem_ppn = cpus_per_node
-    else:
-        raw_ppn = int(math.floor(mem_per_node_mb / mem_mib))
-        mem_ppn = min(
-            cpus_per_node,
-            max(1, raw_ppn - PPN_SAFETY_MARGIN),
-        )
-    ntiles = max(1, int(num_tiles))
-    if ntiles <= 1:
-        return mem_ppn
-    cpu_ppn = max(1, int(cpus_per_node // ntiles))
-    return min(mem_ppn, cpu_ppn)
-
-
-def max_width_for_ppn48(length: int, mem_per_node_mb: int, bytes_per_pixel: float,
-                        cpus_for_ref: int = 48) -> int:
-    max_mem_per_task = mem_per_node_mb / float(cpus_for_ref)
-    max_pixels = max_mem_per_task * (1024.0 ** 2) / bytes_per_pixel
-    return max(1, int(math.floor(max_pixels / length)))
 
 
 def plan_job_split(n_tasks: int, ppn: int, max_nodes_pj: int,

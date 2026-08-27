@@ -43,7 +43,8 @@ options:
 STEP may be a step number, step name, or run-file basename.
 
 SAFE steps:    download_safe, create_cslc, dolphin, create_hdfeos5, ingest_insarmaps
-CSLC steps:    download_cslc, dolphin, create_hdfeos5, ingest_insarmaps
+CSLC steps:    download_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, create_hdfeos5, ingest_insarmaps
+CSLC monolithic: download_cslc, dolphin, create_hdfeos5, ingest_insarmaps (create_isce3_runfiles.py --no-dolphin-split)
 DISP-S1 steps: download_disp, reformat_disp, create_hdfeos5, ingest_insarmaps
 
 Examples:

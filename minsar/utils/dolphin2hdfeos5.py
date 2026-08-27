@@ -80,7 +80,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--output",
         dest="outfile",
         default=None,
-        help="Output .he5 path (default: under timeseries/ or run dir)",
+        help="Output .he5 path (default: dolphin/timeseries/ or OPERA run timeseries/)",
     )
     parser.add_argument(
         "--no-update",
@@ -153,6 +153,7 @@ def run_dolphin(inps, vmin, vmin_sim, suffix: str) -> Path:
     metadata = build_metadata(
         dataset_dir, dolphin_dir, ts_dir, date_list, latitude, longitude, ref_y, ref_x, processor="dolphin"
     )
+    # Write .he5 next to the GeoTIFF timeseries inputs (dolphin/timeseries/).
     return _write_he5(inps, ts_dir, stack, date_list, grid, quality, mask, latitude, longitude, metadata, suffix, bperp=None)
 
 

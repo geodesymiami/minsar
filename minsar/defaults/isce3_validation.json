@@ -15,11 +15,20 @@
         "dolphin/**/*.tif",
         "dolphin/**/*.nc"
       ],
+      "dolphin_wrapped": [
+        "dolphin/interferograms/*.int.tif"
+      ],
+      "dolphin_unwrap": [
+        "dolphin/unwrapped/*.unw.tif"
+      ],
+      "dolphin_timeseries": [
+        "dolphin/timeseries/velocity.tif"
+      ],
       "create_hdfeos5": [
-        "timeseries/*.he5"
+        "dolphin/timeseries/*.he5"
       ],
       "ingest_insarmaps": [
-        "timeseries/JSON*/*.mbtiles"
+        "dolphin/timeseries/JSON*/*.mbtiles"
       ]
     },
     "cslc": {
@@ -31,11 +40,20 @@
         "dolphin/**/*.tif",
         "dolphin/**/*.nc"
       ],
+      "dolphin_wrapped": [
+        "dolphin/interferograms/*.int.tif"
+      ],
+      "dolphin_unwrap": [
+        "dolphin/unwrapped/*.unw.tif"
+      ],
+      "dolphin_timeseries": [
+        "dolphin/timeseries/velocity.tif"
+      ],
       "create_hdfeos5": [
-        "timeseries/*.he5"
+        "dolphin/timeseries/*.he5"
       ],
       "ingest_insarmaps": [
-        "timeseries/JSON*/*.mbtiles"
+        "dolphin/timeseries/JSON*/*.mbtiles"
       ]
     },
     "disp": {

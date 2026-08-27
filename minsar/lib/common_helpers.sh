@@ -198,58 +198,68 @@ scancel_jobs() {
 }
 
 ###########################################
+# Look up one column from minsar/defaults/queues.cfg for PLATFORM_NAME + queue.
+_queue_cfg_value() {
+  local platform="$1" queue="$2" param="$3"
+  local cfg="${MINSAR_HOME}/minsar/defaults/queues.cfg"
+  if [[ ! -f "$cfg" ]]; then
+    echo "Error: queues.cfg not found: $cfg" >&2
+    return 1
+  fi
+  awk -v plat="$platform" -v que="$queue" -v param="$param" '
+    NR == 1 {
+      for (i = 1; i <= NF; i++) if ($i == param) col = i
+      next
+    }
+    $1 == plat && $2 == que {
+      if (col) print $col
+      exit
+    }
+  ' "$cfg"
+}
+
+###########################################
 function changequeuedev() {
   if [[ "$1" == "--help" || "$1" == "-h" || "$#" -lt 1 ]]; then
     echo "Usage: changequeuedev run_10*.job [more .job files]"
-    echo "  * frontera: set queue to development and ~2h walltime"
-    echo "  * stampede3: set partition to skx-dev, -n=${cpus_per_node_skx_dev},"
-    echo "               and cap walltime at ${max_walltime_skx_dev}"
+    echo "  Set partition to \$QUEUE_DEV (or platform default), -n from queues.cfg"
+    echo "  CPUS_PER_NODE, and cap -t at queues.cfg MAX_WALLTIME when longer."
     return
   fi
 
+  local target_queue cpus max_walltime f current current_secs max_secs
   if [[ "${PLATFORM_NAME}" == "frontera" ]]; then
-
-    sed -i 's/^#SBATCH -p \s*flex/#SBATCH -p development/'   "$@"
-    sed -i 's/^#SBATCH -p \s*small/#SBATCH -p development/'  "$@"
-    sed -i 's/^#SBATCH -p \s*normal/#SBATCH -p development/' "$@"
-
-    sed -i 's/^#SBATCH -t \s*[0-9]\{1,2\}:[0-9]\{2\}:[0-9]\{2\}/#SBATCH -t 01:59:00/' "$@"
-
+    target_queue="${QUEUE_DEV:-development}"
   elif [[ "${PLATFORM_NAME}" == "stampede3" ]]; then
-    for f in "$@"; do
-
-      if grep -q '^#SBATCH -p icx' "$f"; then
-         sed -i 's/^#SBATCH -p \s*icx/#SBATCH -p skx-dev/' "$f"
-      elif grep -q '^#SBATCH -p skx ' "$f"; then
-         sed -i 's/^#SBATCH -p \s*skx/#SBATCH -p skx-dev/' "$f"
-      elif grep -q '^#SBATCH -p pvc ' "$f"; then
-         sed -i 's/^#SBATCH -p \s*skx/#SBATCH -p skx-dev/' "$f"
-      fi
-
-      sed -i "s/^#SBATCH -n \s*[0-9]\+/#SBATCH -n ${cpus_per_node_skx_dev}/" "$f"
-
-      # Cap walltime at max_walltime_skx_dev if current > max
-      if grep -q '^#SBATCH -t ' "$f"; then
-        current=$(grep '^#SBATCH -t ' "$f" | head -n1 | awk '{print $3}')
-        current_secs=$(hms_to_sec "$current")
-        max_secs=$(hms_to_sec "$max_walltime_skx_dev")
-        if (( current_secs > max_secs )); then
-          # replace only the first occurrence to be safe
-          awk -v newt="$max_walltime_skx_dev" '
-            BEGIN{done=0}
-            {
-              if (!done && $0 ~ /^#SBATCH -t /) {
-                sub(/^#SBATCH -t[ \t]+[0-9:]+/, "#SBATCH -t " newt)
-                done=1
-              }
-              print
-            }' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
-        fi
-      fi
-    done
+    target_queue="${QUEUE_DEV:-skx-dev}"
   else
-    echo "PLATFORM_NAME='${PLATFORM_NAME}' not recognized. No changes made."
+    echo "PLATFORM_NAME='${PLATFORM_NAME}' not recognized. No changes made." >&2
+    return 1
   fi
+
+  cpus="$(_queue_cfg_value "${PLATFORM_NAME}" "${target_queue}" CPUS_PER_NODE)" || return 1
+  max_walltime="$(_queue_cfg_value "${PLATFORM_NAME}" "${target_queue}" MAX_WALLTIME)" || return 1
+  if [[ -z "$cpus" || -z "$max_walltime" ]]; then
+    echo "Error: no queues.cfg row for ${PLATFORM_NAME} ${target_queue}" >&2
+    return 1
+  fi
+  max_secs=$(hms_to_sec "$max_walltime")
+
+  for f in "$@"; do
+    if [[ ! -f "$f" ]]; then
+      echo "Error: not a file: $f" >&2
+      return 1
+    fi
+    sed -i -E "s/^(#SBATCH[[:space:]]+-p[[:space:]]+)[^[:space:]]+/\1${target_queue}/" "$f"
+    sed -i -E "s/^(#SBATCH[[:space:]]+-n[[:space:]]+)[0-9]+/\1${cpus}/" "$f"
+    if grep -q '^#SBATCH -t ' "$f"; then
+      current=$(grep '^#SBATCH -t ' "$f" | head -n1 | awk '{print $3}')
+      current_secs=$(hms_to_sec "$current")
+      if (( current_secs > max_secs )); then
+        sed -i -E "s/^(#SBATCH[[:space:]]+-t[[:space:]]+)[0-9:]+/\1${max_walltime}/" "$f"
+      fi
+    fi
+  done
 }
 
 ###########################################
