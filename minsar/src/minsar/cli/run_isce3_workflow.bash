@@ -9,6 +9,8 @@ export MINSAR_HOME="${MINSAR_HOME:-$(cd "${SCRIPT_DIR}/../../../.." && pwd)}"
 MINSAR_UTILS="${MINSAR_HOME}/minsar/lib/utils.sh"
 WORKFLOW_UTILS="${MINSAR_HOME}/minsar/lib/workflow_utils.sh"
 SUBMIT_JOBS="${MINSAR_HOME}/minsar/bin/submit_jobs.bash"
+ISCE3_JOB_DEFAULTS="job_defaults_isce3.cfg"
+STAGE_SWEETS_PIXI="${MINSAR_HOME}/minsar/scripts/stage_sweets_pixi_env.bash"
 [[ -f "$MINSAR_UTILS" ]] || {
     echo "Error: MinSAR utilities not found: $MINSAR_UTILS" >&2
     exit 1
@@ -384,6 +386,10 @@ wait_for_slurm_jobs() {
         return 0
     fi
 
+    if [[ -f "$STAGE_SWEETS_PIXI" ]]; then
+        "$STAGE_SWEETS_PIXI"
+    fi
+
     jns="$("$SUBMIT_JOBS" "$file_pattern")"
     exit_status="$?"
     [[ "$exit_status" -eq 0 ]] || die "submit_jobs.bash failed for $file_pattern"
@@ -419,7 +425,7 @@ wait_for_slurm_jobs() {
                     init_walltime="$(grep -oE '#SBATCH -t [0-9]+:[0-9]+:[0-9]+' "$file" | awk '{print $3}')"
                     init_queue="$(grep -oE '#SBATCH -p [^[:space:]]+' "$file" | awk '{print $3}')"
                     echo "Job file ${file} timed out with walltime of ${init_walltime}."
-                    update_walltime_queuename.py "$file" &>/dev/null
+                    update_walltime_queuename.py --config "$ISCE3_JOB_DEFAULTS" "$file" &>/dev/null
                     updated_walltime="$(grep -oE '#SBATCH -t [0-9]+:[0-9]+:[0-9]+' "$file" | awk '{print $3}')"
                     updated_queue="$(grep -oE '#SBATCH -p [^[:space:]]+' "$file" | awk '{print $3}')"
                     datetime="$(date +"%Y-%m-%d:%H-%M")"
@@ -432,6 +438,9 @@ wait_for_slurm_jobs() {
                 fi
                 jobnumbers=($(remove_from_list "$jobnumber" "${jobnumbers[@]}"))
                 files=($(remove_from_list "$file" "${files[@]}"))
+                if [[ -f "$STAGE_SWEETS_PIXI" ]]; then
+                    "$STAGE_SWEETS_PIXI"
+                fi
                 jobnumber="$($SUBMIT_JOBS "${file%.*}")"
                 exit_status="$?"
                 if [[ "$exit_status" -eq 0 ]]; then

@@ -466,7 +466,7 @@ def get_config_defaults(config_file='job_defaults.cfg'):
     if not os.path.isfile(config_file):
         raise ValueError('job config file NOT found, it should be: {}'.format(config_file))
 
-    if os.path.basename(config_file) in ['job_defaults.cfg']:
+    if os.path.basename(config_file) in ('job_defaults.cfg', 'job_defaults_isce3.cfg'):
 
         fields = ['c_walltime', 's_walltime', 'seconds_factor', 'c_memory', 's_memory', 'num_threads', 'io_load',
                   'rerun_walltime_factor', 'switch_queue', 'rerun_walltime_factor_switch']
@@ -1372,13 +1372,13 @@ def extract_step_name_from_job_file(job_file_path):
     return basename
 
 
-def compute_rerun_walltime_and_queue(job_file_path):
+def compute_rerun_walltime_and_queue(job_file_path, config_file='job_defaults.cfg'):
     """
-    Compute new walltime and optionally new queue for a timeout rerun using job_defaults.cfg and queues.cfg.
+    Compute new walltime and optionally new queue for a timeout rerun using job defaults and queues.cfg.
     Returns (new_walltime_str, new_queue_or_None). Caller should replace_walltime_in_job_file and, if
     new_queue_or_None is not None, replace_queuename_in_job_file.
     """
-    config = get_config_defaults(config_file='job_defaults.cfg')
+    config = get_config_defaults(config_file=config_file)
     step_name = extract_step_name_from_job_file(job_file_path)
     if step_name not in config.sections():
         step_name = 'default'

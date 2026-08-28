@@ -15,6 +15,7 @@ from pathlib import Path
 import numpy as np
 
 try:
+    from minsar.utils.dolphin_presets import DOLPHIN_PRESET_HELP, NO_PRESET_NAMING_HELP
     from minsar.utils.dolphin_hdfeos5_utils import (
         DOLPHIN2HDFEOS5_EXAMPLES,
         add_mask_arguments,
@@ -24,12 +25,14 @@ try:
         collect_timeseries,
         create_hdfeos_output,
         detect_input_kind,
+        dolphin_he5_method_name,
         find_opera_stack_nc,
         he5_output_filename,
         latlon_grids,
         load_opera_stack,
         load_quality_layers,
         mask_filename_suffix,
+        normalize_dolphin_preset,
         read_reference_point,
         resolve_mask_thresholds,
         resolve_required_files,
@@ -37,6 +40,7 @@ try:
         same_shape,
     )
 except ImportError:
+    from dolphin_presets import DOLPHIN_PRESET_HELP, NO_PRESET_NAMING_HELP
     from dolphin_hdfeos5_utils import (
         DOLPHIN2HDFEOS5_EXAMPLES,
         add_mask_arguments,
@@ -46,12 +50,14 @@ except ImportError:
         collect_timeseries,
         create_hdfeos_output,
         detect_input_kind,
+        dolphin_he5_method_name,
         find_opera_stack_nc,
         he5_output_filename,
         latlon_grids,
         load_opera_stack,
         load_quality_layers,
         mask_filename_suffix,
+        normalize_dolphin_preset,
         read_reference_point,
         resolve_mask_thresholds,
         resolve_required_files,
@@ -88,6 +94,26 @@ def create_parser() -> argparse.ArgumentParser:
         action="store_false",
         default=True,
         help="Use real last date in filename (default: DATE2=XXXXXXXX if within 31 days)",
+    )
+    parser.add_argument(
+        "--preset",
+        type=normalize_dolphin_preset,
+        default="auto",
+        metavar="NAME",
+        help=DOLPHIN_PRESET_HELP,
+    )
+    parser.add_argument(
+        "--preset-naming",
+        action="store_true",
+        default=True,
+        dest="preset_naming",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--no-preset-naming",
+        action="store_false",
+        dest="preset_naming",
+        help=NO_PRESET_NAMING_HELP,
     )
     add_mask_arguments(parser)
     return parser
@@ -150,8 +176,22 @@ def run_dolphin(inps, vmin, vmin_sim, suffix: str) -> Path:
 
     latitude, longitude = latlon_grids(grid)
     ref_y, ref_x = _pick_ref(shape, mask, quality, ts_dir=ts_dir)
+    method_name = dolphin_he5_method_name(inps.preset, inps.preset_naming)
+    if inps.preset_naming:
+        print(f"HE5 name:   {method_name}")
+    else:
+        print(f"HE5 name:   {method_name} (--no-preset-naming)")
     metadata = build_metadata(
-        dataset_dir, dolphin_dir, ts_dir, date_list, latitude, longitude, ref_y, ref_x, processor="dolphin"
+        dataset_dir,
+        dolphin_dir,
+        ts_dir,
+        date_list,
+        latitude,
+        longitude,
+        ref_y,
+        ref_x,
+        processor="dolphin",
+        post_processing_method=method_name,
     )
     # Write .he5 next to the GeoTIFF timeseries inputs (dolphin/timeseries/).
     return _write_he5(inps, ts_dir, stack, date_list, grid, quality, mask, latitude, longitude, metadata, suffix, bperp=None)

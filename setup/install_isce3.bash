@@ -14,4 +14,7 @@ pixi upgrade asf_search
 
 echo "sweets installation DONE"
 
+if [[ -f "${MINSAR_HOME}/minsar/scripts/stage_sweets_pixi_env.bash" ]]; then
+    "${MINSAR_HOME}/minsar/scripts/stage_sweets_pixi_env.bash"
+fi
 

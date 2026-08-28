@@ -132,6 +132,34 @@ def orbit_pass_wanted(flight_direction: str | None) -> str | None:
     return "ASCENDING" if flight_direction.lower().startswith("a") else "DESCENDING"
 
 
+def _intersecting_frame_features(
+    opera_utils,
+    Bbox,
+    box,
+    shape,
+    west: float,
+    south: float,
+    east: float,
+    north: float,
+) -> list[dict]:
+    """Frame GeoJSON features intersecting a WGS84 bbox (opera-utils to_geo_dict fallback)."""
+    aoi = box(west, south, east, north)
+    bounds = Bbox(left=west, bottom=south, right=east, top=north)
+    try:
+        raw = opera_utils.get_intersecting_frames(bounds)
+        if isinstance(raw, dict):
+            return list(raw.get("features") or [])
+    except AttributeError:
+        pass
+    geojson = opera_utils.get_frame_geojson(as_geodataframe=False)
+    features: list[dict] = []
+    for feat in geojson.get("features") or []:
+        geom = feat.get("geometry")
+        if geom and shape(geom).intersects(aoi):
+            features.append(feat)
+    return features
+
+
 def resolve_frame_id(
     bbox: tuple[str, str, str, str],
     *,
@@ -142,8 +170,10 @@ def resolve_frame_id(
     opera_utils, Bbox, box, shape = _opera_utils()
     west, south, east, north = (float(v) for v in bbox)
     aoi = box(west, south, east, north)
-    frames = opera_utils.get_intersecting_frames(Bbox(left=west, bottom=south, right=east, top=north))
-    features = list(frames.get("features") or [])
+    frames = _intersecting_frame_features(
+        opera_utils, Bbox, box, shape, west, south, east, north
+    )
+    features = frames
     if not features:
         raise RuntimeError(f"No DISP-S1 frames intersect AOI bbox {west} {south} {east} {north}")
 

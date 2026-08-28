@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from datetime import date
 from pathlib import Path
@@ -112,7 +113,57 @@ def aoi_to_wkt(subset_lalo: str) -> str:
     )
 
 
-def resolve_work_dir(template_file: str, cwd: str | None = None) -> str:
+def subset_lalo_from_options(options: dict) -> str:
+    """Return S:N,W:E from miaplpy.subset.lalo in template options."""
+    subset = options.get("miaplpy.subset.lalo")
+    if not subset:
+        raise ValueError("Template has no miaplpy.subset.lalo")
+    return str(subset).strip().strip("'\"")
+
+
+def parse_track(options: dict) -> int:
+    """Relative orbit from ssaraopt.relativeOrbit."""
+    raw = options.get("ssaraopt.relativeOrbit")
+    if raw is None or str(raw).strip() == "":
+        raise ValueError("Template has no ssaraopt.relativeOrbit")
+    return int(str(raw).strip())
+
+
+def flight_direction_from_template(template_file: str) -> str | None:
+    """asc/desc from template options or SenA/SenD in dataset name."""
+    dataset_template = Template(template_file)
+    options = dataset_template.get_options()
+    options.update(pathObj.correct_for_ssara_date_format(dict(options)))
+    for key in ("ssaraopt.flightDirection", "flightDirection", "orbitDirection"):
+        val = options.get(key)
+        if val:
+            text = str(val).strip().lower()
+            if text.startswith("a"):
+                return "asc"
+            if text.startswith("d"):
+                return "desc"
+            raise ValueError(f"unknown flight direction {val!r} in template")
+    dataset = options.get("dataset") or Path(template_file).stem.replace(".template", "")
+    if re.search(r"SenA\d", dataset, re.I):
+        return "asc"
+    if re.search(r"SenD\d", dataset, re.I):
+        return "desc"
+    return None
+
+
+def resolve_work_dir(template_or_options: str | dict, cwd: str | None = None) -> str:
+    """Scratch project dir from template path or options dict (dataset key)."""
+    if isinstance(template_or_options, dict):
+        options = template_or_options
+        cwd_abs = os.path.abspath(cwd or os.getcwd())
+        dataset = options.get("dataset")
+        if dataset and dataset in cwd_abs:
+            return cwd_abs
+        scratch = os.getenv("SCRATCHDIR")
+        if scratch and dataset:
+            return os.path.join(scratch, dataset)
+        return cwd_abs
+    template_file = template_or_options
     cwd = os.path.abspath(cwd or os.getcwd())
     dataset_template = Template(template_file)
     options = dataset_template.get_options()
@@ -134,25 +185,18 @@ def _normalize_orbit_pass(flight_direction: str | None) -> str | None:
     return PASS_FROM_FLIGHT_DIR[key]
 
 
-def bursts_covering_aoi(
+def _burst_gdf_for_aoi(
     subset_lalo: str,
     *,
     track: int | None = None,
     flight_direction: str | None = None,
-) -> tuple[int, list[str]]:
-    """Return (track, IW swaths) for bursts intersecting the AOI via opera_utils.
-
-    Uses ``opera_utils.get_burst_geodataframe()`` (WGS84 footprints with
-    ``orbit_pass``). Equivalent idea to CLI frame lookup via
-    ``opera-utils disp-s1-intersects``, but returns the intersecting IW swaths
-    rather than whole DISP frames.
-    """
+):
+    """GeoDataFrame of OPERA burst footprints intersecting the AOI (filtered)."""
     from opera_utils import get_burst_geodataframe
     from shapely.geometry import box
 
     west, south, east, north = bbox_wsene(subset_lalo)
     aoi = box(float(west), float(south), float(east), float(north))
-    print(f"Querying opera_utils burst footprints for AOI {subset_lalo} ...", file=sys.stderr)
     gdf = get_burst_geodataframe()
     hit = gdf[gdf.geometry.intersects(aoi)].copy()
     if hit.empty:
@@ -171,10 +215,43 @@ def bursts_covering_aoi(
         hit = hit[hit["track"] == int(track)]
         if hit.empty:
             raise RuntimeError(f"Track {track} does not intersect AOI {subset_lalo}")
+    return hit
+
+
+def count_bursts_covering_aoi(
+    subset_lalo: str,
+    *,
+    track: int | None = None,
+    flight_direction: str | None = None,
+) -> int:
+    """Number of distinct OPERA burst footprints intersecting the AOI."""
+    print(f"Querying opera_utils burst footprints for AOI {subset_lalo} ...", file=sys.stderr)
+    hit = _burst_gdf_for_aoi(subset_lalo, track=track, flight_direction=flight_direction)
+    return len(hit)
+
+
+def bursts_covering_aoi(
+    subset_lalo: str,
+    *,
+    track: int | None = None,
+    flight_direction: str | None = None,
+) -> tuple[int, list[str]]:
+    """Return (track, IW swaths) for bursts intersecting the AOI via opera_utils.
+
+    Uses ``opera_utils.get_burst_geodataframe()`` (WGS84 footprints with
+    ``orbit_pass``). Equivalent idea to CLI frame lookup via
+    ``opera-utils disp-s1-intersects``, but returns the intersecting IW swaths
+    rather than whole DISP frames.
+    """
+    print(f"Querying opera_utils burst footprints for AOI {subset_lalo} ...", file=sys.stderr)
+    hit = _burst_gdf_for_aoi(subset_lalo, track=track, flight_direction=flight_direction)
+
+    if track is not None:
         chosen = int(track)
     else:
         tracks = sorted({int(t) for t in hit["track"].unique()})
         passes = sorted({str(p).upper() for p in hit["orbit_pass"].dropna().unique()})
+        want_pass = _normalize_orbit_pass(flight_direction)
         if len(tracks) > 1 and want_pass is None and len(passes) > 1:
             raise RuntimeError(
                 f"AOI intersects tracks {tracks} ({', '.join(passes)}); pass --track or --flight-dir"

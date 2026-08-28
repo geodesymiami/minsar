@@ -362,6 +362,7 @@ hv_append_gpkg_for_he5() {
     local data_files="$1"
     local he5_path="$2"
     local gpkg_path="${he5_path%.he5}.gpkg"
+    local r_he5 r_gpkg
     [[ -z "$he5_path" || "$he5_path" != *.he5 ]] && return 0
     if [[ ! -f "$he5_path" ]]; then
         echo "Error: --save-qgis expected .he5 missing: $he5_path" >&2
@@ -371,8 +372,10 @@ hv_append_gpkg_for_he5() {
         echo "Error: --save-qgis expected GeoPackage missing: $gpkg_path" >&2
         return 1
     fi
-    hv_data_files_contains "$data_files" "$he5_path" || echo "$he5_path" >> "$data_files"
-    hv_data_files_contains "$data_files" "$gpkg_path" || echo "$gpkg_path" >> "$data_files"
+    r_he5=$(hv_data_files_relpath "$he5_path")
+    r_gpkg=$(hv_data_files_relpath "$gpkg_path")
+    hv_data_files_contains "$data_files" "$r_he5" || echo "$r_he5" >> "$data_files"
+    hv_data_files_contains "$data_files" "$r_gpkg" || echo "$r_gpkg" >> "$data_files"
 }
 
 # Upload product dir to Jetstream unless this host is the data server.
@@ -388,6 +391,96 @@ hv_maybe_upload_horzvert_dir() {
     upload_horzvert.py "$product_dir"
 }
 
+# Locate insarmaps.log near an HE5 (same dir, pic/, parent, parent/pic/).
+hv_find_insarmaps_log_for_he5() {
+    local he5="$1"
+    local dir parent
+    [[ -n "$he5" && -f "$he5" ]] || return 1
+    dir=$(dirname "$he5")
+    parent=$(dirname "$dir")
+    local candidate
+    for candidate in \
+        "${dir}/insarmaps.log" \
+        "${dir}/pic/insarmaps.log" \
+        "${parent}/insarmaps.log" \
+        "${parent}/pic/insarmaps.log"; do
+        if [[ -f "$candidate" ]]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Last http(s) URL line from an insarmaps.log (empty if none).
+hv_last_insarmaps_url() {
+    local log_file="$1"
+    [[ -f "$log_file" ]] || return 1
+    grep -E '^https?://' "$log_file" | tail -1
+}
+
+# Relative path for data_files.txt (under $SCRATCHDIR when possible).
+hv_data_files_relpath() {
+    local path="$1"
+    local abs
+    [[ -z "$path" ]] && return 0
+    abs=$(realpath "$path" 2>/dev/null || echo "$path")
+    hv_runfile_path "$abs"
+}
+
+# Copy overlay.html / index.html into product dir and write urls.log.
+hv_write_overlay_and_urls() {
+    local outdir="$1"
+    local horzvert_rel="$2"
+    local lib_dir html_source remote_dir remote_host urls_log
+
+    [[ -n "$outdir" && -d "$outdir" ]] || return 1
+    lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    html_source="${lib_dir}/../html"
+    cp "$html_source/overlay.html" "$outdir/"
+    cp "$outdir/overlay.html" "$outdir/index.html"
+    urls_log="${outdir}/urls.log"
+    if write_insarmaps_framepage_urls.py "${horzvert_rel:-$outdir}" --outdir "${horzvert_rel:-$outdir}"; then
+        return 0
+    fi
+    # Fallback when message_rsmas / env is incomplete: still write overlay URL.
+    remote_host="${REMOTEHOST_DATA:-}"
+    remote_dir="${REMOTE_DIR:-/data/HDF5EOS/}"
+    [[ "$remote_dir" == */ ]] || remote_dir="${remote_dir}/"
+    if [[ -n "$remote_host" ]]; then
+        echo "http://${remote_host}${remote_dir}${horzvert_rel:-$(basename "$outdir")}/overlay.html" > "$urls_log"
+        echo "Warning: write_insarmaps_framepage_urls.py failed; wrote fallback $urls_log" >&2
+        return 0
+    fi
+    echo "Warning: write_insarmaps_framepage_urls.py failed; no REMOTEHOST_DATA for fallback urls.log" >&2
+    return 0
+}
+
+# When --no-insarmaps: build product insarmaps.log from last URL in asc/desc logs.
+hv_assemble_insarmaps_log_from_inputs() {
+    local outdir="$1"
+    local radar1="$2"
+    local radar2="$3"
+    local log_file url found=0
+    local out_log="${outdir}/insarmaps.log"
+
+    : > "$out_log"
+    for he5 in "$radar1" "$radar2"; do
+        [[ -n "$he5" && -f "$he5" ]] || continue
+        log_file=$(hv_find_insarmaps_log_for_he5 "$he5") || continue
+        url=$(hv_last_insarmaps_url "$log_file") || continue
+        [[ -z "$url" ]] && continue
+        echo "$url" >> "$out_log"
+        found=1
+        echo "Using last URL from $log_file"
+    done
+    if [[ $found -eq 0 ]]; then
+        rm -f "$out_log"
+        return 1
+    fi
+    return 0
+}
+
 # Write data_files.txt, InsarMaps HTML/urls, download commands; optionally upload.
 # Args: OUTDIR LAT_STEP LON_STEP RADAR1 RADAR2 INGEST_INSARMAPS INGEST_LOS SAVE_QGIS DO_UPLOAD HORZVERT_REL
 hv_finish_horzvert_run() {
@@ -401,7 +494,8 @@ hv_finish_horzvert_run() {
     local save_qgis="$8"
     local do_upload="$9"
     local horzvert_rel="${10}"
-    local data_files vert horz geo1 geo2 html_source lib_dir
+    local data_files vert horz geo1 geo2
+    local r_vert r_horz r_radar1 r_radar2 r_geo1 r_geo2
 
     outdir=$(realpath "$outdir")
     if [[ -n "${SCRATCHDIR:-}" && -d "$SCRATCHDIR" ]]; then
@@ -426,21 +520,32 @@ hv_finish_horzvert_run() {
     if ! radar2=$(hv_promote_short_he5_to_corner_filename "$(realpath "$radar2")"); then return 1; fi
     radar1=$(realpath "$radar1")
     radar2=$(realpath "$radar2")
-    geo1="$(dirname "$radar1")/geo_$(basename "$radar1")"
-    geo2="$(dirname "$radar2")/geo_$(basename "$radar2")"
+    geo1=$(hv_geo_product_path "$radar1") || return 1
+    geo2=$(hv_geo_product_path "$radar2") || return 1
+    geo1=$(realpath "$geo1" 2>/dev/null || echo "$geo1")
+    geo2=$(realpath "$geo2" 2>/dev/null || echo "$geo2")
+
+    r_vert=$(hv_data_files_relpath "$vert")
+    r_horz=$(hv_data_files_relpath "$horz")
+    r_radar1=$(hv_data_files_relpath "$radar1")
+    r_radar2=$(hv_data_files_relpath "$radar2")
+    r_geo1=$(hv_data_files_relpath "$geo1")
+    r_geo2=$(hv_data_files_relpath "$geo2")
 
     data_files="$outdir/data_files.txt"
     {
         echo "# geocode-lalo-step $lat_step $lon_step"
-        echo "$vert"
-        echo "$horz"
-        echo "$radar1"
+        echo "$r_vert"
+        echo "$r_horz"
+        echo "$r_radar1"
         if [[ "$radar1" != "$radar2" ]]; then
-            echo "$radar2"
+            echo "$r_radar2"
         fi
-        [[ -f "$geo1" ]] && echo "$geo1"
-        if [[ "$geo1" != "$geo2" && -f "$geo2" ]]; then
-            echo "$geo2"
+        if [[ "$geo1" != "$radar1" && -f "$geo1" ]]; then
+            echo "$r_geo1"
+        fi
+        if [[ "$geo2" != "$radar2" && "$geo2" != "$geo1" && -f "$geo2" ]]; then
+            echo "$r_geo2"
         fi
     } > "$data_files"
     if [[ "$save_qgis" != "off" && -n "$save_qgis" ]]; then
@@ -454,23 +559,30 @@ hv_finish_horzvert_run() {
         fi
     fi
 
+    # Always write download_commands.txt from data_files.txt.
+    create_data_download_commands.py "$data_files"
+
     if [[ "$ingest_insarmaps" == "1" ]]; then
         hv_normalize_insarmaps_coordinates "$outdir/insarmaps.log"
         echo ""
         echo "##############################################"
-        echo "Write InsarMaps HTML / urls / download commands"
-        lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-        html_source="${lib_dir}/../html"
-        cp "$html_source/overlay.html" "$outdir/"
-        cp "$outdir/overlay.html" "$outdir/index.html"
-        write_insarmaps_framepage_urls.py "${horzvert_rel:-$outdir}" --outdir "${horzvert_rel:-$outdir}"
-        create_data_download_commands.py "$data_files"
+        echo "Write InsarMaps HTML / urls"
+        hv_write_overlay_and_urls "$outdir" "${horzvert_rel:-$outdir}"
         if [[ -f "$outdir/urls.log" ]]; then
             echo "insarmaps frames created:"
             cat "$outdir/urls.log"
         fi
-    elif [[ "$save_qgis" != "off" && -n "$save_qgis" ]]; then
-        create_data_download_commands.py "$data_files"
+    elif hv_assemble_insarmaps_log_from_inputs "$outdir" "$radar1" "$radar2"; then
+        echo ""
+        echo "##############################################"
+        echo "Write InsarMaps HTML / urls from existing asc/desc insarmaps.log"
+        hv_write_overlay_and_urls "$outdir" "${horzvert_rel:-$outdir}"
+        if [[ -f "$outdir/urls.log" ]]; then
+            echo "insarmaps frames created:"
+            cat "$outdir/urls.log"
+        fi
+    else
+        echo "No asc/desc insarmaps.log URLs found; skipping overlay.html / urls.log"
     fi
 
     if [[ "$do_upload" == "1" ]]; then
@@ -506,22 +618,23 @@ hv_extract_processing_method_dir() {
 }
 
 # Comparable period length for a processing-method dir name (months or days).
+# Matches trailing _YYYYMM_YYYYMM or _YYYYMMDD_YYYYMMDD (e.g. miaplpy_Big1_201504_202608).
 # Bare mintpy/miaplpy (no dates) → 0 so dated names win when picking the longer span.
 hv_processing_method_dir_span() {
     local name="$1"
     local s e sm em sd ed
 
-    if [[ "$name" =~ ^(mintpy|miaplpy)_([0-9]{6})_([0-9]{6})$ ]]; then
-        s="${BASH_REMATCH[2]}"
-        e="${BASH_REMATCH[3]}"
+    if [[ "$name" =~ _([0-9]{6})_([0-9]{6})$ ]]; then
+        s="${BASH_REMATCH[1]}"
+        e="${BASH_REMATCH[2]}"
         sm=$((10#${s:0:4} * 12 + 10#${s:4:2}))
         em=$((10#${e:0:4} * 12 + 10#${e:4:2}))
         echo $((em - sm))
         return 0
     fi
-    if [[ "$name" =~ ^(mintpy|miaplpy)_([0-9]{8})_([0-9]{8})$ ]]; then
-        s="${BASH_REMATCH[2]}"
-        e="${BASH_REMATCH[3]}"
+    if [[ "$name" =~ _([0-9]{8})_([0-9]{8})$ ]]; then
+        s="${BASH_REMATCH[1]}"
+        e="${BASH_REMATCH[2]}"
         sd=$(date -d "${s:0:4}-${s:4:2}-${s:6:2}" +%s 2>/dev/null || true)
         ed=$(date -d "${e:0:4}-${e:4:2}-${e:6:2}" +%s 2>/dev/null || true)
         if [[ -n "$sd" && -n "$ed" ]]; then
@@ -564,12 +677,58 @@ hv_longest_processing_method_dir() {
     fi
 }
 
+# True when HE5 is geocoded (MintPy: Y_FIRST present, or COORDINATES=GEO).
+hv_he5_is_geocoded() {
+    local he5="$1"
+    [[ -n "$he5" && -f "$he5" ]] || return 1
+    HV_HE5="$he5" python3 - <<'PY'
+import os
+import sys
+
+from mintpy.utils import readfile
+
+try:
+    atr = readfile.read_attribute(os.environ["HV_HE5"])
+except Exception:
+    sys.exit(1)
+coords = str(atr.get("COORDINATES", "") or "").upper()
+sys.exit(0 if coords == "GEO" or "Y_FIRST" in atr else 1)
+PY
+}
+
+# Geo product path for horzvert: already-geocoded file as-is; else dirname/geo_<basename>.
+hv_geo_product_path() {
+    local f="$1"
+    local dir base
+
+    [[ -n "$f" ]] || {
+        echo "hv_geo_product_path: empty path" >&2
+        return 1
+    }
+    dir=$(dirname "$f")
+    base=$(basename "$f")
+    if [[ "$base" == geo_* ]]; then
+        echo "$f"
+        return 0
+    fi
+    if hv_he5_is_geocoded "$f"; then
+        echo "$f"
+        return 0
+    fi
+    echo "${dir}/geo_${base}"
+    return 0
+}
+
 # Exit 0 if radar must be geocoded (missing geo, radar newer, or posting mismatch).
+# Already-geocoded inputs (Y_FIRST / COORDINATES=GEO) never need geocode.py.
 need_geocode() {
     local radar="$1"
     local geo="$2"
     local lat_step="${3:-}"
     local lon_step="${4:-}"
+    if hv_he5_is_geocoded "$radar"; then
+        return 1
+    fi
     [[ ! -f "$geo" ]] && return 0
     [[ "$radar" -nt "$geo" ]] && return 0
     if [[ -n "$lat_step" && -n "$lon_step" ]]; then
@@ -672,8 +831,8 @@ hv_write_run_horzvert2timeseries() {
     mkdir -p "$(dirname "$run_file")" "$outdir"
     [[ "$ingest_parallel" == "1" ]] && amp=" &"
 
-    geo1="$(dirname "$radar1")/geo_$(basename "$radar1")"
-    geo2="$(dirname "$radar2")/geo_$(basename "$radar2")"
+    geo1=$(hv_geo_product_path "$radar1") || return 1
+    geo2=$(hv_geo_product_path "$radar2") || return 1
     r_radar1=$(hv_runfile_path "$radar1")
     r_radar2=$(hv_runfile_path "$radar2")
     r_geo1=$(hv_runfile_path "$geo1")
@@ -728,12 +887,13 @@ hv_write_run_horzvert2timeseries() {
                 fi
             fi
             echo ""
+            echo "need_geocode1=0"
+            echo "need_geocode2=0"
             if [[ "$force" == "1" ]]; then
-                echo "need_geocode1=1"
-                echo "need_geocode2=1"
+                # --force re-geocodes radar inputs only; already-geocoded files stay as-is.
+                echo "hv_he5_is_geocoded ${q_radar1} || need_geocode1=1"
+                echo "hv_he5_is_geocoded ${q_radar2} || need_geocode2=1"
             else
-                echo "need_geocode1=0"
-                echo "need_geocode2=0"
                 echo "need_geocode ${q_radar1} ${q_geo1} $(printf '%q' "$lat_step") $(printf '%q' "$lon_step") && need_geocode1=1"
                 echo "need_geocode ${q_radar2} ${q_geo2} $(printf '%q' "$lat_step") $(printf '%q' "$lon_step") && need_geocode2=1"
             fi
@@ -881,8 +1041,8 @@ hv_print_horzvert_overlay_url() {
     return 0
 }
 
-# Execute script-style run file: bash locally, or JOB_SUBMIT .job + run_workflow --jobfile on SLURM login.
-# Optional: $3=queue, $4=walltime, $5=product_dir, $6=do_upload (or HV_* env vars).
+# Execute script-style run file: bash locally, or JOB_SUBMIT .job + run_workflow --jobfile.
+# Optional: $3=queue, $4=walltime, $5=product_dir, $6=do_upload, $7=backend (local|slurm).
 # Jetstream upload (upload_horzvert.py) runs here after success, not inside the SLURM job body.
 hv_run_or_submit_script() {
     local run_file="$1"
@@ -891,6 +1051,7 @@ hv_run_or_submit_script() {
     local walltime="${4:-${HV_WALLTIME:-}}"
     local product_dir="${5:-${HV_HORZVERT_DIR:-}}"
     local do_upload="${6:-${HV_DO_UPLOAD:-0}}"
+    local backend="${7:-${HV_BACKEND:-}}"
     local job_file work_dir
 
     [[ -f "$run_file" ]] || {
@@ -899,7 +1060,15 @@ hv_run_or_submit_script() {
     }
     work_dir=$(dirname "$run_file")
 
-    if hv_should_use_slurm_jobfile; then
+    if [[ -z "$backend" ]]; then
+        if hv_should_use_slurm_jobfile; then
+            backend="slurm"
+        else
+            backend="local"
+        fi
+    fi
+
+    if [[ "$backend" == "slurm" ]]; then
         hv_write_horzvert_jobfile "$run_file" "$job_name" "$queue" "$walltime"
         job_file="${work_dir}/${job_name}.job"
         [[ -f "$job_file" ]] || {
@@ -910,7 +1079,7 @@ hv_run_or_submit_script() {
         run_workflow.bash --jobfile "$job_file" || return 1
         hv_print_horzvert_overlay_url "$work_dir"
     else
-        echo "Running: bash $run_file"
+        echo "Running locally: bash $run_file"
         bash "$run_file" || return 1
     fi
 

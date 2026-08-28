@@ -58,9 +58,15 @@ RECOMMENDED_VMIN_SIM = 0.4
 TC_VMIN = 0.6
 SIMILARITY_VMIN = 0.4
 RECOMMENDED_DENSITY_VMIN = 0.9
+from minsar.utils.dolphin_presets import (
+    DOLPHIN_PRESET_CHOICES,
+    DOLPHIN_PRESET_HELP,
+    normalize_dolphin_preset as normalize_dolphin_preset_name,
+)
 DOLPHIN2HDFEOS5_EXAMPLES = """Examples:
   dolphin2hdfeos5.py dolphin
   dolphin2hdfeos5.py dolphin -m recommended
+  dolphin2hdfeos5.py dolphin --preset standard
   dolphin2hdfeos5.py dolphin -m tc --vmin 0.7
   dolphin2hdfeos5.py dolphin -m similarity --vmin 0.5
   dolphin2hdfeos5.py dolphin -m tc+sim --vmin 0.7 --vmin-sim 0.5
@@ -81,6 +87,18 @@ MASK_SUFFIX_RE = re.compile(
 HE5_QUALITY = "HDFEOS/GRIDS/timeseries/quality"
 HE5_OBS = "HDFEOS/GRIDS/timeseries/observation"
 HE5_GEOM = "HDFEOS/GRIDS/timeseries/geometry"
+
+
+def normalize_dolphin_preset(value: str) -> str:
+    """Normalize CSLC dolphin preset name (auto, standard, dry, wet, arctic)."""
+    return normalize_dolphin_preset_name(value)
+
+
+def dolphin_he5_method_name(preset: str, preset_naming: bool = True) -> str:
+    """HE5 filename method segment: dolphin-<preset> when preset_naming, else dolphin."""
+    if not preset_naming:
+        return "dolphin"
+    return f"dolphin-{normalize_dolphin_preset(preset)}"
 
 
 def add_mask_arguments(parser: argparse.ArgumentParser) -> None:
@@ -876,6 +894,7 @@ def build_metadata(
     ref_x,
     processor: str = "dolphin",
     require_orbit: bool = True,
+    post_processing_method: str | None = None,
 ) -> dict:
     """Build HE5 metadata from the dataset directory name and dolphin/OPERA outputs."""
     dataset_name = infer_dataset_name(dataset_dir)
@@ -923,13 +942,14 @@ def build_metadata(
 
     ref_lat = float(latitude[ref_y, ref_x])
     ref_lon = float(longitude[ref_y, ref_x])
+    method_name = post_processing_method if post_processing_method is not None else processor
 
     metadata = {
         "FILE_TYPE": "HDFEOS",
         "UNIT": "m",
         "PROCESSOR": processor,
         "processing_software": processor,
-        "post_processing_method": processor,
+        "post_processing_method": method_name,
         "processing_type": "LOS_TIMESERIES",
         "PROJECT_NAME": project_name,
         "mission": mission,
@@ -969,7 +989,7 @@ def build_metadata(
     metadata["PROJECT_NAME"] = project_name
     metadata["mission"] = mission
     metadata["relative_orbit"] = int(relative_orbit)
-    metadata["post_processing_method"] = processor
+    metadata["post_processing_method"] = method_name
     metadata["PROCESSOR"] = processor
     metadata["ORBIT_DIRECTION"] = orbit_direction
     metadata["flight_direction"] = metadata.get("flight_direction") or flight

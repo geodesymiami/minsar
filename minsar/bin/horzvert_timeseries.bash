@@ -8,9 +8,10 @@
 #   Write: <site>/<mintpy|miaplpy[_YYYYMM_YYYYMM]>/run_horzvert2timeseries
 #          (longer of the two input periods; ref & wait; geocode & wait;
 #          horzvert_timeseries.py; wait; ingest). Default stops here.
-#   --submit: bash run file (Mac/Jetstream) or run_workflow.bash --jobfile (HPC login).
-#             The run file writes HTML/urls/data_files; upload_horzvert.py runs on the
-#             login node after the job completes (not inside the SLURM job).
+#   --submit: execute run file. Backend (auto|local|slurm) chooses how:
+#             local → bash run file; slurm → run_workflow.bash --jobfile.
+#             auto → slurm on HPC login, else local.
+#             Upload (upload_horzvert.py) runs after successful execution, not inside the job.
 #
 # Run file may contain & / wait — not for LAUNCHER (script-style, like smallbaseline_wrapper.job).
 
@@ -103,10 +104,10 @@ resolve_he5_or_dataset() {
     resolve_he5 "$path"
 }
 
-# Check whether a .he5 file is geocoded (has Y_FIRST in metadata).
+# Check whether a .he5 file is geocoded (Y_FIRST or COORDINATES=GEO).
 # Returns 0 (true) if geocoded, 1 (false) if radar-coded.
 is_geocoded() {
-    python3 -c "from mintpy.utils import readfile; atr=readfile.read_attribute('$1'); exit(0 if 'Y_FIRST' in atr else 1)"
+    hv_he5_is_geocoded "$1"
 }
 
 # Compute LON_STEP from LAT_STEP and reference latitude.
@@ -259,8 +260,9 @@ Options:
       --save-qgis-all, --save_qgis_all  Like --save-qgis plus radar asc/desc LOS .he5 (six products total)
       --queue NAME                    SLURM queue for .job (default: \$QUEUENAME)
       --walltime HH:MM[:SS]           SLURM walltime for .job (default: from job_defaults.cfg)
-      --submit                        Execute now (bash, or run_workflow --jobfile on SLURM login)
-      --upload                        Upload to Jetstream after --submit completes (login node; default on Stampede/Mac)
+      --backend BACKEND               auto, local, or slurm (default: auto)
+      --submit                        Execute now (local bash, or run_workflow --jobfile when backend=slurm)
+      --upload                        Upload to Jetstream after --submit completes (default on Stampede/Mac)
       --no-upload                     Skip Jetstream upload
       --sleep SECS                    sleep seconds before running
       --num-workers N                 ingest_insarmaps hdfeos5_2json workers (default: 1)
@@ -278,6 +280,7 @@ $SCRIPT_NAME LaPalmaRecentSenA60/miaplpy/network_delaunay_4 LaPalmaRecentSenD169
 $SCRIPT_NAME LaPalmaRecentSenA60/miaplpy_202201_202606/network_delaunay_4 LaPalmaRecentSenD169/miaplpy_202501_202606/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --submit --upload
 $SCRIPT_NAME MyvatnSenA45/miaplpy/network_delaunay_4/S1_asc_045.he5 MyvatnSenD9/miaplpy/network_delaunay_4/S1_desc_009.he5/ --ref-lalo 65.61436 -16.87585 --save_qgis --submit
 $SCRIPT_NAME EtnaSenA44/miaplpy_Big1_202001_202412/network_delaunay_4/ EtnaSenD124/miaplpy_Big1_202001_202412/network_delaunay_4/ --ref-lalo 37.807 15.179 --lat-step 0.0004 --dataset filt*DS --save_qgis --queue pvc --walltime 4:00:00 --submit
+$SCRIPT_NAME EtnaSenA44/miaplpy_Big1_202001_202412/network_delaunay_4/ EtnaSenD124/miaplpy_Big1_202001_202412/network_delaunay_4/ --ref-lalo 37.807 15.179 --lat-step 0.0004 --dataset filt*DS --save_qgis --backend local --submit
     "
     printf "$helptext"
     exit 0
@@ -324,6 +327,7 @@ mbtiles_num_workers=6
 sleep_time=""
 queue=""
 walltime=""
+backend="auto"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]
@@ -444,6 +448,11 @@ do
             walltime="$2"
             shift 2
             ;;
+        --backend)
+            [[ $# -lt 2 ]] && { echo "Error: --backend requires auto, local, or slurm" >&2; exit 1; }
+            backend="$2"
+            shift 2
+            ;;
         --upload)
             [[ $upload_flag == "0" && $upload_explicit == "1" ]] && {
                 echo "Error: use only one of --upload or --no-upload" >&2
@@ -530,6 +539,18 @@ if [[ -n "$walltime" ]]; then
         exit 1
     fi
 fi
+if [[ "$backend" != "auto" && "$backend" != "local" && "$backend" != "slurm" ]]; then
+    echo "Error: --backend must be auto, local, or slurm (got '$backend')" >&2
+    exit 1
+fi
+if [[ "$backend" == "auto" ]]; then
+    if hv_should_use_slurm_jobfile; then
+        backend="slurm"
+    else
+        backend="local"
+    fi
+fi
+echo "Backend: $backend"
 ingest_workers_opts=(--num-workers "$num_workers" --mbtiles-num-workers "$mbtiles_num_workers")
 
 if [[ -n "$sleep_time" ]]; then
@@ -646,19 +667,27 @@ echo "FILE2 (resolved): $FILE2"
 # Use sibling radar S1*.he5 when resolution returned geo_*.he5 (re-ref + geocode are radar-first).
 if ! FILE1=$(hv_he5_radar_los_path "$FILE1"); then exit 1; fi
 if ! FILE2=$(hv_he5_radar_los_path "$FILE2"); then exit 1; fi
-echo "FILE1 (radar LOS for pipeline): $FILE1"
-echo "FILE2 (radar LOS for pipeline): $FILE2"
-
-# Output directory (used for --clean, cache check, and Step 3).
-# Use the mintpy/miaplpy dir from the first argument (asc/desc may differ).
-#   MyvatnSenA45/.../miaplpy_noWetSnowHverfjall_201505_202606 + MyvatnSenD9/...
-#   → Myvatn/miaplpy_noWetSnowHverfjall_201505_202606
-processing_method_dir=$(hv_extract_processing_method_dir "$DIR_OR_FILE1" || true)
-if [[ -z "$processing_method_dir" ]]; then
-    processing_method_dir=$(hv_extract_processing_method_dir "$DIR_OR_FILE2" || true)
+echo "FILE1 (pipeline input): $FILE1"
+echo "FILE2 (pipeline input): $FILE2"
+if hv_he5_is_geocoded "$FILE1"; then
+    echo "FILE1 is already geocoded (Y_FIRST/COORDINATES); will skip geocode.py"
+else
+    echo "FILE1 is radar-coded; geocode.py will write geo_$(basename "$FILE1") if needed"
 fi
+if hv_he5_is_geocoded "$FILE2"; then
+    echo "FILE2 is already geocoded (Y_FIRST/COORDINATES); will skip geocode.py"
+else
+    echo "FILE2 is radar-coded; geocode.py will write geo_$(basename "$FILE2") if needed"
+fi
+
+# Output directory (used for --clean, cache check, and finish).
+# Longer mintpy/miaplpy period among the two inputs (must match horzvert_timeseries.py).
+#   EtnaSenA44/.../miaplpy_Big1_201504_202608 + EtnaSenD124/.../miaplpy_Big1_201504_202607
+#   → Etna/miaplpy_Big1_201504_202608
+processing_method_dir=$(hv_longest_processing_method_dir "$DIR_OR_FILE1" "$DIR_OR_FILE2")
 [[ -z "$processing_method_dir" ]] && processing_method_dir="mintpy"
 HORZVERT_DIR="${PROJECT_DIR}/${processing_method_dir}"
+echo "Product dir: $HORZVERT_DIR"
 mkdir -p "$ORIGINAL_DIR/$HORZVERT_DIR"
 {
     echo "##############################################"
@@ -795,8 +824,8 @@ HV_DATASET_OPT1="$(get_ingest_dataset_opt "$FILE1")" \
 HV_DATASET_OPT2="$(get_ingest_dataset_opt "$FILE2")" \
 hv_write_run_horzvert2timeseries
 
-# On HPC login, always materialize the .job envelope (even without --submit).
-if hv_should_use_slurm_jobfile; then
+# Materialize .job envelope when using SLURM backend (even without --submit).
+if [[ "$backend" == "slurm" ]]; then
     hv_write_horzvert_jobfile "$HV_RUN_FILE" "horzvert_timeseries" "$queue" "$walltime" || true
 fi
 
@@ -818,6 +847,6 @@ fi
 
 echo ""
 echo "##############################################"
-echo "Executing run_horzvert2timeseries (--submit)"
+echo "Executing run_horzvert2timeseries (--submit, backend=$backend)"
 append_hv_to_project_logs "$(date +'%Y%m%d:%H-%M') + bash/run_workflow run_horzvert2timeseries"
-hv_run_or_submit_script "$HV_RUN_FILE" "horzvert_timeseries" "$queue" "$walltime" "$HORZVERT_DIR" "$upload_flag"
+hv_run_or_submit_script "$HV_RUN_FILE" "horzvert_timeseries" "$queue" "$walltime" "$HORZVERT_DIR" "$upload_flag" "$backend"

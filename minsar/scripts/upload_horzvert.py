@@ -70,6 +70,92 @@ def parse_data_files_paths(data_files_txt):
     return paths
 
 
+def _scratchdir_relpath(path, work_dir):
+    """Return work_dir-relative path for absolute SCRATCHDIR paths."""
+    if not path:
+        return path
+    full = path if os.path.isabs(path) else os.path.join(work_dir, path)
+    try:
+        rel = os.path.relpath(os.path.realpath(full), os.path.abspath(work_dir))
+    except ValueError:
+        return path
+    if rel.startswith(".."):
+        return path
+    return rel.replace("\\", "/")
+
+
+def rewrite_data_files_txt(data_files_txt, work_dir):
+    """Rewrite absolute scratch paths in data_files.txt to work_dir-relative."""
+    work_dir = os.path.abspath(work_dir)
+    if not os.path.isfile(data_files_txt):
+        return False
+    with open(data_files_txt, encoding="utf-8") as handle:
+        lines = handle.readlines()
+    changed = False
+    out = []
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            out.append(raw if raw.endswith("\n") else raw + "\n")
+            continue
+        rel = _scratchdir_relpath(line, work_dir)
+        if rel != line:
+            changed = True
+        out.append(rel + "\n")
+    if changed:
+        with open(data_files_txt, "w", encoding="utf-8") as handle:
+            handle.writelines(out)
+        print(f"Rewrote paths in {data_files_txt} to be relative to {work_dir}")
+    return changed
+
+
+def rewrite_download_commands_txt(download_commands_txt, work_dir, remote_host=None, remote_dir=None):
+    """Rebuild download_commands.txt from sibling data_files.txt (Jetstream URLs)."""
+    product_dir = os.path.dirname(os.path.abspath(download_commands_txt))
+    data_files = os.path.join(product_dir, "data_files.txt")
+    if not os.path.isfile(data_files):
+        return False
+    rewrite_data_files_txt(data_files, work_dir)
+    remote_host = remote_host or os.getenv("REMOTEHOST_DATA")
+    remote_dir = remote_dir or os.getenv("REMOTE_DIR", "/data/HDF5EOS/")
+    if not remote_dir.endswith("/"):
+        remote_dir += "/"
+    if not remote_host:
+        return False
+    # Prefer create_data_download_commands.py when available.
+    try:
+        status = subprocess.Popen(
+            ["create_data_download_commands.py", data_files],
+            cwd=work_dir,
+        ).wait()
+        if status == 0:
+            print(f"Regenerated {download_commands_txt} for Jetstream URLs")
+            return True
+    except OSError:
+        pass
+    return False
+
+
+def prepare_product_dir_for_upload(product_dir, work_dir, remote_host=None, remote_dir=None):
+    """Rewrite data_files.txt / download_commands.txt paths before rsync."""
+    data_files = os.path.join(product_dir, "data_files.txt")
+    download_commands = os.path.join(product_dir, "download_commands.txt")
+    if os.path.isfile(data_files):
+        rewrite_data_files_txt(data_files, work_dir)
+    if os.path.isfile(download_commands):
+        rewrite_download_commands_txt(
+            download_commands, work_dir, remote_host=remote_host, remote_dir=remote_dir,
+        )
+    elif os.path.isfile(data_files):
+        try:
+            subprocess.Popen(
+                ["create_data_download_commands.py", data_files],
+                cwd=work_dir,
+            ).wait()
+        except OSError:
+            pass
+
+
 def _remote_dir_prefix(REMOTE_DIR=None):
     REMOTE_DIR = REMOTE_DIR if REMOTE_DIR is not None else os.getenv("REMOTE_DIR", "/data/HDF5EOS/")
     if not REMOTE_DIR.startswith("/"):
@@ -309,6 +395,11 @@ def main(iargs=None):
     seen = set()
     for data_dir in inps.data_dirs:
         data_dir = data_dir.rstrip('/')
+        for product_dir in iter_upload_product_dirs(inps.work_dir, normalize_data_dir(data_dir, inps.work_dir)):
+            prepare_product_dir_for_upload(
+                product_dir, inps.work_dir,
+                remote_host=REMOTEHOST_DATA, remote_dir=REMOTE_DIR,
+            )
         for element in collect_upload_relpaths(inps.work_dir, data_dir):
             if element not in seen:
                 seen.add(element)
@@ -326,11 +417,15 @@ def main(iargs=None):
         data_dir = normalize_data_dir(data_dir.rstrip('/'), inps.work_dir)
         printed = False
         for product_dir in iter_upload_product_dirs(inps.work_dir, data_dir):
+            overlay = os.path.join(product_dir, 'overlay.html')
+            if not os.path.isfile(overlay):
+                continue
             rel = os.path.relpath(os.path.realpath(product_dir), inps.work_dir).replace('\\', '/')
             remote_urls.append(overlay_page_url(REMOTEHOST_DATA, REMOTE_DIR, rel))
             printed = True
         if not printed:
-            remote_urls.append(overlay_page_url(REMOTEHOST_DATA, REMOTE_DIR, data_dir))
+            # Keep a note only when overlay was expected but missing.
+            pass
 
     print('\n################')
     print('Uploading listed files (rsync replaces existing copies, including updated radar LOS HE5s)')
@@ -383,7 +478,7 @@ def main(iargs=None):
 ##########################################
     add_log_remote_hdfeos5(scp_list, inps.work_dir)
 ##########################################
-    if not inps.quiet_summary:
+    if not inps.quiet_summary and remote_urls:
         print('\nData at:')
         for url in remote_urls:
             print(url)
