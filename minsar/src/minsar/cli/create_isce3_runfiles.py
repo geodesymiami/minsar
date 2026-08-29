@@ -64,6 +64,7 @@ ARGV_FIX_KW = {
         "--end-date",
         "--end",
         "--track",
+        "--relativeOrbit",
         "--frame-id",
         "--queue",
         "--long-queue",
@@ -85,6 +86,20 @@ ARGV_FIX_KW = {
         "--no-preset-naming",
     ),
 }
+
+
+def _format_template_path(template: str) -> str:
+    """Return template path, shortening with $TE when under the TE directory."""
+    path = str(Path(template).expanduser().resolve())
+    te = os.environ.get("TE")
+    if te:
+        te_path = str(Path(te).expanduser().resolve())
+        if path.startswith(te_path):
+            suffix = path[len(te_path) :]
+            if not suffix.startswith("/"):
+                suffix = "/" + suffix
+            return "$TE" + suffix
+    return path
 
 
 def _log_command_line(log_dir: Path, script_name: str, argv: list[str]) -> None:
@@ -205,6 +220,21 @@ def _make_job_submit(project_dir: Path, run_dir: Path, queue: str, profile: Reso
     return job
 
 
+def _track_from_template_options(options: dict) -> str:
+    """Return relative orbit as string from ssaraopt.relativeOrbit, or '' if missing."""
+    raw = options.get("ssaraopt.relativeOrbit")
+    if raw is None or str(raw).strip() == "":
+        return ""
+    return str(int(str(raw).strip()))
+
+
+def _resolve_track_for_context(args: argparse.Namespace, options: dict) -> str:
+    """CLI --track / --relativeOrbit overrides template ssaraopt.relativeOrbit."""
+    if args.track is not None:
+        return str(args.track)
+    return _track_from_template_options(options)
+
+
 def _flight_direction_for_burst_count(context: dict[str, object]) -> str:
     """Return asc/desc from context CLI or template flight-direction fields."""
     flight = str(context.get("flight_direction") or "").strip()
@@ -242,7 +272,9 @@ def _resolve_n_bursts_for_dolphin(
 
     if burst_count_method == "opera-utils":
         if track is None:
-            raise ValueError("--burst-count-method opera-utils requires --track")
+            raise ValueError(
+                "--burst-count-method opera-utils requires --track (or template ssaraopt.relativeOrbit)"
+            )
         from minsar.utils.generate_sweets_config import count_bursts_covering_aoi
 
         n_bursts = count_bursts_covering_aoi(aoi, track=track, flight_direction=flight)
@@ -252,7 +284,9 @@ def _resolve_n_bursts_for_dolphin(
     from minsar.scripts.create_template import _run_get_sar_coverage
     from minsar.scripts.get_sar_coverage import count_bursts_on_orbit
 
-    if track is None:
+    if track is not None:
+        print(f"  dolphin track={track} from template or CLI", file=sys.stderr)
+    else:
         if not flight:
             raise ValueError(
                 "--burst-count-method sar_coverage requires --flight-dir "
@@ -561,7 +595,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--flight-dir", choices=("asc", "desc"), help="flight direction for AOI input")
     parser.add_argument("--start-date", "--start", dest="start_date", help="first date YYYYMMDD (default: ssaraopt.startDate from template)")
     parser.add_argument("--end-date", "--end", dest="end_date", help="last date YYYYMMDD (default: ssaraopt.endDate from template)")
-    parser.add_argument("--track", type=int, help="relative orbit/track number")
+    parser.add_argument("--track", "--relativeOrbit", type=int, dest="track", help="relative orbit (overrides template ssaraopt.relativeOrbit)")
     parser.add_argument("--frame-id", type=int, help="OPERA DISP-S1 frame ID (required for --disp-S1 / --data-type disp-S1)")
     parser.add_argument(
         "--queue",
@@ -607,7 +641,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--burst-count-method",
         choices=("sar_coverage", "opera-utils"),
         default="sar_coverage",
-        help="estimate n_bursts when data/ is empty: sar_coverage (get_sar_coverage.py) or opera-utils (requires --track)",
+        help="estimate n_bursts when data/ is empty: sar_coverage (get_sar_coverage.py) or opera-utils (track from CLI or template)",
     )
     parser.add_argument("--run", action="store_true", help="after creating files, run run_isce3_workflow.bash --start 1 --end N")
     return parser
@@ -722,6 +756,7 @@ def _ssaraopt_date_yyyymmdd(options: dict, key: str) -> str:
 
 def _template_context(template_file: Path, args: argparse.Namespace) -> dict[str, object]:
     from minsar.objects.dataset_template import Template
+    from minsar.utils.generate_sweets_config import flight_direction_from_template
 
     template = Template(str(template_file))
     template.get_options()
@@ -732,15 +767,16 @@ def _template_context(template_file: Path, args: argparse.Namespace) -> dict[str
         raise ValueError(f"template requires miaplpy.subset.lalo: {template_file}")
     start_date = args.start_date or _ssaraopt_date_yyyymmdd(options, "ssaraopt.startDate")
     end_date = args.end_date or _ssaraopt_date_yyyymmdd(options, "ssaraopt.endDate")
+    flight_dir = args.flight_dir or flight_direction_from_template(str(template_file)) or ""
     return {
         "project": project,
         "template": str(template_file.resolve()),
         "aoi": str(subset).strip().strip("'\""),
         "start_date": start_date or "",
         "end_date": end_date or "",
-        "track": str(args.track or ""),
+        "track": _resolve_track_for_context(args, options),
         "frame_id": str(args.frame_id or ""),
-        "flight_direction": args.flight_dir or "",
+        "flight_direction": flight_dir,
     }
 
 
@@ -948,8 +984,10 @@ def _print_plan(
 ) -> None:
     print(f"Workflow: {workflow.upper()} ({platform})")
     print(f"Project:  $SCRATCHDIR/{context['project']}")
+    template = str(context.get("template") or "").strip()
+    if template:
+        print(f"Template: {_format_template_path(template)}")
     if preset is not None and workflow in {"cslc", "safe"}:
-        print(f"Preset:   {preset}")
         if preset_naming:
             print(f"HE5 name: {_hdfeos5_method_string(preset)}")
         else:
@@ -1433,8 +1471,6 @@ def main(iargs: list[str] | None = None) -> int:
             workflow, platform, context, stages, queue=args.queue, long_queue=args.long_queue,
             preset=args.preset, preset_naming=args.preset_naming,
         )
-        if not input_is_template:
-            print(f"Template: {invocation_dir / Path(str(context['template'])).name}")
         if args.run:
             if args.sleep:
                 print(f"Sleeping {args.sleep} seconds before starting ...")
