@@ -237,26 +237,17 @@ def _strip_bash_script_header(text: str) -> str:
     return "\n".join(body).strip()
 
 
-def _sweets_pixi_env_bash(minsar_home: str | None = None) -> str:
-    """Bash lines: set MINSAR_HOME and put pixi + MinSAR CLI dirs on PATH."""
-    if minsar_home:
-        home = shlex.quote(minsar_home)
-        return (
-            f"export MINSAR_HOME={home}\n"
-            f"export PATH=\"${{HOME}}/.pixi/bin:{minsar_home}/minsar/utils:{minsar_home}/minsar/bin:{minsar_home}/minsar/scripts:${{PATH}}\"\n"
-            f"export PYTHONPATH=\"{minsar_home}${{PYTHONPATH:+:$PYTHONPATH}}\"\n"
-        )
+def _require_minsar_home_bash() -> str:
+    """Bash guard: MINSAR_HOME must be set (source setup/environment.bash before submit or run)."""
     return (
         'if [[ -z "${MINSAR_HOME:-}" ]]; then\n'
         '  echo "Error: MINSAR_HOME is not set; source setup/environment.bash" >&2\n'
         '  exit 1\n'
         'fi\n'
-        'export PATH="${HOME}/.pixi/bin:${MINSAR_HOME}/minsar/utils:${MINSAR_HOME}/minsar/bin:${MINSAR_HOME}/minsar/scripts:${PATH}"\n'
-        'export PYTHONPATH="${MINSAR_HOME}${PYTHONPATH:+:$PYTHONPATH}"\n'
     )
 
 
-def _pixi_run_script(commands: str, minsar_home: str | None = None) -> str:
+def _pixi_run_script(commands: str) -> str:
     """Executable run file that runs stage commands inside the SWEETS pixi environment."""
     body = _strip_bash_script_header(commands)
     if not body:
@@ -264,7 +255,7 @@ def _pixi_run_script(commands: str, minsar_home: str | None = None) -> str:
     return (
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
-        f"{_sweets_pixi_env_bash(minsar_home)}"
+        f"{_require_minsar_home_bash()}"
         'pixi run --manifest-path "$MINSAR_HOME/tools/sweets/pyproject.toml" -- bash <<\'ISCE3_PIXI_BODY\'\n'
         "set -euo pipefail\n"
         "\n"
@@ -866,7 +857,7 @@ def _create_files(
         )
         run_command = command
         if name in PIXI_STAGES and profile.execution_mode != "launcher-task-list":
-            run_command = _pixi_run_script(command, minsar_home=os.environ.get("MINSAR_HOME"))
+            run_command = _pixi_run_script(command)
         _write_run_file(
             run_file,
             title,
@@ -939,7 +930,7 @@ def _configure_sweets(workflow: str, template: Path, work_dir: Path) -> None:
     config_script = work_dir / "sweets_config_command.bash"
     config_script.write_text(
         "#!/usr/bin/env bash\nset -euo pipefail\n"
-        + _sweets_pixi_env_bash(os.environ.get("MINSAR_HOME"))
+        + _require_minsar_home_bash()
         + transparent_command
         + "\n"
     )

@@ -350,7 +350,7 @@ run_job_validation() {
     local job_file="$1"
     local display_path
     display_path="$(job_path_for_display "$job_file")"
-    print_step_banner "Checking:   validate_isce3_job_outputs.py ${display_path}"
+    print_step_banner "Checking outputs:   validate_isce3_job_outputs.py ${display_path}"
     if [[ "$dry_run" == "true" ]]; then
         return 0
     fi
