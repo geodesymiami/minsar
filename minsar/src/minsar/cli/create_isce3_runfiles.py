@@ -228,6 +228,15 @@ def _track_from_template_options(options: dict) -> str:
     return str(int(str(raw).strip()))
 
 
+def _track_source_for_context(args: argparse.Namespace, options: dict | None = None) -> str:
+    """Return 'cli', 'template', or '' for how relative orbit was resolved."""
+    if args.track is not None:
+        return "cli"
+    if options and _track_from_template_options(options):
+        return "template"
+    return ""
+
+
 def _resolve_track_for_context(args: argparse.Namespace, options: dict) -> str:
     """CLI --track / --relativeOrbit overrides template ssaraopt.relativeOrbit."""
     if args.track is not None:
@@ -285,7 +294,13 @@ def _resolve_n_bursts_for_dolphin(
     from minsar.scripts.get_sar_coverage import count_bursts_on_orbit
 
     if track is not None:
-        print(f"  dolphin track={track} from template or CLI", file=sys.stderr)
+        track_source = str(context.get("track_source") or "")
+        if track_source == "cli":
+            print(f"  dolphin track={track} from CLI", file=sys.stderr)
+        elif track_source == "template":
+            print(f"  dolphin track={track} from template", file=sys.stderr)
+        else:
+            print(f"  dolphin track={track}", file=sys.stderr)
     else:
         if not flight:
             raise ValueError(
@@ -775,6 +790,7 @@ def _template_context(template_file: Path, args: argparse.Namespace) -> dict[str
         "start_date": start_date or "",
         "end_date": end_date or "",
         "track": _resolve_track_for_context(args, options),
+        "track_source": _track_source_for_context(args, options),
         "frame_id": str(args.frame_id or ""),
         "flight_direction": flight_dir,
     }
@@ -792,6 +808,7 @@ def _aoi_context(args: argparse.Namespace) -> dict[str, object]:
         "start_date": args.start_date or "",
         "end_date": args.end_date or "",
         "track": str(args.track or ""),
+        "track_source": "cli" if args.track is not None else "",
         "frame_id": str(args.frame_id or ""),
         "flight_direction": args.flight_dir,
     }
