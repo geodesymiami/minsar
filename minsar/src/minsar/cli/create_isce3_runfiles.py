@@ -442,7 +442,6 @@ class Isce3JobAdapter:
             work_dir=str(job_file.parent),
         )
         work_dir = run_file.parent.parent.resolve()
-        validate_cmd = f"validate_isce3_outputs.py --data-type {shlex.quote(workflow)} --step {shlex.quote(stage.name)}"
         sleep_lines = self._sleep_lines()
         if stage.execution_mode == "launcher-task-list":
             lines.extend(
@@ -463,7 +462,6 @@ class Isce3JobAdapter:
         else:
             lines.extend(["\nset -euo pipefail\n", *sleep_lines, f"cd {shlex.quote(str(work_dir))}\n"])
             lines.append(f"bash {shlex.quote(str(run_file.relative_to(work_dir)))}\n")
-        lines.append(f"{validate_cmd}\n")
         job_file.write_text("".join(lines))
         _make_executable(job_file)
 

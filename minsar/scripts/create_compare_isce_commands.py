@@ -15,6 +15,8 @@ from minsar.objects import message_rsmas
 from minsar.utils.bbox_cli_argv import fix_argv_for_negative_bbox_sn_we
 
 COMPARE_SUFFIXES = (
+    "CSLCDOLPHINSTANDARD",
+    "CSLCDOLPHINAUTO",
     "CSLCDOLPHIN-STANDARD",
     "CSLCDOLPHIN-AUTO",
     "SAFE",
@@ -59,7 +61,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("aoi", metavar="AOI", help="area of interest (S:N,W:E bounds or WKT POLYGON)")
     parser.add_argument(
         "name",
-        help="project base name; SAFE/CSLCDolphin-auto/CSLCDolphin-standard/DISP/ISCE2 suffixes are appended",
+        help="project base name; SAFE/CSLCDolphinAuto/CSLCDolphinStandard/DISP/ISCE2 suffixes are appended",
     )
     parser.add_argument("--flight-dir", choices=("asc", "desc"), required=True, help="orbit pass for AOI-based setup")
     parser.add_argument("--start-date", "--start", dest="start_date", required=True, metavar="DATE", help="first date YYYYMMDD or YYYY-MM-DD")
@@ -88,8 +90,8 @@ def project_names(base: str) -> dict[str, str]:
     stem = normalize_base_name(base)
     return {
         "safe": f"{stem}SAFE",
-        "cslc_auto": f"{stem}CSLCDolphin-auto",
-        "cslc_standard": f"{stem}CSLCDolphin-standard",
+        "cslc_auto": f"{stem}CSLCDolphinAuto",
+        "cslc_standard": f"{stem}CSLCDolphinStandard",
         "disp": f"{stem}DISP",
         "isce2": f"{stem}ISCE2",
     }

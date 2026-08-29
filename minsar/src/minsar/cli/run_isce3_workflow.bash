@@ -337,11 +337,30 @@ run_isce3_runfile() {
     bash "$1"
 }
 
+job_path_for_display() {
+    local job_file="$1"
+    if [[ "$job_file" == "$work_dir"/* ]]; then
+        echo "${job_file#"$work_dir"/}"
+    else
+        echo "$job_file"
+    fi
+}
+
+run_job_validation() {
+    local job_file="$1"
+    local display_path
+    display_path="$(job_path_for_display "$job_file")"
+    print_step_banner "Checking:   validate_isce3_job_outputs.py ${display_path}"
+    if [[ "$dry_run" == "true" ]]; then
+        return 0
+    fi
+    validate_isce3_job_outputs.py "$job_file" || die "validation failed: ${display_path}"
+}
+
 run_local_stage() {
     local index="$1"
     local job_file
     local run_file
-    local validation_command=(validate_isce3_outputs.py --step "${stage_names[$index]}")
 
     cd "$work_dir" || die "cannot cd to $work_dir"
     while IFS= read -r job_file; do
@@ -357,10 +376,9 @@ run_local_stage() {
         fi
     done < <(jobs_for_step "${stage_numbers[$index]}")
 
-    print_step_banner "Checking:   ${validation_command[*]}"
-    if [[ "$dry_run" != "true" ]]; then
-        "${validation_command[@]}" || die "validation failed: ${stage_names[$index]}"
-    fi
+    while IFS= read -r job_file; do
+        run_job_validation "$job_file"
+    done < <(jobs_for_step "${stage_numbers[$index]}")
 }
 
 wait_for_slurm_jobs() {
@@ -465,23 +483,13 @@ wait_for_slurm_jobs() {
 }
 
 check_step_outputs() {
-    local index="$1"
     shift
     local files=("$@")
-    local cmd
-    local exit_status
+    local job_file
 
-    cmd="check_job_outputs.py ${files[*]}"
-    print_step_banner "Checking:   $cmd"
-    if [[ "$dry_run" == "true" ]]; then
-        print_step_banner "Checking:   validate_isce3_outputs.py --step ${stage_names[$index]}"
-        return 0
-    fi
-    check_job_outputs.py "${files[@]}"
-    exit_status="$?"
-    [[ "$exit_status" -eq 0 ]] || die "check_job_outputs.py exited with code ($exit_status)"
-    print_step_banner "Checking:   validate_isce3_outputs.py --step ${stage_names[$index]}"
-    validate_isce3_outputs.py --step "${stage_names[$index]}" || die "validation failed: ${stage_names[$index]}"
+    for job_file in "${files[@]}"; do
+        run_job_validation "$job_file"
+    done
     echo
 }
 
