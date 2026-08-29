@@ -47,8 +47,11 @@ def main(iargs: list[str] | None = None) -> int:
     if not config_path.is_file():
         raise FileNotFoundError(f"dolphin config not found: {config_path}")
 
-    from dolphin.workflows.config import DisplacementWorkflow
-    from dolphin.workflows import unwrapping
+    from minsar.utils.sweets_import import hide_argv_from_pyre
+
+    with hide_argv_from_pyre():
+        from dolphin.workflows.config import DisplacementWorkflow
+        from dolphin.workflows import unwrapping
 
     cfg = DisplacementWorkflow.from_yaml(config_path)
     if inps.n_parallel_jobs is not None:

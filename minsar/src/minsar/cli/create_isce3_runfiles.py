@@ -24,6 +24,7 @@ from minsar.utils.dolphin_presets import (
     DOLPHIN_PRESET_HELP,
     NO_PRESET_NAMING_HELP,
     count_opera_cslc_bursts,
+    dolphin_method_string,
     dolphin_worker_cli_flags,
     normalize_dolphin_preset,
 )
@@ -310,11 +311,17 @@ def _geometry_stitch_command(preset: str, config_name: str = SWEETS_CONFIG) -> s
     return f"stitch_sweets_geometry.py --config {config_name} --sy {sy} --sx {sx} --overwrite"
 
 
-def _hdfeos5_command(preset: str, preset_naming: bool = True) -> str:
-    """dolphin2hdfeos5 run-file line; omit default flags when preset naming is on."""
+def _hdfeos5_method_string(preset: str, preset_naming: bool = True) -> str:
+    """HE5 post_processing_method label for dolphin2hdfeos5."""
     if not preset_naming:
-        return "dolphin2hdfeos5.py dolphin --no-preset-naming"
-    return f"dolphin2hdfeos5.py dolphin --preset {preset}"
+        return "dolphin"
+    return dolphin_method_string(preset)
+
+
+def _hdfeos5_command(preset: str, preset_naming: bool = True) -> str:
+    """dolphin2hdfeos5 run-file line with explicit HE5 method label."""
+    method = _hdfeos5_method_string(preset, preset_naming)
+    return f"dolphin2hdfeos5.py dolphin --method-string {method}"
 
 
 def _cslc_dolphin_config_line(
@@ -389,13 +396,13 @@ def _cslc_dolphin_unwrap_commands() -> list[str]:
     """CSLC dolphin_unwrap: memory-aware n_parallel_jobs then unwrap-only."""
     return [
         'N_UNWRAP=$(resize_dolphin_unwrap_jobfile.py .)',
-        'run_dolphin_unwrap.py --n-parallel-jobs "$N_UNWRAP"',
+        'run_dolphin_unwrap.py --config dolphin_config.yaml --n-parallel-jobs "$N_UNWRAP"',
     ]
 
 
 def _cslc_dolphin_timeseries_commands() -> list[str]:
     """CSLC dolphin_timeseries: inversion/velocity only."""
-    return ["run_dolphin_timeseries.py"]
+    return ["run_dolphin_timeseries.py --config dolphin_config.yaml"]
 
 
 class Isce3JobAdapter:
@@ -744,14 +751,14 @@ def _build_stage_specs(workflow: str, context: dict[str, object], split_dolphin:
             ("download_safe", "Download and verify SAFE data, then prepare COMPASS runconfigs", ""),
             ("create_cslc", "Create CSLCs and static layers with COMPASS", ""),
             *dolphin_specs,
-            ("create_hdfeos5", "Create HDF-EOS5 product", ""),
+            ("dolphin_2_hdfeos5", "Convert dolphin timeseries to HDF-EOS5", ""),
             ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", ""),
         ]
     if workflow == "cslc":
         return [
             ("download_cslc", "Download and verify OPERA CSLCs, then prepare geometry", ""),
             *dolphin_specs,
-            ("create_hdfeos5", "Create HDF-EOS5 product", ""),
+            ("dolphin_2_hdfeos5", "Convert dolphin timeseries to HDF-EOS5", ""),
             ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", ""),
         ]
     template = str(context["template"])
@@ -759,7 +766,7 @@ def _build_stage_specs(workflow: str, context: dict[str, object], split_dolphin:
     return [
         ("download_disp", "Download and verify OPERA DISP-S1 products", generate),
         ("reformat_disp", "Reformat DISP-S1 products into a stack", generate),
-        ("create_hdfeos5", "Create HDF-EOS5 product", generate),
+        ("dolphin_2_hdfeos5", "Convert stack to HDF-EOS5", generate),
         ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", generate),
     ]
 
@@ -888,7 +895,7 @@ def _print_plan(
     if preset is not None and workflow in {"cslc", "safe"}:
         print(f"Preset:   {preset}")
         if preset_naming:
-            print(f"HE5 name: dolphin-{preset}")
+            print(f"HE5 name: {_hdfeos5_method_string(preset)}")
         else:
             print("HE5 name: dolphin (--no-preset-naming)")
     if queue is not None:
@@ -1026,7 +1033,7 @@ def _sweets_stage_bodies(
                 geom,
                 f"sweets run {cfg} --starting-step 3",
             ),
-            "create_hdfeos5": hdfeos5,
+            "dolphin_2_hdfeos5": hdfeos5,
             "ingest_insarmaps": ingest,
         }
     n_bursts = _resolve_n_bursts_for_dolphin(work_dir, context)
@@ -1041,7 +1048,7 @@ def _sweets_stage_bodies(
             + "\n",
             "dolphin_unwrap": "\n".join(_cslc_dolphin_unwrap_commands()) + "\n",
             "dolphin_timeseries": "\n".join(_cslc_dolphin_timeseries_commands()) + "\n",
-            "create_hdfeos5": hdfeos5,
+            "dolphin_2_hdfeos5": hdfeos5,
             "ingest_insarmaps": ingest,
         }
     return {
@@ -1052,7 +1059,7 @@ def _sweets_stage_bodies(
             n_bursts,
             preset=preset,
         ),
-        "create_hdfeos5": hdfeos5,
+        "dolphin_2_hdfeos5": hdfeos5,
         "ingest_insarmaps": ingest,
     }
 
@@ -1280,33 +1287,23 @@ def _execute_stage(
             )
         subprocess.run(["bash", str(stage_files[-1])], cwd=work_dir, check=True)
         return 0
-    if action == "create-hdfeos5":
-        if workflow == "disp":
-            he5_dirs = [work_dir / "timeseries"]
-        else:
-            he5_dirs = [work_dir / "dolphin" / "timeseries"]
-        for he5_dir in he5_dirs:
-            for path in he5_dir.glob("*.he5"):
-                path.unlink()
-        command = ["dolphin2hdfeos5.py"]
-        if workflow == "disp":
-            stacks = sorted(work_dir.glob("*stack.nc"))
-            if not stacks:
-                raise RuntimeError("no *stack.nc input found")
-            command.append(str(stacks[0]))
-        else:
-            command.append(str(work_dir / "dolphin"))
-        subprocess.run(command, cwd=work_dir, check=True)
+    if action in ("dolphin-2-hdfeos5", "dolphin_2_hdfeos5"):
+        stage_files = sorted((work_dir / "run_files").glob("run_*_dolphin_2_hdfeos5"))
+        if not stage_files:
+            raise RuntimeError(
+                "dolphin_2_hdfeos5 run file not found under run_files/; "
+                "run create_isce3_runfiles.py first"
+            )
+        subprocess.run(["bash", str(stage_files[-1])], cwd=work_dir, check=True)
         return 0
     if action == "ingest-insarmaps":
-        if workflow == "disp":
-            ingest_dir = "timeseries"
-        else:
-            ingest_dir = "dolphin/timeseries"
-        he5_glob = work_dir / ingest_dir
-        if not any(he5_glob.glob("*.he5")):
-            raise RuntimeError(f"no {ingest_dir}/*.he5 product found")
-        subprocess.run(["ingest_insarmaps.bash", ingest_dir], cwd=work_dir, check=True)
+        stage_files = sorted((work_dir / "run_files").glob("run_*_ingest_insarmaps"))
+        if not stage_files:
+            raise RuntimeError(
+                "ingest_insarmaps run file not found under run_files/; "
+                "run create_isce3_runfiles.py first"
+            )
+        subprocess.run(["bash", str(stage_files[-1])], cwd=work_dir, check=True)
         return 0
     raise ValueError(f"unknown internal stage action {action!r}")
 

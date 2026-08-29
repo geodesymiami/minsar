@@ -251,7 +251,7 @@ def format_disp_stage_commands(
             f"{check}\n"
         ),
         "reformat_disp": reformat,
-        "create_hdfeos5": f"dolphin2hdfeos5.py {stack_name}",
+        "dolphin_2_hdfeos5": f"dolphin2hdfeos5.py {stack_name}",
         "ingest_insarmaps": "ingest_insarmaps.bash timeseries",
     }
 
@@ -280,7 +280,7 @@ def format_disp_s1_bash(
     return (
         stages["download_disp"].rstrip("\n") + "\n\n"
         + stages["reformat_disp"] + "\n"
-        + stages["create_hdfeos5"] + "\n"
+        + stages["dolphin_2_hdfeos5"] + "\n"
         + stages["ingest_insarmaps"] + "\n"
     )
 

@@ -59,14 +59,13 @@ TC_VMIN = 0.6
 SIMILARITY_VMIN = 0.4
 RECOMMENDED_DENSITY_VMIN = 0.9
 from minsar.utils.dolphin_presets import (
-    DOLPHIN_PRESET_CHOICES,
-    DOLPHIN_PRESET_HELP,
+    dolphin_method_string,
     normalize_dolphin_preset as normalize_dolphin_preset_name,
 )
 DOLPHIN2HDFEOS5_EXAMPLES = """Examples:
   dolphin2hdfeos5.py dolphin
   dolphin2hdfeos5.py dolphin -m recommended
-  dolphin2hdfeos5.py dolphin --preset standard
+  dolphin2hdfeos5.py dolphin --method-string dolphinStandard
   dolphin2hdfeos5.py dolphin -m tc --vmin 0.7
   dolphin2hdfeos5.py dolphin -m similarity --vmin 0.5
   dolphin2hdfeos5.py dolphin -m tc+sim --vmin 0.7 --vmin-sim 0.5
@@ -95,10 +94,10 @@ def normalize_dolphin_preset(value: str) -> str:
 
 
 def dolphin_he5_method_name(preset: str, preset_naming: bool = True) -> str:
-    """HE5 filename method segment: dolphin-<preset> when preset_naming, else dolphin."""
+    """HE5 post_processing_method from CSLC preset (--preset-naming on create_isce3_runfiles)."""
     if not preset_naming:
         return "dolphin"
-    return f"dolphin-{normalize_dolphin_preset(preset)}"
+    return dolphin_method_string(preset)
 
 
 def add_mask_arguments(parser: argparse.ArgumentParser) -> None:

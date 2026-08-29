@@ -24,7 +24,7 @@
       "dolphin_timeseries": [
         "dolphin/timeseries/velocity.tif"
       ],
-      "create_hdfeos5": [
+      "dolphin_2_hdfeos5": [
         "dolphin/timeseries/*.he5"
       ],
       "ingest_insarmaps": [
@@ -49,7 +49,7 @@
       "dolphin_timeseries": [
         "dolphin/timeseries/velocity.tif"
       ],
-      "create_hdfeos5": [
+      "dolphin_2_hdfeos5": [
         "dolphin/timeseries/*.he5"
       ],
       "ingest_insarmaps": [
@@ -63,7 +63,7 @@
       "reformat_disp": [
         "*stack.nc"
       ],
-      "create_hdfeos5": [
+      "dolphin_2_hdfeos5": [
         "timeseries/*.he5"
       ],
       "ingest_insarmaps": [

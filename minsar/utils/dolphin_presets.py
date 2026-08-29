@@ -22,7 +22,12 @@ DOLPHIN_PRESET_HELP = (
 )
 
 NO_PRESET_NAMING_HELP = (
-    "Use dolphin (not dolphin-<preset>) in HE5 filename; preset naming is on by default"
+    "Use method-string dolphin (not dolphinAuto/dolphinStandard) in HE5 filename; preset naming is on by default"
+)
+
+METHOD_STRING_HELP = (
+    "HE5 post_processing_method label (e.g. dolphin, dolphinAuto, dolphinStandard); "
+    "used in .he5 filename and metadata"
 )
 
 
@@ -30,6 +35,22 @@ def normalize_dolphin_preset(value: str) -> str:
     token = str(value).strip().lower().replace("_", "-")
     if token not in DOLPHIN_PRESETS:
         raise ValueError(f"invalid preset {value!r}; use {', '.join(DOLPHIN_PRESET_CHOICES)}")
+    return token
+
+
+def dolphin_method_string(preset: str) -> str:
+    """HE5 post_processing_method label for a dolphin CSLC preset (e.g. dolphinStandard)."""
+    key = normalize_dolphin_preset(preset)
+    return "dolphin" + key.capitalize()
+
+
+def normalize_method_string(value: str) -> str:
+    """Validate HE5 method label (alphanumeric, e.g. dolphinStandard)."""
+    token = str(value).strip()
+    if not token or not re.fullmatch(r"[A-Za-z0-9]+", token):
+        raise ValueError(
+            f"invalid method-string {value!r}; use alphanumeric labels like dolphin, dolphinAuto, dolphinStandard"
+        )
     return token
 
 

@@ -36,8 +36,11 @@ def main(iargs: list[str] | None = None) -> int:
     if not config_path.is_file():
         raise FileNotFoundError(f"dolphin config not found: {config_path}")
 
-    from dolphin import timeseries
-    from dolphin.workflows.config import DisplacementWorkflow
+    from minsar.utils.sweets_import import hide_argv_from_pyre
+
+    with hide_argv_from_pyre():
+        from dolphin import timeseries
+        from dolphin.workflows.config import DisplacementWorkflow
 
     cfg = DisplacementWorkflow.from_yaml(config_path)
     # Wrapped stage may have written no-run-inversion / no-run-velocity; force on here.
