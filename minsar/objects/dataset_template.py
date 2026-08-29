@@ -184,7 +184,6 @@ class Template:
                 value_orig = options_in[item]
                 value_new = self.check_correct_quotes(value_orig)
                 options_in[item] = value_new
-                print(value_orig + '-->' + value_new)
         return options_in
 
 
