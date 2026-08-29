@@ -1,0 +1,30 @@
+---
+description: After substantive edits, suggest git add/commit commands and a commit message; do not commit unless asked
+alwaysApply: true
+---
+
+# Git commit suggestions
+
+After **substantive** code or config changes (new scripts, workflow fixes, multi-file features, reverts), end the summary with a suggested commit — **do not run `git commit`** unless the user explicitly asks.
+
+## When to suggest
+
+- New or changed `minsar/` scripts, utils, CLI, job defaults, workflow entry points
+- Multi-line fixes the user will want on another server
+- Skip for: questions only, reading logs, tiny drive-by edits the user did not request
+
+## What to include
+
+1. **Files modified** list (already required in `minsar-project.mdc`).
+2. **Suggested `git add`** — name paths explicitly; do not suggest `git add -A` unless the user wants everything.
+3. **One commit message** — 1–2 sentences, focus on why; match existing repo tone.
+4. **Copy-paste commands** — one line per command (see `chat-copy-paste.mdc`).
+
+## Example block
+
+```bash
+git add minsar/src/minsar/cli/create_isce3_runfiles.py minsar/src/minsar/cli/run_isce3_workflow.bash
+git commit -m "Fix ISCE3 timeout rerun to use job_defaults_isce3.cfg for dolphin_wrapped."
+```
+
+Do not push unless the user asks.

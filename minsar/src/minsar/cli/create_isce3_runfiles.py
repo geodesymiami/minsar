@@ -31,8 +31,6 @@ from minsar.utils.dolphin_presets import (
 
 WORKFLOW_CHOICES = ("safe", "cslc", "disp")
 SWEETS_CONFIG = "sweets_config.yaml"
-SWEETS_PIXI_ENV_REL = "tools/sweets/.pixi/envs/default"
-SYSTEM_PATH_FALLBACK = "/usr/bin:/bin"
 DATA_TYPE_ALIASES = {
     "safe": "safe",
     "cslc": "cslc",
@@ -225,28 +223,6 @@ def _resolve_n_bursts_for_dolphin(work_dir: Path, context: dict[str, object]) ->
     return n_bursts
 
 
-def _dolphin_worker_preamble_bash(cpus_per_node: int, minsar_home: str | None = None) -> str:
-    """Set N_BURSTS from data/ and DOLPHIN_WORKER_FLAGS before dolphin config."""
-    if minsar_home:
-        script = shlex.quote(str(Path(minsar_home) / "minsar/utils/dolphin_presets.py"))
-    else:
-        script = '"$MINSAR_HOME/minsar/utils/dolphin_presets.py"'
-    py = _sweets_python_sh()
-    return (
-        f"N_BURSTS=$({py} {script} --count-bursts --data-dir data)\n"
-        f"export N_BURSTS\n"
-        f"DOLPHIN_WORKER_FLAGS=$({py} {script} --cpus {cpus_per_node} --n-bursts \"$N_BURSTS\")\n"
-    )
-
-
-def _cleanup_dolphin_ministacks_command(minsar_home: str | None = None) -> str:
-    if minsar_home:
-        script = shlex.quote(str(Path(minsar_home) / "minsar/utils/cleanup_dolphin_ministacks.py"))
-    else:
-        script = '"$MINSAR_HOME/minsar/utils/cleanup_dolphin_ministacks.py"'
-    return f'{_sweets_python_sh()} {script} dolphin'
-
-
 def _strip_bash_script_header(text: str) -> str:
     """Return command body without shebang or leading set -e lines."""
     body: list[str] = []
@@ -261,124 +237,22 @@ def _strip_bash_script_header(text: str) -> str:
     return "\n".join(body).strip()
 
 
-def _sweets_python_sh() -> str:
-    return '"$SWEETS_ENV/bin/python3"'
-
-
-def _dolphin_sh_command(args: str) -> str:
-    """Run dolphin CLI via python3 (avoids noexec shebang on /work2)."""
-    return f'"$SWEETS_ENV/bin/python3" "$SWEETS_ENV/bin/dolphin" {args}'
-
-
-def _sweets_stage_bash_lines() -> str:
-    """Pick staged SCRATCH env or work2; staging must be done on a login node."""
-    return (
-        'SWEETS_SRC="${MINSAR_HOME}/tools/sweets/.pixi/envs/default"\n'
-        'SWEETS_STAGE="${SCRATCHDIR:-/scratch/${USER:-unknown}}/minsar_sweets_pixi_default"\n'
-        'if [[ -x "$SWEETS_STAGE/bin/python3" ]] && "$SWEETS_STAGE/bin/python3" -c "pass" >/dev/null 2>&1; then\n'
-        '  export SWEETS_ENV="$SWEETS_STAGE"\n'
-        'elif "$SWEETS_SRC/bin/python3" -c "pass" >/dev/null 2>&1; then\n'
-        '  export SWEETS_ENV="$SWEETS_SRC"\n'
-        'else\n'
-        '  echo "Error: SWEETS pixi env not available on this node." >&2\n'
-        '  echo "From a login node run: stage_sweets_pixi_env.bash" >&2\n'
-        '  exit 1\n'
-        'fi\n'
-    )
-
-
-def _sweets_env_dir(minsar_home: Path) -> Path:
-    return minsar_home / SWEETS_PIXI_ENV_REL
-
-
-def _stage_sweets_env_if_needed(minsar_home: Path) -> Path:
-    """Return SWEETS env prefix; use SCRATCH copy when work2 python is not executable."""
-    src = _sweets_env_dir(minsar_home)
-    py = src / "bin" / "python3"
-    if py.is_file() and os.access(py, os.X_OK):
-        try:
-            subprocess.run([str(py), "-c", "pass"], check=True, capture_output=True)
-            return src
-        except subprocess.CalledProcessError:
-            pass
-    scratch = os.environ.get("SCRATCHDIR") or f"/scratch/{os.environ.get('USER', 'tmp')}"
-    stage = Path(scratch) / "minsar_sweets_pixi_default"
-    stage_py = stage / "bin" / "python3"
-    if stage_py.is_file() and os.access(stage_py, os.X_OK):
-        try:
-            subprocess.run([str(stage_py), "-c", "pass"], check=True, capture_output=True)
-            return stage
-        except subprocess.CalledProcessError:
-            pass
-    stage_script = minsar_home / "minsar/scripts/stage_sweets_pixi_env.bash"
-    if stage_script.is_file():
-        subprocess.run([str(stage_script)], check=True)
-        return stage
-    raise RuntimeError(
-        "SWEETS pixi env is not staged; run stage_sweets_pixi_env.bash from a login node"
-    )
-
-
-def _sweets_env_for_subprocess(minsar_home: Path) -> dict[str, str]:
-    """Subprocess env with SWEETS pixi prefix on PATH (no user ~/.pixi)."""
-    env = os.environ.copy()
-    sweets_env = _stage_sweets_env_if_needed(minsar_home)
-    bin_dir = str(sweets_env / "bin")
-    env["MINSAR_HOME"] = str(minsar_home)
-    prior_pythonpath = env.get("PYTHONPATH")
-    env["PYTHONPATH"] = (
-        f"{minsar_home}:{prior_pythonpath}" if prior_pythonpath else str(minsar_home)
-    )
-    env["PATH"] = f"{bin_dir}:{env.get('PATH', '')}"
-    if SYSTEM_PATH_FALLBACK not in env["PATH"]:
-        env["PATH"] = f"{env['PATH']}:{SYSTEM_PATH_FALLBACK}"
-    env.pop("LD_LIBRARY_PATH", None)
-    proj_share = str(sweets_env / "share/proj")
-    env["PROJ_LIB"] = proj_share
-    env["PROJ_DATA"] = proj_share
-    env["GDAL_DATA"] = str(sweets_env / "share/gdal")
-    env["LD_RUN_PATH"] = str(sweets_env / "lib")
-    return env
-
-
-def _sweets_env_setup_bash_lines() -> str:
-    """Bash exports/unsets so SWEETS GDAL/PROJ win over inherited minsar conda."""
-    return (
-        "unset LD_LIBRARY_PATH\n"
-        'export LD_RUN_PATH="$SWEETS_ENV/lib"\n'
-        'export PROJ_LIB="$SWEETS_ENV/share/proj"\n'
-        'export PROJ_DATA="$SWEETS_ENV/share/proj"\n'
-        'export GDAL_DATA="$SWEETS_ENV/share/gdal"\n'
-    )
-
-
 def _sweets_pixi_env_bash(minsar_home: str | None = None) -> str:
-    """Bash lines: MINSAR_HOME, SWEETS pixi env on PATH, PROJ/GDAL for COMPASS/dolphin."""
-    minsar_utils = "${MINSAR_HOME}/minsar/utils"
-    minsar_bin = "${MINSAR_HOME}/minsar/bin"
-    minsar_scripts = "${MINSAR_HOME}/minsar/scripts"
-    path_line = (
-        f'export PATH="$SWEETS_ENV/bin:{minsar_utils}:{minsar_bin}:{minsar_scripts}:{SYSTEM_PATH_FALLBACK}"\n'
-    )
-    env_setup = _sweets_env_setup_bash_lines()
+    """Bash lines: set MINSAR_HOME and put pixi + MinSAR CLI dirs on PATH."""
     if minsar_home:
         home = shlex.quote(minsar_home)
         return (
             f"export MINSAR_HOME={home}\n"
-            + _sweets_stage_bash_lines()
-            + path_line
-            + f"export PYTHONPATH=\"{minsar_home}${{PYTHONPATH:+:$PYTHONPATH}}\"\n"
-            + env_setup
+            f"export PATH=\"${{HOME}}/.pixi/bin:{minsar_home}/minsar/utils:{minsar_home}/minsar/bin:{minsar_home}/minsar/scripts:${{PATH}}\"\n"
+            f"export PYTHONPATH=\"{minsar_home}${{PYTHONPATH:+:$PYTHONPATH}}\"\n"
         )
     return (
         'if [[ -z "${MINSAR_HOME:-}" ]]; then\n'
         '  echo "Error: MINSAR_HOME is not set; source setup/environment.bash" >&2\n'
         '  exit 1\n'
         'fi\n'
-        + _sweets_stage_bash_lines()
-        + path_line
-        + 'export PYTHONPATH="${MINSAR_HOME}${PYTHONPATH:+:$PYTHONPATH}"\n'
-        + env_setup
+        'export PATH="${HOME}/.pixi/bin:${MINSAR_HOME}/minsar/utils:${MINSAR_HOME}/minsar/bin:${MINSAR_HOME}/minsar/scripts:${PATH}"\n'
+        'export PYTHONPATH="${MINSAR_HOME}${PYTHONPATH:+:$PYTHONPATH}"\n'
     )
 
 
@@ -390,8 +264,13 @@ def _pixi_run_script(commands: str, minsar_home: str | None = None) -> str:
     return (
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
-        f"{_sweets_pixi_env_bash(minsar_home)}\n"
+        f"{_sweets_pixi_env_bash(minsar_home)}"
+        'pixi run --manifest-path "$MINSAR_HOME/tools/sweets/pyproject.toml" -- bash <<\'ISCE3_PIXI_BODY\'\n'
+        "set -euo pipefail\n"
+        "\n"
         f"{body}\n"
+        "\n"
+        "ISCE3_PIXI_BODY\n"
     )
 
 
@@ -464,56 +343,54 @@ def _cslc_dolphin_config_line(
         else dolphin_worker_cli_flags(cpus_per_node, n_bursts_aoi)
     )
     preset_flags = _dolphin_preset_cli_flags(preset)
-    config_args = (
-        "--slc-files data/OPERA_L2_CSLC-S1_*.h5 --subdataset /data/VV "
+    parts = [
+        "dolphin config --slc-files data/OPERA_L2_CSLC-S1_*.h5 --subdataset /data/VV "
         "--work-directory dolphin --mask-file watermask.tif "
         f"--output-options.bounds {west} {south} {east} {north} "
         f"{worker_flags}"
-    )
+    ]
     if preset_flags:
-        config_args += f" {preset_flags}"
+        parts.append(f" {preset_flags}")
     if extra_flags:
-        config_args += f" {extra_flags}"
-    config_args += f" --outfile {outfile}"
-    return _dolphin_sh_command(f"config {config_args}")
+        parts.append(f" {extra_flags}")
+    parts.append(f" --outfile {outfile}")
+    return "".join(parts)
 
 
 def _cslc_dolphin_commands(
     config_line: str,
     cpus_per_node: int,
+    n_bursts: int,
     preset: str = "auto",
-    minsar_home: str | None = None,
 ) -> list[str]:
-    """Shell commands for CSLC dolphin config + run (worker flags from data/ at run time)."""
+    """Shell commands for CSLC dolphin config + run (worker flags set at generate time)."""
     return [
-        _dolphin_worker_preamble_bash(cpus_per_node, minsar_home),
-        _cleanup_dolphin_ministacks_command(minsar_home),
+        "cleanup_dolphin_ministacks.py dolphin",
         _cslc_dolphin_config_line(
-            config_line, cpus_per_node, 1, preset=preset, runtime_workers=True
+            config_line, cpus_per_node, n_bursts, preset=preset, runtime_workers=False
         ),
-        _dolphin_sh_command("run dolphin_config.yaml"),
+        "dolphin run dolphin_config.yaml",
     ]
 
 
 def _cslc_dolphin_wrapped_commands(
     config_line: str,
     cpus_per_node: int,
+    n_bursts: int,
     preset: str = "auto",
-    minsar_home: str | None = None,
 ) -> list[str]:
     """CSLC dolphin_wrapped: phase linking + stitch; writes dolphin_config.yaml."""
     return [
-        _dolphin_worker_preamble_bash(cpus_per_node, minsar_home),
-        _cleanup_dolphin_ministacks_command(minsar_home),
+        "cleanup_dolphin_ministacks.py dolphin",
         _cslc_dolphin_config_line(
             config_line,
             cpus_per_node,
-            1,
+            n_bursts,
             extra_flags=_dolphin_stop_after_stitch_flags(),
             preset=preset,
-            runtime_workers=True,
+            runtime_workers=False,
         ),
-        _dolphin_sh_command("run dolphin_config.yaml"),
+        "dolphin run dolphin_config.yaml",
     ]
 
 
@@ -853,8 +730,7 @@ def _create_template_from_aoi(args: argparse.Namespace) -> Path:
 
 
 def _runner_command(command: str) -> str:
-    """Return command for scripts that already export the SWEETS pixi env."""
-    return command
+    return f'pixi run --manifest-path "$MINSAR_HOME/tools/sweets/pyproject.toml" {command}'
 
 
 def _use_dolphin_split(workflow: str, no_dolphin_split: bool) -> bool:
@@ -1037,10 +913,21 @@ def _print_plan(
 
 
 def _run_in_sweets(work_dir: Path, command: list[str]) -> None:
-    """Run one command in the canonical SWEETS pixi environment."""
+    """Run one command in the canonical SWEETS Pixi environment."""
     minsar_home = Path(os.environ.get("MINSAR_HOME", Path(__file__).resolve().parents[4]))
-    env = _sweets_env_for_subprocess(minsar_home)
-    subprocess.run(command, cwd=work_dir, env=env, check=True)
+    pixi_command = [
+        "pixi",
+        "run",
+        "--manifest-path",
+        str(minsar_home / "tools/sweets/pyproject.toml"),
+        *command,
+    ]
+    env = os.environ.copy()
+    env["MINSAR_HOME"] = str(minsar_home)
+    env["PYTHONPATH"] = str(minsar_home)
+    pixi_bin = Path.home() / ".pixi" / "bin"
+    env["PATH"] = f"{pixi_bin}:{env.get('PATH', '')}"
+    subprocess.run(pixi_command, cwd=work_dir, env=env, check=True)
 
 
 def _configure_sweets(workflow: str, template: Path, work_dir: Path) -> None:
@@ -1107,11 +994,11 @@ def _bbox_wsene_from_sweets_line(line: str) -> tuple[str, str, str, str]:
 def _cslc_dolphin_script(
     config_line: str,
     cpus_per_node: int,
+    n_bursts: int,
     preset: str = "auto",
-    minsar_home: str | None = None,
 ) -> str:
     """Commands for CSLC dolphin config + run."""
-    return "\n".join(_cslc_dolphin_commands(config_line, cpus_per_node, preset=preset, minsar_home=minsar_home)) + "\n"
+    return "\n".join(_cslc_dolphin_commands(config_line, cpus_per_node, n_bursts, preset=preset)) + "\n"
 
 
 def _sweets_download_script(config_line: str, kind: str) -> str:
@@ -1153,18 +1040,13 @@ def _sweets_stage_bodies(
             "create_hdfeos5": hdfeos5,
             "ingest_insarmaps": ingest,
         }
-    minsar_home = os.environ.get("MINSAR_HOME")
     n_bursts = _resolve_n_bursts_for_dolphin(work_dir, context)
-    print(
-        f"  dolphin worker estimate: {dolphin_worker_cli_flags(cpus_per_node, n_bursts)}",
-        file=sys.stderr,
-    )
     if split_dolphin:
         return {
             "download_cslc": download.rstrip("\n") + f"\n{geom}\n",
             "dolphin_wrapped": "\n".join(
                 _cslc_dolphin_wrapped_commands(
-                    config_line, cpus_per_node, preset=preset, minsar_home=minsar_home
+                    config_line, cpus_per_node, n_bursts, preset=preset
                 )
             )
             + "\n",
@@ -1178,8 +1060,8 @@ def _sweets_stage_bodies(
         "dolphin": _cslc_dolphin_script(
             config_line,
             cpus_per_node,
+            n_bursts,
             preset=preset,
-            minsar_home=minsar_home,
         ),
         "create_hdfeos5": hdfeos5,
         "ingest_insarmaps": ingest,

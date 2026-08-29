@@ -130,6 +130,7 @@ export PATH=${PATH}:${MINSAR_HOME}/tools/autoencoder
 export PATH=${PATH}:${MINSAR_HOME}/tools/etna-slider/comparison/scripts
 export PATH=${PATH}:${MINSAR_HOME}/tools/MakeTemplate/src/maketemplate/cli
 export PATH=${PATH}:${MINSAR_HOME}/tools/S4I/viewer4falk
+export PATH=${PATH}:~/.pixi/bin
 export PATH=${ISCE_HOME}/applications:${ISCE_HOME}/bin:${ISCE_STACK}:${ISCE_STACK}/topsStack:${PATH};
 export PATH=${CONDA_PREFIX}/bin:${PATH}
 export PATH="${MINSAR_HOME}/tools/sarplotter-main/app:$PATH"

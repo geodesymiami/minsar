@@ -77,7 +77,7 @@ def cleanup_dolphin_ministacks(work_directory: Path, dry_run: bool = False) -> l
     """Remove incomplete ministack dirs under all */linked_phase/ trees."""
     root = work_directory.expanduser().resolve()
     if not root.is_dir():
-        raise FileNotFoundError(f"work directory not found: {root}")
+        return []
     removed: list[Path] = []
     for linked_phase in sorted(root.glob("*/linked_phase")):
         removed.extend(_cleanup_linked_phase(linked_phase, dry_run))
