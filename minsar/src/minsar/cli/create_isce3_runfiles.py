@@ -70,6 +70,7 @@ ARGV_FIX_KW = {
         "--config",
         "--sleep",
         "--preset",
+        "--burst-count-method",
     ),
     "consume_two": (),
     "flags": (
@@ -204,8 +205,28 @@ def _make_job_submit(project_dir: Path, run_dir: Path, queue: str, profile: Reso
     return job
 
 
-def _resolve_n_bursts_for_dolphin(work_dir: Path, context: dict[str, object]) -> int:
-    """Burst count from data/ when present, else opera_utils footprints over the AOI."""
+def _flight_direction_for_burst_count(context: dict[str, object]) -> str:
+    """Return asc/desc from context CLI or template flight-direction fields."""
+    flight = str(context.get("flight_direction") or "").strip()
+    if flight:
+        return flight
+    template = str(context.get("template") or "")
+    if template:
+        from minsar.utils.generate_sweets_config import flight_direction_from_template
+
+        resolved = flight_direction_from_template(template)
+        if resolved:
+            return resolved
+    return ""
+
+
+def _resolve_n_bursts_for_dolphin(
+    work_dir: Path,
+    context: dict[str, object],
+    *,
+    burst_count_method: str = "sar_coverage",
+) -> int:
+    """Burst count from data/ when present, else sar_coverage or opera-utils over the AOI."""
     data_dir = work_dir / "data"
     if any(data_dir.glob("OPERA_L2_CSLC-S1_*.h5")):
         n_bursts = count_opera_cslc_bursts(data_dir)
@@ -214,13 +235,41 @@ def _resolve_n_bursts_for_dolphin(work_dir: Path, context: dict[str, object]) ->
     aoi = str(context.get("aoi") or "").strip()
     if not aoi:
         return 1
-    from minsar.utils.generate_sweets_config import count_bursts_covering_aoi
 
     track_raw = str(context.get("track") or "")
     track = int(track_raw) if track_raw else None
-    flight = str(context.get("flight_direction") or "") or None
-    n_bursts = count_bursts_covering_aoi(aoi, track=track, flight_direction=flight)
-    print(f"  dolphin n_bursts={n_bursts} from AOI (data/ empty)", file=sys.stderr)
+    flight = _flight_direction_for_burst_count(context) or None
+
+    if burst_count_method == "opera-utils":
+        if track is None:
+            raise ValueError("--burst-count-method opera-utils requires --track")
+        from minsar.utils.generate_sweets_config import count_bursts_covering_aoi
+
+        n_bursts = count_bursts_covering_aoi(aoi, track=track, flight_direction=flight)
+        print(f"  dolphin n_bursts={n_bursts} from opera-utils (track={track})", file=sys.stderr)
+        return n_bursts
+
+    from minsar.scripts.create_template import _run_get_sar_coverage
+    from minsar.scripts.get_sar_coverage import count_bursts_on_orbit
+
+    if track is None:
+        if not flight:
+            raise ValueError(
+                "--burst-count-method sar_coverage requires --flight-dir "
+                "(or template flight direction) when --track is not set"
+            )
+        coverage = _run_get_sar_coverage(aoi, "S1")
+        orbit_key = "desc_relorbit" if flight.lower().startswith("d") else "asc_relorbit"
+        if orbit_key not in coverage:
+            raise RuntimeError(f"get_sar_coverage.py did not return {orbit_key} for AOI {aoi!r}")
+        track = int(coverage[orbit_key])
+        print(f"  dolphin track={track} from get_sar_coverage.py ({flight})", file=sys.stderr)
+    if not flight:
+        raise ValueError(
+            "--burst-count-method sar_coverage requires --flight-dir when estimating bursts from ASF"
+        )
+    n_bursts = count_bursts_on_orbit(aoi, track, flight)
+    print(f"  dolphin n_bursts={n_bursts} from get_sar_coverage.py (track={track})", file=sys.stderr)
     return n_bursts
 
 
@@ -554,6 +603,12 @@ def create_parser() -> argparse.ArgumentParser:
         default=None,
         help="sleep seconds in each SLURM job file before the stage runs",
     )
+    parser.add_argument(
+        "--burst-count-method",
+        choices=("sar_coverage", "opera-utils"),
+        default="sar_coverage",
+        help="estimate n_bursts when data/ is empty: sar_coverage (get_sar_coverage.py) or opera-utils (requires --track)",
+    )
     parser.add_argument("--run", action="store_true", help="after creating files, run run_isce3_workflow.bash --start 1 --end N")
     return parser
 
@@ -822,6 +877,7 @@ def _create_files(
             split_dolphin=split_dolphin,
             preset=args.preset,
             preset_naming=args.preset_naming,
+            burst_count_method=args.burst_count_method,
         )
     else:
         bodies = None
@@ -1013,6 +1069,7 @@ def _sweets_stage_bodies(
     split_dolphin: bool = False,
     preset: str = "auto",
     preset_naming: bool = True,
+    burst_count_method: str = "sar_coverage",
 ) -> dict[str, str]:
     """Resolve concrete SAFE or CSLC run-file bodies at generate time."""
     config_line = _sweets_config_line(workflow, context)
@@ -1033,7 +1090,9 @@ def _sweets_stage_bodies(
             "dolphin_2_hdfeos5": hdfeos5,
             "ingest_insarmaps": ingest,
         }
-    n_bursts = _resolve_n_bursts_for_dolphin(work_dir, context)
+    n_bursts = _resolve_n_bursts_for_dolphin(
+        work_dir, context, burst_count_method=burst_count_method
+    )
     if split_dolphin:
         return {
             "download_cslc": download.rstrip("\n") + f"\n{geom}\n",

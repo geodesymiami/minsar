@@ -201,6 +201,75 @@ def _get_subswath_s1(product) -> str:
     return '-'
 
 
+def _get_burst_key_s1(product) -> str:
+    """Return a stable burst identifier for deduplication across acquisition dates."""
+    burst_dict = product.properties.get('burst') or {}
+    for key in ('relativeBurstID', 'burstId', 'absoluteBurstID'):
+        val = burst_dict.get(key) or product.properties.get(key)
+        if val is not None:
+            return str(val)
+    sw = _get_subswath_s1(product)
+    for key in ('burstIndex', 'index'):
+        val = burst_dict.get(key)
+        if val is not None:
+            return f"{sw}:{val}"
+    return _s1_product_label(product)
+
+
+def _flight_dir_to_asf_direction(flight_direction: str) -> str:
+    """Map asc/desc (or Ascending/Descending) to ASF flightDirection value."""
+    token = flight_direction.strip().lower()
+    if token.startswith('a'):
+        return 'ASCENDING'
+    if token.startswith('d'):
+        return 'DESCENDING'
+    raise ValueError(f"unknown flight direction {flight_direction!r}; use asc or desc")
+
+
+def count_bursts_on_orbit(
+    aoi: str,
+    relative_orbit: int,
+    flight_direction: str,
+    *,
+    start: datetime.date | None = None,
+    end: datetime.date | None = None,
+    verbose: bool = False,
+) -> int:
+    """Count distinct Sentinel-1 bursts intersecting an AOI on one relative orbit.
+
+    Uses ASF BURST products (same source as orbit discovery in this script).
+    """
+    wkt = parse_aoi(aoi)
+    direction = _flight_dir_to_asf_direction(flight_direction)
+    period_start = start or datetime.date(2020, 1, 1)
+    period_end = end or datetime.date(2020, 2, 1)
+    kwargs = dict(
+        platform=asf.PLATFORM.SENTINEL1,
+        processingLevel=asf.PRODUCT_TYPE.BURST,
+        intersectsWith=wkt,
+        start=str(period_start),
+        end=str(period_end),
+        relativeOrbit=int(relative_orbit),
+        flightDirection=direction,
+        polarization=['VV'],
+        dataset=[asf.DATASET.SLC_BURST],
+        maxResults=250,
+    )
+    _vprint(verbose, f"  BURST count query: relativeOrbit={relative_orbit} flightDirection={direction}")
+    try:
+        results = list(asf.search(**kwargs))
+    except Exception as exc:
+        raise RuntimeError(
+            f"ASF BURST search failed for orbit {relative_orbit} over AOI {aoi!r}: {exc}"
+        ) from exc
+    burst_keys = {_get_burst_key_s1(product) for product in results}
+    if not burst_keys:
+        raise RuntimeError(
+            f"No ASF BURST products found for orbit {relative_orbit} ({direction}) intersecting AOI {aoi!r}"
+        )
+    return max(1, len(burst_keys))
+
+
 def _get_date(product) -> Optional[str]:
     """Extract acquisition date (YYYY-MM-DD)."""
     start = product.properties.get('startTime')
