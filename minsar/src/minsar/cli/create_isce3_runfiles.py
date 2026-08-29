@@ -891,7 +891,7 @@ def _print_plan(
     preset_naming: bool = True,
 ) -> None:
     print(f"Workflow: {workflow.upper()} ({platform})")
-    print(f"Project:  {context['project']}")
+    print(f"Project:  $SCRATCHDIR/{context['project']}")
     if preset is not None and workflow in {"cslc", "safe"}:
         print(f"Preset:   {preset}")
         if preset_naming:
@@ -900,10 +900,7 @@ def _print_plan(
             print("HE5 name: dolphin (--no-preset-naming)")
     if queue is not None:
         print(f"Queue:    {queue} (long: {long_queue})")
-    if stages is not None:
-        run_files = [Path(stage.run_file).name for stage in stages]
-        print(f"run_files created: {', '.join(run_files)}")
-    else:
+    if stages is None:
         run_files = [f"run_{number:02d}_{name}" for number, (name, _, _) in enumerate(specs or [], 1)]
         print(f"run_files to create: {', '.join(run_files)}")
 

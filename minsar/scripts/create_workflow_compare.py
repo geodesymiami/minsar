@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write a bash driver to set up SAFE, CSLC Dolphin presets, DISP-S1, and ISCE2/miaplpy compare runs."""
+"""Write a bash driver to set up SAFE, CSLC Dolphin presets, DISP-S1, and MiaplPy compare runs."""
 
 from __future__ import annotations
 
@@ -19,10 +19,13 @@ COMPARE_SUFFIXES = (
     "CSLCDOLPHINAUTO",
     "CSLCDOLPHIN-STANDARD",
     "CSLCDOLPHIN-AUTO",
+    "CSLCSTANDARD",
+    "CSLCAUTO",
     "SAFE",
     "DISP",
     "ISCE2",
     "MIAPLPY",
+    "I",
 )
 ARGV_FIX_KW = {
     "consume_one": (
@@ -46,9 +49,9 @@ DESCRIPTION = (
 )
 
 EXAMPLE = """Examples:
-  create_compare_isce_commands.py 19.4:19.54,-155.02:-154.80 qqHawaiiPuna --flight-dir desc --start 20250101 --end 20250630
-  create_compare_isce_commands.py 19.4:19.54,-155.02:-154.80 qqHawaiiPuna --flight-dir desc --start 20250101 --end 20250630 --output qqHawaiiPuna_compare.bash
-  create_compare_isce_commands.py 19.4:19.54,-155.02:-154.80 qqHawaiiPuna --flight-dir desc --start 20250101 --end 20250630 --run
+  create_workflow_compare.py 19.4:19.54,-155.02:-154.80 qqHawaiiPuna --flight-dir desc --start 20250101 --end 20250630
+  create_workflow_compare.py 19.4:19.54,-155.02:-154.80 qqHawaiiPuna --flight-dir desc --start 20250101 --end 20250630 --output qqHawaiiPuna_compare.bash
+  create_workflow_compare.py 19.4:19.54,-155.02:-154.80 qqHawaiiPuna --flight-dir desc --start 20250101 --end 20250630 --run
 """
 
 
@@ -61,7 +64,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("aoi", metavar="AOI", help="area of interest (S:N,W:E bounds or WKT POLYGON)")
     parser.add_argument(
         "name",
-        help="project base name; SAFE/CSLCDolphinAuto/CSLCDolphinStandard/DISP/ISCE2 suffixes are appended",
+        help="project base name; SAFE/CSLCAuto/CSLCStandard/DISP/I suffixes are appended",
     )
     parser.add_argument("--flight-dir", choices=("asc", "desc"), required=True, help="orbit pass for AOI-based setup")
     parser.add_argument("--start-date", "--start", dest="start_date", required=True, metavar="DATE", help="first date YYYYMMDD or YYYY-MM-DD")
@@ -90,10 +93,10 @@ def project_names(base: str) -> dict[str, str]:
     stem = normalize_base_name(base)
     return {
         "safe": f"{stem}SAFE",
-        "cslc_auto": f"{stem}CSLCDolphinAuto",
-        "cslc_standard": f"{stem}CSLCDolphinStandard",
+        "cslc_auto": f"{stem}CSLCAuto",
+        "cslc_standard": f"{stem}CSLCStandard",
         "disp": f"{stem}DISP",
-        "isce2": f"{stem}ISCE2",
+        "isce2": f"{stem}I",
     }
 
 
@@ -179,7 +182,7 @@ def build_compare_script(
     lines = [
         "#!/usr/bin/env bash",
         "set -e",
-        f"# Compare SAFE, CSLC Dolphin auto/standard, DISP-S1 (ISCE3), and MiaplPy (ISCE2) for {stem}",
+        f"# Compare SAFE, CSLC auto/standard, DISP-S1 (ISCE3), and MiaplPy for {stem}",
         _isce3_command(aoi, names["safe"], flight_dir=flight_dir, start=start, end=end, data_flag="--safe", track=track, frame_id=frame_id, run=True),
         _isce3_command(
             aoi,
