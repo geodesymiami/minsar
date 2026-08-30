@@ -690,7 +690,7 @@ def _run_isce3_workflow(work_dir: Path, end_step: int) -> int:
         raise RuntimeError(f"run_isce3_workflow.bash not found: {runner}")
     os.chdir(work_dir)
     command = [str(runner), "--start", "1", "--end", str(end_step)]
-    print(f"cd {work_dir}")
+    print(f"cd $SCRATCHDIR/{work_dir.name}")
     print(f"Running: {' '.join(command)}")
     completed = subprocess.run(command, check=False)
     return completed.returncode

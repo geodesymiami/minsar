@@ -346,8 +346,28 @@ job_path_for_display() {
     fi
 }
 
+print_ingest_insarmaps_url_if_applicable() {
+    local job_file="$1"
+    local step_start_epoch="$2"
+    local log_file="${work_dir}/insarmaps.log"
+    local job_basename log_mtime url
+
+    job_basename=$(basename "$job_file" .job)
+    [[ "$job_basename" == *ingest_insarmaps* ]] || return 0
+    [[ -n "$step_start_epoch" ]] || return 0
+    [[ -f "$log_file" ]] || return 0
+
+    log_mtime=$(stat -c %Y "$log_file" 2>/dev/null || echo 0)
+    [[ "$log_mtime" -gt "$step_start_epoch" ]] || return 0
+
+    url=$(tail -1 "$log_file")
+    [[ "$url" == http://* || "$url" == https://* ]] || return 0
+    echo "$url"
+}
+
 run_job_validation() {
     local job_file="$1"
+    local step_start_epoch="${2:-}"
     local display_path
     display_path="$(job_path_for_display "$job_file")"
     print_step_banner "Checking outputs:   validate_isce3_job_outputs.py ${display_path}"
@@ -355,10 +375,12 @@ run_job_validation() {
         return 0
     fi
     validate_isce3_job_outputs.py "$job_file" || die "validation failed: ${display_path}"
+    print_ingest_insarmaps_url_if_applicable "$job_file" "$step_start_epoch"
 }
 
 run_local_stage() {
     local index="$1"
+    local step_start_epoch="${2:-}"
     local job_file
     local run_file
 
@@ -377,7 +399,7 @@ run_local_stage() {
     done < <(jobs_for_step "${stage_numbers[$index]}")
 
     while IFS= read -r job_file; do
-        run_job_validation "$job_file"
+        run_job_validation "$job_file" "$step_start_epoch"
     done < <(jobs_for_step "${stage_numbers[$index]}")
 }
 
@@ -483,12 +505,13 @@ wait_for_slurm_jobs() {
 }
 
 check_step_outputs() {
+    local step_start_epoch="${1:-}"
     shift
     local files=("$@")
     local job_file
 
     for job_file in "${files[@]}"; do
-        run_job_validation "$job_file"
+        run_job_validation "$job_file" "$step_start_epoch"
     done
     echo
 }
@@ -498,8 +521,12 @@ if [[ "$backend" == "slurm" && "$dry_run" != "true" ]]; then
 fi
 
 for ((index = start_index; index <= end_index; index++)); do
+    ingest_step_start_epoch=""
+    if [[ "${stage_names[$index]}" == "ingest_insarmaps" && "$dry_run" != "true" ]]; then
+        ingest_step_start_epoch=$(date +%s)
+    fi
     if [[ "$backend" == "local" ]]; then
-        run_local_stage "$index"
+        run_local_stage "$index" "$ingest_step_start_epoch"
     else
         files=()
         while IFS= read -r job_file; do
@@ -510,6 +537,6 @@ for ((index = start_index; index <= end_index; index++)); do
             print_step_banner "Running:    $(basename "$job_file" .job)"
         done
         wait_for_slurm_jobs "${stage_names[$index]}" "${stage_patterns[$index]}" "${files[@]}"
-        check_step_outputs "$index" "${files[@]}"
+        check_step_outputs "$ingest_step_start_epoch" "${files[@]}"
     fi
 done
