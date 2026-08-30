@@ -71,12 +71,17 @@ def build_html(directory_path):
 
     png_files.sort(key=sort_key)
 
-    template_dict = readfile.read_template(template_files[0])
+    if template_files:
+        template_dict = readfile.read_template(template_files[0])
+        project_name = template_files[0].split(".")[0]
+    else:
+        template_dict = {}
+        pic_path = pathlib.Path(directory_path).resolve()
+        project_name = pic_path.parent.parent.name if pic_path.parent.name == "dolphin" else pic_path.parent.name
     try:
        network_type = template_dict.get('miaplpy.interferograms.networkType', None)
     except:
        network_type = 'single_reference'
-    project_name = template_files[0].split('.')[0]
 
     # Create the HTML file with headers and image tags
     html_content = "<html><body>"
@@ -92,9 +97,10 @@ def build_html(directory_path):
         html_content += header_tag + img_tag
 
     txt_file = 'reference_date.txt'
-    header_tag = f'  <h2>{txt_file}</h2>\n'
-    with open(txt_file, 'r') as file:
-        html_content += header_tag + '<pre>\n' + file.read() + '</pre>\n'
+    if os.path.isfile(txt_file):
+        header_tag = f'  <h2>{txt_file}</h2>\n'
+        with open(txt_file, 'r') as file:
+            html_content += header_tag + '<pre>\n' + file.read() + '</pre>\n'
 
     for kmz_file in kmz_files:
         header_tag = f'<h2>{kmz_file}</h2>\n'

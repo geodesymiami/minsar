@@ -498,9 +498,19 @@ def _cslc_dolphin_unwrap_commands() -> list[str]:
     ]
 
 
+def _dolphin_plot_commands() -> list[str]:
+    return [
+        "plot_dolphin_summary_pngs.py --dir dolphin",
+        "create_html.py dolphin/pic",
+    ]
+
+
 def _cslc_dolphin_timeseries_commands() -> list[str]:
     """CSLC dolphin_timeseries: inversion/velocity only."""
-    return ["run_dolphin_timeseries.py --config dolphin_config.yaml"]
+    return [
+        "run_dolphin_timeseries.py --config dolphin_config.yaml",
+        *_dolphin_plot_commands(),
+    ]
 
 
 class Isce3JobAdapter:
@@ -1102,7 +1112,13 @@ def _cslc_dolphin_script(
     preset: str = "auto",
 ) -> str:
     """Commands for CSLC dolphin config + run."""
-    return "\n".join(_cslc_dolphin_commands(config_line, cpus_per_node, n_bursts, preset=preset)) + "\n"
+    return (
+        "\n".join(
+            _cslc_dolphin_commands(config_line, cpus_per_node, n_bursts, preset=preset)
+            + _dolphin_plot_commands()
+        )
+        + "\n"
+    )
 
 
 def _sweets_download_script(config_line: str, kind: str) -> str:
@@ -1144,6 +1160,7 @@ def _sweets_stage_bodies(
             "dolphin": _bash_script(
                 geom,
                 f"sweets run {cfg} --starting-step 3",
+                *_dolphin_plot_commands(),
             ),
             "dolphin_2_hdfeos5": hdfeos5,
             "ingest_insarmaps": ingest,
