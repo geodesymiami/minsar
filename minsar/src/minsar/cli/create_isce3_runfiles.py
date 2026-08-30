@@ -1108,12 +1108,15 @@ def _cslc_dolphin_script(
 def _sweets_download_script(config_line: str, kind: str) -> str:
     """Download/check/retry script for SAFE or CSLC with explicit config and kind."""
     cfg = SWEETS_CONFIG
-    return _bash_script(
+    steps = [
         config_line,
         f"sweets_download.py --config {cfg}",
         f"check_sweets_download.py --config {cfg} --kind {kind} --delete --redownload",
         f"check_sweets_download.py --config {cfg} --kind {kind}",
-    )
+    ]
+    if kind == "cslc":
+        steps.append(f"filter_cslc_missing_data.py --config {cfg}")
+    return _bash_script(*steps)
 
 
 def _sweets_stage_bodies(
