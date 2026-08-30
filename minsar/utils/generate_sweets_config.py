@@ -218,6 +218,19 @@ def _burst_gdf_for_aoi(
     return hit
 
 
+def burst_ids_covering_aoi(
+    subset_lalo: str,
+    *,
+    track: int | None = None,
+    flight_direction: str | None = None,
+) -> list[str]:
+    """Sorted OPERA burst_id_jpl values (e.g. t143_305969_iw2) intersecting the AOI."""
+    hit = _burst_gdf_for_aoi(subset_lalo, track=track, flight_direction=flight_direction)
+    if "burst_id_jpl" not in hit.columns:
+        raise RuntimeError("OPERA burst footprints missing burst_id_jpl column")
+    return sorted(hit["burst_id_jpl"].dropna().astype(str).unique())
+
+
 def count_bursts_covering_aoi(
     subset_lalo: str,
     *,
@@ -226,8 +239,7 @@ def count_bursts_covering_aoi(
 ) -> int:
     """Number of distinct OPERA burst footprints intersecting the AOI."""
     print(f"Querying opera_utils burst footprints for AOI {subset_lalo} ...", file=sys.stderr)
-    hit = _burst_gdf_for_aoi(subset_lalo, track=track, flight_direction=flight_direction)
-    return len(hit)
+    return len(burst_ids_covering_aoi(subset_lalo, track=track, flight_direction=flight_direction))
 
 
 def bursts_covering_aoi(
@@ -315,6 +327,18 @@ def resolve_sweets_source(
     return "safe"
 
 
+_BURST_ID_JPL_RE = re.compile(r"^t(\d+)_(\d+)_iw(\d+)$", re.IGNORECASE)
+
+
+def burst_id_jpl_to_cslc_glob(burst_id_jpl: str) -> str:
+    """Map t143_305969_iw2 to data/OPERA_L2_CSLC-S1_T143-305969-IW2_*.h5."""
+    match = _BURST_ID_JPL_RE.match(burst_id_jpl.strip())
+    if not match:
+        raise ValueError(f"unexpected OPERA burst id {burst_id_jpl!r}")
+    tag = f"T{match.group(1)}-{match.group(2)}-IW{match.group(3)}"
+    return f"data/OPERA_L2_CSLC-S1_{tag}_*.h5"
+
+
 def format_sweets_config_command(
     *,
     bbox: tuple[str, str, str, str],
@@ -323,6 +347,7 @@ def format_sweets_config_command(
     source: str,
     track: int | None,
     swaths: list[str],
+    burst_ids: list[str] | None = None,
     out_dir: str = "./data",
     work_dir: str = ".",
     output: str = "sweets_config.yaml",
@@ -339,6 +364,9 @@ def format_sweets_config_command(
         parts.append(f"--track {track}")
     if source == "safe" and swaths:
         parts.append(f"--swaths {' '.join(swaths)}")
+    if source == "opera-cslc" and burst_ids:
+        parts.append("--burst-ids")
+        parts.extend(burst_ids)
     parts.extend(
         [
             f"--out-dir {out_dir}",
@@ -402,6 +430,18 @@ def build_from_template(
                 "Pass --track or --flight-dir, or check AOI coverage."
             )
 
+    burst_ids: list[str] = []
+    if source == "opera-cslc":
+        burst_ids = burst_ids_covering_aoi(
+            subset_lalo,
+            track=parsed_track,
+            flight_direction=flight_direction,
+        )
+        print(
+            f"  burst_ids ({len(burst_ids)}): {' '.join(burst_ids)}",
+            file=sys.stderr,
+        )
+
     command = format_sweets_config_command(
         bbox=bbox,
         start=start,
@@ -409,6 +449,7 @@ def build_from_template(
         source=source,
         track=parsed_track,
         swaths=swaths if source == "safe" else [],
+        burst_ids=burst_ids if source == "opera-cslc" else None,
     )
     work_dir = resolve_work_dir(template_file)
     return command, work_dir

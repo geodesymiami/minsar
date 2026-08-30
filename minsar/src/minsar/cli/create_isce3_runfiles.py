@@ -265,19 +265,29 @@ def _resolve_n_bursts_for_dolphin(
     *,
     burst_count_method: str = "sar_coverage",
 ) -> int:
-    """Burst count from data/ when present, else sar_coverage or opera-utils over the AOI."""
+    """Burst count from AOI footprints when track is known, else data/ or ASF coverage."""
+    aoi = str(context.get("aoi") or "").strip()
+    track_raw = str(context.get("track") or "")
+    track = int(track_raw) if track_raw else None
+    flight = _flight_direction_for_burst_count(context) or None
+
+    if aoi and track is not None:
+        from minsar.utils.generate_sweets_config import count_bursts_covering_aoi
+
+        n_bursts = count_bursts_covering_aoi(aoi, track=track, flight_direction=flight)
+        print(
+            f"  dolphin n_bursts={n_bursts} from opera-utils footprints (track={track})",
+            file=sys.stderr,
+        )
+        return n_bursts
+
     data_dir = work_dir / "data"
     if any(data_dir.glob("OPERA_L2_CSLC-S1_*.h5")):
         n_bursts = count_opera_cslc_bursts(data_dir)
         print(f"  dolphin n_bursts={n_bursts} from {data_dir}", file=sys.stderr)
         return n_bursts
-    aoi = str(context.get("aoi") or "").strip()
     if not aoi:
         return 1
-
-    track_raw = str(context.get("track") or "")
-    track = int(track_raw) if track_raw else None
-    flight = _flight_direction_for_burst_count(context) or None
 
     if burst_count_method == "opera-utils":
         if track is None:
@@ -446,10 +456,26 @@ def _hdfeos5_command(preset: str, preset_naming: bool = True) -> str:
     return f"dolphin2hdfeos5.py dolphin --method-string {method}"
 
 
+def _cslc_slc_files_arg(context: dict[str, object]) -> str:
+    """Per-burst OPERA CSLC globs for bursts intersecting the AOI."""
+    from minsar.utils.generate_sweets_config import burst_id_jpl_to_cslc_glob, burst_ids_covering_aoi
+
+    aoi = str(context.get("aoi") or "").strip()
+    if not aoi:
+        raise ValueError("CSLC dolphin config requires AOI in template context")
+    track_raw = str(context.get("track") or "")
+    track = int(track_raw) if track_raw else None
+    flight = str(context.get("flight_direction") or "") or None
+    burst_ids = burst_ids_covering_aoi(aoi, track=track, flight_direction=flight)
+    globs = [burst_id_jpl_to_cslc_glob(bid) for bid in burst_ids]
+    return " ".join(globs)
+
+
 def _cslc_dolphin_config_line(
     config_line: str,
     cpus_per_node: int,
     n_bursts_aoi: int,
+    context: dict[str, object],
     extra_flags: str = "",
     outfile: str = "dolphin_config.yaml",
     preset: str = "auto",
@@ -463,8 +489,9 @@ def _cslc_dolphin_config_line(
         else dolphin_worker_cli_flags(cpus_per_node, n_bursts_aoi)
     )
     preset_flags = _dolphin_preset_cli_flags(preset)
+    slc_files = _cslc_slc_files_arg(context)
     parts = [
-        "dolphin config --slc-files data/OPERA_L2_CSLC-S1_*.h5 --subdataset /data/VV "
+        f"dolphin config --slc-files {slc_files} --subdataset /data/VV "
         "--work-directory dolphin --mask-file watermask.tif "
         f"--output-options.bounds {west} {south} {east} {north} "
         f"{worker_flags}"
@@ -481,13 +508,19 @@ def _cslc_dolphin_commands(
     config_line: str,
     cpus_per_node: int,
     n_bursts: int,
+    context: dict[str, object],
     preset: str = "auto",
 ) -> list[str]:
     """Shell commands for CSLC dolphin config + run (worker flags set at generate time)."""
     return [
         "cleanup_dolphin_ministacks.py dolphin",
         _cslc_dolphin_config_line(
-            config_line, cpus_per_node, n_bursts, preset=preset, runtime_workers=False
+            config_line,
+            cpus_per_node,
+            n_bursts,
+            context,
+            preset=preset,
+            runtime_workers=False,
         ),
         "dolphin run dolphin_config.yaml",
     ]
@@ -497,6 +530,7 @@ def _cslc_dolphin_wrapped_commands(
     config_line: str,
     cpus_per_node: int,
     n_bursts: int,
+    context: dict[str, object],
     preset: str = "auto",
 ) -> list[str]:
     """CSLC dolphin_wrapped: phase linking + stitch; writes dolphin_config.yaml."""
@@ -506,6 +540,7 @@ def _cslc_dolphin_wrapped_commands(
             config_line,
             cpus_per_node,
             n_bursts,
+            context,
             extra_flags=_dolphin_stop_after_stitch_flags(),
             preset=preset,
             runtime_workers=False,
@@ -1133,12 +1168,13 @@ def _cslc_dolphin_script(
     config_line: str,
     cpus_per_node: int,
     n_bursts: int,
+    context: dict[str, object],
     preset: str = "auto",
 ) -> str:
     """Commands for CSLC dolphin config + run."""
     return (
         "\n".join(
-            _cslc_dolphin_commands(config_line, cpus_per_node, n_bursts, preset=preset)
+            _cslc_dolphin_commands(config_line, cpus_per_node, n_bursts, context, preset=preset)
         )
         + "\n"
     )
@@ -1195,7 +1231,7 @@ def _sweets_stage_bodies(
             "download_cslc": download.rstrip("\n") + f"\n{geom}\n",
             "dolphin_wrapped": "\n".join(
                 _cslc_dolphin_wrapped_commands(
-                    config_line, cpus_per_node, n_bursts, preset=preset
+                    config_line, cpus_per_node, n_bursts, context, preset=preset
                 )
             )
             + "\n",
@@ -1210,6 +1246,7 @@ def _sweets_stage_bodies(
             config_line,
             cpus_per_node,
             n_bursts,
+            context,
             preset=preset,
         ),
         "dolphin_2_hdfeos5": hdfeos5,

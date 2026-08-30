@@ -54,18 +54,18 @@ def normalize_method_string(value: str) -> str:
     return token
 
 
-_OPERA_BURST_ID_RE = re.compile(r"T\d+-(\d+)-IW", re.IGNORECASE)
+_OPERA_BURST_TAG_RE = re.compile(r"T\d+-\d+-IW\d+", re.IGNORECASE)
 
 
 def count_opera_cslc_bursts(data_dir: Path | str = "data") -> int:
-    """Return distinct OPERA burst count under data/ (minimum 1)."""
-    burst_ids: set[str] = set()
+    """Return distinct OPERA burst count under data/ (frame + IW, minimum 1)."""
+    burst_tags: set[str] = set()
     root = Path(data_dir)
     for path in sorted(root.glob("OPERA_L2_CSLC-S1_*.h5")):
-        match = _OPERA_BURST_ID_RE.search(path.name)
+        match = _OPERA_BURST_TAG_RE.search(path.name)
         if match:
-            burst_ids.add(match.group(1))
-    return max(1, len(burst_ids))
+            burst_tags.add(match.group(0).upper())
+    return max(1, len(burst_tags))
 
 
 def dolphin_worker_counts(cpus_per_node: int, n_bursts_aoi: int) -> tuple[int, int, int]:
