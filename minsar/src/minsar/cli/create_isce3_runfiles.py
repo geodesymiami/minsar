@@ -399,8 +399,13 @@ def _pixi_run_script_with_tail(pixi_commands: str, tail_commands: list[str]) -> 
     )
 
 
-# Dolphin stages that run plot_dolphin_summary_pngs / create_html outside pixi (MintPy not in SWEETS).
+# Stages that run extra commands after pixi (MintPy / job_submission are not in SWEETS).
 _DOLPHIN_PIXI_PLOT_TAIL_STAGES = frozenset({"dolphin", "dolphin_timeseries"})
+_SAFE_PIXI_JOB_TAIL_STAGES = frozenset({"download_safe"})
+
+
+def _create_cslc_job_tail_commands() -> list[str]:
+    return ["isce3_batch_job.py"]
 
 
 def _dolphin_stop_after_stitch_flags() -> str:
@@ -1052,6 +1057,8 @@ def _create_files(
         if name in PIXI_STAGES and profile.execution_mode != "launcher-task-list":
             if name in _DOLPHIN_PIXI_PLOT_TAIL_STAGES:
                 run_command = _pixi_run_script_with_tail(command, _dolphin_plot_commands())
+            elif name in _SAFE_PIXI_JOB_TAIL_STAGES:
+                run_command = _pixi_run_script_with_tail(command, _create_cslc_job_tail_commands())
             else:
                 run_command = _pixi_run_script(command)
         _write_run_file(
@@ -1459,6 +1466,12 @@ def _execute_stage(
             work_dir,
             ["python", "-m", "minsar.utils.prepare_compass_runconfigs", "--config", SWEETS_CONFIG],
         )
+        from minsar.utils.isce3_batch_job import write_create_cslc_batch_job
+
+        run_files = sorted((work_dir / "run_files").glob("run_*_create_cslc"))
+        if len(run_files) != 1:
+            raise RuntimeError("expected exactly one create_cslc run file")
+        write_create_cslc_batch_job(work_dir, run_files[0])
         return 0
     if action == "prepare-cslc-geometry":
         _run_in_sweets(

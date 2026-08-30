@@ -10,7 +10,6 @@ import sys
 from pathlib import Path
 
 from minsar.objects import message_rsmas
-from minsar.utils.isce3_batch_job import write_create_cslc_batch_job
 
 DESCRIPTION = "Prepare COMPASS runconfigs after SAFE download and write the create_cslc task list."
 EXAMPLE = """Examples:
@@ -78,8 +77,7 @@ def prepare(work_dir: Path, config: Path) -> None:
         using_zipped=safes[0].suffix == ".zip",
         gpu_enabled=workflow.gpu_enabled,
     )
-    run_file = materialize_compass_tasks(work_dir)
-    write_create_cslc_batch_job(work_dir, run_file)
+    materialize_compass_tasks(work_dir)
 
 
 def main(iargs: list[str] | None = None) -> int:

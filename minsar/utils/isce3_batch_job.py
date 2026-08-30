@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Create multinode SLURM jobfiles for ISCE3 task-list stages via job_submission."""
 
 from __future__ import annotations
@@ -6,7 +7,16 @@ import argparse
 import glob
 import os
 import re
+import sys
 from pathlib import Path
+
+from minsar.objects import message_rsmas
+
+DESCRIPTION = "Write the create_cslc SLURM jobfile from the existing task list."
+EXAMPLE = """Examples:
+  isce3_batch_job.py
+  isce3_batch_job.py --batch-file run_files/run_02_create_cslc
+"""
 
 CREATE_CSLC_QUEUE_META = ".isce3_create_cslc_queue"
 DEFERRED_TASK_LIST_STAGES = frozenset({"create_cslc"})
@@ -93,3 +103,43 @@ def write_create_cslc_batch_job(
     job.write_batch_jobs(batch_file=str(batch_file))
     print(f"Created: {', '.join(os.path.basename(path) for path in job.job_files)}")
     return job.job_files
+
+
+def _find_create_cslc_run_file(work_dir: Path) -> Path:
+    run_files = sorted((work_dir / "run_files").glob("run_*_create_cslc"))
+    if len(run_files) != 1:
+        raise RuntimeError(f"expected exactly one create_cslc run file under {work_dir / 'run_files'}")
+    return run_files[0]
+
+
+def create_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description=DESCRIPTION,
+        epilog=EXAMPLE,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("--work-dir", type=Path, default=Path("."), help="ISCE3 project directory (default: cwd)")
+    parser.add_argument("--batch-file", type=Path, help="create_cslc task list (default: run_files/run_*_create_cslc)")
+    parser.add_argument("--queue", help="SLURM partition (default: run_files metadata or $QUEUENAME)")
+    return parser
+
+
+def main(iargs: list[str] | None = None) -> int:
+    parser = create_parser()
+    inps = parser.parse_args(args=iargs)
+    work_dir = inps.work_dir.resolve()
+    message_rsmas.log(
+        str(work_dir),
+        os.path.basename(__file__) + " " + " ".join(iargs if iargs is not None else sys.argv[1:]),
+    )
+    try:
+        batch_file = inps.batch_file.resolve() if inps.batch_file else _find_create_cslc_run_file(work_dir)
+        write_create_cslc_batch_job(work_dir, batch_file, queue=inps.queue)
+    except (FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
