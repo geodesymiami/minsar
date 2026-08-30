@@ -2,7 +2,7 @@
 """Rebuild quality/mask in an HDF-EOS5 file from embedded quality layers.
 
 Same -m / --vmin / --vmin-sim as dolphin2hdfeos5.py. Writes a new .he5 with a
-mask suffix (does not modify the input in place). Does not NaN displacement.
+mask suffix (does not modify the input in place). NaN-fills displacement outside mask.
 """
 
 from __future__ import annotations

@@ -586,8 +586,10 @@ def build_mask(
         mask &= np.asarray(watermask) != 0
 
     if stack is not None:
-        if stack.shape[0] > 1:
-            mask &= np.isfinite(stack[1])
+        if stack.ndim == 3:
+            # All dates must be finite for InsarMaps ingest (hdfeos5_2json_mbtiles
+            # skips NaN only on the first date; NaN in later dates breaks JSON).
+            mask &= np.all(np.isfinite(stack), axis=0)
         else:
             mask &= np.isfinite(stack[0])
 
@@ -627,6 +629,15 @@ def build_mask(
     else:
         raise ValueError(f"unknown mask source: {source}")
     return mask
+
+
+def apply_mask_to_displacement(stack: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """NaN-fill masked pixels in a displacement cube (MintPy mask: True = valid)."""
+    out = np.asarray(stack, dtype=np.float32).copy()
+    m = np.asarray(mask, dtype=bool)
+    if out.ndim == 3 and m.ndim == 2:
+        out[:, ~m] = np.nan
+    return out
 
 
 def read_reference_point(ts_dir: Path, shape: tuple[int, int]) -> tuple[int, int] | None:
@@ -806,6 +817,8 @@ def create_hdfeos_output(
 
     if bperp is None:
         bperp = np.zeros(len(date_list))
+
+    ts_data = apply_mask_to_displacement(ts_data, mask)
 
     hdfeos_dict = {
         f"{HE5_GEOM}/latitude": lat_grid.astype("float32"),
@@ -1182,9 +1195,11 @@ def remask_he5_file(
     out_path.parent.mkdir(parents=True, exist_ok=True)
     stack, shape, quality = quality_from_he5(in_path)
     mask = build_mask(shape, stack, quality, source=source, vmin=vmin, vmin_sim=vmin_sim)
+    stack = apply_mask_to_displacement(stack, mask)
     shutil.copy2(in_path, out_path)
     with h5py.File(out_path, "r+") as f:
         dset = f[f"{HE5_QUALITY}/mask"]
         dset[...] = mask.astype(dset.dtype)
+        f[f"{HE5_OBS}/displacement"][...] = stack
     print(f"\n HDFEOS file remasked: {out_path}")
     return out_path
