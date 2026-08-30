@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from minsar.objects import message_rsmas
+from minsar.utils.isce3_batch_job import write_create_cslc_batch_job
 
 DESCRIPTION = "Prepare COMPASS runconfigs after SAFE download and write the create_cslc task list."
 EXAMPLE = """Examples:
@@ -32,7 +33,7 @@ def _q(value: str | Path) -> str:
     return shlex.quote(str(value))
 
 
-def materialize_compass_tasks(work_dir: Path) -> None:
+def materialize_compass_tasks(work_dir: Path) -> Path:
     """Write one s1_cslc.py / s1_static_layers.py command per runconfig into create_cslc."""
     cslc = sorted(work_dir.rglob("runconfigs/*.yaml"))
     if not cslc:
@@ -49,6 +50,7 @@ def materialize_compass_tasks(work_dir: Path) -> None:
     if len(run_files) != 1:
         raise RuntimeError("expected exactly one create_cslc run file")
     run_files[0].write_text("\n".join(commands) + "\n")
+    return run_files[0]
 
 
 def prepare(work_dir: Path, config: Path) -> None:
@@ -76,7 +78,8 @@ def prepare(work_dir: Path, config: Path) -> None:
         using_zipped=safes[0].suffix == ".zip",
         gpu_enabled=workflow.gpu_enabled,
     )
-    materialize_compass_tasks(work_dir)
+    run_file = materialize_compass_tasks(work_dir)
+    write_create_cslc_batch_job(work_dir, run_file)
 
 
 def main(iargs: list[str] | None = None) -> int:

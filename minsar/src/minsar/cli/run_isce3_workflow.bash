@@ -231,20 +231,17 @@ stage_names=()
 stage_patterns=()
 
 shopt -s nullglob
-all_job_files=("$run_dir"/run_[0-9][0-9]_*.job)
+all_run_files=("$run_dir"/run_[0-9][0-9]_*)
 shopt -u nullglob
-[[ "${#all_job_files[@]}" -gt 0 ]] || die "no run_NN_*.job files found in $run_dir"
+[[ "${#all_run_files[@]}" -gt 0 ]] || die "no run_NN_* run files found in $run_dir"
 
-for job_file in "${all_job_files[@]}"; do
-    job_basename="$(basename "$job_file" .job)"
-    [[ "$job_basename" =~ ^run_([0-9][0-9])_(.+)$ ]] || die "invalid job filename: $job_file"
+for run_file in "${all_run_files[@]}"; do
+    [[ "$run_file" == *.job ]] && continue
+    run_basename="$(basename "$run_file")"
+    [[ "$run_basename" =~ ^run_([0-9][0-9])_(.+)$ ]] || die "invalid run filename: $run_file"
     number_token="${BASH_REMATCH[1]}"
-    rest="${BASH_REMATCH[2]}"
+    name="${BASH_REMATCH[2]}"
     number="$((10#$number_token))"
-    name="$rest"
-    if [[ "$name" =~ ^(.+)_([0-9]+)$ ]]; then
-        name="${BASH_REMATCH[1]}"
-    fi
     already=false
     for existing in "${stage_numbers[@]}"; do
         if [[ "$existing" == "$number" ]]; then
@@ -255,12 +252,12 @@ for job_file in "${all_job_files[@]}"; do
     if [[ "$already" != "true" ]]; then
         stage_numbers+=("$number")
         stage_names+=("$name")
-        stage_patterns+=("$run_dir/$(step_prefix "$job_basename")")
+        stage_patterns+=("$run_dir/run_${number_token}_${name}")
     fi
 done
 
 stage_count="${#stage_names[@]}"
-[[ "$stage_count" -gt 0 ]] || die "no run_NN_*.job files found in $run_dir"
+[[ "$stage_count" -gt 0 ]] || die "no run_NN_* run files found in $run_dir"
 
 resolve_step() {
     local value="$1"

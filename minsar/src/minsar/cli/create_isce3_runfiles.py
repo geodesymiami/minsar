@@ -18,6 +18,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from minsar.utils.bbox_cli_argv import fix_argv_for_negative_bbox_sn_we
+from minsar.utils.isce3_batch_job import (
+    CREATE_CSLC_QUEUE_META,
+    DEFERRED_TASK_LIST_STAGES,
+    is_deferred_batch_job,
+)
 from minsar.utils.dolphin_presets import (
     DOLPHIN_PRESETS,
     DOLPHIN_PRESET_CHOICES,
@@ -1005,15 +1010,21 @@ def _create_files(
         if missing:
             raise RuntimeError(f"{workflow} stage commands missing: {', '.join(missing)}")
         specs = [(name, title, bodies[name]) for name, title, _ in specs]
-    expected_names = {
-        filename
-        for number, (name, _, _) in enumerate(specs, 1)
-        for filename in (f"run_{number:02d}_{name}", f"run_{number:02d}_{name}.job")
-    }
+    expected_names = set()
+    deferred_stage_names = set()
+    for number, (name, _, _) in enumerate(specs, 1):
+        expected_names.add(f"run_{number:02d}_{name}")
+        if name in DEFERRED_TASK_LIST_STAGES:
+            deferred_stage_names.add(name)
+        else:
+            expected_names.add(f"run_{number:02d}_{name}.job")
+    expected_names.add(CREATE_CSLC_QUEUE_META)
     stale_files = sorted(
         path
         for path in run_dir.glob("run_[0-9][0-9]_*")
-        if path.suffix in {"", ".job"} and path.name not in expected_names
+        if path.suffix in {"", ".job"}
+        and path.name not in expected_names
+        and not is_deferred_batch_job(path, deferred_stage_names)
     )
     for path in stale_files:
         path.unlink()
@@ -1050,9 +1061,12 @@ def _create_files(
             task_list=profile.execution_mode == "launcher-task-list",
             raw=True,
         )
-        Isce3JobAdapter(
-            work_dir, run_dir, stage.queue, profile, sleep_secs=args.sleep
-        ).render(stage, run_file, job_file, workflow)
+        if name in DEFERRED_TASK_LIST_STAGES:
+            (run_dir / CREATE_CSLC_QUEUE_META).write_text(stage.queue + "\n")
+        else:
+            Isce3JobAdapter(
+                work_dir, run_dir, stage.queue, profile, sleep_secs=args.sleep
+            ).render(stage, run_file, job_file, workflow)
         stages.append(stage)
     return stages
 
