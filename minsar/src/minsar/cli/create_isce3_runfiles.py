@@ -364,6 +364,30 @@ def _pixi_run_script(commands: str) -> str:
     )
 
 
+def _pixi_run_script_with_tail(pixi_commands: str, tail_commands: list[str]) -> str:
+    """Pixi heredoc for SWEETS/dolphin, then minsar-env commands (e.g. create_html needs MintPy)."""
+    pixi_body = _strip_bash_script_header(pixi_commands)
+    if not pixi_body:
+        pixi_body = "true"
+    tail = "\n".join(tail_commands) + "\n" if tail_commands else ""
+    return (
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        f"{_require_minsar_home_bash()}"
+        'pixi run --manifest-path "$MINSAR_HOME/tools/sweets/pyproject.toml" -- bash <<\'ISCE3_PIXI_BODY\'\n'
+        "set -euo pipefail\n"
+        "\n"
+        f"{pixi_body}\n"
+        "\n"
+        "ISCE3_PIXI_BODY\n"
+        f"{tail}"
+    )
+
+
+# Dolphin stages that run plot_dolphin_summary_pngs / create_html outside pixi (MintPy not in SWEETS).
+_DOLPHIN_PIXI_PLOT_TAIL_STAGES = frozenset({"dolphin", "dolphin_timeseries"})
+
+
 def _dolphin_stop_after_stitch_flags() -> str:
     """Dolphin config flags for wrapped + stitch only (no unwrap or timeseries)."""
     return (
@@ -506,11 +530,8 @@ def _dolphin_plot_commands() -> list[str]:
 
 
 def _cslc_dolphin_timeseries_commands() -> list[str]:
-    """CSLC dolphin_timeseries: inversion/velocity only."""
-    return [
-        "run_dolphin_timeseries.py --config dolphin_config.yaml",
-        *_dolphin_plot_commands(),
-    ]
+    """CSLC dolphin_timeseries: inversion/velocity only (plot/HTML run outside pixi)."""
+    return ["run_dolphin_timeseries.py --config dolphin_config.yaml"]
 
 
 class Isce3JobAdapter:
@@ -983,7 +1004,10 @@ def _create_files(
         )
         run_command = command
         if name in PIXI_STAGES and profile.execution_mode != "launcher-task-list":
-            run_command = _pixi_run_script(command)
+            if name in _DOLPHIN_PIXI_PLOT_TAIL_STAGES:
+                run_command = _pixi_run_script_with_tail(command, _dolphin_plot_commands())
+            else:
+                run_command = _pixi_run_script(command)
         _write_run_file(
             run_file,
             title,
@@ -1115,7 +1139,6 @@ def _cslc_dolphin_script(
     return (
         "\n".join(
             _cslc_dolphin_commands(config_line, cpus_per_node, n_bursts, preset=preset)
-            + _dolphin_plot_commands()
         )
         + "\n"
     )
@@ -1160,7 +1183,6 @@ def _sweets_stage_bodies(
             "dolphin": _bash_script(
                 geom,
                 f"sweets run {cfg} --starting-step 3",
-                *_dolphin_plot_commands(),
             ),
             "dolphin_2_hdfeos5": hdfeos5,
             "ingest_insarmaps": ingest,

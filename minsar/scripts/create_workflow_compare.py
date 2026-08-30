@@ -64,7 +64,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("aoi", metavar="AOI", help="area of interest (S:N,W:E bounds or WKT POLYGON)")
     parser.add_argument(
         "name",
-        help="project base name; SAFE/CSLCAuto/CSLCStandard/DISP/I suffixes are appended",
+        help="project base name; ISCE3 pipelines get SAFE/CSLCAuto/CSLCStandard/DISP suffixes; MiaplPy uses the base name",
     )
     parser.add_argument("--flight-dir", choices=("asc", "desc"), required=True, help="orbit pass for AOI-based setup")
     parser.add_argument("--start-date", "--start", dest="start_date", required=True, metavar="DATE", help="first date YYYYMMDD or YYYY-MM-DD")
@@ -96,7 +96,7 @@ def project_names(base: str) -> dict[str, str]:
         "cslc_auto": f"{stem}CSLCAuto",
         "cslc_standard": f"{stem}CSLCStandard",
         "disp": f"{stem}DISP",
-        "isce2": f"{stem}I",
+        "isce2": stem,
     }
 
 
@@ -250,7 +250,7 @@ def main(iargs: list[str] | None = None) -> int:
     _make_executable(out_path)
     print()
     for line in body.splitlines():
-        if line.startswith("create_isce3_runfiles.py"):
+        if line.startswith(("create_isce3_runfiles.py", "minsarApp.bash")):
             print(line)
     print(f"Wrote {out_path.name}")
 
