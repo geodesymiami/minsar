@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write a bash driver to set up SAFE, CSLC Dolphin presets, DISP-S1, and MiaplPy compare runs."""
+"""Write a bash driver of minsarIsce3App.bash and minsarApp.bash compare runs."""
 
 from __future__ import annotations
 
@@ -43,15 +43,15 @@ ARGV_FIX_KW = {
 }
 
 DESCRIPTION = (
-    "Write a bash script with create_isce3_runfiles.py --run (--safe, --data-type cslc with "
+    "Write a bash script with minsarIsce3App.bash (--safe, --data-type cslc with "
     "--preset auto or standard, --disp-S1) and minsarApp.bash (--no-mintpy --miaplpy) "
     "for the same AOI and dates. Each pipeline uses a separate project name under $SCRATCHDIR."
 )
 
 EXAMPLE = """Examples:
-  create_workflow_compare.py 19.4:19.54,-155.02:-154.80 qqHawaiiPuna --flight-dir desc --start 20250101 --end 20250630
-  create_workflow_compare.py 19.4:19.54,-155.02:-154.80 qqHawaiiPuna --flight-dir desc --start 20250101 --end 20250630 --output qqHawaiiPuna_compare.bash
-  create_workflow_compare.py 19.4:19.54,-155.02:-154.80 qqHawaiiPuna --flight-dir desc --start 20250101 --end 20250630 --run
+  workflow_compare.py 19.4:19.54,-155.02:-154.80 qqHawaiiPuna --flight-dir desc --start 20250101 --end 20250630
+  workflow_compare.py 19.4:19.54,-155.02:-154.80 qqHawaiiPuna --flight-dir desc --start 20250101 --end 20250630 --output qqHawaiiPuna_compare.bash
+  workflow_compare.py 19.4:19.54,-155.02:-154.80 qqHawaiiPuna --flight-dir desc --start 20250101 --end 20250630 --run
 """
 
 
@@ -69,13 +69,13 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--flight-dir", choices=("asc", "desc"), required=True, help="orbit pass for AOI-based setup")
     parser.add_argument("--start-date", "--start", dest="start_date", required=True, metavar="DATE", help="first date YYYYMMDD or YYYY-MM-DD")
     parser.add_argument("--end-date", "--end", dest="end_date", required=True, metavar="DATE", help="last date YYYYMMDD or YYYY-MM-DD")
-    parser.add_argument("--track", type=int, help="relative orbit (passed to create_isce3_runfiles.py)")
-    parser.add_argument("--frame-id", type=int, help="OPERA DISP-S1 frame ID (passed to create_isce3_runfiles.py)")
+    parser.add_argument("--track", type=int, help="relative orbit (passed to minsarIsce3App.bash)")
+    parser.add_argument("--frame-id", type=int, help="OPERA DISP-S1 frame ID (passed to minsarIsce3App.bash)")
     parser.add_argument("--output", type=Path, help="bash driver path (default: <base>_compare.bash in cwd)")
     parser.add_argument(
         "--run",
         action="store_true",
-        help="after writing the driver, run the create_isce3_runfiles.py commands",
+        help="after writing the driver, run the minsarIsce3App.bash commands",
     )
     return parser
 
@@ -110,7 +110,7 @@ def _normalize_date(value: str) -> str:
     raise ValueError(f"date must be YYYYMMDD or YYYY-MM-DD: {value!r}")
 
 
-def _isce3_command(
+def _minsar_isce3_app_command(
     aoi: str,
     project: str,
     *,
@@ -121,17 +121,16 @@ def _isce3_command(
     preset: str | None = None,
     track: int | None,
     frame_id: int | None,
-    run: bool = False,
 ) -> str:
     parts = [
-        "create_isce3_runfiles.py",
+        "minsarIsce3App.bash",
         shlex.quote(aoi),
         shlex.quote(project),
         "--flight-dir",
         flight_dir,
-        "--start",
+        "--start-date",
         start,
-        "--end",
+        "--end-date",
         end,
     ]
     if preset is not None:
@@ -144,8 +143,6 @@ def _isce3_command(
         parts.extend(["--track", str(track)])
     if frame_id is not None and data_flag in {"--disp-S1", "--disp"}:
         parts.extend(["--frame-id", str(frame_id)])
-    if run:
-        parts.append("--run")
     return " ".join(parts)
 
 
@@ -182,9 +179,9 @@ def build_compare_script(
     lines = [
         "#!/usr/bin/env bash",
         "set -e",
-        f"# Compare SAFE, CSLC auto/standard, DISP-S1 (ISCE3), and MiaplPy for {stem}",
-        _isce3_command(aoi, names["safe"], flight_dir=flight_dir, start=start, end=end, data_flag="--safe", track=track, frame_id=frame_id, run=True),
-        _isce3_command(
+        f"# Compare SAFE, CSLC auto/standard, DISP-S1 (minsarIsce3App), and MiaplPy for {stem}",
+        _minsar_isce3_app_command(aoi, names["safe"], flight_dir=flight_dir, start=start, end=end, data_flag="--safe", track=track, frame_id=frame_id),
+        _minsar_isce3_app_command(
             aoi,
             names["cslc_auto"],
             flight_dir=flight_dir,
@@ -193,9 +190,8 @@ def build_compare_script(
             preset="auto",
             track=track,
             frame_id=frame_id,
-            run=True,
         ),
-        _isce3_command(
+        _minsar_isce3_app_command(
             aoi,
             names["cslc_standard"],
             flight_dir=flight_dir,
@@ -204,9 +200,8 @@ def build_compare_script(
             preset="standard",
             track=track,
             frame_id=frame_id,
-            run=True,
         ),
-        _isce3_command(aoi, names["disp"], flight_dir=flight_dir, start=start, end=end, data_flag="--disp-S1", track=track, frame_id=frame_id, run=True),
+        _minsar_isce3_app_command(aoi, names["disp"], flight_dir=flight_dir, start=start, end=end, data_flag="--disp-S1", track=track, frame_id=frame_id),
         _minsar_app_command(aoi, names["isce2"], flight_dir=flight_dir, start=start, end=end),
         "",
     ]
@@ -250,7 +245,7 @@ def main(iargs: list[str] | None = None) -> int:
     _make_executable(out_path)
     print()
     for line in body.splitlines():
-        if line.startswith(("create_isce3_runfiles.py", "minsarApp.bash")):
+        if line.startswith(("minsarIsce3App.bash", "minsarApp.bash")):
             print(line)
     print(f"Wrote {out_path.name}")
 
@@ -263,7 +258,7 @@ def main(iargs: list[str] | None = None) -> int:
             {"preset": "standard", "project": names["cslc_standard"]},
             {"data_flag": "--disp-S1", "project": names["disp"]},
         ):
-            command = _isce3_command(
+            command = _minsar_isce3_app_command(
                 inps.aoi,
                 spec["project"],
                 flight_dir=inps.flight_dir,
@@ -273,7 +268,6 @@ def main(iargs: list[str] | None = None) -> int:
                 preset=spec.get("preset"),
                 track=inps.track,
                 frame_id=inps.frame_id,
-                run=True,
             )
             print(f"Running: {command}", file=sys.stderr)
             completed = subprocess.run(command, shell=True, cwd=work_dir, check=False)

@@ -42,11 +42,12 @@ options:
   --max-parallel N      local parallel tasks for launcher task lists (default: 1)
   --dry-run             print commands without executing or submitting
 
-STEP may be a step number, step name, or run-file basename.
+STEP may be a step number, step name, run-file basename, or a coarse alias:
+  download, download_create_cslc, dolphin, hdfeos5, ingest.
 
-SAFE steps:    download_safe, create_cslc, dolphin, dolphin_2_hdfeos5, ingest_insarmaps
+SAFE steps:    download_safe, create_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps
 CSLC steps:    download_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps
-CSLC monolithic: download_cslc, dolphin, dolphin_2_hdfeos5, ingest_insarmaps (create_isce3_runfiles.py --no-dolphin-split)
+SAFE/CSLC monolithic: dolphin instead of dolphin_wrapped/unwrap/timeseries (create_isce3_runfiles.py --no-dolphin-split)
 DISP-S1 steps: download_disp, reformat_disp, dolphin_2_hdfeos5, ingest_insarmaps
 
 Examples:
@@ -54,7 +55,8 @@ Examples:
   ${SCRIPT_NAME} --start 2
   ${SCRIPT_NAME} --start 2 --stop 3
   ${SCRIPT_NAME} --dostep 3
-  ${SCRIPT_NAME} --start dolphin --end dolphin_2_hdfeos5
+  ${SCRIPT_NAME} --start download --end download
+  ${SCRIPT_NAME} --start dolphin_unwrap --end ingest_insarmaps
   ${SCRIPT_NAME} --dostep ingest_insarmaps
   ${SCRIPT_NAME} --backend local
 EOF
@@ -259,6 +261,56 @@ done
 stage_count="${#stage_names[@]}"
 [[ "$stage_count" -gt 0 ]] || die "no run_NN_* run files found in $run_dir"
 
+stage_exists() {
+    local wanted="$1"
+    local name
+    for name in "${stage_names[@]}"; do
+        [[ "$name" == "$wanted" ]] && return 0
+    done
+    return 1
+}
+
+first_existing_stage() {
+    local name
+    for name in "$@"; do
+        if stage_exists "$name"; then
+            echo "$name"
+            return 0
+        fi
+    done
+    return 1
+}
+
+expand_step_alias() {
+    local value="$1"
+    local which="$2"
+    case "$value" in
+        download|download_create_cslc)
+            if [[ "$which" == "end" ]]; then
+                first_existing_stage create_cslc reformat_disp download_safe download_cslc download_disp || echo "$value"
+            else
+                first_existing_stage download_safe download_cslc download_disp || echo "$value"
+            fi
+            ;;
+        dolphin)
+            if [[ "$which" == "end" ]]; then
+                first_existing_stage dolphin_timeseries dolphin dolphin_unwrap dolphin_wrapped || echo "$value"
+            else
+                first_existing_stage dolphin_wrapped dolphin || echo "$value"
+            fi
+            ;;
+        hdfeos5)
+            echo "dolphin_2_hdfeos5"
+            ;;
+        ingest)
+            echo "ingest_insarmaps"
+            ;;
+        *)
+            echo "$value"
+            ;;
+    esac
+}
+
 resolve_step() {
     local value="$1"
     local index
@@ -284,14 +336,22 @@ start_index=0
 end_index=$((stage_count - 1))
 
 if [[ -n "$do_step" ]]; then
-    start_index="$(resolve_step "$do_step")" || die "unknown step: $do_step"
-    end_index="$start_index"
+    case "$do_step" in
+        download|download_create_cslc|dolphin)
+            start_index="$(resolve_step "$(expand_step_alias "$do_step" start)")" || die "unknown step: $do_step"
+            end_index="$(resolve_step "$(expand_step_alias "$do_step" end)")" || die "unknown step: $do_step"
+            ;;
+        *)
+            start_index="$(resolve_step "$(expand_step_alias "$do_step" start)")" || die "unknown step: $do_step"
+            end_index="$start_index"
+            ;;
+    esac
 else
     if [[ -n "$start_step" ]]; then
-        start_index="$(resolve_step "$start_step")" || die "unknown step: $start_step"
+        start_index="$(resolve_step "$(expand_step_alias "$start_step" start)")" || die "unknown step: $start_step"
     fi
     if [[ -n "$end_step" ]]; then
-        end_index="$(resolve_step "$end_step")" || die "unknown step: $end_step"
+        end_index="$(resolve_step "$(expand_step_alias "$end_step" end)")" || die "unknown step: $end_step"
     fi
 fi
 

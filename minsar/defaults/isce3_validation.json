@@ -12,22 +12,22 @@
         "gslcs/**/static_*.h5"
       ],
       "dolphin": [
-        "dolphin/**/*.tif"
+        "{DIR}/**/*.tif"
       ],
       "dolphin_wrapped": [
-        "dolphin/interferograms/*.int.tif"
+        "{DIR}/interferograms/*.int.tif"
       ],
       "dolphin_unwrap": [
-        "dolphin/unwrapped/*.unw.tif"
+        "{DIR}/unwrapped/*.unw.tif"
       ],
       "dolphin_timeseries": [
-        "dolphin/timeseries/velocity.tif"
+        "{DIR}/timeseries/velocity.tif"
       ],
       "dolphin_2_hdfeos5": [
-        "dolphin/timeseries/*.he5"
+        "{DIR}/timeseries/*.he5"
       ],
       "ingest_insarmaps": [
-        "dolphin/timeseries/JSON*/*.mbtiles"
+        "{DIR}/timeseries/JSON*/*.mbtiles"
       ]
     },
     "cslc": {
@@ -36,22 +36,22 @@
         "data/**/*CSLC*.h5"
       ],
       "dolphin": [
-        "dolphin/**/*.tif"
+        "{DIR}/**/*.tif"
       ],
       "dolphin_wrapped": [
-        "dolphin/interferograms/*.int.tif"
+        "{DIR}/interferograms/*.int.tif"
       ],
       "dolphin_unwrap": [
-        "dolphin/unwrapped/*.unw.tif"
+        "{DIR}/unwrapped/*.unw.tif"
       ],
       "dolphin_timeseries": [
-        "dolphin/timeseries/velocity.tif"
+        "{DIR}/timeseries/velocity.tif"
       ],
       "dolphin_2_hdfeos5": [
-        "dolphin/timeseries/*.he5"
+        "{DIR}/timeseries/*.he5"
       ],
       "ingest_insarmaps": [
-        "dolphin/timeseries/JSON*/*.mbtiles"
+        "{DIR}/timeseries/JSON*/*.mbtiles"
       ]
     },
     "disp": {

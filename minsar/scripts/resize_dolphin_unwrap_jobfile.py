@@ -56,6 +56,12 @@ def create_parser() -> argparse.ArgumentParser:
         help="Dolphin YAML for unwrap_method and snaphu tile settings (default: dolphin_config.yaml)",
     )
     parser.add_argument(
+        "--dolphin-dir",
+        default=None,
+        metavar="DIR",
+        help="Dolphin work directory containing interferograms/ (default: .isce3_dolphin_dir or dolphin)",
+    )
+    parser.add_argument(
         "--bytes-per-pixel",
         type=float,
         default=BYTES_PER_PIXEL,
@@ -71,8 +77,8 @@ def resolve_project_dir(path_str: str) -> Path:
     return path
 
 
-def find_representative_ifg(project_dir: Path) -> Path:
-    ifg_dir = project_dir / "dolphin" / "interferograms"
+def find_representative_ifg(project_dir: Path, dolphin_dir: str = "dolphin") -> Path:
+    ifg_dir = project_dir / dolphin_dir / "interferograms"
     if not ifg_dir.is_dir():
         raise FileNotFoundError(
             f"Missing {ifg_dir}. Run dolphin_wrapped first."
@@ -178,7 +184,12 @@ def main(iargs: list[str] | None = None) -> int:
     inps = parser.parse_args(args=iargs)
 
     project_dir = resolve_project_dir(inps.project_dir)
-    ifg_path = find_representative_ifg(project_dir)
+    dolphin_dir = inps.dolphin_dir
+    if not dolphin_dir:
+        from minsar.utils.isce3_dolphin_experiment import read_dolphin_dir_sidecar
+
+        dolphin_dir = read_dolphin_dir_sidecar(project_dir)
+    ifg_path = find_representative_ifg(project_dir, dolphin_dir)
     length, width = read_ifg_size(ifg_path)
 
     config_path = inps.dolphin_config

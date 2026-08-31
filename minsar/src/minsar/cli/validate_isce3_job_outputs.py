@@ -10,6 +10,8 @@ import re
 import sys
 from pathlib import Path
 
+from minsar.utils.isce3_dolphin_experiment import read_dolphin_dir_sidecar
+
 DEFAULT_VALIDATION_FILE = Path(__file__).resolve().parents[3] / "defaults/isce3_validation.json"
 _JOB_STEM_RE = re.compile(r"^run_(\d{2})_(.+)$")
 
@@ -104,12 +106,18 @@ def _selected(step: dict[str, object], values: list[str] | None) -> bool:
     return any(value in {str(step["name"]), str(step["number"]), str(step["run_file"])} for value in values)
 
 
-def _validate_step(step: dict[str, object], rules: dict[str, list[str]], work_dir: Path) -> dict[str, object]:
+def _validate_step(
+    step: dict[str, object],
+    rules: dict[str, list[str]],
+    work_dir: Path,
+    dolphin_dir: str = "dolphin",
+) -> dict[str, object]:
     checks = []
     for pattern in rules[str(step["name"])]:
-        absolute_pattern = str(work_dir / str(pattern))
+        resolved = str(pattern).replace("{DIR}", dolphin_dir)
+        absolute_pattern = str(work_dir / resolved)
         matches = sorted(glob.glob(absolute_pattern, recursive=True))
-        checks.append({"pattern": pattern, "matches": matches, "ok": bool(matches)})
+        checks.append({"pattern": resolved, "matches": matches, "ok": bool(matches)})
     ok = all(check["ok"] for check in checks)
     marker = "OK" if ok else "MISSING"
     print(f"[{marker:7}] {step['number']:02d} {step['name']}")
@@ -127,6 +135,7 @@ def main(iargs: list[str] | None = None) -> int:
             raise ValueError("unsupported validation schema")
         steps = _discover_steps(work_dir)
         workflow, rules = _workflow_rules(config, steps, args.data_type)
+        dolphin_dir = read_dolphin_dir_sidecar(work_dir)
 
         step_filters: list[str] | None = list(args.step) if args.step else None
         if args.job_files:
@@ -140,7 +149,7 @@ def main(iargs: list[str] | None = None) -> int:
         for step in steps:
             if not _selected(step, step_filters):
                 continue
-            results.append(_validate_step(step, rules, work_dir))
+            results.append(_validate_step(step, rules, work_dir, dolphin_dir=dolphin_dir))
 
         if step_filters and not results:
             raise ValueError("none of the requested steps exist")
