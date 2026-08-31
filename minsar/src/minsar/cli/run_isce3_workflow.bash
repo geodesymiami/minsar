@@ -304,6 +304,10 @@ run_task_list() {
     local failed=0
     local pids=()
 
+    if [[ "$(basename "$run_file")" == *create_cslc* ]]; then
+        export_sweets_pixi_gdal_proj
+    fi
+
     while IFS= read -r task || [[ -n "$task" ]]; do
         [[ -n "${task//[[:space:]]/}" ]] || continue
         [[ "$task" != \#* ]] || continue
@@ -517,10 +521,74 @@ if [[ "$backend" == "slurm" && "$dry_run" != "true" ]]; then
     command -v sbatch >/dev/null 2>&1 || die "sbatch is not available; use --backend local"
 fi
 
+find_project_template() {
+    local templates=()
+    local nullglob_state
+    nullglob_state="$(shopt -p nullglob)"
+    shopt -s nullglob
+    templates=("$work_dir"/*.template)
+    if [[ "${#templates[@]}" -eq 0 ]]; then
+        templates=("$(dirname "$work_dir")"/*.template)
+    fi
+    eval "$nullglob_state"
+    [[ "${#templates[@]}" -gt 0 ]] || die "No *.template found in $work_dir or $(dirname "$work_dir")"
+    echo "${templates[0]}"
+}
+
+sweets_pixi_prefix() {
+    local staged="${SCRATCHDIR:-}/minsar_sweets_pixi_default"
+    if [[ -n "${SWEETS_ENV:-}" ]]; then
+        echo "$SWEETS_ENV"
+        return
+    fi
+    if [[ -n "${SCRATCHDIR:-}" && -d "${staged}/share/proj" ]]; then
+        echo "$staged"
+        return
+    fi
+    echo "${MINSAR_HOME}/tools/sweets/.pixi/envs/default"
+}
+
+export_sweets_pixi_gdal_proj() {
+    local prefix
+    prefix="$(sweets_pixi_prefix)"
+    export PROJ_LIB="${prefix}/share/proj"
+    export PROJ_DATA="${prefix}/share/proj"
+    export GDAL_DATA="${prefix}/share/gdal"
+}
+
+write_create_cslc_jobfile() {
+    local run_file="$1"
+    local template queue_file queue
+    local cmd
+    [[ -f "$run_file" ]] || die "create_cslc task list not found: $run_file"
+    if ! grep -q '[^[:space:]]' "$run_file"; then
+        die "create_cslc task list is empty: $run_file (run download_safe first)"
+    fi
+    template="$(find_project_template)"
+    cmd=(job_submission.py --template "$template" "$run_file" --outdir "$run_dir" --writeonly)
+    queue_file="$run_dir/.isce3_create_cslc_queue"
+    if [[ -f "$queue_file" ]]; then
+        queue="$(tr -d '[:space:]' < "$queue_file")"
+        if [[ -n "$queue" ]]; then
+            cmd+=(--queue "$queue")
+        fi
+    fi
+    echo "Creating create_cslc jobfile:"
+    echo "${cmd[*]}"
+    if [[ "$dry_run" == "true" ]]; then
+        return 0
+    fi
+    [[ -f "${run_file}.job" ]] && rm -f "${run_file}.job"
+    "${cmd[@]}" || die "job_submission.py failed for $run_file"
+}
+
 for ((index = start_index; index <= end_index; index++)); do
     ingest_step_start_epoch=""
     if [[ "${stage_names[$index]}" == "ingest_insarmaps" && "$dry_run" != "true" ]]; then
         ingest_step_start_epoch=$(date +%s)
+    fi
+    if [[ "${stage_names[$index]}" == "create_cslc" ]]; then
+        write_create_cslc_jobfile "${stage_patterns[$index]}"
     fi
     if [[ "$backend" == "local" ]]; then
         run_local_stage "$index" "$ingest_step_start_epoch"
@@ -529,7 +597,11 @@ for ((index = start_index; index <= end_index; index++)); do
         while IFS= read -r job_file; do
             files+=("$job_file")
         done < <(list_jobs_for_pattern "${stage_patterns[$index]}")
-        [[ "${#files[@]}" -gt 0 ]] || die "no job files for step ${stage_names[$index]}"
+        if [[ "${#files[@]}" -eq 0 ]]; then
+            [[ "$dry_run" == "true" ]] || die "no job files for step ${stage_names[$index]}"
+            echo "no job files for step ${stage_names[$index]} (dry-run)"
+            continue
+        fi
         for job_file in "${files[@]}"; do
             print_step_banner "Running:    $(basename "$job_file" .job)"
         done

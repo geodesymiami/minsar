@@ -18,11 +18,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from minsar.utils.bbox_cli_argv import fix_argv_for_negative_bbox_sn_we
-from minsar.utils.isce3_batch_job import (
-    CREATE_CSLC_QUEUE_META,
-    DEFERRED_TASK_LIST_STAGES,
-    is_deferred_batch_job,
-)
 from minsar.utils.dolphin_presets import (
     DOLPHIN_PRESETS,
     DOLPHIN_PRESET_CHOICES,
@@ -46,6 +41,8 @@ DATA_TYPE_ALIASES = {
     "disp-ni": "disp-ni",
     "dispni": "disp-ni",
 }
+CREATE_CSLC_QUEUE_META = ".isce3_create_cslc_queue"
+DEFERRED_TASK_LIST_STAGES = frozenset({"create_cslc"})
 PIXI_STAGES = frozenset({
     "download_disp",
     "reformat_disp",
@@ -57,6 +54,8 @@ PIXI_STAGES = frozenset({
     "dolphin_timeseries",
 })
 DOLPHIN_SPLIT_STAGES = ("dolphin_wrapped", "dolphin_unwrap", "dolphin_timeseries")
+CREATE_CSLC_QUEUE_META = ".isce3_create_cslc_queue"
+DEFERRED_TASK_LIST_STAGES = frozenset({"create_cslc"})
 # half_window is (y, x); strides is (y, x). See minsar.utils.dolphin_presets.
 
 ARGV_FIX_KW = {
@@ -399,13 +398,16 @@ def _pixi_run_script_with_tail(pixi_commands: str, tail_commands: list[str]) -> 
     )
 
 
-# Stages that run extra commands after pixi (MintPy / job_submission are not in SWEETS).
+# Dolphin stages that run plot_dolphin_summary_pngs / create_html outside pixi (MintPy not in SWEETS).
 _DOLPHIN_PIXI_PLOT_TAIL_STAGES = frozenset({"dolphin", "dolphin_timeseries"})
-_SAFE_PIXI_JOB_TAIL_STAGES = frozenset({"download_safe"})
 
 
-def _create_cslc_job_tail_commands() -> list[str]:
-    return ["isce3_batch_job.py"]
+def _is_deferred_batch_job(path: Path, deferred_names: set[str]) -> bool:
+    """True when path is run_NN_<stage>_N.job for a deferred task-list stage."""
+    if path.suffix != ".job":
+        return False
+    match = re.match(r"run_\d{2}_(.+)_\d+$", path.stem)
+    return bool(match and match.group(1) in deferred_names)
 
 
 def _dolphin_stop_after_stitch_flags() -> str:
@@ -660,6 +662,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Create run files and SLURM job files for SAFE, CSLC, or DISP-S1 processing. "
+            "Default data type: safe. "
             "Workflow: --data-type {safe,cslc,disp-S1,disp-NI} or --safe / --cslc / --disp-S1."
         ),
         epilog=epilog,
@@ -680,7 +683,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--data-type",
         type=_parse_data_type,
         metavar="TYPE",
-        help="starting data type {safe,cslc,disp-S1,disp-NI} (or use --safe, --cslc, --disp-S1)",
+        help="data type {safe,cslc,disp-S1,disp-NI}; default safe (or use --safe, --cslc, --disp-S1)",
     )
     parser.add_argument("--platform", default="S1", help="platform: S1 or NISAR/NI")
     parser.add_argument("--flight-dir", choices=("asc", "desc"), help="flight direction for AOI input")
@@ -1029,7 +1032,7 @@ def _create_files(
         for path in run_dir.glob("run_[0-9][0-9]_*")
         if path.suffix in {"", ".job"}
         and path.name not in expected_names
-        and not is_deferred_batch_job(path, deferred_stage_names)
+        and not _is_deferred_batch_job(path, deferred_stage_names)
     )
     for path in stale_files:
         path.unlink()
@@ -1057,8 +1060,6 @@ def _create_files(
         if name in PIXI_STAGES and profile.execution_mode != "launcher-task-list":
             if name in _DOLPHIN_PIXI_PLOT_TAIL_STAGES:
                 run_command = _pixi_run_script_with_tail(command, _dolphin_plot_commands())
-            elif name in _SAFE_PIXI_JOB_TAIL_STAGES:
-                run_command = _pixi_run_script_with_tail(command, _create_cslc_job_tail_commands())
             else:
                 run_command = _pixi_run_script(command)
         _write_run_file(
@@ -1466,12 +1467,6 @@ def _execute_stage(
             work_dir,
             ["python", "-m", "minsar.utils.prepare_compass_runconfigs", "--config", SWEETS_CONFIG],
         )
-        from minsar.utils.isce3_batch_job import write_create_cslc_batch_job
-
-        run_files = sorted((work_dir / "run_files").glob("run_*_create_cslc"))
-        if len(run_files) != 1:
-            raise RuntimeError("expected exactly one create_cslc run file")
-        write_create_cslc_batch_job(work_dir, run_files[0])
         return 0
     if action == "prepare-cslc-geometry":
         _run_in_sweets(

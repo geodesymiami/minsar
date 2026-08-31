@@ -1380,6 +1380,7 @@ class JOB_SUBMIT:
             job_file_lines.append( "# execute tasks with launcher\n" )
             job_file_lines.append( "################################################\n" )
             job_file_lines.append( "export OMP_NUM_THREADS={0}\n".format(self.default_num_threads))
+            job_file_lines.extend(create_cslc_pixi_gdal_proj_exports(batch_file))
             job_file_lines.append( "export LAUNCHER_PPN={0}\n".format(self.number_of_parallel_tasks_per_node))
             job_file_lines.append( "export LAUNCHER_NHOSTS={0}\n".format(number_of_nodes))
             job_file_lines.append( "export LAUNCHER_JOB_FILE={0}\n".format(batch_file))
@@ -1418,8 +1419,9 @@ class JOB_SUBMIT:
 
                job_file_lines.append("\nexport LD_PRELOAD=/home1/apps/tacc-patches/python_cacher/myopen.so")
 
-            job_file_lines.append("\n\nexport OMP_NUM_THREADS={0}".format(self.default_num_threads))
-            job_file_lines.append("\nexport PATH={0}:$PATH".format(self.stack_path))
+            job_file_lines.append("\n\nexport OMP_NUM_THREADS={0}\n".format(self.default_num_threads))
+            job_file_lines.extend(create_cslc_pixi_gdal_proj_exports(batch_file))
+            job_file_lines.append("export PATH={0}:$PATH\n".format(self.stack_path))
 
             job_file_lines.append("\n")
 
@@ -1432,6 +1434,40 @@ class JOB_SUBMIT:
                 job_f.writelines(job_file_lines)
 
         return job_file_name
+
+
+def sweets_pixi_prefix():
+    """Return SWEETS pixi env prefix (scratch stage, SWEETS_ENV, or $MINSAR_HOME)."""
+    sweets_env = os.environ.get("SWEETS_ENV")
+    if sweets_env:
+        return sweets_env
+    scratch = os.environ.get("SCRATCHDIR")
+    if scratch:
+        staged = os.path.join(scratch, "minsar_sweets_pixi_default")
+        if os.path.isdir(os.path.join(staged, "share", "proj")):
+            return staged
+    minsar_home = os.environ.get("MINSAR_HOME")
+    if minsar_home:
+        return os.path.join(minsar_home, "tools", "sweets", ".pixi", "envs", "default")
+    return None
+
+
+def create_cslc_pixi_gdal_proj_exports(batch_file):
+    """PROJ/GDAL exports so COMPASS uses SWEETS pixi, not inherited minsar conda."""
+    if "create_cslc" not in os.path.basename(str(batch_file or "")):
+        return []
+    prefix = sweets_pixi_prefix()
+    if not prefix:
+        raise RuntimeError("create_cslc job needs SWEETS_ENV, SCRATCHDIR, or MINSAR_HOME for pixi PROJ/GDAL")
+    proj = os.path.join(prefix, "share", "proj")
+    gdal = os.path.join(prefix, "share", "gdal")
+    if not os.path.isdir(proj):
+        raise RuntimeError("SWEETS pixi PROJ directory not found: {}".format(proj))
+    return [
+        "export PROJ_LIB={0}\n".format(proj),
+        "export PROJ_DATA={0}\n".format(proj),
+        "export GDAL_DATA={0}\n".format(gdal),
+    ]
 
 
 def check_words_in_file(errfile, eword):

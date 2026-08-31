@@ -12,8 +12,7 @@
         "gslcs/**/static_*.h5"
       ],
       "dolphin": [
-        "dolphin/**/*.tif",
-        "dolphin/**/*.nc"
+        "dolphin/**/*.tif"
       ],
       "dolphin_wrapped": [
         "dolphin/interferograms/*.int.tif"
@@ -37,8 +36,7 @@
         "data/**/*CSLC*.h5"
       ],
       "dolphin": [
-        "dolphin/**/*.tif",
-        "dolphin/**/*.nc"
+        "dolphin/**/*.tif"
       ],
       "dolphin_wrapped": [
         "dolphin/interferograms/*.int.tif"
