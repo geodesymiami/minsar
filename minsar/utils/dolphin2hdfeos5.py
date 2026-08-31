@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 
 try:
-    from minsar.utils.dolphin_presets import METHOD_STRING_HELP, normalize_method_string
+    from minsar.utils.dolphin_presets import METHOD_STRING_HELP, OPERA_DISP_METHOD_STRING, normalize_method_string
     from minsar.utils.dolphin_hdfeos5_utils import (
         DOLPHIN2HDFEOS5_EXAMPLES,
         add_mask_arguments,
@@ -38,7 +38,7 @@ try:
         same_shape,
     )
 except ImportError:
-    from dolphin_presets import METHOD_STRING_HELP, normalize_method_string
+    from dolphin_presets import METHOD_STRING_HELP, OPERA_DISP_METHOD_STRING, normalize_method_string
     from dolphin_hdfeos5_utils import (
         DOLPHIN2HDFEOS5_EXAMPLES,
         add_mask_arguments,
@@ -94,7 +94,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--method-string",
         type=normalize_method_string,
-        default="dolphin",
+        default=None,
         metavar="LABEL",
         help=METHOD_STRING_HELP,
     )
@@ -159,7 +159,7 @@ def run_dolphin(inps, vmin, vmin_sim, suffix: str) -> Path:
 
     latitude, longitude = latlon_grids(grid)
     ref_y, ref_x = _pick_ref(shape, mask, quality, ts_dir=ts_dir)
-    method_name = inps.method_string
+    method_name = inps.method_string or "dolphin"
     print(f"HE5 name:   {method_name}")
     metadata = build_metadata(
         dataset_dir,
@@ -197,6 +197,8 @@ def run_opera(inps, vmin, vmin_sim, suffix: str) -> Path:
 
     latitude, longitude = latlon_grids(grid)
     ref_y, ref_x = _pick_ref(shape, mask, quality)
+    method_name = inps.method_string or OPERA_DISP_METHOD_STRING
+    print(f"HE5 name:   {method_name}")
     metadata = build_metadata(
         run_dir,
         run_dir,
@@ -207,6 +209,7 @@ def run_opera(inps, vmin, vmin_sim, suffix: str) -> Path:
         ref_y,
         ref_x,
         processor="opera-disp",
+        post_processing_method=method_name,
         require_orbit=False,
     )
     out_dir = run_dir / "timeseries"

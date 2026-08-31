@@ -25,9 +25,11 @@ NO_PRESET_NAMING_HELP = (
     "Use method-string dolphin (not dolphinAuto/dolphinStandard) in HE5 filename; preset naming is on by default"
 )
 
+OPERA_DISP_METHOD_STRING = "operaDisp"
+
 METHOD_STRING_HELP = (
-    "HE5 post_processing_method label (e.g. dolphin, dolphinAuto, dolphinStandard); "
-    "used in .he5 filename and metadata"
+    "HE5 post_processing_method label (e.g. dolphinAuto, dolphinStandard, operaDisp); "
+    "used in .he5 filename and metadata (default: dolphin or operaDisp by input kind)"
 )
 
 

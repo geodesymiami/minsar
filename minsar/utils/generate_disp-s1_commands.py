@@ -19,6 +19,7 @@ from typing import NamedTuple
 from minsar.objects import message_rsmas
 from minsar.objects.auto_defaults import PathFind
 from minsar.objects.dataset_template import Template
+from minsar.utils.dolphin_presets import OPERA_DISP_METHOD_STRING
 from minsar.utils.generate_sweets_config import (
     S1_START_DEFAULT,
     bbox_wsene,
@@ -251,7 +252,7 @@ def format_disp_stage_commands(
             f"{check}\n"
         ),
         "reformat_disp": reformat,
-        "dolphin_2_hdfeos5": f"dolphin2hdfeos5.py {stack_name}",
+        "dolphin_2_hdfeos5": f"dolphin2hdfeos5.py {stack_name} --method-string {OPERA_DISP_METHOD_STRING}",
         "ingest_insarmaps": "ingest_insarmaps.bash timeseries",
     }
 

@@ -7,6 +7,7 @@
 
 import datetime as dt
 import os
+import re
 from typing import Optional
 
 import h5py
@@ -330,6 +331,27 @@ def use_x_placeholder_for_update(last_date_ymd: str, today: 'dt.date', max_age_d
     return (today - last).days <= max(0, int(max_age_days))
 
 
+_HE5_METHOD_LOWERCASE = frozenset({"mintpy", "miaplpy", "sarvey"})
+
+
+def he5_method_filename_token(value) -> str:
+    """Filename token from post_processing_method.
+
+    Keep camelCase labels (dolphinAuto, operaDisp). Hyphenated labels become
+    camelCase (opera-disp -> operaDisp). Historic MintPy/MiaplPy/sarvey stay lowercase.
+    """
+    token = str(value).strip() if value is not None else ""
+    if not token:
+        token = "MintPy"
+    compact = token.lower().replace("-", "").replace("_", "")
+    if compact in _HE5_METHOD_LOWERCASE:
+        return compact
+    parts = [p for p in re.split(r"[-_\s]+", token) if p]
+    if len(parts) == 1:
+        return token
+    return parts[0] + "".join(p.capitalize() for p in parts[1:])
+
+
 def get_output_filename(
     metadata,
     template,
@@ -342,7 +364,7 @@ def get_output_filename(
     SAT = metadata['mission']
     SW = metadata['beam_mode']
     orbit_direction_str = get_orbit_direction_str(metadata)
-    method_str = metadata.get('post_processing_method', 'MintPy').lower()
+    method_str = he5_method_filename_token(metadata.get('post_processing_method', 'MintPy'))
     if metadata['beam_swath']:
         SW += str(metadata['beam_swath'])
     RELORB = "{:03d}".format(int(metadata['relative_orbit']))

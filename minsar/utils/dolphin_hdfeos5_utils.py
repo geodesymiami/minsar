@@ -66,6 +66,7 @@ DOLPHIN2HDFEOS5_EXAMPLES = """Examples:
   dolphin2hdfeos5.py dolphin
   dolphin2hdfeos5.py dolphin -m recommended
   dolphin2hdfeos5.py dolphin --method-string dolphinStandard
+  dolphin2hdfeos5.py stack.nc --method-string operaDisp
   dolphin2hdfeos5.py dolphin -m tc --vmin 0.7
   dolphin2hdfeos5.py dolphin -m similarity --vmin 0.5
   dolphin2hdfeos5.py dolphin -m tc+sim --vmin 0.7 --vmin-sim 0.5
