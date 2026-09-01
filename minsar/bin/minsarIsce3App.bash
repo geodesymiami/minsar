@@ -38,10 +38,12 @@ options:
   --copy-dolphin-inputs copy interferograms/unwrapped instead of symlink
   --preset NAME         dolphin preset (auto, standard, dry, wet, arctic)
   --backend BACKEND     auto, local, or slurm (default: auto)
+  --sleep SECS          sleep seconds before running
   --dry-run             print the generator plan without writing files or submitting
 
 Examples:
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template
+  ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --sleep 30
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --data-type cslc --start download
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --unwrap-options.run-interpolation true
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --start dolphin_unwrap --unwrap-method whirlwind
@@ -58,7 +60,7 @@ die() {
 
 is_consume_one() {
     case "$1" in
-        --data-type|--platform|--flight-dir|--start-date|--end-date|--track|--relativeOrbit|--frame-id|--queue|--long-queue|--config|--sleep|--preset|--burst-count-method|--dolphin-dir|--from-dolphin-dir|--unwrap-method|--ministack-size|--backend|--start|--end|--stop|--dostep|--phase|--max-parallel)
+        --data-type|--platform|--flight-dir|--start-date|--end-date|--track|--relativeOrbit|--frame-id|--queue|--long-queue|--config|--preset|--burst-count-method|--dolphin-dir|--from-dolphin-dir|--unwrap-method|--ministack-size|--backend|--start|--end|--stop|--dostep|--phase|--max-parallel)
             return 0
             ;;
     esac
@@ -142,6 +144,7 @@ user_phase=false
 dry_run=false
 has_science=false
 explicit_dolphin_dir=false
+sleep_time=""
 positionals=()
 gen_args=()
 original_args=("$@")
@@ -183,6 +186,12 @@ while [[ $# -gt 0 ]]; do
             explicit_dolphin_dir=true
             has_science=true
             gen_args+=("$1" "$2")
+            shift 2
+            ;;
+        --sleep)
+            [[ -n "${2:-}" && "$2" != --* ]] || die "$1 requires a value"
+            [[ "$2" =~ ^[0-9]+$ ]] || die "$1 must be a non-negative integer"
+            sleep_time="$2"
             shift 2
             ;;
         --dry-run)
@@ -283,6 +292,11 @@ has_run_stage() {
     return 1
 }
 
+if [[ -n "$sleep_time" && "$dry_run" != true ]]; then
+    echo "sleeping $sleep_time secs before starting ..."
+    sleep "$sleep_time"
+fi
+
 echo "Running: create_isce3_runfiles.py ${positionals[*]} ${gen_args[*]} --phase ${phase}"
 gen_out="$(mktemp)"
 trap 'rm -f "$gen_out"' EXIT
@@ -344,6 +358,8 @@ elif [[ "$phase" == "dolphin" ]]; then
         fi
     fi
     run_args+=(--start "$start_from" --end ingest_insarmaps)
+else
+    run_args+=(--start download --end ingest_insarmaps)
 fi
 
 echo "Running: run_isce3_workflow.bash ${run_args[*]}"

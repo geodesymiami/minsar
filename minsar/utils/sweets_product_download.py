@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import sys
+from collections import defaultdict
 from pathlib import Path
 
 SAFE_KEY_RE = re.compile(r"_(\d{8})T\d{6}_.*_(\d{6})_[0-9A-F]{6}_")
@@ -67,9 +69,104 @@ def _hdf5_has_datasets(path: Path, datasets: tuple[str, ...]) -> tuple[bool, str
     return True, ""
 
 
-def expected_safe_keys(search) -> set[tuple[int, str]]:
-    """Return expected (absolute_orbit, yyyymmdd) keys for a BurstSearch config."""
-    from burst2safe import utils as burst_utils
+def _burst_group_key(result) -> tuple[int, str, str]:
+    """Return (absolute_orbit, swath, polarization) for an ASF burst hit."""
+    props = result.properties
+    return int(props["orbit"]), str(props["burst"]["subswath"]), str(props["polarization"])
+
+
+def _relative_burst_ids(bursts: list) -> list[int]:
+    """Sorted unique relative burst IDs in an ASF burst group."""
+    return sorted({int(burst.properties["burst"]["relativeBurstID"]) for burst in bursts})
+
+
+def _dedupe_bursts(bursts: list) -> list:
+    """Keep one ASF hit per granule fileID."""
+    seen: set[str] = set()
+    unique: list = []
+    for burst in bursts:
+        file_id = str(burst.properties.get("fileID") or burst.properties.get("fileName") or id(burst))
+        if file_id in seen:
+            continue
+        seen.add(file_id)
+        unique.append(burst)
+    return unique
+
+
+def _fetch_burst_id_range(template_bursts: list, needed: list[int]) -> list:
+    """Search ASF for needed relative burst IDs on the template group's orbit/swath/pol."""
+    import asf_search
+
+    relative_orbit, _, swath = template_bursts[0].properties["burst"]["fullBurstID"].split("_")
+    polarization = template_bursts[0].properties["polarization"]
+    absolute_orbit = int(template_bursts[0].properties["orbit"])
+    full_burst_ids = [f"{relative_orbit}_{burst_id:06}_{swath}" for burst_id in needed]
+    return list(
+        asf_search.search(
+            dataset=asf_search.constants.DATASET.SLC_BURST,
+            absoluteOrbit=absolute_orbit,
+            polarization=polarization,
+            fullBurstID=full_burst_ids,
+        )
+    )
+
+
+def fill_consecutive_burst_ids(results: list) -> list:
+    """Add skipped burst IDs so each orbit/swath/pol group is consecutive.
+
+    burst2safe will not pack a SAFE unless relative burst IDs are consecutive.
+    ASF ``intersectsWith`` can hit the first and last burst covering an AOI and
+    miss a middle burst whose footprint does not quite intersect the rectangle.
+    Fetch ``min_id..max_id`` for that group. If a date still lacks a burst in the
+    ASF catalog, skip that acquisition instead of failing the whole stack.
+    """
+    groups: dict[tuple[int, str, str], list] = defaultdict(list)
+    for result in results:
+        groups[_burst_group_key(result)].append(result)
+
+    all_ids = _relative_burst_ids(results)
+    if not all_ids:
+        return []
+    needed = list(range(all_ids[0], all_ids[-1] + 1))
+
+    filled: list = []
+    skipped: list[int] = []
+    for key, bursts in groups.items():
+        orbit, swath, pol = key
+        have = _relative_burst_ids(bursts)
+        if have != needed:
+            missing = [burst_id for burst_id in needed if burst_id not in have]
+            print(
+                f"Filling burst ID gap {missing} for orbit {orbit} {swath} {pol} "
+                f"(ASF intersected {have}, need {needed})",
+                file=sys.stderr,
+            )
+            bursts = _fetch_burst_id_range(bursts, needed)
+            have = _relative_burst_ids(bursts)
+        if have != needed:
+            missing = [burst_id for burst_id in needed if burst_id not in have]
+            print(
+                f"Skipping orbit {orbit} {swath} {pol}: still missing burst IDs {missing} after ASF search",
+                file=sys.stderr,
+            )
+            skipped.append(orbit)
+            continue
+        filled.extend(_dedupe_bursts(bursts))
+    if skipped:
+        print(
+            f"Skipped {len(skipped)} SAFE acquisition(s) with incomplete burst IDs: {skipped}",
+            file=sys.stderr,
+        )
+    if not filled:
+        raise RuntimeError(
+            f"SAFE search found no acquisition with consecutive burst IDs {needed}. "
+            "ASF did not return the middle burst(s) for any date in the range."
+        )
+    return filled
+
+
+def search_safe_bursts(search) -> list:
+    """ASF burst hits for a BurstSearch, with consecutive burst-ID gaps filled."""
     from burst2safe.search import find_group
 
     results = find_group(
@@ -83,6 +180,14 @@ def expected_safe_keys(search) -> set[tuple[int, str]]:
         start_date=search.start,
         end_date=search.end,
     )
+    return fill_consecutive_burst_ids(list(results))
+
+
+def expected_safe_keys(search) -> set[tuple[int, str]]:
+    """Return expected (absolute_orbit, yyyymmdd) keys for a BurstSearch config."""
+    from burst2safe import utils as burst_utils
+
+    results = search_safe_bursts(search)
     infos = burst_utils.get_burst_infos(results, search.out_dir)
     if search.flight_direction:
         infos = [info for info in infos if info.direction.upper() == search.flight_direction.upper()]
@@ -112,20 +217,9 @@ def download_safes(search, *, skip_existing: bool = True) -> list[Path]:
     from burst2safe import utils as burst_utils
     from burst2safe.download import download_bursts
     from burst2safe.safe import Safe
-    from burst2safe.search import find_group
 
     search.out_dir.mkdir(parents=True, exist_ok=True)
-    results = find_group(
-        search.track,
-        search.aoi,
-        search.polarizations,
-        search.swaths,
-        "IW",
-        search.min_bursts,
-        use_relative_orbit=True,
-        start_date=search.start,
-        end_date=search.end,
-    )
+    results = search_safe_bursts(search)
     burst_infos = burst_utils.get_burst_infos(results, search.out_dir)
     if search.flight_direction:
         burst_infos = [info for info in burst_infos if info.direction.upper() == search.flight_direction.upper()]
@@ -143,8 +237,19 @@ def download_safes(search, *, skip_existing: bool = True) -> list[Path]:
 
     abs_orbits = burst_utils.drop_duplicates([info.absolute_orbit for info in burst_infos])
     burst_sets = [[info for info in burst_infos if info.absolute_orbit == orbit] for orbit in abs_orbits]
+    valid_sets: list[list] = []
     for burst_set in burst_sets:
-        Safe.check_group_validity(burst_set)
+        try:
+            Safe.check_group_validity(burst_set)
+        except ValueError as exc:
+            orbit = burst_set[0].absolute_orbit if burst_set else "?"
+            print(f"Skipping orbit {orbit}: {exc}", file=sys.stderr)
+            continue
+        valid_sets.append(burst_set)
+    if not valid_sets:
+        raise RuntimeError("No SAFE acquisition has a valid consecutive burst group")
+    burst_sets = valid_sets
+    burst_infos = [info for burst_set in burst_sets for info in burst_set]
 
     download_bursts(burst_infos)
     safe_paths: list[Path] = []

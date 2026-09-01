@@ -87,7 +87,6 @@ do_step=""
 max_parallel=1
 dry_run=false
 wait_time=30
-original_args=("$@")
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -162,20 +161,6 @@ fi
 echo "Backend: $backend"
 
 work_dir="$(pwd -P)"
-# Log the full command line with SCRATCHDIR/SAMPLESDIR/TE simplified (as in run_workflow.bash)
-simplified_args=()
-for arg in "${original_args[@]}"; do
-    if [[ -n "${SCRATCHDIR:-}" && "$arg" == "$SCRATCHDIR"* ]]; then
-        simplified_args+=("\$SCRATCHDIR${arg#$SCRATCHDIR}")
-    elif [[ -n "${SAMPLESDIR:-}" && "$arg" == "$SAMPLESDIR"* ]]; then
-        simplified_args+=("\$SAMPLESDIR${arg#$SAMPLESDIR}")
-    elif [[ -n "${TE:-}" && "$arg" == "$TE"* ]]; then
-        simplified_args+=("\$TE${arg#$TE}")
-    else
-        simplified_args+=("$arg")
-    fi
-done
-echo "$(date +"%Y%m%d:%H-%M") + ${SCRIPT_NAME} ${simplified_args[*]}" >> "${work_dir}"/log
 run_dir="$work_dir/run_files"
 project_name="$(basename "$work_dir")"
 [[ -d "$run_dir" ]] || die "run_files directory not found under $work_dir"
@@ -357,6 +342,17 @@ fi
 
 [[ "$start_index" -le "$end_index" ]] || die "--start follows --end"
 
+log_parts=("${SCRIPT_NAME}")
+[[ "$backend" != "auto" ]] && log_parts+=(--backend "$backend")
+[[ "$dry_run" == "true" ]] && log_parts+=(--dry-run)
+[[ "$max_parallel" != "1" ]] && log_parts+=(--max-parallel "$max_parallel")
+if [[ "$start_index" -eq "$end_index" ]]; then
+    log_parts+=(--dostep "${stage_names[$start_index]}")
+else
+    log_parts+=(--start "${stage_names[$start_index]}" --stop "${stage_names[$end_index]}")
+fi
+echo "$(date +"%Y%m%d:%H-%M") + ${log_parts[*]}" >> "${work_dir}"/log
+
 run_task_list() {
     local run_file="$1"
     local task
@@ -464,6 +460,15 @@ run_local_stage() {
     done < <(jobs_for_step "${stage_numbers[$index]}")
 }
 
+log_submit_jobs_command() {
+    local target="$1"
+    local display="$target"
+    if [[ "$target" == "$work_dir"/* ]]; then
+        display="${target#"$work_dir"/}"
+    fi
+    echo "$(date +"%Y%m%d:%H-%M") + submit_jobs.bash ${display}" >> "${work_dir}/log"
+}
+
 wait_for_slurm_jobs() {
     local step_name="$1"
     local file_pattern="$2"
@@ -491,6 +496,7 @@ wait_for_slurm_jobs() {
         "$STAGE_SWEETS_PIXI"
     fi
 
+    log_submit_jobs_command "$file_pattern"
     jns="$("$SUBMIT_JOBS" "$file_pattern")"
     exit_status="$?"
     [[ "$exit_status" -eq 0 ]] || die "submit_jobs.bash failed for $file_pattern"
@@ -542,6 +548,7 @@ wait_for_slurm_jobs() {
                 if [[ -f "$STAGE_SWEETS_PIXI" ]]; then
                     "$STAGE_SWEETS_PIXI"
                 fi
+                log_submit_jobs_command "${file%.*}"
                 jobnumber="$($SUBMIT_JOBS "${file%.*}")"
                 exit_status="$?"
                 if [[ "$exit_status" -eq 0 ]]; then

@@ -1056,23 +1056,74 @@ def _aoi_context(args: argparse.Namespace) -> dict[str, object]:
     }
 
 
+def _subset_lalo_assignment(key: str, subset: str) -> str:
+    """Return a template assignment in convert_bbox / miaplpy.subset.lalo layout."""
+    return f"{key}                  = {subset}    #[S:N,W:E / no], auto for no"
+
+
+def _fill_aoi_subset_lines(template_file: Path, aoi: str) -> None:
+    """Write miaplpy.subset.lalo and dolphin.subset.lalo from the AOI (S:N,W:E)."""
+    from minsar.scripts.create_template import _aoi_to_subset_lalo
+
+    subset = _aoi_to_subset_lalo(aoi)
+    miaplpy_line = _subset_lalo_assignment("miaplpy.subset.lalo", subset)
+    dolphin_line = _subset_lalo_assignment("dolphin.subset.lalo", subset)
+    lines = template_file.read_text().splitlines()
+    out: list[str] = []
+    miaplpy_idx: int | None = None
+    have_dolphin = False
+    for line in lines:
+        if re.match(r"^\s*miaplpy\.subset\.lalo\s*=", line):
+            miaplpy_idx = len(out)
+            out.append(miaplpy_line)
+            continue
+        if re.match(r"^\s*dolphin\.subset\.lalo\s*=", line):
+            have_dolphin = True
+            out.append(dolphin_line)
+            continue
+        out.append(line)
+    if miaplpy_idx is None:
+        out.append(miaplpy_line)
+        miaplpy_idx = len(out) - 1
+    if not have_dolphin:
+        out.insert(miaplpy_idx + 1, dolphin_line)
+    template_file.write_text("\n".join(out) + "\n")
+
+
+def _templates_dir() -> Path:
+    """Return $TEMPLATES or $TE. AOI templates are always written here."""
+    raw = os.environ.get("TEMPLATES") or os.environ.get("TE")
+    if not raw:
+        raise ValueError("TEMPLATES or TE must be set; source setup/environment.bash")
+    return Path(raw).expanduser()
+
+
 def _create_template_from_aoi(args: argparse.Namespace) -> Path:
-    """Create the standard MinSAR template used by downstream generators."""
+    """Create the MinSAR template under $TE, independent of the invocation directory."""
     from minsar.scripts.create_template import main as create_template
 
     if not args.name:
         raise ValueError("AOI input requires a project NAME")
     if not args.flight_dir:
         raise ValueError("AOI input requires --flight-dir asc or desc")
+    te_dir = _templates_dir()
+    te_dir.mkdir(parents=True, exist_ok=True)
     command = [args.input, args.name, "--flight-dir", args.flight_dir, "--platform", "S1"]
     if args.start_date:
         command.extend(["--start-date", args.start_date])
     if args.end_date:
         command.extend(["--end-date", args.end_date])
-    status, template_file, _, _ = create_template(command)
+    cwd = Path.cwd()
+    os.chdir(te_dir)
+    try:
+        status, template_file, _, _ = create_template(command)
+    finally:
+        os.chdir(cwd)
     if status or template_file is None:
         raise RuntimeError("create_template.py could not resolve the AOI into a MinSAR template")
-    return Path(template_file)
+    path = Path(template_file).resolve()
+    _fill_aoi_subset_lines(path, args.input)
+    return path
 
 
 def _runner_command(command: str) -> str:
@@ -1919,6 +1970,11 @@ def main(iargs: list[str] | None = None) -> int:
             )
             return 0
         work_dir.mkdir(parents=True, exist_ok=True)
+        template_src = Path(str(context.get("template") or ""))
+        if template_src.is_file():
+            template_dest = work_dir / template_src.name
+            if template_dest.resolve() != template_src.resolve():
+                template_dest.write_text(template_src.read_text())
         os.chdir(work_dir)
         if workflow in {"safe", "cslc"} and args.phase in {"download", "all"}:
             _write_sweets_config(workflow, context, work_dir)
