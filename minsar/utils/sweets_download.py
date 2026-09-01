@@ -17,6 +17,7 @@ DESCRIPTION = (
 EXAMPLE = """Examples:
   sweets_download.py --config sweets_config.yaml
   sweets_download.py --config sweets_config.yaml --force
+  sweets_download.py --config sweets_config.yaml --download-retries 10
 """
 
 
@@ -28,10 +29,11 @@ def create_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--config", type=Path, default=Path("sweets_config.yaml"), help="sweets config YAML (default: sweets_config.yaml)")
     parser.add_argument("--force", action="store_true", help="re-download all products even when valid files exist")
+    parser.add_argument("--download-retries", type=int, default=10, metavar="N", help="retry SAFE burst download up to N times after ASF RetryError (default: 10)")
     return parser
 
 
-def download_products(work_dir: Path, config: Path, *, skip_existing: bool = True) -> None:
+def download_products(work_dir: Path, config: Path, *, skip_existing: bool = True, download_retries: int = 10) -> None:
     """Download SWEETS inputs listed in config."""
     from minsar.utils.sweets_import import hide_argv_from_pyre
     from minsar.utils.sweets_product_download import download_cslcs, download_safes
@@ -50,7 +52,7 @@ def download_products(work_dir: Path, config: Path, *, skip_existing: bool = Tru
     if kind == "safe":
         if not hasattr(search, "download_static_layers"):
             get_burst_db()
-        download_safes(search, skip_existing=skip_existing)
+        download_safes(search, skip_existing=skip_existing, retries=download_retries)
         return
     if kind == "opera-cslc":
         download_cslcs(search, skip_existing=skip_existing)
@@ -73,8 +75,10 @@ def main(iargs: list[str] | None = None) -> int:
         str(work_dir),
         os.path.basename(__file__) + " " + " ".join(iargs if iargs is not None else sys.argv[1:]),
     )
+    if inps.download_retries < 1:
+        parser.error("--download-retries must be >= 1")
     try:
-        download_products(work_dir, inps.config, skip_existing=not inps.force)
+        download_products(work_dir, inps.config, skip_existing=not inps.force, download_retries=inps.download_retries)
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

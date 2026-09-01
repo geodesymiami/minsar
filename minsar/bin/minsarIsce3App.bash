@@ -40,10 +40,12 @@ options:
   --backend BACKEND     auto, local, or slurm (default: auto)
   --sleep SECS          sleep seconds before running
   --dry-run             print the generator plan without writing files or submitting
+  --no-run              write run/job files without starting run_isce3_workflow.bash
 
 Examples:
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --sleep 30
+  ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --no-run
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --data-type cslc --start download
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --unwrap-options.run-interpolation true
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --start dolphin_unwrap --unwrap-method whirlwind
@@ -111,10 +113,11 @@ project_from_generator_log() {
 }
 
 log_app_command() {
-    local dest="$1"
+    local dests=("$@")
     local arg
     local simplified_args=()
-    mkdir -p "$dest"
+    local banner line dest real seen_real
+    local -a seen=()
     for arg in "${original_args[@]}"; do
         if [[ -n "${SCRATCHDIR:-}" && "$arg" == "$SCRATCHDIR"* ]]; then
             simplified_args+=("\$SCRATCHDIR${arg#$SCRATCHDIR}")
@@ -128,8 +131,27 @@ log_app_command() {
             simplified_args+=("$arg")
         fi
     done
-    echo "#############################################################################################" | tee -a "${dest}/log"
-    echo "$(date +"%Y%m%d:%H-%M") * ${SCRIPT_NAME} ${simplified_args[*]}" | tee -a "${dest}/log"
+    banner="#############################################################################################"
+    line="$(date +"%Y%m%d:%H-%M") * ${SCRIPT_NAME} ${simplified_args[*]}"
+    echo "$banner"
+    echo "$line"
+    for dest in "${dests[@]}"; do
+        mkdir -p "$dest"
+        real="$(cd "$dest" && pwd -P)"
+        seen_real=false
+        if ((${#seen[@]} > 0)); then
+            for seen_path in "${seen[@]}"; do
+                if [[ "$seen_path" == "$real" ]]; then
+                    seen_real=true
+                    break
+                fi
+            done
+        fi
+        [[ "$seen_real" == true ]] && continue
+        seen+=("$real")
+        echo "$banner" >> "${real}/log"
+        echo "$line" >> "${real}/log"
+    done
 }
 
 [[ -f "$GENERATOR" ]] || die "create_isce3_runfiles.py not found: $GENERATOR"
@@ -142,12 +164,14 @@ backend=""
 phase=""
 user_phase=false
 dry_run=false
+no_run=false
 has_science=false
 explicit_dolphin_dir=false
 sleep_time=""
 positionals=()
 gen_args=()
 original_args=("$@")
+invoke_dir="$(pwd -P)"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -197,6 +221,10 @@ while [[ $# -gt 0 ]]; do
         --dry-run)
             dry_run=true
             gen_args+=("$1")
+            shift
+            ;;
+        --no-run)
+            no_run=true
             shift
             ;;
         --run)
@@ -305,9 +333,13 @@ if resolved="$(project_from_generator_log "$gen_out")"; then
     project="$resolved"
 fi
 work_dir="${SCRATCHDIR}/${project}"
-log_app_command "$work_dir"
+log_app_command "$invoke_dir" "$work_dir"
 echo "Project: \$SCRATCHDIR/${project}"
 if [[ "$dry_run" == true ]]; then
+    exit 0
+fi
+if [[ "$no_run" == true ]]; then
+    echo "Skipping run_isce3_workflow.bash (--no-run)"
     exit 0
 fi
 

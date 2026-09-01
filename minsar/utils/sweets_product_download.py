@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import re
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 
 SAFE_KEY_RE = re.compile(r"_(\d{8})T\d{6}_.*_(\d{6})_[0-9A-F]{6}_")
+DEFAULT_BURST_DOWNLOAD_RETRIES = 10
+BURST_DOWNLOAD_RETRY_SLEEP_SECS = 60
 
 
 def safe_acquisition_key(path: Path) -> tuple[int, str] | None:
@@ -212,10 +215,29 @@ def valid_safe_keys(out_dir: Path) -> set[tuple[int, str]]:
     return valid
 
 
-def download_safes(search, *, skip_existing: bool = True) -> list[Path]:
+def _download_bursts_with_retries(burst_infos, *, retries: int = DEFAULT_BURST_DOWNLOAD_RETRIES) -> None:
+    """Call burst2safe.download_bursts, retrying ASF HTTP 202 RetryError."""
+    from burst2safe.download import download_bursts
+    from tenacity import RetryError
+
+    attempts = max(1, retries)
+    for attempt in range(1, attempts + 1):
+        try:
+            download_bursts(burst_infos)
+            return
+        except RetryError as exc:
+            if attempt == attempts:
+                raise RuntimeError(f"Burst download failed after {attempts} attempts (ASF RetryError)") from exc
+            print(
+                f"Burst download retry {attempt}/{attempts} after ASF RetryError; sleeping {BURST_DOWNLOAD_RETRY_SLEEP_SECS}s",
+                file=sys.stderr,
+            )
+            time.sleep(BURST_DOWNLOAD_RETRY_SLEEP_SECS)
+
+
+def download_safes(search, *, skip_existing: bool = True, retries: int = DEFAULT_BURST_DOWNLOAD_RETRIES) -> list[Path]:
     """Download burst SLCs and build SAFE directories, optionally skipping valid products."""
     from burst2safe import utils as burst_utils
-    from burst2safe.download import download_bursts
     from burst2safe.safe import Safe
 
     search.out_dir.mkdir(parents=True, exist_ok=True)
@@ -251,7 +273,7 @@ def download_safes(search, *, skip_existing: bool = True) -> list[Path]:
     burst_sets = valid_sets
     burst_infos = [info for burst_set in burst_sets for info in burst_set]
 
-    download_bursts(burst_infos)
+    _download_bursts_with_retries(burst_infos, retries=retries)
     safe_paths: list[Path] = []
     for burst_set in burst_sets:
         for info in burst_set:

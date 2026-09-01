@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shlex
 import sys
 from pathlib import Path
@@ -32,19 +33,38 @@ def _q(value: str | Path) -> str:
     return shlex.quote(str(value))
 
 
+_BROWSE_ENABLED_RE = re.compile(
+    r"(browse_image:\n(?:[ \t]+.+\n)*?[ \t]+enabled: )true",
+    re.MULTILINE,
+)
+
+
+def disable_browse_images(runconfig_dir: Path) -> int:
+    """Turn off COMPASS browse images so GDAL NETCDF failures cannot fail CSLC tasks."""
+    updated = 0
+    for path in sorted(runconfig_dir.glob("*.yaml")):
+        text = path.read_text()
+        new, count = _BROWSE_ENABLED_RE.subn(r"\1false", text, count=1)
+        if count:
+            path.write_text(new)
+            updated += count
+    return updated
+
+
 def materialize_compass_tasks(work_dir: Path) -> Path:
     """Write one s1_cslc.py / s1_static_layers.py command per runconfig into create_cslc."""
     cslc = sorted(work_dir.rglob("runconfigs/*.yaml"))
     if not cslc:
         raise RuntimeError("SWEETS did not create COMPASS CSLC runconfigs")
     sweets_bin = '"$MINSAR_HOME/tools/sweets/.pixi/envs/default/bin"'
-    commands = [f"{sweets_bin}/s1_cslc.py {_q(path)}" for path in cslc]
+    wrapper = f'{sweets_bin}/python "$MINSAR_HOME/minsar/utils/run_compass_task.py"'
+    commands = [f"{wrapper} s1_cslc.py {_q(path)}" for path in cslc]
     first_per_burst: dict[str, Path] = {}
     for path in cslc:
         parts = path.stem.split("_")
         key = "_".join(parts[3:]) if len(parts) > 3 else path.stem
         first_per_burst.setdefault(key, path)
-    commands.extend(f"{sweets_bin}/s1_static_layers.py {_q(path)}" for path in first_per_burst.values())
+    commands.extend(f"{wrapper} s1_static_layers.py {_q(path)}" for path in first_per_burst.values())
     run_files = sorted((work_dir / "run_files").glob("run_*_create_cslc"))
     if len(run_files) != 1:
         raise RuntimeError("expected exactly one create_cslc run file")
@@ -77,6 +97,7 @@ def prepare(work_dir: Path, config: Path) -> None:
         using_zipped=safes[0].suffix == ".zip",
         gpu_enabled=workflow.gpu_enabled,
     )
+    disable_browse_images(workflow.gslc_dir / "runconfigs")
     materialize_compass_tasks(work_dir)
 
 
