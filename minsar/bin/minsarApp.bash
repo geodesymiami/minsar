@@ -547,8 +547,8 @@ fi
 
 # set isce_stop depending on coregistration method and workflow  (for Sentinel-1, for TSX/CSK/ENV we have --dostep ifgram but can be implemented)
 if [[ ${template[topsStack.coregistration]} == "geometry" ]]; then 
-    full_isce_run_stop=12
-    partial_isce_run_stop=8
+    full_isce_run_stop=11
+    partial_isce_run_stop=7
     if [[ ${template[topsStack.workflow]} == "slc" ]]; then
          full_isce_run_stop=8
          partial_isce_run_stop=8
@@ -596,9 +596,8 @@ if [[ "$isce_stop_cli_flag" == "1" ]]; then
 elif [[ "$platform_str" == *"SENTINEL-1"* && "$isce_start_cli_flag" == "1" ]]; then
     # For Sentinel: if user provides --isce-start but omits --isce-stop, run ifgram-only range.
     isce_stop="$partial_isce_run_stop"
-elif [[ "$platform_str" == *"SENTINEL-1"* && "$no_mintpy_cli_flag" == "1" && ${template[topsStack.coregistration]} != "geometry" ]]; then
-    # --no-mintpy (e.g. MiaplPy-only): default to partial ISCE (e.g. 1–12 for NESD burst stack), not full through unwrap (16).
-    # Geometry coregistration already uses full_isce_run_stop=12; do not override with partial_isce_run_stop=8 here.
+elif [[ "$platform_str" == *"SENTINEL-1"* && "$no_mintpy_cli_flag" == "1" ]]; then
+    # --no-mintpy (e.g. MiaplPy-only): default to partial ISCE, not full through unwrap.
     isce_stop="$partial_isce_run_stop"
 else
     isce_stop="$full_isce_run_stop"
