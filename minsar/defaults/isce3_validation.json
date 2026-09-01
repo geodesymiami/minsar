@@ -5,7 +5,7 @@
       "download_safe": [
         "sweets_config.yaml",
         "data/**/*.SAFE",
-        "run_files/run_02_create_cslc"
+        "run_files_isce3/run_02_create_cslc"
       ],
       "create_cslc": [
         "gslcs/**/t*.h5",

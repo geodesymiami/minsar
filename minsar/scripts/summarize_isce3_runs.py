@@ -30,15 +30,15 @@ _BAKED_N_PARALLEL_JOBS_RE = re.compile(r"--unwrap-options\.n-parallel-jobs\s+(\d
 
 def create_parser() -> argparse.ArgumentParser:
     epilog = """Examples:
- summarize_isce3_runs.py /scratch/.../qxHawaiiCSLCDolphin-autoSenD87/run_files
- summarize_isce3_runs.py run_files
- summarize_isce3_runs.py $TE/qxHawaiiCSLCDolphin-autoSenD87/run_files --outdir $TE/qxHawaiiCSLCDolphin-autoSenD87"""
+ summarize_isce3_runs.py /scratch/.../qxHawaiiCSLCDolphin-autoSenD87/run_files_isce3
+ summarize_isce3_runs.py run_files_isce3
+ summarize_isce3_runs.py $TE/qxHawaiiCSLCDolphin-autoSenD87/run_files_isce3 --outdir $TE/qxHawaiiCSLCDolphin-autoSenD87"""
     parser = argparse.ArgumentParser(
         description="Summarize ISCE3 run metadata and per-step SLURM walltimes into walltimes_isce3.log.",
         epilog=epilog,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("run_files_dir", help="path to run_files/ directory")
+    parser.add_argument("run_files_dir", help="path to run_files_isce3/ directory")
     parser.add_argument("--outdir", default=None, help="output directory for walltimes_isce3.log (default: project dir)")
     return parser
 
@@ -549,10 +549,10 @@ def main(iargs: list[str] | None = None) -> int:
     args = create_parser().parse_args(iargs)
     run_files_dir = Path(args.run_files_dir).expanduser().resolve()
     if not run_files_dir.is_dir():
-        print(f"Error: run_files directory not found: {run_files_dir}", file=sys.stderr)
+        print(f"Error: run files directory not found: {run_files_dir}", file=sys.stderr)
         return 1
-    if run_files_dir.name != "run_files":
-        print(f"Warning: expected a run_files directory; got {run_files_dir}", file=sys.stderr)
+    if run_files_dir.name != "run_files_isce3":
+        print(f"Warning: expected a run_files_isce3 directory; got {run_files_dir}", file=sys.stderr)
 
     project_dir = run_files_dir.parent
     outdir = Path(args.outdir).expanduser().resolve() if args.outdir else project_dir

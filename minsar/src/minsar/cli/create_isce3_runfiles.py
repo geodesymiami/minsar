@@ -53,6 +53,7 @@ DATA_TYPE_ALIASES = {
     "disp-ni": "disp-ni",
     "dispni": "disp-ni",
 }
+RUN_FILES_DIRNAME = "run_files_isce3"
 CREATE_CSLC_QUEUE_META = ".isce3_create_cslc_queue"
 DEFERRED_TASK_LIST_STAGES = frozenset({"create_cslc"})
 DOWNLOAD_STAGE_NAMES = {
@@ -134,6 +135,11 @@ def _stage_in_phase(name: str, workflow: str, phase: str) -> bool:
     if phase == "download":
         return name in download_names
     return name not in download_names
+
+
+def _isce3_run_dir(work_dir: Path) -> Path:
+    """Return the ISCE3 run/job files directory under the project."""
+    return work_dir / RUN_FILES_DIRNAME
 
 
 def _run_file_stage_name(path: Path) -> str | None:
@@ -900,7 +906,7 @@ def create_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="copy interferograms/unwrapped from --from-dolphin-dir instead of symlink",
     )
-    parser.add_argument("--run", action="store_true", help="after creating files, run run_isce3_workflow.bash --start 1 --end N")
+    parser.add_argument("--run", action="store_true", help="after creating files, run run_isce3_workflow.bash run_files_isce3 --start 1 --end N")
     return parser
 
 
@@ -931,7 +937,7 @@ def _run_isce3_workflow(work_dir: Path, end_step: int) -> int:
     if not runner.is_file():
         raise RuntimeError(f"run_isce3_workflow.bash not found: {runner}")
     os.chdir(work_dir)
-    command = [str(runner), "--start", "1", "--end", str(end_step)]
+    command = [str(runner), RUN_FILES_DIRNAME, "--start", "1", "--end", str(end_step)]
     print(f"cd $SCRATCHDIR/{work_dir.name}")
     print(f"Running: {' '.join(command)}")
     completed = subprocess.run(command, check=False)
@@ -1207,7 +1213,7 @@ def _create_files(
     extra_flags: str = "",
     embed_config: bool = True,
 ) -> list[Stage]:
-    run_dir = work_dir / "run_files"
+    run_dir = _isce3_run_dir(work_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
     phase = getattr(args, "phase", "all") or "all"
     all_specs = _build_stage_specs(
@@ -1350,6 +1356,7 @@ def _print_plan(
 ) -> None:
     print(f"Workflow: {workflow.upper()} ({platform})")
     print(f"Project:  $SCRATCHDIR/{context['project']}")
+    print(f"Run dir:  {RUN_FILES_DIRNAME}")
     template = str(context.get("template") or "").strip()
     if template:
         print(f"Template: {_format_template_path(template)}")
@@ -1837,38 +1844,39 @@ def _execute_stage(
             ["python", "-m", "minsar.utils.stitch_sweets_geometry", "--config", SWEETS_CONFIG],
         )
         return 0
+    run_dir = _isce3_run_dir(work_dir)
     if action == "dolphin":
-        dolphin_files = sorted((work_dir / "run_files").glob("run_*_dolphin"))
+        dolphin_files = sorted(run_dir.glob("run_*_dolphin"))
         if not dolphin_files:
             raise RuntimeError(
-                "dolphin run file not found under run_files/; "
+                f"dolphin run file not found under {RUN_FILES_DIRNAME}/; "
                 "run create_isce3_runfiles.py first"
             )
         subprocess.run(["bash", str(dolphin_files[-1])], cwd=work_dir, check=True)
         return 0
     if action in DOLPHIN_SPLIT_STAGES:
-        stage_files = sorted((work_dir / "run_files").glob(f"run_*_{action}"))
+        stage_files = sorted(run_dir.glob(f"run_*_{action}"))
         if not stage_files:
             raise RuntimeError(
-                f"{action} run file not found under run_files/; "
+                f"{action} run file not found under {RUN_FILES_DIRNAME}/; "
                 "run create_isce3_runfiles.py first"
             )
         subprocess.run(["bash", str(stage_files[-1])], cwd=work_dir, check=True)
         return 0
     if action in ("dolphin-2-hdfeos5", "dolphin_2_hdfeos5"):
-        stage_files = sorted((work_dir / "run_files").glob("run_*_dolphin_2_hdfeos5"))
+        stage_files = sorted(run_dir.glob("run_*_dolphin_2_hdfeos5"))
         if not stage_files:
             raise RuntimeError(
-                "dolphin_2_hdfeos5 run file not found under run_files/; "
+                f"dolphin_2_hdfeos5 run file not found under {RUN_FILES_DIRNAME}/; "
                 "run create_isce3_runfiles.py first"
             )
         subprocess.run(["bash", str(stage_files[-1])], cwd=work_dir, check=True)
         return 0
     if action == "ingest-insarmaps":
-        stage_files = sorted((work_dir / "run_files").glob("run_*_ingest_insarmaps"))
+        stage_files = sorted(run_dir.glob("run_*_ingest_insarmaps"))
         if not stage_files:
             raise RuntimeError(
-                "ingest_insarmaps run file not found under run_files/; "
+                f"ingest_insarmaps run file not found under {RUN_FILES_DIRNAME}/; "
                 "run create_isce3_runfiles.py first"
             )
         subprocess.run(["bash", str(stage_files[-1])], cwd=work_dir, check=True)

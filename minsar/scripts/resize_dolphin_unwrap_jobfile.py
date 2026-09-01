@@ -103,7 +103,7 @@ def read_ifg_size(ifg_path: Path) -> tuple[int, int]:
 
 
 def infer_queue_from_jobfiles(project_dir: Path) -> str | None:
-    run_dir = project_dir / "run_files"
+    run_dir = project_dir / "run_files_isce3"
     if not run_dir.is_dir():
         return None
     for job in sorted(run_dir.glob("run_*_dolphin_unwrap.job")):

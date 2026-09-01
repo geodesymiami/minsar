@@ -2,7 +2,7 @@
 
 `minsarIsce3App.bash` is the user command for ISCE3 SAFE, CSLC, and DISP-S1 processing. It always identifies the dataset the same way as `create_isce3_runfiles.py`: a MinSAR template, or AOI plus project name (and `--flight-dir` when the first argument is an AOI). Science flags alone are invalid.
 
-Work directory is `$SCRATCHDIR/<project>` from that template stem or name. The app runs `create_isce3_runfiles.py` once on the login node, then `run_isce3_workflow.bash` from the project directory.
+Work directory is `$SCRATCHDIR/<project>` from that template stem or name. The app writes ISCE3 run/job files under `run_files_isce3/`, then runs `run_isce3_workflow.bash run_files_isce3` from the project directory.
 
 Optional alias: `run_isce3.bash` → `minsarIsce3App.bash`.
 
@@ -28,7 +28,7 @@ create_isce3_runfiles.py 19.45:19.5,-154.915:-154.852 HawaiiPuna --flight-dir de
 
 ## What the app passes to the generator
 
-| App command | Generator extras | Then `run_isce3_workflow.bash` |
+| App command | Generator extras | Then `run_isce3_workflow.bash run_files_isce3` |
 |---|---|---|
 | template only | `--phase all` | step 1 through last |
 | `--start download` | `--phase download` | `--start download --end download` (SAFE: `download_safe` through `create_cslc`) |

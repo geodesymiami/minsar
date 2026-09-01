@@ -28,9 +28,9 @@ source "$WORKFLOW_UTILS"
 
 print_help() {
     cat <<EOF
-usage: ${SCRIPT_NAME} [OPTIONS]
+usage: ${SCRIPT_NAME} [RUN_DIR] [OPTIONS]
 
-Run ISCE3 steps from the current processing directory.
+Run ISCE3 steps from RUN_DIR (default: ./run_files_isce3). Project dir is the parent of RUN_DIR.
 
 options:
   -h, --help            show this help
@@ -52,13 +52,15 @@ DISP-S1 steps: download_disp, reformat_disp, dolphin_2_hdfeos5, ingest_insarmaps
 
 Examples:
   ${SCRIPT_NAME}
-  ${SCRIPT_NAME} --start 2
-  ${SCRIPT_NAME} --start 2 --stop 3
-  ${SCRIPT_NAME} --dostep 3
-  ${SCRIPT_NAME} --start download --end download
-  ${SCRIPT_NAME} --start dolphin_unwrap --end ingest_insarmaps
-  ${SCRIPT_NAME} --dostep ingest_insarmaps
-  ${SCRIPT_NAME} --backend local
+  ${SCRIPT_NAME} run_files_isce3
+  ${SCRIPT_NAME} run_files_isce3 --start 2
+  ${SCRIPT_NAME} run_files_isce3 --start 2 --stop 3
+  ${SCRIPT_NAME} run_files_isce3 --dostep 3
+  ${SCRIPT_NAME} run_files_isce3 --start download --end download
+  ${SCRIPT_NAME} run_files_isce3 --start dolphin_unwrap --end ingest_insarmaps
+  ${SCRIPT_NAME} run_files_isce3 --dostep ingest_insarmaps
+  ${SCRIPT_NAME} run_files_isce3 --backend local
+  ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaSenD87/run_files_isce3 --start dolphin_wrapped
 EOF
 }
 
@@ -87,6 +89,8 @@ do_step=""
 max_parallel=1
 dry_run=false
 wait_time=30
+run_dir_arg=""
+DEFAULT_RUN_DIR_NAME="run_files_isce3"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -127,7 +131,11 @@ while [[ $# -gt 0 ]]; do
             die "unknown option: $1"
             ;;
         *)
-            die "unexpected positional argument: $1"
+            if [[ -n "$run_dir_arg" ]]; then
+                die "unexpected positional argument: $1"
+            fi
+            run_dir_arg="$1"
+            shift
             ;;
     esac
 done
@@ -160,10 +168,20 @@ if [[ "$backend" == "auto" ]]; then
 fi
 echo "Backend: $backend"
 
-work_dir="$(pwd -P)"
-run_dir="$work_dir/run_files"
+if [[ -z "$run_dir_arg" ]]; then
+    run_dir_arg="$DEFAULT_RUN_DIR_NAME"
+fi
+if [[ "$run_dir_arg" == /* ]]; then
+    run_dir="$run_dir_arg"
+else
+    run_dir="$(pwd -P)/$run_dir_arg"
+fi
+[[ -d "$run_dir" ]] || die "run files directory not found: $run_dir"
+run_dir="$(cd "$run_dir" && pwd -P)"
+work_dir="$(cd "$run_dir/.." && pwd -P)"
 project_name="$(basename "$work_dir")"
-[[ -d "$run_dir" ]] || die "run_files directory not found under $work_dir"
+run_dir_display="${run_dir#"$work_dir"/}"
+echo "Run files: $run_dir_display"
 
 job_uses_launcher() {
     local job_file="$1"
@@ -225,6 +243,7 @@ shopt -u nullglob
 for run_file in "${all_run_files[@]}"; do
     [[ "$run_file" == *.job ]] && continue
     run_basename="$(basename "$run_file")"
+    [[ "$run_basename" == *.* ]] && continue
     [[ "$run_basename" =~ ^run_([0-9][0-9])_(.+)$ ]] || die "invalid run filename: $run_file"
     number_token="${BASH_REMATCH[1]}"
     name="${BASH_REMATCH[2]}"
@@ -342,7 +361,7 @@ fi
 
 [[ "$start_index" -le "$end_index" ]] || die "--start follows --end"
 
-log_parts=("${SCRIPT_NAME}")
+log_parts=("${SCRIPT_NAME}" "$run_dir_display")
 [[ "$backend" != "auto" ]] && log_parts+=(--backend "$backend")
 [[ "$dry_run" == "true" ]] && log_parts+=(--dry-run)
 [[ "$max_parallel" != "1" ]] && log_parts+=(--max-parallel "$max_parallel")

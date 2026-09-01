@@ -18,8 +18,8 @@ _JOB_STEM_RE = re.compile(r"^run_(\d{2})_(.+)$")
 
 def create_parser() -> argparse.ArgumentParser:
     epilog = """Examples:
- validate_isce3_job_outputs.py run_files/run_02_dolphin_wrapped.job
- validate_isce3_job_outputs.py run_files/run_01_download_cslc.job
+ validate_isce3_job_outputs.py run_files_isce3/run_02_dolphin_wrapped.job
+ validate_isce3_job_outputs.py run_files_isce3/run_01_download_cslc.job
  validate_isce3_job_outputs.py --step dolphin
  validate_isce3_job_outputs.py --data-type disp --step 2
  validate_isce3_job_outputs.py --json validation_report.json"""
@@ -28,7 +28,7 @@ def create_parser() -> argparse.ArgumentParser:
         epilog=epilog,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("job_files", nargs="*", help="SLURM job file(s), e.g. run_files/run_NN_stage.job")
+    parser.add_argument("job_files", nargs="*", help="SLURM job file(s), e.g. run_files_isce3/run_NN_stage.job")
     parser.add_argument("--data-type", choices=("safe", "cslc", "disp"), help="workflow type; inferred from job files by default")
     parser.add_argument("--step", action="append", help="step name or number to check; may be repeated")
     parser.add_argument("--json", dest="json_output", type=Path, help="write a machine-readable report")
@@ -65,13 +65,14 @@ def _resolve_job_path(work_dir: Path, job_file: str | Path) -> Path:
 def _discover_steps(work_dir: Path) -> list[dict[str, object]]:
     """Discover ordered workflow steps from generated job filenames."""
     steps_by_number: dict[int, dict[str, object]] = {}
-    for job_file in sorted((work_dir / "run_files").glob("run_[0-9][0-9]_*.job")):
+    run_dir = work_dir / "run_files_isce3"
+    for job_file in sorted(run_dir.glob("run_[0-9][0-9]_*.job")):
         number, name, stem = _parse_job_path(job_file)
         if number not in steps_by_number:
             steps_by_number[number] = {"number": number, "name": name, "run_file": stem}
     steps = list(steps_by_number.values())
     if not steps:
-        raise ValueError(f"no run_NN_*.job files found in {work_dir / 'run_files'}")
+        raise ValueError(f"no run_NN_*.job files found in {run_dir}")
     return steps
 
 

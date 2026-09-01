@@ -8,6 +8,7 @@ SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
 export MINSAR_HOME="${MINSAR_HOME:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
 GENERATOR="${MINSAR_HOME}/minsar/src/minsar/cli/create_isce3_runfiles.py"
 RUNNER="${MINSAR_HOME}/minsar/src/minsar/cli/run_isce3_workflow.bash"
+ISCE3_RUN_DIR_NAME="run_files_isce3"
 
 print_help() {
     cat <<EOF
@@ -150,6 +151,29 @@ log_app_command() {
         [[ "$seen_real" == true ]] && continue
         seen+=("$real")
         echo "$banner" >> "${real}/log"
+        echo "$line" >> "${real}/log"
+    done
+}
+
+write_log_line() {
+    local line="$1"
+    shift
+    local dest real seen_real
+    local -a seen=()
+    for dest in "$@"; do
+        mkdir -p "$dest"
+        real="$(cd "$dest" && pwd -P)"
+        seen_real=false
+        if ((${#seen[@]} > 0)); then
+            for seen_path in "${seen[@]}"; do
+                if [[ "$seen_path" == "$real" ]]; then
+                    seen_real=true
+                    break
+                fi
+            done
+        fi
+        [[ "$seen_real" == true ]] && continue
+        seen+=("$real")
         echo "$line" >> "${real}/log"
     done
 }
@@ -310,7 +334,7 @@ has_run_stage() {
     local nullglob_state
     nullglob_state="$(shopt -p nullglob)"
     shopt -s nullglob
-    for file in "$work_dir/run_files"/run_[0-9][0-9]_"${stem}"; do
+    for file in "$work_dir/$ISCE3_RUN_DIR_NAME"/run_[0-9][0-9]_"${stem}"; do
         if [[ -f "$file" ]]; then
             eval "$nullglob_state"
             return 0
@@ -343,7 +367,7 @@ if [[ "$no_run" == true ]]; then
     exit 0
 fi
 
-[[ -d "$work_dir/run_files" ]] || die "run_files not found under $work_dir"
+[[ -d "$work_dir/$ISCE3_RUN_DIR_NAME" ]] || die "$ISCE3_RUN_DIR_NAME not found under $work_dir"
 cd "$work_dir"
 
 dolphin_dir="dolphin"
@@ -394,5 +418,6 @@ else
     run_args+=(--start download --end ingest_insarmaps)
 fi
 
-echo "Running: run_isce3_workflow.bash ${run_args[*]}"
-exec "$RUNNER" "${run_args[@]}"
+echo "Running: run_isce3_workflow.bash ${ISCE3_RUN_DIR_NAME} ${run_args[*]}"
+write_log_line "$(date +"%Y%m%d:%H-%M") * run_isce3_workflow.bash ${ISCE3_RUN_DIR_NAME} ${run_args[*]}" "$invoke_dir" "$work_dir"
+exec "$RUNNER" "$ISCE3_RUN_DIR_NAME" "${run_args[@]}"

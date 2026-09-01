@@ -65,7 +65,7 @@ def materialize_compass_tasks(work_dir: Path) -> Path:
         key = "_".join(parts[3:]) if len(parts) > 3 else path.stem
         first_per_burst.setdefault(key, path)
     commands.extend(f"{wrapper} s1_static_layers.py {_q(path)}" for path in first_per_burst.values())
-    run_files = sorted((work_dir / "run_files").glob("run_*_create_cslc"))
+    run_files = sorted((work_dir / "run_files_isce3").glob("run_*_create_cslc"))
     if len(run_files) != 1:
         raise RuntimeError("expected exactly one create_cslc run file")
     run_files[0].write_text("\n".join(commands) + "\n")
