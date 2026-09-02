@@ -4,6 +4,9 @@ set -eo pipefail
 ### Install #########################
 git clone git@github.com:opera-adt/COMPASS.git tools/COMPASS
 git clone git@github.com:opera-adt/disp-s1.git tools/disp-s1
+git clone git@github.com:opera-adt/bowser.git  tools/bowser
+git clone git@github.com:opera-adt/tropo.git  tools/tropo
+git clone git@github.com:opera-adt/disp-nisar.git  tools/disp-nisar.git
 git clone git@github.com:OPERA-Cal-Val/OPERA_Applications.git tools/OPERA_Applications
 
 # chttps://github.com/scottstanie/opera-utils.git@develop-scott"
