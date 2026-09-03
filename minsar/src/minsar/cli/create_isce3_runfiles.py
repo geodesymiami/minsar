@@ -477,13 +477,11 @@ def _normalize_dolphin_preset(value: str) -> str:
 
 
 def _dolphin_preset_cli_flags(preset: str) -> str:
-    """CLI flags for strides and half-window; empty string for auto (dolphin package defaults)."""
+    """CLI flags for preset runs: run_interpolation plus strides and half-window."""
     spec = DOLPHIN_PRESETS[preset]
     strides = spec["strides"]
     half_window = spec["half_window"]
-    if strides is None and half_window is None:
-        return ""
-    parts: list[str] = []
+    parts: list[str] = ["--unwrap-options.run-interpolation true"]
     if strides is not None:
         sy, sx = strides
         parts.append(f"--sy {sy} --sx {sx}")
