@@ -20,6 +20,11 @@ or other formats accepted by convert_bbox.py (e.g. GoogleEarth points).
 
 ISCE topsStack coregistration defaults to NESD in the written template; pass
 ``--coregistration geometry`` or ``--geometry`` for geometry-only coregistration.
+
+Optional MintPy / MinSAR template overrides:
+
+``--tropo METHOD`` / ``--mintpy.troposphericDelay.method METHOD`` (e.g. ``no``, ``auto``, ``pyaps``)
+``--insarmaps-dataset DATASET`` / ``--minsar.insarmaps_dataset DATASET`` (e.g. ``DS``, ``filt*DS``, ``geo``)
 """
 
 from __future__ import annotations
@@ -349,6 +354,35 @@ def _parse_period(period: str) -> tuple[str, str]:
     )
 
 
+_MINTPY_TROPOSPHERIC_DELAY_METHODS = frozenset(
+    {"no", "auto", "pyaps", "height_correlation", "base_trop_cor"}
+)
+
+
+def _validate_mintpy_tropospheric_delay_method(value: str) -> str:
+    """Normalize and validate ``mintpy.troposphericDelay.method`` CLI value."""
+    v = value.strip().lower()
+    if v not in _MINTPY_TROPOSPHERIC_DELAY_METHODS:
+        allowed = ", ".join(sorted(_MINTPY_TROPOSPHERIC_DELAY_METHODS))
+        raise ValueError(
+            f"Invalid --tropo / --mintpy.troposphericDelay.method {value!r}; "
+            f"use one of: {allowed}"
+        )
+    return v
+
+
+def _validate_minsar_insarmaps_dataset(value: str) -> str:
+    """Validate ``minsar.insarmaps_dataset`` CLI value."""
+    v = value.strip()
+    if not v:
+        raise ValueError("Invalid --insarmaps-dataset: empty value")
+    if re.search(r"\s", v):
+        raise ValueError(
+            f"Invalid --insarmaps-dataset {value!r}: must not contain whitespace"
+        )
+    return v
+
+
 def _resolve_coregistration(
     *,
     coregistration: str | None,
@@ -378,6 +412,8 @@ def _substitute_template(
     exclude_season: str | None,
     tops_stack_coregistration: str = "NESD",
     mintpy_plot: str = "no",
+    mintpy_tropospheric_delay_method: str | None = None,
+    minsar_insarmaps_dataset: str | None = None,
 ) -> str:
     """Replace orbit/AOI/date options, optionally adding ssaraopt.excludeSeason."""
     lines = content.splitlines()
@@ -408,6 +444,20 @@ def _substitute_template(
             exclude_matched = True
             if exclude_season is not None:
                 line = re.sub(r"=\s*[^\s#]+", f"= {exclude_season}", line)
+        elif (
+            mintpy_tropospheric_delay_method is not None
+            and re.match(r"^\s*mintpy\.troposphericDelay\.method\s*=", line)
+        ):
+            line = re.sub(
+                r"=\s*[^\s#]+",
+                f"= {mintpy_tropospheric_delay_method}",
+                line,
+            )
+        elif (
+            minsar_insarmaps_dataset is not None
+            and re.match(r"^\s*minsar\.insarmaps_dataset\s*=", line)
+        ):
+            line = re.sub(r"=\s*[^\s#]+", f"= {minsar_insarmaps_dataset}", line)
         out.append(line)
     if exclude_season is not None and not exclude_added and not exclude_matched:
         out.append(f"ssaraopt.excludeSeason             = {exclude_season}")
@@ -469,6 +519,8 @@ Examples:
   create_template.py 36.331:36.486,25.318:25.492 Santorini --coregistration NESD
   create_template.py 36.331:36.486,25.318:25.492 Santorini --quick-run 2026 --mintpy-no-plot
   create_template.py 36.331:36.486,25.318:25.492 Santorini --period 20210101:20221231 --mintpy-plot
+  create_template.py 36.331:36.486,25.318:25.492 Santorini --mintpy.troposphericDelay.method no --minsar.insarmaps_dataset DS
+  create_template.py 36.331:36.486,25.318:25.492 Santorini --tropo no --insarmaps-dataset DS
 """,
     )
     parser.add_argument("aoi", metavar="AOI", help="AOI: S:N,W:E; WKT POLYGON; Minus-first lat: quote AOI or argv normalization.")
@@ -487,6 +539,8 @@ Examples:
     plot_grp = parser.add_mutually_exclusive_group()
     plot_grp.add_argument("--mintpy-plot", dest="mintpy_plot_cli", action="store_const", const="yes", default=None, help="Force mintpy.plot = yes (overrides date-span rule)")
     plot_grp.add_argument("--mintpy-no-plot", dest="mintpy_plot_cli", action="store_const", const="no", help="Force mintpy.plot = no (overrides date-span rule)")
+    parser.add_argument("--tropo", "--mintpy.troposphericDelay.method", dest="mintpy_tropospheric_delay_method", metavar="METHOD", default=None, help="mintpy.troposphericDelay.method: no, auto, pyaps, height_correlation, base_trop_cor")
+    parser.add_argument("--insarmaps-dataset", "--insarmaps_dataset", "--minsar.insarmaps_dataset", dest="minsar_insarmaps_dataset", metavar="DATASET", default=None, help="minsar.insarmaps_dataset (e.g. DS, filt*DS, geo, PS, PSDS, all)")
     return parser
 
 
@@ -512,6 +566,26 @@ def main(
     if tops_err:
         print(f"Error: {tops_err}", file=sys.stderr)
         return 1, None, None, ""
+
+    mintpy_tropospheric_delay_method = None
+    if inps.mintpy_tropospheric_delay_method is not None:
+        try:
+            mintpy_tropospheric_delay_method = _validate_mintpy_tropospheric_delay_method(
+                inps.mintpy_tropospheric_delay_method
+            )
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1, None, None, ""
+
+    minsar_insarmaps_dataset = None
+    if inps.minsar_insarmaps_dataset is not None:
+        try:
+            minsar_insarmaps_dataset = _validate_minsar_insarmaps_dataset(
+                inps.minsar_insarmaps_dataset
+            )
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1, None, None, ""
 
     if inps.last_year:
         conflicts: list[str] = []
@@ -653,6 +727,8 @@ def main(
         exclude_season=exclude_season,
         tops_stack_coregistration=tops_co,
         mintpy_plot=mintpy_plot,
+        mintpy_tropospheric_delay_method=mintpy_tropospheric_delay_method,
+        minsar_insarmaps_dataset=minsar_insarmaps_dataset,
     )
 
     out_base = f"{name}{primary_label}"

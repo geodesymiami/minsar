@@ -412,16 +412,6 @@ def _strip_bash_script_header(text: str) -> str:
     return "\n".join(body).strip()
 
 
-def _require_minsar_home_bash() -> str:
-    """Bash guard: MINSAR_HOME must be set (source setup/environment.bash before submit or run)."""
-    return (
-        'if [[ -z "${MINSAR_HOME:-}" ]]; then\n'
-        '  echo "Error: MINSAR_HOME is not set; source setup/environment.bash" >&2\n'
-        '  exit 1\n'
-        'fi\n'
-    )
-
-
 def _pixi_run_script(commands: str) -> str:
     """Executable run file that runs stage commands inside the SWEETS pixi environment."""
     body = _strip_bash_script_header(commands)
@@ -430,7 +420,6 @@ def _pixi_run_script(commands: str) -> str:
     return (
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
-        f"{_require_minsar_home_bash()}"
         'pixi run --manifest-path "$MINSAR_HOME/tools/sweets/pyproject.toml" -- bash <<\'ISCE3_PIXI_BODY\'\n'
         "set -euo pipefail\n"
         "\n"
@@ -449,7 +438,6 @@ def _pixi_run_script_with_tail(pixi_commands: str, tail_commands: list[str]) -> 
     return (
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
-        f"{_require_minsar_home_bash()}"
         'pixi run --manifest-path "$MINSAR_HOME/tools/sweets/pyproject.toml" -- bash <<\'ISCE3_PIXI_BODY\'\n'
         "set -euo pipefail\n"
         "\n"
@@ -1411,7 +1399,6 @@ def _configure_sweets(workflow: str, template: Path, work_dir: Path) -> None:
     config_script = work_dir / "sweets_config_command.bash"
     config_script.write_text(
         "#!/usr/bin/env bash\nset -euo pipefail\n"
-        + _require_minsar_home_bash()
         + transparent_command
         + "\n"
     )
