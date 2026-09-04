@@ -837,3 +837,78 @@ generate_upload_script() {
 
     chmod +x "$output_script"
 }
+
+###########################################
+# Remove date from run_files from start_run_file onward (bash equivalent of remove_date_from_run_files.py).
+function _remove_date_from_run_files_bash() {
+    local run_files_dir="$1"
+    local date="$2"
+    local start_run_file="$3"
+    [[ -d "$run_files_dir" ]] || return 0
+
+    local run_file
+    while IFS= read -r run_file; do
+        [[ -n "$run_file" ]] || continue
+        local base step
+        base="$(basename "$run_file")"
+        step="${base#run_}"
+        step="${step%%_*}"
+        step=$((10#$step))
+        [[ "$step" -lt "$start_run_file" ]] && continue
+        if grep -q "$date" "$run_file"; then
+            grep -v "$date" "$run_file" > "${run_file}.tmp" || true
+            if [[ -s "${run_file}.tmp" ]]; then
+                mv "${run_file}.tmp" "$run_file"
+            else
+                rm -f "${run_file}.tmp" "$run_file" "${run_file}.job"
+            fi
+        fi
+    done < <(find "$run_files_dir" -maxdepth 1 -type f -name 'run_[0-9][0-9]_*' \
+        ! -name '*.job' ! -name '*.o' ! -name '*.e' ! -name '*.time_log' ! -name '*error_matches*' \
+        ! -regex '.*/run_[0-9][0-9]_.*_[0-9]{8}_.*' | sort -V)
+}
+
+###########################################
+# Remove dates listed in SLC/dates_unfixable_partial_swath.txt from SLC and any
+# stack products/run_files already created (e.g. re-run with --start ifgram).
+function remove_unfixable_partial_swath_dates() {
+    local slc_dir="${1:-SLC}"
+    local unfixable_file="$slc_dir/dates_unfixable_partial_swath.txt"
+    [[ -s "$unfixable_file" ]] || return 0
+
+    local -a stack_date_dirs=(secondarys coreg_secondarys coarse_interferograms interferograms merged)
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        local ymd
+        ymd="$(echo "$line" | sed -E 's/^([0-9]{8}).*/\1/')"
+        [[ "$ymd" =~ ^[0-9]{8}$ ]] || continue
+        echo "Removing partial-subswath date $ymd (see $unfixable_file)"
+
+        shopt -s nullglob
+        local f
+        for f in "$slc_dir"/*"${ymd}"T*; do
+            rm -rf "$f"
+        done
+
+        local d
+        for d in "${stack_date_dirs[@]}"; do
+            [[ -d "$d/$ymd" ]] && rm -rf "$d/$ymd"
+        done
+
+        if [[ -d configs ]]; then
+            for f in configs/*"${ymd}"*; do
+                rm -f "$f"
+            done
+        fi
+        if [[ -d baselines ]]; then
+            for f in baselines/*"${ymd}"*; do
+                rm -rf "$f"
+            done
+        fi
+        shopt -u nullglob
+
+        if [[ -d run_files ]]; then
+            _remove_date_from_run_files_bash run_files "$ymd" 2
+        fi
+    done < "$unfixable_file"
+}

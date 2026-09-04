@@ -16,6 +16,28 @@ Then `burst_download.bash` removes matching paths under `SLC/` for each `YYYYMMD
 
 To skip this step (no `check_if_bursts_includeAOI.py`, no pruning), run `burst_download.bash` with **`--no-check-bursts-includeAOI`**.
 
+## burst_download.bash: subswath coverage repair
+
+After the main `burst2stack` pass (and the uniform AOI-extension loop for overlap errors), `burst_download.bash` runs **`check_burst_stack_coverage.py`** unless **`--no-check-subswath-coverage`** is set.
+
+It inspects each `SLC/*.SAFE` against the **original** AOI bbox (`extent_orig`):
+
+| Check | Output file |
+|-------|-------------|
+| Missing IW subswath vs modal/reference set | `SLC/dates_missing_subswath.txt` (`YYYYMMDD missing=IW1`) |
+| Burst count differs from modal | `SLC/dates_inconsistent_burst_count.txt` |
+| Measurement TIFF footprints outside AOI (along-track extras) | `SLC/dates_extra_azimuth_bursts.txt` |
+
+**Repair:**
+
+1. **Lon-only extension** — widen W and E only (lat unchanged) in steps of `0.02` deg up to `0.15` deg; re-fetch ASF listing; remove and re-run `burst2stack` for affected dates. Log: `SLC/burst2stack_lon_extension.log`. Final stacking extent: `SLC/extent_stack.txt`.
+2. **Azimuth trim / homogenize** — re-run `burst2stack` for dates with extra azimuth bursts or inconsistent burst counts using `extent_final` (lon from `extent_stack`, lat from `extent_orig`).
+3. **`check_file_size.py SLC`** — report remaining burst-count outliers.
+
+Dates still missing a subswath after max lon extension are listed in **`SLC/dates_unfixable_partial_swath.txt`**, then **removed from `SLC/`** automatically (same as AOI-pruned dates). Before stack steps, **`minsarApp.bash`** also removes those dates from **`secondarys/`**, **`coreg_secondarys/`**, matching **`configs/`** / **`baselines/`**, and prunes **`run_files/`** (from run step 2 onward) when present.
+
+Skip with **`--no-check-subswath-coverage`**. Lon repair requires re-fetching the ASF listing (do not use `--skip-listing`).
+
 ### Other “removed date” logs (different meaning)
 
 | File | Source | Meaning |

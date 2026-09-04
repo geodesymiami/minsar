@@ -685,6 +685,9 @@ if [[ $download_flag == "1" ]]; then
            rm -rf $files
        done
     fi
+
+    # Drop partial-subswath dates flagged by burst_download (cannot be fixed by lon extension)
+    remove_unfixable_partial_swath_dates "$download_dir"
 fi
 
 # preprocess SLCs for non-Sentinel-1 platforms and burst2safe. No preprocessing needed for slc and burst2stack.
@@ -786,6 +789,8 @@ if [[ $jobfiles_flag == "1" ]]; then
 fi
 
 if [[ $ifgram_flag == "1" ]]; then
+
+    remove_unfixable_partial_swath_dates "$download_dir"
 
     if [[ $template_file =~ (Tsx|Csk|Env) ]]; then
         OLD_PATH="$PATH"
