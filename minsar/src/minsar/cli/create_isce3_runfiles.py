@@ -675,7 +675,7 @@ def _cslc_dolphin_wrapped_commands(
     yaml_name: str = "dolphin_config.yaml",
     embed_config: bool = True,
 ) -> list[str]:
-    """CSLC dolphin_wrapped: phase linking + stitch; writes DIR YAML."""
+    """CSLC dolphin_wrapped: per-burst phase linking only; writes DIR YAML."""
     stop = _dolphin_stop_after_stitch_flags()
     flags = f"{extra_flags} {stop}".strip() if extra_flags else stop
     return _cslc_dolphin_commands(
@@ -693,8 +693,9 @@ def _cslc_dolphin_wrapped_commands(
 
 
 def _cslc_dolphin_unwrap_commands(yaml_name: str = "dolphin_config.yaml", dolphin_dir: str = DEFAULT_DOLPHIN_DIR) -> list[str]:
-    """CSLC dolphin_unwrap: memory-aware n_parallel_jobs then unwrap-only."""
+    """CSLC dolphin_unwrap: stitch burst ifgs, size n_parallel_jobs, then unwrap."""
     return [
+        f"run_dolphin_stitch.py --config {yaml_name}",
         f'N_UNWRAP=$(resize_dolphin_unwrap_jobfile.py . --dolphin-config {yaml_name} --dolphin-dir {dolphin_dir})',
         f'run_dolphin_unwrap.py --config {yaml_name} --n-parallel-jobs "$N_UNWRAP"',
     ]
@@ -1137,8 +1138,8 @@ def _use_dolphin_split(workflow: str, no_dolphin_split: bool) -> bool:
 def _dolphin_stage_specs(split_dolphin: bool) -> list[tuple[str, str]]:
     if split_dolphin:
         return [
-            ("dolphin_wrapped", "Run Dolphin phase linking and stitch"),
-            ("dolphin_unwrap", "Unwrap stitched interferograms"),
+            ("dolphin_wrapped", "Run Dolphin per-burst phase linking"),
+            ("dolphin_unwrap", "Stitch burst interferograms and unwrap"),
             ("dolphin_timeseries", "Run Dolphin timeseries inversion"),
         ]
     return [("dolphin", "Run Dolphin displacement processing")]

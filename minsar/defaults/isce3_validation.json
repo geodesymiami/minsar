@@ -15,7 +15,8 @@
         "{DIR}/**/*.tif"
       ],
       "dolphin_wrapped": [
-        "{DIR}/interferograms/*.int.tif"
+        "{DIR}/*/linked_phase/*.tif",
+        "{DIR}/*/interferograms/*.int.vrt"
       ],
       "dolphin_unwrap": [
         "{DIR}/unwrapped/*.unw.tif"
@@ -39,7 +40,8 @@
         "{DIR}/**/*.tif"
       ],
       "dolphin_wrapped": [
-        "{DIR}/interferograms/*.int.tif"
+        "{DIR}/*/linked_phase/*.tif",
+        "{DIR}/*/interferograms/*.int.vrt"
       ],
       "dolphin_unwrap": [
         "{DIR}/unwrapped/*.unw.tif"

@@ -6,13 +6,14 @@ Script: `minsar/scripts/resize_dolphin_unwrap_jobfile.py` (on `PATH` via `minsar
 
 ## Why
 
-Snaphu memory scales with image pixels (~420 bytes/pixel). The default `cpus // 4` concurrent unwrap jobs can exceed node RAM on large stitched products (e.g. Etna-scale stacks on `skx-dev`). By default, CSLC workflows split dolphin; the **dolphin_unwrap** run file calls this script at job start (after `dolphin_wrapped` produced stitched ifgs).
+Snaphu memory scales with image pixels (~420 bytes/pixel). The default `cpus // 4` concurrent unwrap jobs can exceed node RAM on large stitched products (e.g. Etna-scale stacks on `skx-dev`). By default, CSLC workflows split dolphin; the **dolphin_unwrap** run file stitches burst ifgs, then calls this script (after `dolphin_wrapped` produced per-burst linked phase).
 
 ## When it runs
 
-Inside `run_NN_dolphin_unwrap` (pixi heredoc), before `run_dolphin_unwrap.py`:
+Inside `run_NN_dolphin_unwrap` (pixi heredoc), after stitch and before `run_dolphin_unwrap.py`:
 
 ```bash
+run_dolphin_stitch.py --config dolphin_config.yaml
 N_UNWRAP=$(resize_dolphin_unwrap_jobfile.py .)
 run_dolphin_unwrap.py --n-parallel-jobs "$N_UNWRAP"
 ```
@@ -21,7 +22,7 @@ run_dolphin_unwrap.py --n-parallel-jobs "$N_UNWRAP"
 
 ## Size source
 
-First `dolphin/interferograms/*.int.tif` (stitched wrapped ifg from `dolphin_wrapped`).
+First `dolphin/interferograms/*.int.tif` (stitched wrapped ifg from `run_dolphin_stitch.py`).
 
 ## Formulas (snaphu)
 

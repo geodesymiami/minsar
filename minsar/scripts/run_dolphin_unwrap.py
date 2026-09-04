@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run dolphin unwrap only (after dolphin_wrapped produced stitched ifgs).
+"""Run dolphin unwrap only (after run_dolphin_stitch.py wrote stitched ifgs).
 
 Examples:
   run_dolphin_unwrap.py
@@ -24,7 +24,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--config",
         type=Path,
         default=Path("dolphin_config.yaml"),
-        help="Dolphin displacement config from dolphin_wrapped (default: dolphin_config.yaml)",
+        help="Dolphin displacement config (default: dolphin_config.yaml)",
     )
     parser.add_argument(
         "--n-parallel-jobs",
@@ -47,50 +47,50 @@ def main(iargs: list[str] | None = None) -> int:
     if not config_path.is_file():
         raise FileNotFoundError(f"dolphin config not found: {config_path}")
 
-    from minsar.utils.sweets_import import hide_argv_from_pyre
+    from minsar.utils.dolphin_stage_run import load_displacement_workflow, with_hidden_argv
 
-    with hide_argv_from_pyre():
-        from dolphin.workflows.config import DisplacementWorkflow
+    def _run() -> None:
         from dolphin.workflows import unwrapping
 
-    cfg = DisplacementWorkflow.from_yaml(config_path)
-    if inps.n_parallel_jobs is not None:
-        cfg.unwrap_options.n_parallel_jobs = int(inps.n_parallel_jobs)
-    cfg.unwrap_options.run_unwrap = True
+        cfg = load_displacement_workflow(config_path)
+        if inps.n_parallel_jobs is not None:
+            cfg.unwrap_options.n_parallel_jobs = int(inps.n_parallel_jobs)
+        cfg.unwrap_options.run_unwrap = True
 
-    ifg_dir = cfg.interferogram_network._directory
-    ifg_paths = _sorted_pairs(ifg_dir, "*.int.tif")
-    if not ifg_paths:
-        raise FileNotFoundError(f"No stitched *.int.tif under {ifg_dir}")
+        ifg_dir = cfg.interferogram_network._directory
+        ifg_paths = _sorted_pairs(ifg_dir, "*.int.tif")
+        if not ifg_paths:
+            raise FileNotFoundError(f"No stitched *.int.tif under {ifg_dir}. Run run_dolphin_stitch.py first.")
 
-    cor_paths: list[Path] = []
-    for ifg in ifg_paths:
-        # dolphin estimate_interferometric_correlations writes *.int.cor.tif
-        cor = ifg.with_name(ifg.name.replace(".int.tif", ".int.cor.tif"))
-        if not cor.is_file():
-            raise FileNotFoundError(f"Missing correlation file for {ifg.name}: {cor}")
-        cor_paths.append(cor)
+        cor_paths: list[Path] = []
+        for ifg in ifg_paths:
+            cor = ifg.with_name(ifg.name.replace(".int.tif", ".int.cor.tif"))
+            if not cor.is_file():
+                raise FileNotFoundError(f"Missing correlation file for {ifg.name}: {cor}")
+            cor_paths.append(cor)
 
-    temp_coh_files = sorted(ifg_dir.glob("temporal_coherence*.tif"))
-    if not temp_coh_files:
-        temp_coh_files = sorted(ifg_dir.glob("auto*.tif"))
-    avg_temp_coh = temp_coh_files[-1] if temp_coh_files else None
+        temp_coh_files = sorted(ifg_dir.glob("temporal_coherence*.tif"))
+        if not temp_coh_files:
+            temp_coh_files = sorted(ifg_dir.glob("auto*.tif"))
+        avg_temp_coh = temp_coh_files[-1] if temp_coh_files else None
 
-    similarity_files = sorted(ifg_dir.glob("*similarity*.tif"))
-    full_similarity = similarity_files[-1] if similarity_files else None
+        similarity_files = sorted(ifg_dir.glob("*similarity*.tif"))
+        full_similarity = similarity_files[-1] if similarity_files else None
 
-    row_looks, col_looks = cfg.phase_linking.half_window.to_looks()
-    nlooks = row_looks * col_looks
+        row_looks, col_looks = cfg.phase_linking.half_window.to_looks()
+        nlooks = row_looks * col_looks
 
-    unwrapping.run(
-        ifg_file_list=ifg_paths,
-        cor_file_list=cor_paths,
-        temporal_coherence_filename=avg_temp_coh,
-        similarity_filename=full_similarity,
-        nlooks=nlooks,
-        unwrap_options=cfg.unwrap_options,
-        mask_file=cfg.mask_file,
-    )
+        unwrapping.run(
+            ifg_file_list=ifg_paths,
+            cor_file_list=cor_paths,
+            temporal_coherence_filename=avg_temp_coh,
+            similarity_filename=full_similarity,
+            nlooks=nlooks,
+            unwrap_options=cfg.unwrap_options,
+            mask_file=cfg.mask_file,
+        )
+
+    with_hidden_argv(_run)
     return 0
 
 

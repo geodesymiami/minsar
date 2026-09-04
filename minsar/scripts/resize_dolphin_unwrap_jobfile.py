@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Print memory-aware dolphin unwrap n_parallel_jobs from stitched ifg size.
 
-Reads LENGTH x WIDTH from dolphin/interferograms/*.int.tif (after dolphin_wrapped).
+Reads LENGTH x WIDTH from dolphin/interferograms/*.int.tif (after run_dolphin_stitch.py).
 Uses the same snaphu memory model as resize_miaplpy_unwrap_jobfiles.py.
 
 Examples:
@@ -81,12 +81,12 @@ def find_representative_ifg(project_dir: Path, dolphin_dir: str = "dolphin") -> 
     ifg_dir = project_dir / dolphin_dir / "interferograms"
     if not ifg_dir.is_dir():
         raise FileNotFoundError(
-            f"Missing {ifg_dir}. Run dolphin_wrapped first."
+            f"Missing {ifg_dir}. Run run_dolphin_stitch.py first."
         )
     candidates = sorted(ifg_dir.glob("*.int.tif"))
     if not candidates:
         raise FileNotFoundError(
-            f"No stitched *.int.tif under {ifg_dir}. Run dolphin_wrapped first."
+            f"No stitched *.int.tif under {ifg_dir}. Run run_dolphin_stitch.py first."
         )
     return candidates[0]
 
