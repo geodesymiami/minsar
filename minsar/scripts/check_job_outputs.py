@@ -26,16 +26,21 @@ def job_output_canonical_path(path):
 
 def load_unfixable_partial_swath_dates(project_dir):
     """Dates listed by burst_download as missing a subswath after lon-extension repair."""
+    return set(load_unfixable_partial_swath_entries(project_dir).keys())
+
+
+def load_unfixable_partial_swath_entries(project_dir):
+    """Map YYYYMMDD -> full line from SLC/dates_unfixable_partial_swath.txt."""
     unfixable_file = os.path.join(project_dir, 'SLC', 'dates_unfixable_partial_swath.txt')
-    dates = set()
+    entries = {}
     if not os.path.isfile(unfixable_file):
-        return dates
+        return entries
     with open(unfixable_file) as f:
         for line in f:
             line = line.strip()
             if len(line) >= 8 and line[:8].isdigit():
-                dates.add(line[:8])
-    return dates
+                entries[line[:8]] = line
+    return entries
 
 
 def date_from_job_output_basename(path):
@@ -203,10 +208,16 @@ def main(iargs=None):
        # this covers missing frames: run_files are generated although a frame in the middle is missing
        if 'fullBurst_geo2rdr' in job_name:
           unfixable_swath_dates = load_unfixable_partial_swath_dates(project_dir)
+          unfixable_swath_entries = load_unfixable_partial_swath_entries(project_dir)
           for file in list(error_files):
               date = date_from_job_output_basename(file)
               if date in unfixable_swath_dates:
                   print('WARNING: partial-subswath date {} listed in SLC/dates_unfixable_partial_swath.txt: removing from run_files'.format(date))
+                  putils.log_removed_bursts_missing(
+                      os.path.join(project_dir, 'SLC'),
+                      unfixable_swath_entries.get(date, date),
+                      reason='removed at run_04 (partial subswath)',
+                  )
                   putils.run_remove_date_from_run_files(run_files_dir=run_files_dir, date=date, start_run_file=4)
                   for secondary_date_dir in (
                       os.path.join(project_dir, 'secondarys', date),
@@ -228,6 +239,13 @@ def main(iargs=None):
               for string in data_problems_strings_run_04:
                   if check_words_in_file(file, string):
                       date = file.split("_")[-2]
+                      missing_iw = putils.infer_missing_iw_from_error_file(file)
+                      log_line = '{} missing={}'.format(date, missing_iw) if missing_iw else date
+                      putils.log_removed_bursts_missing(
+                          os.path.join(project_dir, 'SLC'),
+                          log_line,
+                          reason='removed at run_04 (FileNotFoundError)',
+                      )
                       print( 'WARNING: \"' + string + '\" found in ' + os.path.basename(file) + ': removing ' + date + ' from run_files ')
                       putils.run_remove_date_from_run_files(run_files_dir=run_files_dir, date=date, start_run_file = 4 )
                       secondary_date_dir = project_dir + '/coreg_secondarys/' + date

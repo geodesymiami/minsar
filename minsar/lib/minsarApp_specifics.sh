@@ -869,6 +869,29 @@ function _remove_date_from_run_files_bash() {
 }
 
 ###########################################
+# Append removed date + missing bursts to SLC/removed_bursts_missing.txt (dedup by date).
+function log_removed_bursts_missing() {
+    local slc_dir="${1:-SLC}"
+    local line="$2"
+    local reason="${3:-}"
+    line="$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    [[ "$line" =~ ^[0-9]{8} ]] || return 0
+    local ymd="${line:0:8}"
+    if [[ "$line" != *missing=* ]]; then
+        line="${ymd} missing=unknown"
+    fi
+    local log_file="$slc_dir/removed_bursts_missing.txt"
+    if [[ -f "$log_file" ]] && grep -q "^${ymd} " "$log_file" 2>/dev/null; then
+        return 0
+    fi
+    if [[ -n "$reason" ]]; then
+        echo "$line  # $reason" >> "$log_file"
+    else
+        echo "$line" >> "$log_file"
+    fi
+}
+
+###########################################
 # Remove dates listed in SLC/dates_unfixable_partial_swath.txt from SLC and any
 # stack products/run_files already created (e.g. re-run with --start ifgram).
 function remove_unfixable_partial_swath_dates() {
@@ -883,6 +906,7 @@ function remove_unfixable_partial_swath_dates() {
         ymd="$(echo "$line" | sed -E 's/^([0-9]{8}).*/\1/')"
         [[ "$ymd" =~ ^[0-9]{8}$ ]] || continue
         echo "Removing partial-subswath date $ymd (see $unfixable_file)"
+        log_removed_bursts_missing "$slc_dir" "$line" "excluded from stack (partial subswath)"
 
         shopt -s nullglob
         local f

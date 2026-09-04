@@ -34,7 +34,7 @@ It inspects each `SLC/*.SAFE` against the **original** AOI bbox (`extent_orig`):
 2. **Azimuth trim / homogenize** — re-run `burst2stack` for dates with extra azimuth bursts or inconsistent burst counts using `extent_final` (lon from `extent_stack`, lat from `extent_orig`).
 3. **`check_file_size.py SLC`** — report remaining burst-count outliers.
 
-Dates still missing a subswath after max lon extension are listed in **`SLC/dates_unfixable_partial_swath.txt`**, then **removed from `SLC/`** automatically (same as AOI-pruned dates). Before stack steps, **`minsarApp.bash`** also removes those dates from **`secondarys/`**, **`coreg_secondarys/`**, matching **`configs/`** / **`baselines/`**, and prunes **`run_files/`** (from run step 2 onward) when present.
+Dates still missing a subswath after max lon extension are listed in **`SLC/dates_unfixable_partial_swath.txt`**, then **removed from `SLC/`** automatically (same as AOI-pruned dates). Each removed date is also appended to **`SLC/removed_bursts_missing.txt`** with the missing IW subswath(s), e.g. `20260320 missing=IW2`. Before stack steps, **`minsarApp.bash`** also removes those dates from **`secondarys/`**, **`coreg_secondarys/`**, matching **`configs/`** / **`baselines/`**, and prunes **`run_files/`** (from run step 2 onward) when present.
 
 Skip with **`--no-check-subswath-coverage`**. Lon repair requires re-fetching the ASF listing (do not use `--skip-listing`).
 
@@ -42,6 +42,7 @@ Skip with **`--no-check-subswath-coverage`**. Lon repair requires re-fetching th
 
 | File | Source | Meaning |
 |------|--------|--------|
+| `SLC/removed_bursts_missing.txt` | `burst_download.bash`, `minsarApp.bash`, `check_job_outputs.py` | Dates removed from the stack because required IW subswath(s) were missing (`YYYYMMDD missing=IWn`). |
 | `SLC/dates_removed.txt` | `check_SAFE_completeness.py` | Incomplete `.SAFE` directories (missing required internal files), not geometric AOI coverage. |
 | `removed_dates_*.txt` | `check_burst2safe_job_outputs.py` | Dates inferred from burst2safe stderr problem strings; deletes matching paths under the job directory. |
 

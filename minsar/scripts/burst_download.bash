@@ -551,6 +551,26 @@ _remove_slc_products_for_ymd() {
     shopt -u nullglob
 }
 
+_log_removed_bursts_missing() {
+    local line="$1"
+    local reason="${2:-}"
+    line="$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    [[ "$line" =~ ^[0-9]{8} ]] || return 0
+    local ymd="${line:0:8}"
+    if [[ "$line" != *missing=* ]]; then
+        line="${ymd} missing=unknown"
+    fi
+    local log_file="$slc_dir/removed_bursts_missing.txt"
+    if [[ -f "$log_file" ]] && grep -q "^${ymd} " "$log_file" 2>/dev/null; then
+        return 0
+    fi
+    if [[ -n "$reason" ]]; then
+        echo "$line  # $reason" >> "$log_file"
+    else
+        echo "$line" >> "$log_file"
+    fi
+}
+
 _remove_dates_from_coverage_file() {
     local file="$1"
     local reason="$2"
@@ -560,6 +580,7 @@ _remove_dates_from_coverage_file() {
         ymd="$(echo "$line" | sed -E 's/^([0-9]{8}).*/\1/')"
         [[ "$ymd" =~ ^[0-9]{8}$ ]] || continue
         echo "Removing SLC products for date $ymd ($reason)"
+        _log_removed_bursts_missing "$line" "$reason"
         _remove_slc_products_for_ymd "$ymd"
     done < "$file"
 }
