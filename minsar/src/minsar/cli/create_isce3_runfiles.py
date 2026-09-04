@@ -611,8 +611,9 @@ def _dolphin_body_commands(
     yaml_name: str,
     embed_config: bool,
     prefix: list[str] | None = None,
+    wrapped_only: bool = False,
 ) -> list[str]:
-    """cleanup, optional dolphin config, dolphin run."""
+    """cleanup, optional dolphin config, then dolphin run (or wrapped-only)."""
     commands = list(prefix or [])
     commands.append(f"cleanup_dolphin_ministacks.py {dolphin_dir}")
     if embed_config:
@@ -629,7 +630,10 @@ def _dolphin_body_commands(
                 dolphin_dir=dolphin_dir,
             )
         )
-    commands.append(f"dolphin run {yaml_name}")
+    if wrapped_only:
+        commands.append(f"run_dolphin_wrapped.py --config {yaml_name}")
+    else:
+        commands.append(f"dolphin run {yaml_name}")
     return commands
 
 
@@ -643,6 +647,7 @@ def _cslc_dolphin_commands(
     dolphin_dir: str = DEFAULT_DOLPHIN_DIR,
     yaml_name: str = "dolphin_config.yaml",
     embed_config: bool = True,
+    wrapped_only: bool = False,
 ) -> list[str]:
     """Shell commands for CSLC dolphin config + run (worker flags set at generate time)."""
     return _dolphin_body_commands(
@@ -655,6 +660,7 @@ def _cslc_dolphin_commands(
         dolphin_dir=dolphin_dir,
         yaml_name=yaml_name,
         embed_config=embed_config,
+        wrapped_only=wrapped_only,
     )
 
 
@@ -682,6 +688,7 @@ def _cslc_dolphin_wrapped_commands(
         dolphin_dir=dolphin_dir,
         yaml_name=yaml_name,
         embed_config=embed_config,
+        wrapped_only=True,
     )
 
 
@@ -1571,6 +1578,7 @@ def _sweets_stage_bodies(
                 yaml_name=yaml_name,
                 embed_config=embed_config,
                 prefix=[geom],
+                wrapped_only=True,
             )
             bodies["dolphin_wrapped"] = "\n".join(wrapped) + "\n"
             bodies["dolphin_unwrap"] = unwrap_cmds
