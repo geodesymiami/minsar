@@ -1426,8 +1426,17 @@ def compute_rerun_walltime_and_queue(job_file_path, config_file='job_defaults.cf
 
 def run_remove_date_from_run_files(run_files_dir, date, start_run_file):
     """ removes dates from run_files """
-    run_files=[]
-    run_files = glob.glob(run_files_dir + '/run_*_*[0-9]')
+    import re
+    run_files = []
+    for path in glob.glob(run_files_dir + '/run_[0-9][0-9]_*'):
+        base = os.path.basename(path)
+        if base.endswith('.job') or base.endswith('.o') or base.endswith('.e'):
+            continue
+        if base.endswith('.time_log') or 'error_matches' in base:
+            continue
+        if re.search(r'run_[0-9][0-9]_.*_[0-9]{8}_', base):
+            continue
+        run_files.append(path)
     run_files = natsorted(run_files)
 
     # remove run_files with index < start_run_file

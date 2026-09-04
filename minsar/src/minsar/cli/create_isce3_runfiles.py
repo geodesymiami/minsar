@@ -481,7 +481,7 @@ def _dolphin_preset_cli_flags(preset: str) -> str:
     spec = DOLPHIN_PRESETS[preset]
     strides = spec["strides"]
     half_window = spec["half_window"]
-    parts: list[str] = ["--unwrap-options.run-interpolation true"]
+    parts: list[str] = ["--unwrap-options.run-interpolation"]
     if strides is not None:
         sy, sx = strides
         parts.append(f"--sy {sy} --sx {sx}")

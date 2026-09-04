@@ -778,6 +778,8 @@ if [[ $jobfiles_flag == "1" ]]; then
        run_command "run_download_orbits_asf.bash"
     fi
 
+    remove_unfixable_partial_swath_dates "$download_dir"
+
     # clean directory for processing and create jobfiles
     pwd=`pwd`; echo "DIR: $pwd"
     run_command "run_clean_dir.bash $PWD --runfiles --ifgram --mintpy --miaplpy"

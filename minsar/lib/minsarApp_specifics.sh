@@ -909,6 +909,16 @@ function remove_unfixable_partial_swath_dates() {
 
         if [[ -d run_files ]]; then
             _remove_date_from_run_files_bash run_files "$ymd" 2
+            shopt -s nullglob
+            for f in run_files/run_*_"${ymd}"_*.{e,o,time_log}; do
+                rm -f "$f"
+            done
+            if [[ -d run_files/stdout_run_04_fullBurst_geo2rdr ]]; then
+                for f in run_files/stdout_run_04_fullBurst_geo2rdr/*"${ymd}"*; do
+                    rm -f "$f"
+                done
+            fi
+            shopt -u nullglob
         fi
     done < "$unfixable_file"
 }

@@ -318,4 +318,20 @@ def passthrough_cli_flags(tokens: list[str]) -> str:
     """Shell-quoted leftover dolphin config flags."""
     import shlex
 
-    return " ".join(shlex.quote(token) for token in tokens)
+    out: list[str] = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        nxt = tokens[index + 1] if index + 1 < len(tokens) else None
+        if (
+            nxt is not None
+            and not nxt.startswith("--")
+            and _norm_key(token) in TOKEN_BOOL_ON
+            and nxt.strip().lower() in {"true", "1", "yes"}
+        ):
+            out.append(token)
+            index += 2
+            continue
+        out.append(token)
+        index += 1
+    return " ".join(shlex.quote(token) for token in out)
