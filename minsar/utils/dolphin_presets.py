@@ -5,20 +5,29 @@ from __future__ import annotations
 import argparse
 import re
 from pathlib import Path
+
+# Default half-window / stride when --preset standard (also CLI help defaults).
+DEFAULT_HALF_WINDOW: tuple[int, int] = (6, 12)
+DEFAULT_STRIDES: tuple[int, int] = (3, 6)
+DEFAULT_PRESET = "standard"
+
 # auto: dolphin package defaults (no --sy/--sx/--hwy/--hwx on CLI).
+# disp-s1: OPERA DISP-S1 base algorithm_parameters (tools/disp-s1/configs).
 DOLPHIN_PRESETS: dict[str, dict[str, tuple[int, int] | None]] = {
     "auto": {"strides": None, "half_window": None},
-    "standard": {"strides": (3, 6), "half_window": (8, 16)},
-    "dry": {"strides": (3, 6), "half_window": (6, 12)},
-    "wet": {"strides": (3, 6), "half_window": (9, 18)},
-    "arctic": {"strides": (3, 6), "half_window": (9, 19)},
+    "standard": {"strides": DEFAULT_STRIDES, "half_window": DEFAULT_HALF_WINDOW},
+    "dry": {"strides": DEFAULT_STRIDES, "half_window": (5, 11)},
+    "wet": {"strides": DEFAULT_STRIDES, "half_window": (9, 18)},
+    "arctic": {"strides": DEFAULT_STRIDES, "half_window": (9, 19)},
+    "disp-s1": {"strides": DEFAULT_STRIDES, "half_window": (8, 16)},
 }
 
 DOLPHIN_PRESET_CHOICES = tuple(DOLPHIN_PRESETS)
 
 DOLPHIN_PRESET_HELP = (
-    "{auto, standard, dry, wet, arctic}, default: auto. "
-    "Strides: auto 1x1, others 3x6. hw: 7x14, 8x16, 6x12, 9x18, 9x19."
+    "{auto, standard, dry, wet, arctic, disp-s1}, default: standard. "
+    "hw: auto 7x14, standard 6x12, dry 5x11, wet 9x18, arctic 9x19, disp-s1 8x16. "
+    "stride: auto 1x1, others 3x6 (override with --stride)."
 )
 
 NO_PRESET_NAMING_HELP = (
@@ -43,6 +52,8 @@ def normalize_dolphin_preset(value: str) -> str:
 def dolphin_method_string(preset: str) -> str:
     """HE5 post_processing_method label for a dolphin CSLC preset (e.g. dolphinStandard)."""
     key = normalize_dolphin_preset(preset)
+    if key == "disp-s1":
+        return "dolphinDispS1"
     return "dolphin" + key.capitalize()
 
 
@@ -54,6 +65,81 @@ def normalize_method_string(value: str) -> str:
             f"invalid method-string {value!r}; use alphanumeric labels like dolphin, dolphinAuto, dolphinStandard"
         )
     return token
+
+
+def half_window_yx_from_mapping(data: dict) -> tuple[int, int] | None:
+    """Return (y, x) from phase_linking.half_window, or None."""
+    pl = data.get("phase_linking")
+    if not isinstance(pl, dict):
+        return None
+    hw = pl.get("half_window")
+    if not isinstance(hw, dict):
+        return None
+    if "y" not in hw or "x" not in hw:
+        return None
+    return int(hw["y"]), int(hw["x"])
+
+
+def strides_yx_from_mapping(data: dict) -> tuple[int, int] | None:
+    """Return (y, x) from output_options.strides, or None."""
+    out = data.get("output_options")
+    if not isinstance(out, dict):
+        return None
+    strides = out.get("strides")
+    if not isinstance(strides, dict):
+        return None
+    if "y" not in strides or "x" not in strides:
+        return None
+    return int(strides["y"]), int(strides["x"])
+
+
+def resolve_half_window_strides(
+    preset: str,
+    *,
+    half_window: tuple[int, int] | None = None,
+    strides: tuple[int, int] | None = None,
+    imported: dict | None = None,
+) -> tuple[tuple[int, int] | None, tuple[int, int] | None]:
+    """Resolve effective (half_window_yx, strides_yx).
+
+    Order: preset → imported YAML → explicit CLI overrides.
+    None means omit on dolphin CLI (package defaults for ``auto``).
+    """
+    key = normalize_dolphin_preset(preset)
+    spec = DOLPHIN_PRESETS[key]
+    hw = spec["half_window"]
+    st = spec["strides"]
+    if imported is not None:
+        imp_hw = half_window_yx_from_mapping(imported)
+        imp_st = strides_yx_from_mapping(imported)
+        if imp_hw is not None:
+            hw = imp_hw
+        if imp_st is not None:
+            st = imp_st
+    if half_window is not None:
+        hw = half_window
+    if strides is not None:
+        st = strides
+    return hw, st
+
+
+def dolphin_window_cli_flags(
+    half_window: tuple[int, int] | None,
+    strides: tuple[int, int] | None,
+    *,
+    run_interpolation: bool = True,
+) -> str:
+    """CLI flags for run_interpolation plus optional strides and half-window."""
+    parts: list[str] = []
+    if run_interpolation:
+        parts.append("--unwrap-options.run-interpolation")
+    if strides is not None:
+        sy, sx = strides
+        parts.append(f"--sy {sy} --sx {sx}")
+    if half_window is not None:
+        hwy, hwx = half_window
+        parts.append(f"--hwy {hwy} --hwx {hwx}")
+    return " ".join(parts)
 
 
 _OPERA_BURST_TAG_RE = re.compile(r"T\d+-\d+-IW\d+", re.IGNORECASE)

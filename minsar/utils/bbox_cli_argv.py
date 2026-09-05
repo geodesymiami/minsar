@@ -101,9 +101,10 @@ def fix_argv_for_negative_bbox_sn_we(
     Default (multiple_initial_positionals=False): same as convert_bbox.py — move the bbox
     after options and prefix with '--' so one trailing positional works.
 
-    multiple_initial_positionals=True: for CLIs with two leading positionals (AOI then name),
-    insert '--' before the bbox without swapping AOI/name. If options appear after the name
-    (e.g. ``AOI name --quick-run 2026``), those are moved before ``--`` so argparse still
+    multiple_initial_positionals=True: for CLIs with two or more leading positionals
+    (AOI then name, optional dolphin config), insert '--' before the bbox without
+    swapping those positionals. If options appear after the name (e.g.
+    ``AOI name --quick-run 2026``), those are moved before ``--`` so argparse still
     parses them as options.
     """
     argv = list(argv)
@@ -141,12 +142,17 @@ def fix_argv_for_negative_bbox_sn_we(
             if multiple_initial_positionals:
                 if i + 1 >= n:
                     return argv[:i] + ["--"] + argv[i:]
-                bbox, name = argv[i], argv[i + 1]
-                tail = argv[i + 2 :]
+                # Keep AOI, NAME, and any further leading positionals (e.g. dolphin_config).
+                pos: list[str] = [argv[i]]
+                j = i + 1
+                while j < n and not str(argv[j]).startswith("-"):
+                    pos.append(argv[j])
+                    j += 1
+                tail = argv[j:]
                 opt_first, rest = _drain_known_options(
                     tail, one=one, two=two, flagset=flagset
                 )
-                return argv[:i] + opt_first + ["--", bbox, name] + rest
+                return argv[:i] + opt_first + ["--"] + pos + rest
             # Put all tokens AFTER the bbox first, then '--' + bbox, so trailing
             # options (e.g. --platform S1) are not swallowed as positionals.
             return argv[:i] + argv[i + 1 :] + ["--", a]

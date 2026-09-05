@@ -12,8 +12,8 @@ ISCE3_RUN_DIR_NAME="run_files_isce3"
 
 print_help() {
     cat <<EOF
-usage: ${SCRIPT_NAME} TEMPLATE [OPTIONS]
-       ${SCRIPT_NAME} AOI NAME --flight-dir {asc,desc} [OPTIONS]
+usage: ${SCRIPT_NAME} TEMPLATE [DOLPHIN_CONFIG] [OPTIONS]
+       ${SCRIPT_NAME} AOI NAME [DOLPHIN_CONFIG] --flight-dir {asc,desc} [OPTIONS]
 
 Run an ISCE3 SAFE/CSLC/DISP workflow: write configs and run/job files, then submit.
 Always pass a MinSAR template or AOI plus project name. Science flags alone are invalid.
@@ -21,6 +21,7 @@ Use --start-date/--end-date for dates; --start/--end/--dostep are processing ste
 Leftover --section.option flags go to dolphin config. Use --dolphin-dir, not --work-directory.
 Processing steps are [download, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps]
 Additional steps for data-type safe, disp-S1: create_cslc, reformat_disp respectively
+Optional DOLPHIN_CONFIG is a .yaml/.yml or OPERA DISP-S1 .nc with algorithm parameters.
 
 options:
   -h, --help            show this help
@@ -37,7 +38,9 @@ options:
                         source DIR for YAML comparison and interferogram inputs (default: dolphin)
   --unwrap-method NAME  shortcut for --unwrap-options.unwrap-method
   --copy-dolphin-inputs copy interferograms/unwrapped instead of symlink
-  --preset NAME         dolphin preset (auto, standard, dry, wet, arctic)
+  --preset NAME         auto, standard, dry, wet, arctic, disp-s1 (default: standard)
+  --half-window Y X     phase-linking half-window (default from preset; standard 6 12)
+  --stride Y X          output strides (default from preset; standard 3 6)
   --backend BACKEND     auto, local, or slurm (default: auto)
   --sleep SECS          sleep seconds before running
   --dry-run             print the generator plan without writing files or submitting
@@ -48,10 +51,15 @@ Examples:
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --sleep 30
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --no-run
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --data-type cslc --start download
+  ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --data-type cslc --preset dry --stride 2 4
+  ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --data-type cslc --preset disp-s1
+  ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template dolphin_config.yaml --data-type cslc
+  ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template OPERA_L3_DISP-S1.nc --data-type cslc
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --unwrap-options.run-interpolation true
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --start dolphin_unwrap --unwrap-method whirlwind
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --start ingest_insarmaps
   ${SCRIPT_NAME} 19.45:19.5,-154.915:-154.852 HawaiiPuna --flight-dir desc
+  ${SCRIPT_NAME} 19.45:19.5,-154.915:-154.852 HawaiiPuna dolphin_config.yaml --flight-dir desc --data-type cslc
   ${SCRIPT_NAME} 19.45:19.5,-154.915:-154.852 HawaiiPuna --flight-dir desc --unwrap-options.run-interpolation true
 EOF
 }
@@ -68,6 +76,15 @@ is_consume_one() {
             ;;
     esac
     [[ "$1" == --*.* ]] && return 0
+    return 1
+}
+
+is_consume_two() {
+    case "$1" in
+        --half-window|--stride)
+            return 0
+            ;;
+    esac
     return 1
 }
 
@@ -91,7 +108,7 @@ is_download_step() {
 
 is_science_token() {
     case "$1" in
-        --unwrap-method|--dolphin-dir|--from-dolphin-dir|--copy-dolphin-inputs|--ministack-size)
+        --unwrap-method|--dolphin-dir|--from-dolphin-dir|--copy-dolphin-inputs|--ministack-size|--half-window|--stride|--preset)
             return 0
             ;;
     esac
@@ -264,6 +281,10 @@ while [[ $# -gt 0 ]]; do
             if is_flag "$1"; then
                 gen_args+=("$1")
                 shift
+            elif is_consume_two "$1"; then
+                [[ -n "${2:-}" && "$2" != --* && -n "${3:-}" && "$3" != --* ]] || die "$1 requires Y X"
+                gen_args+=("$1" "$2" "$3")
+                shift 3
             elif is_consume_one "$1" || [[ "$1" == --* ]]; then
                 if [[ -n "${2:-}" && "$2" != --* ]]; then
                     gen_args+=("$1" "$2")
@@ -288,10 +309,25 @@ if [[ -n "$app_dostep" && ( -n "$app_start" || -n "$app_end" ) ]]; then
     die "--dostep cannot be combined with --start or --end"
 fi
 
+is_dolphin_config_positional() {
+    case "$1" in
+        *.yaml|*.yml|*.nc|*.YAML|*.YML|*.NC)
+            return 0
+            ;;
+    esac
+    return 1
+}
+
 if [[ "${#positionals[@]}" -eq 1 ]]; then
     template="${positionals[0]}"
     if [[ ! -f "$template" && "$template" != *.template ]]; then
         die "AOI input requires a project NAME (and --flight-dir)"
+    fi
+    project="$(basename "$template" .template)"
+elif [[ "${#positionals[@]}" -eq 2 ]] && is_dolphin_config_positional "${positionals[1]}"; then
+    template="${positionals[0]}"
+    if [[ ! -f "$template" && "$template" != *.template ]]; then
+        die "AOI input requires a project NAME before dolphin config"
     fi
     project="$(basename "$template" .template)"
 else
