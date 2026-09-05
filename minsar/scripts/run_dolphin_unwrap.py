@@ -48,8 +48,10 @@ def main(iargs: list[str] | None = None) -> int:
         raise FileNotFoundError(f"dolphin config not found: {config_path}")
 
     from minsar.utils.dolphin_stage_run import load_displacement_workflow, with_hidden_argv
+    from minsar.utils.unwrap_memory import fit_snaphu_tiling
 
     def _run() -> None:
+        from dolphin.io import get_raster_xysize
         from dolphin.workflows import unwrapping
 
         cfg = load_displacement_workflow(config_path)
@@ -76,6 +78,26 @@ def main(iargs: list[str] | None = None) -> int:
 
         similarity_files = sorted(ifg_dir.glob("*similarity*.tif"))
         full_similarity = similarity_files[-1] if similarity_files else None
+
+        width, length = get_raster_xysize(ifg_paths[0])
+        snaphu_opts = cfg.unwrap_options.snaphu_options
+        ntiles, overlap = fit_snaphu_tiling(
+            int(length),
+            int(width),
+            tuple(snaphu_opts.ntiles),
+            tuple(snaphu_opts.tile_overlap),
+        )
+        if ntiles != tuple(snaphu_opts.ntiles) or overlap != tuple(snaphu_opts.tile_overlap):
+            print(
+                f"Adjusted snaphu tiling for ifg {length}x{width}: "
+                f"ntiles {tuple(snaphu_opts.ntiles)}->{ntiles}, "
+                f"overlap {tuple(snaphu_opts.tile_overlap)}->{overlap}",
+                file=sys.stderr,
+            )
+            snaphu_opts.ntiles = ntiles
+            snaphu_opts.tile_overlap = overlap
+            if ntiles == (1, 1):
+                snaphu_opts.n_parallel_tiles = 1
 
         row_looks, col_looks = cfg.phase_linking.half_window.to_looks()
         nlooks = row_looks * col_looks
