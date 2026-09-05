@@ -10,9 +10,9 @@ from pathlib import Path
 from typing import Any
 
 DESCRIPTION = (
-    "Load a dolphin_config.yaml or extract algorithm YAML from an OPERA DISP-S1 .nc, "
-    "and merge algorithm fields into a generated Dolphin config "
-    "(excluding ministack-related and MinSAR-owned fields)."
+    "Load a dolphin_config.yaml or extract Dolphin YAML from an OPERA DISP-S1 .nc "
+    "(prefers metadata/dolphin_workflow_config), and merge algorithm fields into a "
+    "generated Dolphin config (excluding ministack-related and MinSAR-owned fields)."
 )
 EXAMPLE = """Examples:
   merge_dolphin_algo_config.py --target dolphin_config.yaml --from algo.yaml --hwy 6 --hwx 12 --sy 3 --sx 6
@@ -106,14 +106,13 @@ def load_algo_mapping_from_yaml(path: Path) -> dict[str, Any]:
 
 
 def load_algo_mapping_from_nc(path: Path) -> dict[str, Any]:
-    """Extract algorithm YAML from an OPERA DISP-S1 NetCDF and parse it."""
-    from minsar.utils.extract_dolphin_config_yaml import _rank, find_config_candidates
+    """Extract Dolphin YAML from an OPERA DISP-S1 NetCDF and parse it.
 
-    candidates = find_config_candidates(path)
-    if not candidates:
-        raise ValueError(f"no algorithm_parameters_yaml (or similar) in {path}")
-    candidates.sort(key=lambda item: _rank(item[0], item[1]))
-    _name, text = candidates[0]
+    Prefers ``metadata/dolphin_workflow_config`` when available.
+    """
+    from minsar.utils.extract_dolphin_config_yaml import extract_config_yaml
+
+    _name, text = extract_config_yaml(path)
     return _load_yaml_mapping(text)
 
 

@@ -21,7 +21,7 @@ Use --start-date/--end-date for dates; --start/--end/--dostep are processing ste
 Leftover --section.option flags go to dolphin config. Use --dolphin-dir, not --work-directory.
 Processing steps are [download, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps]
 Additional steps for data-type safe, disp-S1: create_cslc, reformat_disp respectively
-Optional DOLPHIN_CONFIG is a .yaml/.yml or OPERA DISP-S1 .nc with algorithm parameters.
+Optional DOLPHIN_CONFIG is a .yaml/.yml or OPERA DISP-S1 .nc (prefers metadata/dolphin_workflow_config).
 
 options:
   -h, --help            show this help

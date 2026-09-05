@@ -901,7 +901,10 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "dolphin_config",
         nargs="?",
-        help="optional dolphin_config.yaml/.yml or OPERA DISP-S1 .nc with algorithm YAML",
+        help=(
+            "optional dolphin_config.yaml/.yml, or OPERA DISP-S1 .nc "
+            "(uses metadata/dolphin_workflow_config when present)"
+        ),
     )
     parser.add_argument("--safe", action="store_true", help="SAFE workflow (same as --data-type safe)")
     parser.add_argument("--cslc", action="store_true", help="CSLC workflow (same as --data-type cslc)")
@@ -2074,6 +2077,11 @@ def main(iargs: list[str] | None = None) -> int:
             config_path = Path(args.dolphin_config).expanduser().resolve()
             if not config_path.is_file():
                 raise ValueError(f"dolphin config not found: {config_path}")
+            if config_path.suffix.lower() == ".nc":
+                from minsar.utils.extract_dolphin_config_yaml import extract_config_yaml
+
+                src_name, _ = extract_config_yaml(config_path)
+                print(f"Using OPERA DISP config from NetCDF dataset: {src_name}")
             imported_algo = load_algo_mapping(config_path)
         args.half_window_yx, args.strides_yx = resolve_half_window_strides(
             args.preset,
