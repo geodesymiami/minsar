@@ -80,7 +80,6 @@ PIXI_STAGES = frozenset({
     "dolphin_wrapped",
     "dolphin_unwrap",
     "dolphin_timeseries",
-    "disp_s1_process",
 })
 DOLPHIN_SPLIT_STAGES = ("dolphin_wrapped", "dolphin_unwrap", "dolphin_timeseries")
 # CSLC workflow steps outside the numbered run_NN_* sequence (--dostep uses stage name).
@@ -92,8 +91,7 @@ PROFILE_ALIASES = {
     "disp_s1_process": "run_disp_s1_process",
 }
 DISP_S1_PRODUCE_DIR = "disp_s1_produce"
-DISP_S1_PROCESS_SCRIPT = '$MINSAR_HOME/tools/disp-s1/scripts/disp_s1_process.py'
-DISP_S1_SRC = '$MINSAR_HOME/tools/disp-s1/src'
+DISP_S1_PROCESS_CMD = "disp_s1_process.py"
 DEFAULT_DISP_S1_MINISTACK_SIZE = 15
 # half_window is (y, x); strides is (y, x). See minsar.utils.dolphin_presets.
 IMPORTED_ALGO_YAML = ".minsar_imported_algo.yaml"
@@ -470,6 +468,21 @@ def _pixi_run_script(commands: str) -> str:
         f"{body}\n"
         "\n"
         "ISCE3_PIXI_BODY\n"
+    )
+
+
+def _disp_s1_run_script(commands: str) -> str:
+    """Run disp_s1_process in the disp-s1 conda env (not SWEETS pixi)."""
+    body = _strip_bash_script_header(commands)
+    if not body:
+        body = "true"
+    return (
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'export PATH="${MINSAR_HOME}/minsar/scripts:${PATH}"\n'
+        'source "${MINSAR_HOME}/minsar/scripts/activate_disp_s1_env.bash"\n'
+        "\n"
+        f"{body}\n"
     )
 
 
@@ -1471,7 +1484,9 @@ def _create_files(
             profile.num_threads,
         )
         run_command = command
-        if name in PIXI_STAGES and profile.execution_mode != "launcher-task-list":
+        if name == "disp_s1_process":
+            run_command = _disp_s1_run_script(command)
+        elif name in PIXI_STAGES and profile.execution_mode != "launcher-task-list":
             if name in _DOLPHIN_PIXI_PLOT_TAIL_STAGES:
                 run_command = _pixi_run_script_with_tail(command, _dolphin_plot_commands(dolphin_dir))
             else:
@@ -1854,13 +1869,6 @@ def _extent_from_aoi(aoi: str) -> str:
     return f"{west},{south} : {east},{north}"
 
 
-def _resolve_work_project(args: argparse.Namespace, *, input_is_template: bool, template_project: str) -> str:
-    """Scratch project directory name: CLI NAME for AOI; template stem when INPUT is a file."""
-    if args.name and not input_is_template:
-        return args.name.strip()
-    return template_project
-
-
 def _stage_queue(name: str, profile: ResourceProfile, args: argparse.Namespace) -> str:
     """Queue for a stage from job_defaults queue_class and --queue / --long-queue."""
     return args.queue if profile.queue_class == "short" else args.long_queue
@@ -1868,6 +1876,8 @@ def _stage_queue(name: str, profile: ResourceProfile, args: argparse.Namespace) 
 
 def _run_file_uses_raw_body(name: str, profile: ResourceProfile, run_command: str) -> bool:
     """True when the run file body is written verbatim (pixi script, task list, or existing bash script)."""
+    if name == "disp_s1_process":
+        return True
     if profile.execution_mode == "launcher-task-list":
         return True
     if name in PIXI_STAGES:
@@ -1903,9 +1913,7 @@ def _disp_s1_process_command(
     frame_id = _resolve_disp_s1_frame_id(context)
     extent = _extent_from_aoi(str(context["aoi"]))
     ms = int(ministack_size) if ministack_size is not None else DEFAULT_DISP_S1_MINISTACK_SIZE
-    return (
-        f"PYTHONPATH={DISP_S1_SRC}:${{PYTHONPATH:-}} "
-        f"python {DISP_S1_PROCESS_SCRIPT}"
+    args = (
         f" --cslc-dir {cslc_dir}"
         f" --work-dir {work_subdir}"
         f" --frame-id {frame_id}"
@@ -1914,6 +1922,9 @@ def _disp_s1_process_command(
         f" --ministack-size {ms}"
         f" --buffer 500"
         f" --stages process"
+    )
+    return (
+        f"{DISP_S1_PROCESS_CMD}{args}"
     )
 
 
@@ -2252,11 +2263,6 @@ def main(iargs: list[str] | None = None) -> int:
             context = _aoi_context(args)
         else:
             context = _template_context(_create_template_from_aoi(args).resolve(), args)
-        context["project"] = _resolve_work_project(
-            args,
-            input_is_template=input_is_template,
-            template_project=str(context["project"]),
-        )
         config = args.config or Path(__file__).resolve().parents[3] / "defaults/job_defaults_isce3.cfg"
         profiles = _read_profiles(config)
         scratch_dir = Path(os.environ["SCRATCHDIR"]).expanduser().resolve()

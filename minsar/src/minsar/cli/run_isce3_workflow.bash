@@ -60,9 +60,9 @@ Examples:
   ${SCRIPT_NAME} run_files_isce3 --start download --end download
   ${SCRIPT_NAME} run_files_isce3 --start dolphin_unwrap --end ingest_insarmaps
   ${SCRIPT_NAME} run_files_isce3 --dostep ingest_insarmaps
-  ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaFalkdisp/run_files_isce3 --dostep download_cslc
-  ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaFalkdisp/run_files_isce3 --dostep disp_s1_process
-  ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaFalkdisp/run_files_isce3 --dostep reformat_disp
+  ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaFalkdispSenD87/run_files_isce3 --dostep download_cslc
+  ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaFalkdispSenD87/run_files_isce3 --dostep disp_s1_process
+  ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaFalkdispSenD87/run_files_isce3 --dostep reformat_disp
   ${SCRIPT_NAME} run_files_isce3 --backend local
   ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaSenD87/run_files_isce3 --start dolphin_wrapped
 EOF
