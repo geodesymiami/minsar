@@ -14,6 +14,10 @@ from minsar.utils.isce3_dolphin_experiment import read_dolphin_dir_sidecar
 
 DEFAULT_VALIDATION_FILE = Path(__file__).resolve().parents[3] / "defaults/isce3_validation.json"
 _JOB_STEM_RE = re.compile(r"^run_(\d{2})_(.+)$")
+_UNNUMBERED_JOB_STEMS = {
+    "run_disp_s1_process": "disp_s1_process",
+    "run_reformat_disp": "reformat_disp",
+}
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -44,6 +48,9 @@ def _canonical_step_name(rest: str) -> str:
 
 def _parse_job_path(job_path: Path) -> tuple[int, str, str]:
     stem = job_path.stem if job_path.suffix == ".job" else job_path.name
+    sidecar_name = _UNNUMBERED_JOB_STEMS.get(stem)
+    if sidecar_name is not None:
+        return 0, sidecar_name, stem
     match = _JOB_STEM_RE.match(stem)
     if not match:
         raise ValueError(f"invalid job filename: {job_path}")
@@ -71,8 +78,12 @@ def _discover_steps(work_dir: Path) -> list[dict[str, object]]:
         if number not in steps_by_number:
             steps_by_number[number] = {"number": number, "name": name, "run_file": stem}
     steps = list(steps_by_number.values())
+    for stem, name in _UNNUMBERED_JOB_STEMS.items():
+        job_file = run_dir / f"{stem}.job"
+        if job_file.is_file() and not any(str(step["name"]) == name for step in steps):
+            steps.append({"number": 0, "name": name, "run_file": stem})
     if not steps:
-        raise ValueError(f"no run_NN_*.job files found in {run_dir}")
+        raise ValueError(f"no ISCE3 job files found in {run_dir}")
     return steps
 
 

@@ -212,6 +212,15 @@ def resolve_frame_id(
     return int(best["id"])
 
 
+def format_disp_s1_reformat_command(*, input_files: str, output_name: str) -> str:
+    """Return opera-utils disp-s1-reformat command (OPERA download or local produce inputs)."""
+    return (
+        f"opera-utils disp-s1-reformat --input-files {input_files} "
+        f"--output-name {output_name} --reference-method BORDER "
+        f"--quality-datasets None --drop-vars shp_counts estimated_phase_quality"
+    )
+
+
 def format_disp_stage_commands(
     *,
     frame_id: int,
@@ -236,10 +245,9 @@ def format_disp_stage_commands(
         f"check_opera_download.py {output_dir} --frame-id {frame_id} "
         f"--start-datetime {start} --end-datetime {end}"
     )
-    reformat = (
-        f"opera-utils disp-s1-reformat --input-files {output_dir}/OPERA*.nc "
-        f"--output-name {stack_name} --reference-method BORDER "
-        f"--quality-datasets None --drop-vars shp_counts estimated_phase_quality"
+    reformat = format_disp_s1_reformat_command(
+        input_files=f"{output_dir}/OPERA*.nc",
+        output_name=stack_name,
     )
     return {
         "download_disp": (

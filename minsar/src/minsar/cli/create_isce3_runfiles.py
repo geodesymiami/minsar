@@ -80,17 +80,20 @@ PIXI_STAGES = frozenset({
     "dolphin_wrapped",
     "dolphin_unwrap",
     "dolphin_timeseries",
+    "disp_s1_process",
 })
 DOLPHIN_SPLIT_STAGES = ("dolphin_wrapped", "dolphin_unwrap", "dolphin_timeseries")
 # CSLC workflow steps outside the numbered run_NN_* sequence (--dostep uses stage name).
 UNNUMBERED_RUN_BASENAMES = {
     "disp_s1_process": "run_disp_s1_process",
+    "reformat_disp": "run_reformat_disp",
 }
 PROFILE_ALIASES = {
     "disp_s1_process": "run_disp_s1_process",
 }
 DISP_S1_PRODUCE_DIR = "disp_s1_produce"
 DISP_S1_PROCESS_SCRIPT = '$MINSAR_HOME/tools/disp-s1/scripts/disp_s1_process.py'
+DISP_S1_SRC = '$MINSAR_HOME/tools/disp-s1/src'
 DEFAULT_DISP_S1_MINISTACK_SIZE = 15
 # half_window is (y, x); strides is (y, x). See minsar.utils.dolphin_presets.
 IMPORTED_ALGO_YAML = ".minsar_imported_algo.yaml"
@@ -843,9 +846,10 @@ class Isce3JobAdapter:
     def render(self, stage: Stage, run_file: Path, job_file: Path, workflow: str) -> None:
         """Render a script or LAUNCHER job using JOB_SUBMIT's existing methods."""
         stage.walltime = self.job_submit.default_wall_time
+        job_stem = job_file.stem
         lines = self.job_submit.get_job_file_lines(
-            stage.name,
-            job_file.stem,
+            job_stem,
+            job_stem,
             number_of_nodes=1,
             work_dir=str(job_file.parent),
         )
@@ -1297,6 +1301,11 @@ def _build_stage_specs(workflow: str, context: dict[str, object], split_dolphin:
                 "Produce OPERA DISP-S1 NetCDF products locally (manual; not in default workflow)",
                 "",
             ),
+            (
+                "reformat_disp",
+                "Reformat locally produced DISP-S1 products into a stack (manual; not in default workflow)",
+                "",
+            ),
         ]
     template = str(context["template"])
     generate = "" if template else "true"
@@ -1456,7 +1465,7 @@ def _create_files(
             str(run_file.relative_to(work_dir)),
             str(job_file.relative_to(work_dir)),
             command,
-            args.queue if profile.queue_class == "short" else args.long_queue,
+            _stage_queue(name, profile, args),
             profile.walltime,
             profile.memory_mb,
             profile.num_threads,
@@ -1472,7 +1481,7 @@ def _create_files(
             title,
             run_command,
             task_list=profile.execution_mode == "launcher-task-list",
-            raw=True,
+            raw=_run_file_uses_raw_body(name, profile, run_command),
         )
         if name in DEFERRED_TASK_LIST_STAGES:
             (run_dir / CREATE_CSLC_QUEUE_META).write_text(stage.queue + "\n")
@@ -1685,8 +1694,10 @@ def _sweets_stage_bodies(
     hdfeos5 = _hdfeos5_command(preset, preset_naming, dolphin_dir=dolphin_dir)
     ingest = f"ingest_insarmaps.bash {dolphin_dir}/timeseries"
     disp_s1_process = ""
+    reformat_disp = ""
     if workflow == "cslc":
         disp_s1_process = _disp_s1_process_command(context, ministack_size=ministack_size) + "\n"
+        reformat_disp = _reformat_disp_command(context) + "\n"
     geom = _geometry_stitch_command(strides, cfg)
     merge_algo_cmd = None
     imported_path: Path | None = None
@@ -1811,6 +1822,7 @@ def _sweets_stage_bodies(
             "dolphin_2_hdfeos5": hdfeos5,
             "ingest_insarmaps": ingest,
             "disp_s1_process": disp_s1_process,
+            "reformat_disp": reformat_disp,
         }
     return {
         "download_cslc": download.rstrip("\n") + f"\n{geom}\n",
@@ -1830,6 +1842,7 @@ def _sweets_stage_bodies(
         "dolphin_2_hdfeos5": hdfeos5,
         "ingest_insarmaps": ingest,
         "disp_s1_process": disp_s1_process,
+        "reformat_disp": reformat_disp,
     }
 
 
@@ -1839,6 +1852,27 @@ def _extent_from_aoi(aoi: str) -> str:
 
     west, south, east, north = bbox_wsene(aoi)
     return f"{west},{south} : {east},{north}"
+
+
+def _resolve_work_project(args: argparse.Namespace, *, input_is_template: bool, template_project: str) -> str:
+    """Scratch project directory name: CLI NAME for AOI; template stem when INPUT is a file."""
+    if args.name and not input_is_template:
+        return args.name.strip()
+    return template_project
+
+
+def _stage_queue(name: str, profile: ResourceProfile, args: argparse.Namespace) -> str:
+    """Queue for a stage from job_defaults queue_class and --queue / --long-queue."""
+    return args.queue if profile.queue_class == "short" else args.long_queue
+
+
+def _run_file_uses_raw_body(name: str, profile: ResourceProfile, run_command: str) -> bool:
+    """True when the run file body is written verbatim (pixi script, task list, or existing bash script)."""
+    if profile.execution_mode == "launcher-task-list":
+        return True
+    if name in PIXI_STAGES:
+        return True
+    return run_command.lstrip().startswith("#!")
 
 
 def _resolve_disp_s1_frame_id(context: dict[str, object]) -> int:
@@ -1870,7 +1904,8 @@ def _disp_s1_process_command(
     extent = _extent_from_aoi(str(context["aoi"]))
     ms = int(ministack_size) if ministack_size is not None else DEFAULT_DISP_S1_MINISTACK_SIZE
     return (
-        f'python {DISP_S1_PROCESS_SCRIPT}'
+        f"PYTHONPATH={DISP_S1_SRC}:${{PYTHONPATH:-}} "
+        f"python {DISP_S1_PROCESS_SCRIPT}"
         f" --cslc-dir {cslc_dir}"
         f" --work-dir {work_subdir}"
         f" --frame-id {frame_id}"
@@ -1879,6 +1914,21 @@ def _disp_s1_process_command(
         f" --ministack-size {ms}"
         f" --buffer 500"
         f" --stages process"
+    )
+
+
+def _reformat_disp_command(
+    context: dict[str, object],
+    *,
+    work_subdir: str = DISP_S1_PRODUCE_DIR,
+) -> str:
+    """Shell command to reformat disp_s1_process .nc outputs into one stack (same as disp workflow reformat)."""
+    module = runpy.run_path(str(_disp_module_path()))
+    format_reformat = module["format_disp_s1_reformat_command"]
+    project = str(context["project"])
+    return format_reformat(
+        input_files=f"{work_subdir}/output_*/20*.nc",
+        output_name=f"{project}-stack.nc",
     )
 
 
@@ -2202,6 +2252,11 @@ def main(iargs: list[str] | None = None) -> int:
             context = _aoi_context(args)
         else:
             context = _template_context(_create_template_from_aoi(args).resolve(), args)
+        context["project"] = _resolve_work_project(
+            args,
+            input_is_template=input_is_template,
+            template_project=str(context["project"]),
+        )
         config = args.config or Path(__file__).resolve().parents[3] / "defaults/job_defaults_isce3.cfg"
         profiles = _read_profiles(config)
         scratch_dir = Path(os.environ["SCRATCHDIR"]).expanduser().resolve()

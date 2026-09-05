@@ -54,6 +54,12 @@
       ],
       "ingest_insarmaps": [
         "{DIR}/timeseries/JSON*/*.mbtiles"
+      ],
+      "disp_s1_process": [
+        "disp_s1_produce/output_*/20*.nc"
+      ],
+      "reformat_disp": [
+        "*stack.nc"
       ]
     },
     "disp": {

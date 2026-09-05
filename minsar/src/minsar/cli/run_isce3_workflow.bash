@@ -46,10 +46,10 @@ STEP may be a step number, step name, run-file basename, or a coarse alias:
   download, download_create_cslc, dolphin, hdfeos5, ingest.
 
 SAFE steps:    download_safe, create_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps
-CSLC steps:    download_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps, disp_s1_process
+CSLC steps:    download_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps, disp_s1_process, reformat_disp
 SAFE/CSLC monolithic: dolphin instead of dolphin_wrapped/unwrap/timeseries (create_isce3_runfiles.py --no-dolphin-split)
 DISP-S1 steps: download_disp, reformat_disp, dolphin_2_hdfeos5, ingest_insarmaps
-disp_s1_process (CSLC only): local OPERA produce via disp_s1_process.py; manual — not in default --end ingest_insarmaps
+disp_s1_process / reformat_disp (CSLC only): local OPERA produce + stack reformat; manual — not in default --end ingest_insarmaps
 
 Examples:
   ${SCRIPT_NAME}
@@ -60,8 +60,9 @@ Examples:
   ${SCRIPT_NAME} run_files_isce3 --start download --end download
   ${SCRIPT_NAME} run_files_isce3 --start dolphin_unwrap --end ingest_insarmaps
   ${SCRIPT_NAME} run_files_isce3 --dostep ingest_insarmaps
-  ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaFalkdispSenD87/run_files_isce3 --dostep download_cslc
-  ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaFalkdispSenD87/run_files_isce3 --dostep disp_s1_process
+  ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaFalkdisp/run_files_isce3 --dostep download_cslc
+  ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaFalkdisp/run_files_isce3 --dostep disp_s1_process
+  ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaFalkdisp/run_files_isce3 --dostep reformat_disp
   ${SCRIPT_NAME} run_files_isce3 --backend local
   ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaSenD87/run_files_isce3 --start dolphin_wrapped
 EOF
@@ -255,8 +256,8 @@ for run_file in "${all_run_files[@]}"; do
     fi
 done
 
-# Sidecar steps outside the numbered run_NN_* sequence (e.g. disp_s1_process).
-for entry in "disp_s1_process:run_disp_s1_process"; do
+# Sidecar steps outside the numbered run_NN_* sequence (e.g. disp_s1_process, reformat_disp).
+for entry in "disp_s1_process:run_disp_s1_process" "reformat_disp:run_reformat_disp"; do
     stage_name="${entry%%:*}"
     run_basename="${entry#*:}"
     run_file="$run_dir/$run_basename"

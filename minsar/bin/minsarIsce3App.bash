@@ -19,9 +19,9 @@ Run an ISCE3 SAFE/CSLC/DISP workflow: write configs and run/job files, then subm
 Always pass a MinSAR template or AOI plus project name. Science flags alone are invalid.
 Use --start-date/--end-date for dates; --start/--end/--dostep are processing steps.
 Leftover --section.option flags go to dolphin config. Use --dolphin-dir, not --work-directory.
-Processing steps are [download, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps, disp_s1_process]
+Processing steps are [download, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps, disp_s1_process, reformat_disp]
 Additional steps for data-type safe, disp-S1: create_cslc, reformat_disp respectively
-disp_s1_process is written for --data-type cslc but not run by default (manual OPERA produce).
+disp_s1_process and reformat_disp are written for --data-type cslc but not run by default (manual OPERA produce path).
 Optional DOLPHIN_CONFIG is a .yaml/.yml or OPERA DISP-S1 .nc (prefers metadata/dolphin_workflow_config).
 
 options:
