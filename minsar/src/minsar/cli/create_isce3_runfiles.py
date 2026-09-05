@@ -82,6 +82,16 @@ PIXI_STAGES = frozenset({
     "dolphin_timeseries",
 })
 DOLPHIN_SPLIT_STAGES = ("dolphin_wrapped", "dolphin_unwrap", "dolphin_timeseries")
+# CSLC workflow steps outside the numbered run_NN_* sequence (--dostep uses stage name).
+UNNUMBERED_RUN_BASENAMES = {
+    "disp_s1_process": "run_disp_s1_process",
+}
+PROFILE_ALIASES = {
+    "disp_s1_process": "run_disp_s1_process",
+}
+DISP_S1_PRODUCE_DIR = "disp_s1_produce"
+DISP_S1_PROCESS_SCRIPT = '$MINSAR_HOME/tools/disp-s1/scripts/disp_s1_process.py'
+DEFAULT_DISP_S1_MINISTACK_SIZE = 15
 # half_window is (y, x); strides is (y, x). See minsar.utils.dolphin_presets.
 IMPORTED_ALGO_YAML = ".minsar_imported_algo.yaml"
 
@@ -155,9 +165,17 @@ def _isce3_run_dir(work_dir: Path) -> Path:
     return work_dir / RUN_FILES_DIRNAME
 
 
+def _run_basename_for_stage(name: str, number: int) -> str:
+    """Run-file basename: unnumbered for sidecar stages, else run_NN_<stage>."""
+    return UNNUMBERED_RUN_BASENAMES.get(name, f"run_{number:02d}_{name}")
+
+
 def _run_file_stage_name(path: Path) -> str | None:
-    """Stage name from run_NN_<stage> or run_NN_<stage>_N.job, or None."""
+    """Stage name from run_NN_<stage>, run_<sidecar>, or run_NN_<stage>_N.job, or None."""
     stem = path.stem if path.suffix == ".job" else path.name
+    for stage, basename in UNNUMBERED_RUN_BASENAMES.items():
+        if stem == basename or re.fullmatch(rf"{re.escape(basename)}_\d+", stem):
+            return stage
     match = re.match(r"^run_\d{2}_(.+)$", stem)
     if not match:
         return None
@@ -1274,6 +1292,11 @@ def _build_stage_specs(workflow: str, context: dict[str, object], split_dolphin:
             *dolphin_specs,
             ("dolphin_2_hdfeos5", "Convert dolphin timeseries to HDF-EOS5", ""),
             ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", ""),
+            (
+                "disp_s1_process",
+                "Produce OPERA DISP-S1 NetCDF products locally (manual; not in default workflow)",
+                "",
+            ),
         ]
     template = str(context["template"])
     generate = "" if template else "true"
@@ -1286,7 +1309,7 @@ def _build_stage_specs(workflow: str, context: dict[str, object], split_dolphin:
 
 
 def _profile_for(name: str, profiles: dict[str, ResourceProfile]) -> ResourceProfile:
-    return profiles.get(name, profiles["default"])
+    return profiles.get(PROFILE_ALIASES.get(name, name), profiles["default"])
 
 
 def _write_run_file(path: Path, title: str, command: str, task_list: bool = False, raw: bool = False) -> None:
@@ -1384,13 +1407,16 @@ def _create_files(
     number_by_name = {name: number for number, (name, _, _) in enumerate(all_specs, 1)}
     for name, _, _ in specs:
         number = number_by_name[name]
-        expected_names.add(f"run_{number:02d}_{name}")
+        run_name = _run_basename_for_stage(name, number)
+        expected_names.add(run_name)
         if name in DEFERRED_TASK_LIST_STAGES:
             deferred_stage_names.add(name)
         else:
-            expected_names.add(f"run_{number:02d}_{name}.job")
+            expected_names.add(f"{run_name}.job")
     if "create_cslc" in phase_names:
         expected_names.add(CREATE_CSLC_QUEUE_META)
+    for path in sorted(run_dir.glob("run_[0-9][0-9]_run_disp_s1_process*")):
+        path.unlink(missing_ok=True)
     candidates = [
         path
         for path in run_dir.glob("run_[0-9][0-9]_*")
@@ -1398,6 +1424,11 @@ def _create_files(
         and path.name not in expected_names
         and not _is_deferred_batch_job(path, deferred_stage_names)
     ]
+    for basename in UNNUMBERED_RUN_BASENAMES.values():
+        for suffix in ("", ".job"):
+            path = run_dir / f"{basename}{suffix}"
+            if path.exists() and path.name not in expected_names:
+                candidates.append(path)
     if phase == "all":
         stale_files = sorted(candidates)
     else:
@@ -1413,7 +1444,7 @@ def _create_files(
     for name, title, command in specs:
         number = number_by_name[name]
         profile = _profile_for(name, profiles)
-        run_name = f"run_{number:02d}_{name}"
+        run_name = _run_basename_for_stage(name, number)
         job_name = f"{run_name}.job"
         run_file = run_dir / run_name
         job_file = run_dir / job_name
@@ -1653,6 +1684,9 @@ def _sweets_stage_bodies(
     download = _sweets_download_script(kind)
     hdfeos5 = _hdfeos5_command(preset, preset_naming, dolphin_dir=dolphin_dir)
     ingest = f"ingest_insarmaps.bash {dolphin_dir}/timeseries"
+    disp_s1_process = ""
+    if workflow == "cslc":
+        disp_s1_process = _disp_s1_process_command(context, ministack_size=ministack_size) + "\n"
     geom = _geometry_stitch_command(strides, cfg)
     merge_algo_cmd = None
     imported_path: Path | None = None
@@ -1776,6 +1810,7 @@ def _sweets_stage_bodies(
             "dolphin_timeseries": ts_cmds,
             "dolphin_2_hdfeos5": hdfeos5,
             "ingest_insarmaps": ingest,
+            "disp_s1_process": disp_s1_process,
         }
     return {
         "download_cslc": download.rstrip("\n") + f"\n{geom}\n",
@@ -1794,7 +1829,57 @@ def _sweets_stage_bodies(
         ),
         "dolphin_2_hdfeos5": hdfeos5,
         "ingest_insarmaps": ingest,
+        "disp_s1_process": disp_s1_process,
     }
+
+
+def _extent_from_aoi(aoi: str) -> str:
+    """Return disp_s1_process --extent value from S:N,W:E subset string."""
+    from minsar.utils.generate_sweets_config import bbox_wsene
+
+    west, south, east, north = bbox_wsene(aoi)
+    return f"{west},{south} : {east},{north}"
+
+
+def _resolve_disp_s1_frame_id(context: dict[str, object]) -> int:
+    """OPERA DISP-S1 frame ID from CLI or largest-overlap frame for the AOI."""
+    frame_raw = str(context.get("frame_id") or "").strip()
+    if frame_raw:
+        return int(frame_raw)
+    from minsar.utils.generate_sweets_config import bbox_wsene
+
+    module = runpy.run_path(str(_disp_module_path()))
+    resolve_frame_id = module["resolve_frame_id"]
+    aoi = str(context["aoi"])
+    bbox = bbox_wsene(aoi)
+    track_raw = str(context.get("track") or "")
+    track = int(track_raw) if track_raw else None
+    flight = str(context.get("flight_direction") or "") or None
+    return resolve_frame_id(bbox, track=track, flight_direction=flight)
+
+
+def _disp_s1_process_command(
+    context: dict[str, object],
+    *,
+    ministack_size: int | None = None,
+    cslc_dir: str = "data",
+    work_subdir: str = DISP_S1_PRODUCE_DIR,
+) -> str:
+    """Shell command for tools/disp-s1/scripts/disp_s1_process.py (process stage only)."""
+    frame_id = _resolve_disp_s1_frame_id(context)
+    extent = _extent_from_aoi(str(context["aoi"]))
+    ms = int(ministack_size) if ministack_size is not None else DEFAULT_DISP_S1_MINISTACK_SIZE
+    return (
+        f'python {DISP_S1_PROCESS_SCRIPT}'
+        f" --cslc-dir {cslc_dir}"
+        f" --work-dir {work_subdir}"
+        f" --frame-id {frame_id}"
+        f' --extent "{extent}"'
+        f" --gslc-glob 'OPERA_L2_CSLC-S1_*.h5'"
+        f" --ministack-size {ms}"
+        f" --buffer 500"
+        f" --stages process"
+    )
 
 
 def _disp_module_path() -> Path:

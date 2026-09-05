@@ -46,9 +46,10 @@ STEP may be a step number, step name, run-file basename, or a coarse alias:
   download, download_create_cslc, dolphin, hdfeos5, ingest.
 
 SAFE steps:    download_safe, create_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps
-CSLC steps:    download_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps
+CSLC steps:    download_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps, disp_s1_process
 SAFE/CSLC monolithic: dolphin instead of dolphin_wrapped/unwrap/timeseries (create_isce3_runfiles.py --no-dolphin-split)
 DISP-S1 steps: download_disp, reformat_disp, dolphin_2_hdfeos5, ingest_insarmaps
+disp_s1_process (CSLC only): local OPERA produce via disp_s1_process.py; manual — not in default --end ingest_insarmaps
 
 Examples:
   ${SCRIPT_NAME}
@@ -59,6 +60,8 @@ Examples:
   ${SCRIPT_NAME} run_files_isce3 --start download --end download
   ${SCRIPT_NAME} run_files_isce3 --start dolphin_unwrap --end ingest_insarmaps
   ${SCRIPT_NAME} run_files_isce3 --dostep ingest_insarmaps
+  ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaFalkdispSenD87/run_files_isce3 --dostep download_cslc
+  ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaFalkdispSenD87/run_files_isce3 --dostep disp_s1_process
   ${SCRIPT_NAME} run_files_isce3 --backend local
   ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaSenD87/run_files_isce3 --start dolphin_wrapped
 EOF
@@ -218,17 +221,8 @@ list_jobs_for_pattern() {
 }
 
 jobs_for_step() {
-    local number="$1"
-    local nn
-    local job
-    local nullglob_state
-    printf -v nn '%02d' "$number"
-    nullglob_state="$(shopt -p nullglob)"
-    shopt -s nullglob
-    for job in "$run_dir"/run_"${nn}"_*.job; do
-        printf '%s\n' "$job"
-    done
-    eval "$nullglob_state"
+    local index="$1"
+    list_jobs_for_pattern "${stage_patterns[$index]}"
 }
 
 stage_numbers=()
@@ -238,7 +232,6 @@ stage_patterns=()
 shopt -s nullglob
 all_run_files=("$run_dir"/run_[0-9][0-9]_*)
 shopt -u nullglob
-[[ "${#all_run_files[@]}" -gt 0 ]] || die "no run_NN_* run files found in $run_dir"
 
 for run_file in "${all_run_files[@]}"; do
     [[ "$run_file" == *.job ]] && continue
@@ -262,8 +255,20 @@ for run_file in "${all_run_files[@]}"; do
     fi
 done
 
+# Sidecar steps outside the numbered run_NN_* sequence (e.g. disp_s1_process).
+for entry in "disp_s1_process:run_disp_s1_process"; do
+    stage_name="${entry%%:*}"
+    run_basename="${entry#*:}"
+    run_file="$run_dir/$run_basename"
+    if [[ -f "$run_file" ]]; then
+        stage_numbers+=("0")
+        stage_names+=("$stage_name")
+        stage_patterns+=("$run_dir/$run_basename")
+    fi
+done
+
 stage_count="${#stage_names[@]}"
-[[ "$stage_count" -gt 0 ]] || die "no run_NN_* run files found in $run_dir"
+[[ "$stage_count" -gt 0 ]] || die "no run files found in $run_dir"
 
 stage_exists() {
     local wanted="$1"
@@ -331,7 +336,7 @@ resolve_step() {
                 echo "$index"
                 return 0
             fi
-        done < <(jobs_for_step "${stage_numbers[$index]}")
+        done < <(jobs_for_step "$index")
     done
     return 1
 }
@@ -472,11 +477,11 @@ run_local_stage() {
                 run_isce3_runfile "$run_file" || die "step failed: ${stage_names[$index]}"
             fi
         fi
-    done < <(jobs_for_step "${stage_numbers[$index]}")
+    done < <(jobs_for_step "$index")
 
     while IFS= read -r job_file; do
         run_job_validation "$job_file" "$step_start_epoch"
-    done < <(jobs_for_step "${stage_numbers[$index]}")
+    done < <(jobs_for_step "$index")
 }
 
 log_submit_jobs_command() {
