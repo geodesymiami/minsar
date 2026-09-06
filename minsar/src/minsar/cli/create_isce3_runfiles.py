@@ -1938,7 +1938,7 @@ def _reformat_disp_command(
     format_reformat = module["format_disp_s1_reformat_command"]
     project = str(context["project"])
     return format_reformat(
-        input_files=f"{work_subdir}/output_*/20*.nc",
+        input_files=f"{work_subdir}/output_*/OPERA*.nc",
         output_name=f"{project}-stack.nc",
     )
 

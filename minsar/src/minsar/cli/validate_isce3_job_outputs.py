@@ -155,7 +155,12 @@ def main(iargs: list[str] | None = None) -> int:
             for job_file in args.job_files:
                 job_path = _resolve_job_path(work_dir, job_file)
                 number, name, stem = _parse_job_path(job_path)
-                step_filters.extend([name, str(number), stem])
+                # Unnumbered sidecars all use number 0; filtering by "0" would select every
+                # sidecar (e.g. run_disp_s1_process.job would also check reformat_disp).
+                if stem in _UNNUMBERED_JOB_STEMS:
+                    step_filters.extend([name, stem])
+                else:
+                    step_filters.extend([name, str(number), stem])
 
         results: list[dict[str, object]] = []
         for step in steps:
