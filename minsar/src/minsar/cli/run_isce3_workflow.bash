@@ -429,6 +429,28 @@ job_path_for_display() {
     fi
 }
 
+print_job_stderr_tail() {
+    local job_file="$1"
+    local jobnumber="$2"
+    local err_file stderr_spec
+
+    stderr_spec="$(grep -E '^#SBATCH[[:space:]]+-e[[:space:]]+' "$job_file" | awk '{print $3}' | tail -1)" || true
+    if [[ -n "$stderr_spec" ]]; then
+        err_file="${stderr_spec//%J/$jobnumber}"
+    else
+        err_file="${job_file%.job}_${jobnumber}.e"
+    fi
+
+    echo "Job stderr (last 5 lines): $err_file"
+    if [[ -f "$err_file" && -s "$err_file" ]]; then
+        tail -n 5 "$err_file"
+    elif [[ -f "$err_file" ]]; then
+        echo "(stderr file is empty)"
+    else
+        echo "(stderr file not found)"
+    fi
+}
+
 print_ingest_insarmaps_url_if_applicable() {
     local job_file="$1"
     local step_start_epoch="$2"
@@ -586,6 +608,7 @@ wait_for_slurm_jobs() {
                     die "resubmit failed for $file"
                 fi
             elif [[ "$state" == *"FAILED"* || "$state" == *"CANCELLED"* ]]; then
+                print_job_stderr_tail "$file" "$jobnumber"
                 die "job $file: state $state"
             else
                 echo "Strange job state: $state, encountered."
