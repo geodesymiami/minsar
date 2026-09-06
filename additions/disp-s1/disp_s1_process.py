@@ -5,6 +5,10 @@ MinSAR patch (``additions/disp-s1/disp_s1_process.py``):
 - Ionosphere corrections are skipped (``ionospheric_corrections=None``).
 - After each historical ministack, compressed SLCs are renamed to OPERA
   convention (``rename_output.py``, same as ``run_disp.py``) before chaining.
+- After all ministacks, DISP ``.nc`` products are renamed to OPERA
+  convention so ``opera-utils disp-s1-reformat`` can ingest them.
+- Completed ministacks are skipped on re-run; incomplete batch work dirs are
+  removed before retry; duplicate compressed SLCs in ``comp_slcs/`` are deduped.
 
 Given a directory of CSLC/GSLC bursts, this runs the full local pipeline for an
 arbitrary site/track/frame:
@@ -114,6 +118,144 @@ DEFAULT_GSLC_GLOB = "t*.h5"  # pattern matching (G)SLC HDF5 files, any burst id
 os.environ.setdefault("XLA_PYTHON_CLIENT_MEM_FRACTION", "0.1")
 
 # ── HELPERS ───────────────────────────────────────────────────────────────────
+
+
+def _minsar_home() -> Path:
+    raw = os.environ.get("MINSAR_HOME")
+    if raw:
+        return Path(raw).expanduser().resolve()
+    return Path(__file__).resolve().parents[2]
+
+
+def _load_rename_output_module():
+    """Load tools/disp-s1/scripts/rename_output.py (same helper as run_disp.py)."""
+    script = _minsar_home() / "tools/disp-s1/scripts/rename_output.py"
+    if not script.is_file():
+        raise FileNotFoundError(f"rename_output.py not found: {script}")
+    spec = importlib.util.spec_from_file_location("disp_s1_rename_output", script)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load {script}")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def rename_disp_products_to_opera(paths: Sequence[Path]) -> list[Path]:
+    """Rename local produce ``.nc`` / compressed ``.h5`` files to OPERA names."""
+    mod = _load_rename_output_module()
+    renamed: list[Path] = []
+    for src in paths:
+        name = src.name
+        if name.startswith("OPERA_L3_DISP-S1_") or "COMPRESSED-CSLC" in name:
+            renamed.append(src)
+            continue
+        is_compressed = name.lower().startswith("compressed")
+        is_date_pair_nc = bool(re.fullmatch(r"\d{8}_\d{8}\.nc", name))
+        if not (is_compressed or is_date_pair_nc):
+            renamed.append(src)
+            continue
+        print(f"Renaming to OPERA convention: {name}")
+        renamed.append(mod.rename_disp_s1_file(src, dry_run=False))
+    return renamed
+
+
+def rename_output_nc_products(work_base: Path) -> list[Path]:
+    """Rename all date-pair ``output_*/YYYYMMDD_YYYYMMDD.nc`` under work_base."""
+    candidates = sorted(work_base.glob("output_*/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].nc"))
+    if not candidates:
+        return sorted(work_base.glob("output_*/OPERA_L3_DISP-S1_*.nc"))
+    print(f"\nRenaming {len(candidates)} DISP .nc product(s) to OPERA convention...")
+    return rename_disp_products_to_opera(candidates)
+
+
+_OPERA_COMP_PROD_TIME_RE = re.compile(
+    r"^(OPERA_L2_COMPRESSED-CSLC-S1_.+_\d{8}T\d{6}Z_\d{8}T\d{6}Z_\d{8}T\d{6}Z)_"
+    r"\d{8}T\d{6}Z(_VV.*)$"
+)
+
+
+def _disp_product_paths(output_dir: Path) -> list[Path]:
+    """List DISP ``.nc`` products under one batch output directory."""
+    if not output_dir.is_dir():
+        return []
+    opera = sorted(output_dir.glob("OPERA_L3_DISP-S1_*.nc"))
+    if opera:
+        return opera
+    return sorted(
+        output_dir.glob(
+            "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_"
+            "[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9].nc"
+        )
+    )
+
+
+def _expected_historical_product_count(ms_size: int) -> int:
+    """One displacement product per secondary date in a historical ministack."""
+    return max(0, ms_size - 1)
+
+
+def _batch_outputs_complete(
+    output_dir: Path, mode: ProcessingMode, ms_size: int
+) -> bool:
+    """Return True when a ministack already has its expected ``.nc`` products."""
+    n_found = len(_disp_product_paths(output_dir))
+    if mode == ProcessingMode.HISTORICAL:
+        return n_found >= _expected_historical_product_count(ms_size)
+    return n_found >= 1
+
+
+def _comp_slc_identity_key(path: Path) -> str:
+    """Stable key for deduping re-harvested compressed SLCs (ignore production time)."""
+    name = path.name
+    m = _OPERA_COMP_PROD_TIME_RE.match(name)
+    if m:
+        return m.group(1) + m.group(2)
+    return name
+
+
+def dedupe_comp_slcs(comp_slc_dir: Path) -> int:
+    """Keep the newest file per compressed-SLC identity; return removals."""
+    stored = sorted(comp_slc_dir.glob("*.h5")) or sorted(comp_slc_dir.glob("*.tif"))
+    if not stored:
+        return 0
+    by_key: dict[str, list[Path]] = {}
+    for path in stored:
+        by_key.setdefault(_comp_slc_identity_key(path), []).append(path)
+    removed = 0
+    for paths in by_key.values():
+        if len(paths) < 2:
+            continue
+        paths.sort(key=lambda p: p.stat().st_mtime)
+        for dup in paths[:-1]:
+            print(f"  dedupe comp_slcs: removing duplicate {dup.name}")
+            dup.unlink()
+            removed += 1
+    return removed
+
+
+def _reset_incomplete_batch(work_dir: Path, output_dir: Path) -> None:
+    """Drop partial ministack scratch/products so dolphin does not reuse bad layers."""
+    if work_dir.is_dir():
+        print(f"  RE-RUN: removing incomplete {work_dir}")
+        shutil.rmtree(work_dir)
+    if output_dir.is_dir():
+        for path in _disp_product_paths(output_dir):
+            print(f"  RE-RUN: removing partial product {path.name}")
+            path.unlink()
+
+
+def _restore_amp_state(work_base: Path) -> tuple[list[Path], list[Path]]:
+    """Carry amplitude stats forward from the latest completed historical batch."""
+    amp_disp: list[Path] = []
+    amp_mean: list[Path] = []
+    for work_dir in sorted(work_base.glob("batch_*_historical")):
+        new_disp = sorted(work_dir.rglob("*_amp_dispersion.tif"))
+        new_mean = sorted(work_dir.rglob("*_amp_mean.tif"))
+        if new_disp:
+            amp_disp = new_disp
+        if new_mean:
+            amp_mean = new_mean
+    return amp_disp, amp_mean
 
 
 def make_cfg(
@@ -1095,12 +1237,16 @@ def run_processing(
     # ── Shared compressed SLC store ───────────────────────────────────────────
     comp_slc_dir = work_base / "comp_slcs"
     comp_slc_dir.mkdir(parents=True, exist_ok=True)
+    n_deduped = dedupe_comp_slcs(comp_slc_dir)
+    if n_deduped:
+        print(f"Deduped {n_deduped} duplicate compressed SLC(s) in {comp_slc_dir}")
 
-    amp_disp_files: list[Path] = []
-    amp_mean_files: list[Path] = []
+    amp_disp_files, amp_mean_files = _restore_amp_state(work_base)
 
     def _pick_comp(k: int) -> list[Path]:
         """Latest ``k`` compressed SLCs per burst from the shared store."""
+        if k <= 0:
+            return []
         stored = sorted(comp_slc_dir.glob("*.h5")) or sorted(comp_slc_dir.glob("*.tif"))
         picked: list[Path] = []
         for burst_files in group_by_burst(stored).values():
@@ -1135,34 +1281,6 @@ def run_processing(
         )
         run_no_corrections(cfg, pge_rc)
 
-    def _minsar_home() -> Path:
-        raw = os.environ.get("MINSAR_HOME")
-        if raw:
-            return Path(raw).expanduser().resolve()
-        return Path(__file__).resolve().parents[2]
-
-    def _rename_compressed_to_opera(paths: list[Path]) -> list[Path]:
-        """Rename ``compressed_*.h5`` to ``OPERA_L2_COMPRESSED-CSLC-S1_*`` in place."""
-        script = _minsar_home() / "tools/disp-s1/scripts/rename_output.py"
-        if not script.is_file():
-            raise FileNotFoundError(f"rename_output.py not found: {script}")
-        spec = importlib.util.spec_from_file_location("disp_s1_rename_output", script)
-        if spec is None or spec.loader is None:
-            raise ImportError(f"Cannot load {script}")
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        renamed: list[Path] = []
-        for src in paths:
-            if "COMPRESSED-CSLC" in src.name:
-                renamed.append(src)
-                continue
-            if not src.name.lower().startswith("compressed"):
-                renamed.append(src)
-                continue
-            print(f"Renaming compressed SLC to OPERA convention: {src.name}")
-            renamed.append(mod.rename_disp_s1_file(src, dry_run=False))
-        return renamed
-
     def _harvest_compressed(output_dir, work_dir) -> None:
         """Copy compressed SLCs into the shared store (OPERA names for chaining)."""
         comp_out = output_dir / "compressed_slcs"
@@ -1170,11 +1288,12 @@ def run_processing(
         if not new_comp:
             new_comp = sorted(work_dir.rglob("linked_phase/compressed_*.tif"))
         elif new_comp:
-            new_comp = _rename_compressed_to_opera(new_comp)
+            new_comp = rename_disp_products_to_opera(new_comp)
         for src in new_comp:
             dst = comp_slc_dir / src.name
             if not dst.exists():
                 shutil.copy2(src, dst)
+        dedupe_comp_slcs(comp_slc_dir)
 
     run_idx = 0
 
@@ -1182,15 +1301,25 @@ def run_processing(
     for ms_i in range(n_hist):
         s, e = ms_i * ms_size, (ms_i + 1) * ms_size
         batch_cslcs = [f for b in burst_ids for f in reals_by_burst[b][s:e]]
-        comp_slc_files = _pick_comp(max_comp)
+        comp_slc_files = _pick_comp(min(ms_i, max_comp))
         work_dir = work_base / f"batch_{run_idx:03d}_historical"
         output_dir = work_base / f"output_{run_idx:03d}"
+        expected_nc = _expected_historical_product_count(ms_size)
 
         print(f"\n{'='*60}")
         print(
             f"[historical {ms_i + 1}/{n_hist}] date idx {s}-{e - 1}  "
             f"reals={len(batch_cslcs)}  ccslc_in={len(comp_slc_files)}"
         )
+        if _batch_outputs_complete(output_dir, ProcessingMode.HISTORICAL, ms_size):
+            n_found = len(_disp_product_paths(output_dir))
+            print(
+                f"  SKIP: {output_dir.name} already has {n_found}/{expected_nc} product(s)"
+            )
+            run_idx += 1
+            continue
+
+        _reset_incomplete_batch(work_dir, output_dir)
         _run_batch(
             batch_cslcs, comp_slc_files, work_dir, output_dir, ProcessingMode.HISTORICAL
         )
@@ -1226,8 +1355,18 @@ def run_processing(
             f"window reals idx {s}-{n} ({len(batch_cslcs)} files)  "
             f"ccslc={len(comp_fwd)}"
         )
+        if _batch_outputs_complete(output_dir, ProcessingMode.FORWARD, ms_size):
+            n_found = len(_disp_product_paths(output_dir))
+            print(f"  SKIP: {output_dir.name} already has {n_found}/1 product(s)")
+            run_idx += 1
+            continue
+
+        _reset_incomplete_batch(work_dir, output_dir)
         _run_batch(batch_cslcs, comp_fwd, work_dir, output_dir, ProcessingMode.FORWARD)
         run_idx += 1
+
+    # OPERA filename required by opera-utils disp-s1-reformat (same as run_disp.py).
+    rename_output_nc_products(work_base)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1348,7 +1487,10 @@ def main(argv: list[str] | None = None) -> None:
     if "reformat" in args.stages:
         print("\n" + "=" * 60)
         print("Reformatting outputs to zarr...")
-        input_files = sorted(work_base.glob("output_*/20*.nc"))
+        # Prefer OPERA names; rename leftover date-pair products if needed.
+        input_files = rename_output_nc_products(work_base)
+        if not input_files:
+            input_files = sorted(work_base.glob("output_*/OPERA_L3_DISP-S1_*.nc"))
         if not input_files:
             raise SystemExit(
                 f"No per-ministack .nc outputs found under {work_base}/output_*/"
