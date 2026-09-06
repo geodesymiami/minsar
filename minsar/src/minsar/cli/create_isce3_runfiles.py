@@ -154,6 +154,19 @@ def _normalize_dolphin_mode(value: str) -> str:
     return token
 
 
+_DOLPHIN_MODE_NAME_TOKEN = {"standard": "Standard", "opera": "Opera"}
+_DOLPHIN_MODE_NAME_SUFFIX_RE = re.compile(r"(Opera|Standard)$", re.IGNORECASE)
+
+
+def _aoi_name_with_dolphin_mode(name: str, dolphin_mode: str) -> str:
+    """Append Opera/Standard to an AOI project basename (strip a prior mode suffix first)."""
+    token = _DOLPHIN_MODE_NAME_TOKEN[dolphin_mode]
+    base = _DOLPHIN_MODE_NAME_SUFFIX_RE.sub("", str(name).strip())
+    if not base:
+        base = str(name).strip()
+    return f"{base}{token}"
+
+
 def _normalize_phase(value: str) -> str:
     """Normalize --phase to download, dolphin, or all."""
     token = value.strip().lower().replace("-", "_")
@@ -630,13 +643,15 @@ def _hdfeos5_method_string(preset: str, preset_naming: bool = True) -> str:
 def _hdfeos5_command(preset: str, preset_naming: bool = True, dolphin_dir: str = DEFAULT_DOLPHIN_DIR) -> str:
     """dolphin2hdfeos5 run-file line with explicit HE5 method label."""
     method = _hdfeos5_method_string(preset, preset_naming)
-    return f"dolphin2hdfeos5.py {dolphin_dir} --method-string {method}"
+    watermask = f"{dolphin_dir}/unwrapped/warped_watermask.tif"
+    return f"dolphin2hdfeos5.py {dolphin_dir} --method-string {method} --watermask {watermask}"
 
 
 def _opera_hdfeos5_command(context: dict[str, object]) -> str:
     """dolphin2hdfeos5 from a locally produced DISP-S1 stack NetCDF."""
     project = str(context["project"])
-    return f"dolphin2hdfeos5.py {project}-stack.nc --method-string {OPERA_DISP_METHOD_STRING}"
+    stack = f"{project}-stack.nc"
+    return f"dolphin2hdfeos5.py {stack} --method-string {OPERA_DISP_METHOD_STRING} --watermask {stack}"
 
 
 def _opera_ingest_command() -> str:
@@ -940,6 +955,7 @@ def create_parser() -> argparse.ArgumentParser:
  create_isce3_runfiles.py $TE/HawaiiPunaSenD87.template --half-window 6 12 --stride 3 6 --data-type cslc --dolphin-mode opera
  create_isce3_runfiles.py $TE/HawaiiPunaSenD87.template dolphin_config.yaml --data-type cslc
  create_isce3_runfiles.py $TE/HawaiiPunaSenD87.template OPERA_L3_DISP-S1.nc --data-type cslc
+ create_isce3_runfiles.py 19.45:19.5,-154.915:-154.852 HawaiiPunaCSLC --flight-dir desc --data-type cslc --dolphin-mode opera
  create_isce3_runfiles.py 19.45:19.5,-154.915:-154.852 HawaiiPuna --flight-dir desc --data-type cslc --phase all
  create_isce3_runfiles.py 19.45:19.5,-154.915:-154.852 HawaiiPuna dolphin_config.yaml --flight-dir desc --data-type cslc
  create_isce3_runfiles.py 19.45:19.5,-154.915:-154.852 HawaiiPuna OPERA_L3_DISP-S1.nc --flight-dir desc --data-type cslc
@@ -1040,7 +1056,10 @@ def create_parser() -> argparse.ArgumentParser:
         type=_normalize_dolphin_mode,
         default=DEFAULT_DOLPHIN_MODE,
         metavar="MODE",
-        help="CSLC processing path: standard (Dolphin stack) or opera (local DISP-S1 produce); default: standard",
+        help=(
+            "CSLC path: standard (Dolphin stack) or opera (local DISP-S1 produce); default: standard. "
+            "AOI runs append Standard/Opera to the template and project name"
+        ),
     )
     parser.add_argument(
         "--sleep",
@@ -2348,6 +2367,12 @@ def main(iargs: list[str] | None = None) -> int:
             raise ValueError("NISAR is accepted but processing is not implemented until RSLC/GSLC commands are defined")
         input_path = Path(args.input).expanduser()
         input_is_template = input_path.is_file()
+        if (
+            not input_is_template
+            and workflow == "cslc"
+            and args.name
+        ):
+            args.name = _aoi_name_with_dolphin_mode(args.name, args.dolphin_mode)
         if input_is_template:
             context = _template_context(input_path.resolve(), args)
         elif args.dry_run:

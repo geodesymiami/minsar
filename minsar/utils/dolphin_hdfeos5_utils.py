@@ -64,9 +64,10 @@ from minsar.utils.dolphin_presets import (
 )
 DOLPHIN2HDFEOS5_EXAMPLES = """Examples:
   dolphin2hdfeos5.py dolphin
+  dolphin2hdfeos5.py dolphin --watermask dolphin/unwrapped/warped_watermask.tif
   dolphin2hdfeos5.py dolphin -m recommended
   dolphin2hdfeos5.py dolphin --method-string dolphinStandard
-  dolphin2hdfeos5.py stack.nc --method-string operaDisp
+  dolphin2hdfeos5.py stack.nc --method-string operaDisp --watermask stack.nc
   dolphin2hdfeos5.py dolphin -m tc --vmin 0.7
   dolphin2hdfeos5.py dolphin -m similarity --vmin 0.5
   dolphin2hdfeos5.py dolphin -m tc+sim --vmin 0.7 --vmin-sim 0.5
@@ -406,16 +407,49 @@ def _temporal_coherence_candidates(dolphin_dir: Path, ts_dir: Path) -> list[Path
 def _watermask_candidates(dataset_dir: Path, dolphin_dir: Path, ts_dir: Path) -> list[Path]:
     return [
         ts_dir / "warped_watermask.tif",
+        dolphin_dir / "unwrapped" / "warped_watermask.tif",
         dolphin_dir / "warped_watermask.tif",
         dataset_dir / "watermask.tif",
     ]
+
+
+def read_watermask(path: Path, shape: tuple[int, int]) -> np.ndarray:
+    """Load a water mask GeoTIFF or NetCDF ``water_mask`` on the given grid."""
+    path = Path(path).expanduser().resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"Watermask not found: {path}")
+    suffix = path.suffix.lower()
+    if suffix in {".tif", ".tiff"}:
+        return _read_required_tif(path, shape)
+    if suffix == ".nc":
+        return _read_watermask_nc(path, shape)
+    raise ValueError(f"Unsupported watermask format {path.suffix} (use .tif or .nc): {path}")
+
+
+def _read_watermask_nc(path: Path, shape: tuple[int, int]) -> np.ndarray:
+    with h5py.File(path, "r") as f:
+        if "water_mask" not in f:
+            raise ValueError(f"{path} has no water_mask dataset")
+        data = np.asarray(f["water_mask"][:], dtype=np.float32)
+    if data.ndim == 3:
+        data = data[0]
+    if data.ndim != 2:
+        raise ValueError(f"{path} water_mask has shape {data.shape}, expected 2D matching {shape}")
+    if tuple(data.shape) != tuple(shape):
+        raise ValueError(f"{path} water_mask has shape {data.shape}, expected {shape}")
+    return data
 
 
 def _glob_existing(pattern: Path) -> list[Path]:
     return [Path(path) for path in sorted(glob.glob(str(pattern)))]
 
 
-def resolve_required_files(dataset_dir: Path, dolphin_dir: Path, ts_dir: Path) -> dict:
+def resolve_required_files(
+    dataset_dir: Path,
+    dolphin_dir: Path,
+    ts_dir: Path,
+    watermask_path: Path | None = None,
+) -> dict:
     """Locate required Dolphin rasters. Raise FileNotFoundError listing missing paths."""
     missing = []
     files = {}
@@ -445,11 +479,17 @@ def resolve_required_files(dataset_dir: Path, dolphin_dir: Path, ts_dir: Path) -
     else:
         missing.append(_missing_looked_for(_temporal_coherence_candidates(dolphin_dir, ts_dir)))
 
-    watermask = _first_existing_file(_watermask_candidates(dataset_dir, dolphin_dir, ts_dir))
-    if watermask is not None:
-        files["watermask"] = watermask
+    if watermask_path is not None:
+        wm = Path(watermask_path).expanduser().resolve()
+        if not wm.is_file():
+            raise FileNotFoundError(f"Watermask not found: {wm}")
+        files["watermask"] = wm
     else:
-        missing.append(_missing_looked_for(_watermask_candidates(dataset_dir, dolphin_dir, ts_dir)))
+        watermask = _first_existing_file(_watermask_candidates(dataset_dir, dolphin_dir, ts_dir))
+        if watermask is not None:
+            files["watermask"] = watermask
+        else:
+            missing.append(_missing_looked_for(_watermask_candidates(dataset_dir, dolphin_dir, ts_dir)))
 
     conn_path = ts_dir / "conncomp_intersection.tif"
     if conn_path.is_file():
@@ -532,7 +572,7 @@ def load_quality_layers(
     else:
         temp_coh = _mean_matching_tif(temp_paths, shape, required=True)
 
-    watermask = _read_required_tif(files["watermask"], shape)
+    watermask = read_watermask(files["watermask"], shape)
     conncomp = _read_required_tif(files["conncomp"], shape)
     height = _read_required_tif(files["height"], shape)
     incidence = _read_required_tif(files["incidence"], shape)
@@ -1096,7 +1136,11 @@ def _opera_geometry_from_dir(geom_dir: Path | None, shape: tuple[int, int]):
     return height, incidence, azimuth, shadow
 
 
-def load_opera_stack(stack_nc: Path, run_dir: Path | None = None):
+def load_opera_stack(
+    stack_nc: Path,
+    run_dir: Path | None = None,
+    watermask_path: Path | None = None,
+):
     """Load displacement + quality layers from an OPERA reformatted stack NetCDF."""
     stack_nc = Path(stack_nc).expanduser().resolve()
     run_dir = Path(run_dir).expanduser().resolve() if run_dir else stack_nc.parent
@@ -1147,6 +1191,8 @@ def load_opera_stack(stack_nc: Path, run_dir: Path | None = None):
     grid = {"LENGTH": length, "WIDTH": width, "transform": transform, "crs": crs, "bbox": None}
     geom_dir = run_dir / "geometry" if (run_dir / "geometry").is_dir() else None
     height, incidence, azimuth, shadow = _opera_geometry_from_dir(geom_dir, shape)
+    if watermask_path is not None:
+        watermask = read_watermask(watermask_path, shape)
     quality = {
         "temporal_coherence": temp_coh,
         "avg_spatial_coherence": None,

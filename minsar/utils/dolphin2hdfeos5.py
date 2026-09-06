@@ -98,6 +98,12 @@ def create_parser() -> argparse.ArgumentParser:
         metavar="LABEL",
         help=METHOD_STRING_HELP,
     )
+    parser.add_argument(
+        "--watermask",
+        default=None,
+        metavar="PATH",
+        help="Water mask GeoTIFF or NetCDF water_mask (default: auto for dolphin; water_mask from input stack for opera)",
+    )
     add_mask_arguments(parser)
     return parser
 
@@ -143,12 +149,15 @@ def _pick_ref(shape, mask, quality, ts_dir=None):
 
 def run_dolphin(inps, vmin, vmin_sim, suffix: str) -> Path:
     dataset_dir, dolphin_dir, ts_dir = resolve_run_paths(Path(inps.input_path))
+    watermask_path = Path(inps.watermask).expanduser() if inps.watermask else None
     print(f"Kind:       dolphin")
     print(f"Dataset:    {dataset_dir}")
     print(f"Dolphin:    {dolphin_dir}")
     print(f"Timeseries: {ts_dir}")
 
-    files = resolve_required_files(dataset_dir, dolphin_dir, ts_dir)
+    files = resolve_required_files(
+        dataset_dir, dolphin_dir, ts_dir, watermask_path=watermask_path
+    )
     _print_dolphin_files(files)
 
     stack, date_list, grid = collect_timeseries(ts_dir)
@@ -181,15 +190,23 @@ def run_opera(inps, vmin, vmin_sim, suffix: str) -> Path:
     input_path = Path(inps.input_path).expanduser().resolve()
     stack_nc = find_opera_stack_nc(input_path)
     run_dir = stack_nc.parent if stack_nc.parent.is_dir() else input_path
+    watermask_path = Path(inps.watermask).expanduser() if inps.watermask else None
     print(f"Kind:       opera-disp")
     print(f"Run dir:    {run_dir}")
     print(f"Stack NC:   {stack_nc}")
 
-    stack, date_list, grid, quality, bperp = load_opera_stack(stack_nc, run_dir)
+    stack, date_list, grid, quality, bperp = load_opera_stack(
+        stack_nc, run_dir, watermask_path=watermask_path
+    )
     shape = (int(grid["LENGTH"]), int(grid["WIDTH"]))
     print(f"Timeseries: {stack.shape[0]} dates, {shape[0]}x{shape[1]}")
     print(f"Temp coh:   average_temporal_coherence / mean(temporal_coherence)")
     print(f"Similarity: nanmean(phase_similarity)")
+    if quality.get("watermask") is not None:
+        wm_label = watermask_path if watermask_path is not None else stack_nc
+        print(f"Watermask:          {wm_label}")
+    else:
+        print(f"Watermask:          (none)")
     if quality.get("recommended_density") is not None:
         print(f"Rec dens:   from recommended_mask (for -m recommendedDensity)")
     mask = build_mask(shape, stack, quality, source=inps.mask_source, vmin=vmin, vmin_sim=vmin_sim)
