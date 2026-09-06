@@ -75,7 +75,7 @@ from dolphin.workflows.config import (
 )
 from dolphin.workflows.corrections import CorrectionOptions
 from dolphin.workflows.displacement import run as run_displacement
-from opera_utils import OPERA_DATASET_NAME, group_by_burst, group_by_date
+from opera_utils import OPERA_DATASET_NAME, get_dates, group_by_burst, group_by_date
 from pyproj import CRS, Transformer
 from rasterio.windows import from_bounds
 
@@ -111,7 +111,7 @@ if TYPE_CHECKING:
 DEFAULT_MS_SIZE = 15  # acquisitions per ministack
 DEFAULT_BUFFER = 500.0  # metres of padding around the requested extent
 DEFAULT_MAX_COMP = 5  # compressed SLCs carried forward per burst (historical)
-DEFAULT_FORWARD_WINDOW = 5  # real SLCs per forward run: n-4, n-3, n-2, n-1, n
+DEFAULT_FORWARD_WINDOW = 5  # legacy CLI; forward reals use ms_size + 1 (run_disp.py)
 DEFAULT_GSLC_GLOB = "t*.h5"  # pattern matching (G)SLC HDF5 files, any burst id
 DEFAULT_HALF_WINDOW_YX = (3, 7)  # y, x — with DEFAULT_STRIDES_YX → ~10 m posting
 DEFAULT_STRIDES_YX = (1, 2)  # y, x — OPERA production uses 3 6 (~30 m)
@@ -233,6 +233,39 @@ def dedupe_comp_slcs(comp_slc_dir: Path) -> int:
             dup.unlink()
             removed += 1
     return removed
+
+
+# forward_mode_network_size default is 3 → need 4 real CSLCs (disp-s1 error 2001).
+MIN_FORWARD_REALS = 4
+
+
+def _latest_comp_per_burst(
+    burst_map: dict[str, list[Path]], k: int, first_real_date: datetime
+) -> list[Path]:
+    """Latest ``k`` compressed SLCs per burst with ref date before ``first_real_date``.
+
+    Same rule as ``tools/disp-s1/scripts/run_disp.py`` ``latest_k_per_burst``.
+    """
+    out: list[Path] = []
+    for bid in sorted(burst_map.keys()):
+        files = sorted(burst_map[bid])
+        if not files:
+            continue
+        valid = [f for f in files if get_dates(f)[0] < first_real_date]
+        out.extend(valid[-k:])
+    return out
+
+
+def _forward_real_batch(
+    reals_by_burst: dict[str, list[Path]],
+    burst_ids: list[str],
+    start_idx: int,
+    ms_size: int,
+    n_dates: int,
+) -> list[Path]:
+    """Real CSLCs for one forward run (``run_disp.py`` ``get_forward_batch``)."""
+    end_idx = min(start_idx + ms_size + 1, n_dates)
+    return [f for b in burst_ids for f in reals_by_burst[b][start_idx:end_idx]]
 
 
 def _reset_incomplete_batch(work_dir: Path, output_dir: Path) -> None:
@@ -1208,10 +1241,10 @@ def run_processing(
 
     Full ministacks of ``ms_size`` real SLCs run in HISTORICAL mode (each saving
     one compressed SLC). Every remaining date that cannot fill a full ministack
-    then runs in FORWARD mode as its own job, with a fixed input stack of
-    ``1 compressed SLC + forward_window real SLCs`` ending at that date
-    (e.g. n-4, n-3, n-2, n-1, n for forward_window=5). Each forward run yields
-    exactly one product (date n), so no dates are dropped.
+    then runs in FORWARD mode as its own job, with ``ms_size + 1`` real SLCs
+    starting at that date (``run_disp.py`` ``get_forward_batch``) plus filtered
+    compressed SLCs (``latest_k_per_burst``). Each forward run yields exactly one
+    product (date n).
     """
     # ── Discover CSLCs ────────────────────────────────────────────────────────
     files = sorted(cslc_dir.rglob(gslc_glob))
@@ -1348,23 +1381,36 @@ def run_processing(
         run_idx += 1
 
     # ── Forward products (one run per leftover date) ──────────────────────────
-    # Each forward run: 1 compressed SLC + `forward_window` reals ending at date n.
-    # run_no_corrections keeps only the newest date's product, so one product/run.
+    stored_comp = sorted(comp_slc_dir.glob("*.h5")) or sorted(comp_slc_dir.glob("*.tif"))
+    burst_to_compressed = group_by_burst(stored_comp)
     for k, n in enumerate(range(hist_count, n_dates)):
-        s = max(0, n - (forward_window - 1))
-        batch_cslcs = [f for b in burst_ids for f in reals_by_burst[b][s : n + 1]]
-        comp_fwd = _pick_comp(1)  # exactly 1 ccslc per burst
-        if not comp_fwd:
-            raise SystemExit("No compressed SLC available for forward mode.")
+        end_idx = min(n + ms_size + 1, n_dates)
+        batch_cslcs = _forward_real_batch(reals_by_burst, burst_ids, n, ms_size, n_dates)
+        n_real_per_burst = end_idx - n
+        first_real_date = min(get_dates(f)[0] for f in batch_cslcs)
+        comp_fwd = sorted(_latest_comp_per_burst(burst_to_compressed, 1, first_real_date))
         work_dir = work_base / f"batch_{run_idx:03d}_forward"
         output_dir = work_base / f"output_{run_idx:03d}"
 
         print(f"\n{'='*60}")
         print(
             f"[forward {k + 1}/{n_forward}] product date idx {n}  "
-            f"window reals idx {s}-{n} ({len(batch_cslcs)} files)  "
-            f"ccslc={len(comp_fwd)}"
+            f"reals idx {n}-{end_idx - 1} ({len(batch_cslcs)} files, "
+            f"{n_real_per_burst}/burst)  ccslc={len(comp_fwd)}"
         )
+        if n_real_per_burst < MIN_FORWARD_REALS:
+            print(
+                f"  SKIP: forward nearest-3 network needs >={MIN_FORWARD_REALS} reals/burst "
+                f"(disp-s1 error 2001), have {n_real_per_burst}"
+            )
+            run_idx += 1
+            continue
+        if len(comp_fwd) < n_bursts:
+            raise SystemExit(
+                "Forward mode needs one compressed SLC per burst with reference date "
+                f"before {first_real_date.date()} (disp-s1 error 1001/2000 guard); "
+                f"found {len(comp_fwd)}/{n_bursts} in {comp_slc_dir}"
+            )
         if _batch_outputs_complete(output_dir, ProcessingMode.FORWARD, ms_size):
             n_found = len(_disp_product_paths(output_dir))
             print(f"  SKIP: {output_dir.name} already has {n_found}/1 product(s)")
@@ -1426,10 +1472,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--forward-window",
         type=int,
         default=DEFAULT_FORWARD_WINDOW,
-        help=(
-            "Real SLCs per forward run (window ending at the product date, e.g. "
-            "5 → n-4,n-3,n-2,n-1,n). Each forward run also uses 1 compressed SLC."
-        ),
+        help="Ignored; forward runs use --ministack-size + 1 reals (run_disp.py cadence).",
     )
     p.add_argument(
         "--buffer",
