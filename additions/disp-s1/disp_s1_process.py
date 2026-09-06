@@ -113,6 +113,8 @@ DEFAULT_BUFFER = 500.0  # metres of padding around the requested extent
 DEFAULT_MAX_COMP = 5  # compressed SLCs carried forward per burst (historical)
 DEFAULT_FORWARD_WINDOW = 5  # real SLCs per forward run: n-4, n-3, n-2, n-1, n
 DEFAULT_GSLC_GLOB = "t*.h5"  # pattern matching (G)SLC HDF5 files, any burst id
+DEFAULT_HALF_WINDOW_YX = (3, 7)  # y, x — with DEFAULT_STRIDES_YX → ~10 m posting
+DEFAULT_STRIDES_YX = (1, 2)  # y, x — OPERA production uses 3 6 (~30 m)
 
 # Keep JAX/XLA memory modest so it plays nice on shared GPUs.
 os.environ.setdefault("XLA_PYTHON_CLIENT_MEM_FRACTION", "0.1")
@@ -270,8 +272,12 @@ def make_cfg(
     compressed_slc_plan: CompressedSlcPlan = CompressedSlcPlan.LAST_PER_MINISTACK,
     output_reference_idx: int | None = None,
     ministack_size: int = DEFAULT_MS_SIZE,
+    half_window: tuple[int, int] | None = None,
+    strides: tuple[int, int] | None = None,
 ) -> DisplacementWorkflow:
     """Build a `DisplacementWorkflow` config for one ministack batch."""
+    hwy, hwx = half_window if half_window is not None else DEFAULT_HALF_WINDOW_YX
+    sy, sx = strides if strides is not None else DEFAULT_STRIDES_YX
     return DisplacementWorkflow(
         cslc_file_list=comp_slc_files + cslc_files,
         input_options=InputOptions(subdataset=OPERA_DATASET_NAME),
@@ -282,7 +288,7 @@ def make_cfg(
             ministack_size=ministack_size,
             max_num_compressed=5,
             output_reference_idx=output_reference_idx,
-            half_window=HalfWindow(y=3, x=7),
+            half_window=HalfWindow(y=hwy, x=hwx),
             use_evd=False,
             beta=0.0,
             zero_correlation_threshold=0.0,
@@ -294,7 +300,7 @@ def make_cfg(
         ),
         interferogram_network=InterferogramNetwork(max_bandwidth=3),
         output_options=OutputOptions(
-            strides=Strides(x=2, y=1),
+            strides=Strides(x=sx, y=sy),
             bounds=bounds,
             bounds_epsg=epsg,
         ),
@@ -1195,6 +1201,8 @@ def run_processing(
     gpu: bool,
     gslc_glob: str,
     forward_window: int = DEFAULT_FORWARD_WINDOW,
+    half_window: tuple[int, int] | None = None,
+    strides: tuple[int, int] | None = None,
 ) -> None:
     """Stage 1: run disp_s1 per batch with compressed carry-forward.
 
@@ -1270,6 +1278,8 @@ def run_processing(
             compressed_slc_plan=CompressedSlcPlan.LAST_PER_MINISTACK,
             output_reference_idx=max(0, num_ccslc - 1),
             ministack_size=num_ccslc + n_real + 1,
+            half_window=half_window,
+            strides=strides,
         )
         pge_rc = make_pge_runconfig(
             cfg=cfg,
@@ -1371,8 +1381,12 @@ def run_processing(
 
 def build_parser() -> argparse.ArgumentParser:
     """Command-line interface for the DISP-S1 processing pipeline."""
+    epilog = """Examples:
+ disp_s1_process.py --cslc-dir data --work-dir disp_s1_produce --frame-id 23211 --extent "-154.91,19.459 : -154.887,19.486"
+ disp_s1_process.py --cslc-dir data --work-dir disp_s1_produce --frame-id 23211 --extent "-154.91,19.459 : -154.887,19.486" --stride 3 6 --half-window 8 16 --stages process"""
     p = argparse.ArgumentParser(
-        description=__doc__,
+        description="Local OPERA DISP-S1 produce from CSLCs (ministacks, compressed SLCs, forward products).",
+        epilog=epilog,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     # ── Required, site-specific ──
@@ -1423,6 +1437,20 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_BUFFER,
         help="Padding (metres) added around the extent bbox.",
     )
+    p.add_argument(
+        "--half-window",
+        nargs=2,
+        type=int,
+        metavar=("Y", "X"),
+        help=f"Phase-linking half-window Y X pixels (default: {DEFAULT_HALF_WINDOW_YX[0]} {DEFAULT_HALF_WINDOW_YX[1]}).",
+    )
+    p.add_argument(
+        "--stride",
+        nargs=2,
+        type=int,
+        metavar=("Y", "X"),
+        help=f"Output strides Y X (default: {DEFAULT_STRIDES_YX[0]} {DEFAULT_STRIDES_YX[1]}; OPERA production: 3 6).",
+    )
     p.add_argument("--gpu", action="store_true", help="Enable GPU (JAX) processing.")
     p.add_argument(
         "--gslc-glob",
@@ -1470,6 +1498,9 @@ def main(argv: list[str] | None = None) -> None:
     # Stage scratch inside the work dir (JPL /tmp is tiny — keep off it).
     os.environ["TMPDIR"] = str(work_base)
 
+    half_window = tuple(args.half_window) if args.half_window is not None else None
+    strides = tuple(args.stride) if args.stride is not None else None
+
     if "process" in args.stages:
         run_processing(
             cslc_dir=args.cslc_dir,
@@ -1482,6 +1513,8 @@ def main(argv: list[str] | None = None) -> None:
             gpu=args.gpu,
             gslc_glob=args.gslc_glob,
             forward_window=args.forward_window,
+            half_window=half_window,
+            strides=strides,
         )
 
     if "reformat" in args.stages:

@@ -19,9 +19,9 @@ Run an ISCE3 SAFE/CSLC/DISP workflow: write configs and run/job files, then subm
 Always pass a MinSAR template or AOI plus project name. Science flags alone are invalid.
 Use --start-date/--end-date for dates; --start/--end/--dostep are processing steps.
 Leftover --section.option flags go to dolphin config. Use --dolphin-dir, not --work-directory.
-Processing steps are [download, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps, disp_s1_process, reformat_disp]
+Processing steps (standard CSLC): download_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps
+Processing steps (--dolphin-mode opera): download_cslc, disp_s1_process, reformat_disp, dolphin_2_hdfeos5, ingest_insarmaps
 Additional steps for data-type safe, disp-S1: create_cslc, reformat_disp respectively
-disp_s1_process and reformat_disp are written for --data-type cslc but not run by default (manual OPERA produce path).
 Optional DOLPHIN_CONFIG is a .yaml/.yml or OPERA DISP-S1 .nc (prefers metadata/dolphin_workflow_config).
 
 options:
@@ -42,6 +42,7 @@ options:
   --preset NAME         auto, standard, dry, wet, arctic, disp-s1 (default: standard)
   --half-window Y X     phase-linking half-window (default from preset; standard 6 12)
   --stride Y X          output strides (default from preset; standard 3 6)
+  --dolphin-mode MODE   CSLC path: standard (Dolphin stack) or opera (local DISP-S1 produce); default: standard
   --backend BACKEND     auto, local, or slurm (default: auto)
   --sleep SECS          sleep seconds before running
   --dry-run             print the generator plan without writing files or submitting
@@ -53,7 +54,7 @@ Examples:
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --no-run
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --data-type cslc --start download
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --data-type cslc --preset dry --stride 2 4
-  ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --data-type cslc --preset disp-s1
+  ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --data-type cslc --preset disp-s1 --dolphin-mode opera
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template dolphin_config.yaml --data-type cslc
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template OPERA_L3_DISP-S1.nc --data-type cslc
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --unwrap-options.run-interpolation true
@@ -72,7 +73,7 @@ die() {
 
 is_consume_one() {
     case "$1" in
-        --data-type|--platform|--flight-dir|--start-date|--end-date|--track|--relativeOrbit|--frame-id|--queue|--long-queue|--config|--preset|--burst-count-method|--dolphin-dir|--from-dolphin-dir|--unwrap-method|--ministack-size|--backend|--start|--end|--stop|--dostep|--phase|--max-parallel)
+        --data-type|--platform|--flight-dir|--start-date|--end-date|--track|--relativeOrbit|--frame-id|--queue|--long-queue|--config|--preset|--burst-count-method|--dolphin-dir|--from-dolphin-dir|--unwrap-method|--ministack-size|--dolphin-mode|--backend|--start|--end|--stop|--dostep|--phase|--max-parallel)
             return 0
             ;;
     esac
@@ -107,9 +108,13 @@ is_download_step() {
     return 1
 }
 
+is_opera_dolphin_mode() {
+    [[ "${dolphin_mode:-standard}" == "opera" ]]
+}
+
 is_science_token() {
     case "$1" in
-        --unwrap-method|--dolphin-dir|--from-dolphin-dir|--copy-dolphin-inputs|--ministack-size|--half-window|--stride|--preset)
+        --unwrap-method|--dolphin-dir|--from-dolphin-dir|--copy-dolphin-inputs|--ministack-size|--half-window|--stride|--preset|--dolphin-mode)
             return 0
             ;;
     esac
@@ -377,6 +382,10 @@ has_run_stage() {
             return 0
         fi
     done
+    if [[ -f "$work_dir/$ISCE3_RUN_DIR_NAME/run_${stem}" ]]; then
+        eval "$nullglob_state"
+        return 0
+    fi
     eval "$nullglob_state"
     return 1
 }
@@ -409,14 +418,20 @@ cd "$work_dir"
 
 dolphin_dir="dolphin"
 layer="wrapped"
+dolphin_mode="standard"
 if [[ -f "$work_dir/.isce3_run_slice" ]]; then
     dolphin_dir="$(sed -n 's/^dolphin_dir=//p' "$work_dir/.isce3_run_slice" | head -1)"
     layer="$(sed -n 's/^layer=//p' "$work_dir/.isce3_run_slice" | head -1)"
+    dolphin_mode="$(sed -n 's/^dolphin_mode=//p' "$work_dir/.isce3_run_slice" | head -1)"
 fi
 dolphin_dir="${dolphin_dir:-dolphin}"
 layer="${layer:-wrapped}"
+dolphin_mode="${dolphin_mode:-standard}"
 if [[ "$phase" != "download" ]]; then
     echo "Dolphin dir: ${dolphin_dir}"
+    if is_opera_dolphin_mode; then
+        echo "Dolphin mode: opera"
+    fi
 fi
 
 run_args=()
@@ -438,16 +453,20 @@ elif [[ "$phase" == "download" ]]; then
 elif [[ "$phase" == "dolphin" ]]; then
     start_from="$app_start"
     if [[ -z "$start_from" ]]; then
-        case "$layer" in
-            unwrap) start_from="dolphin_unwrap" ;;
-            timeseries) start_from="dolphin_timeseries" ;;
-            *) start_from="dolphin_wrapped" ;;
-        esac
-        if ! has_run_stage "$start_from" && has_run_stage dolphin; then
-            start_from="dolphin"
-        fi
-        if has_run_stage dolphin_2_hdfeos5 && ! has_run_stage dolphin_wrapped && ! has_run_stage dolphin; then
-            start_from="dolphin_2_hdfeos5"
+        if is_opera_dolphin_mode; then
+            start_from="disp_s1_process"
+        else
+            case "$layer" in
+                unwrap) start_from="dolphin_unwrap" ;;
+                timeseries) start_from="dolphin_timeseries" ;;
+                *) start_from="dolphin_wrapped" ;;
+            esac
+            if ! has_run_stage "$start_from" && has_run_stage dolphin; then
+                start_from="dolphin"
+            fi
+            if has_run_stage dolphin_2_hdfeos5 && ! has_run_stage dolphin_wrapped && ! has_run_stage dolphin; then
+                start_from="dolphin_2_hdfeos5"
+            fi
         fi
     fi
     run_args+=(--start "$start_from" --end ingest_insarmaps)

@@ -46,10 +46,11 @@ STEP may be a step number, step name, run-file basename, or a coarse alias:
   download, download_create_cslc, dolphin, hdfeos5, ingest.
 
 SAFE steps:    download_safe, create_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps
-CSLC steps:    download_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps, disp_s1_process, reformat_disp
+CSLC steps (standard): download_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps
+CSLC steps (opera):    download_cslc, disp_s1_process, reformat_disp, dolphin_2_hdfeos5, ingest_insarmaps
 SAFE/CSLC monolithic: dolphin instead of dolphin_wrapped/unwrap/timeseries (create_isce3_runfiles.py --no-dolphin-split)
 DISP-S1 steps: download_disp, reformat_disp, dolphin_2_hdfeos5, ingest_insarmaps
-disp_s1_process / reformat_disp (CSLC only): local OPERA produce + stack reformat; manual — not in default --end ingest_insarmaps
+Legacy sidecar run files (run_disp_s1_process, run_reformat_disp) remain supported for older projects.
 
 Examples:
   ${SCRIPT_NAME}
@@ -304,9 +305,9 @@ expand_step_alias() {
             ;;
         dolphin)
             if [[ "$which" == "end" ]]; then
-                first_existing_stage dolphin_timeseries dolphin dolphin_unwrap dolphin_wrapped || echo "$value"
+                first_existing_stage dolphin_timeseries reformat_disp disp_s1_process dolphin dolphin_unwrap dolphin_wrapped || echo "$value"
             else
-                first_existing_stage dolphin_wrapped dolphin || echo "$value"
+                first_existing_stage dolphin_wrapped disp_s1_process dolphin || echo "$value"
             fi
             ;;
         hdfeos5)
