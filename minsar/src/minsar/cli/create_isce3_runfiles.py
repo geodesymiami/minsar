@@ -85,6 +85,15 @@ PIXI_STAGES = frozenset({
 DOLPHIN_SPLIT_STAGES = ("dolphin_wrapped", "dolphin_unwrap", "dolphin_timeseries")
 DOLPHIN_MODE_CHOICES = ("standard", "opera")
 DEFAULT_DOLPHIN_MODE = "standard"
+REFERENCE_METHOD_CHOICES = ("NONE", "POINT", "MEDIAN", "BORDER", "HIGH_COHERENCE")
+DEFAULT_REFERENCE_METHOD = "HIGH_COHERENCE"
+_REFERENCE_METHOD_BY_VALUE = {
+    "none": "NONE",
+    "point": "POINT",
+    "median": "MEDIAN",
+    "border": "BORDER",
+    "high_coherence": "HIGH_COHERENCE",
+}
 OPERA_DOLPHIN_STAGES = ("disp_s1_process", "reformat_disp")
 # Legacy sidecar run files (pre --dolphin-mode opera); removed on regenerate.
 LEGACY_UNNUMBERED_RUN_BASENAMES = (
@@ -124,6 +133,7 @@ ARGV_FIX_KW = {
         "--unwrap-method",
         "--ministack-size",
         "--dolphin-mode",
+        "--reference-method",
     ),
     "consume_two": (
         "--half-window",
@@ -152,6 +162,19 @@ def _normalize_dolphin_mode(value: str) -> str:
             f"invalid --dolphin-mode {value!r}; use {', '.join(DOLPHIN_MODE_CHOICES)}"
         )
     return token
+
+
+def _normalize_reference_method(value: str) -> str:
+    """Normalize opera-utils disp-s1-reformat --reference-method."""
+    token = value.strip().upper().replace("-", "_")
+    if token in REFERENCE_METHOD_CHOICES:
+        return token
+    by_value = _REFERENCE_METHOD_BY_VALUE.get(value.strip().lower().replace("-", "_"))
+    if by_value:
+        return by_value
+    raise argparse.ArgumentTypeError(
+        f"invalid --reference-method {value!r}; use {', '.join(REFERENCE_METHOD_CHOICES)}"
+    )
 
 
 _DOLPHIN_MODE_NAME_TOKEN = {"standard": "Standard", "opera": "Opera"}
@@ -959,6 +982,7 @@ def create_parser() -> argparse.ArgumentParser:
  create_isce3_runfiles.py 19.45:19.5,-154.915:-154.852 HawaiiPuna --flight-dir desc --data-type cslc --phase all
  create_isce3_runfiles.py 19.45:19.5,-154.915:-154.852 HawaiiPuna dolphin_config.yaml --flight-dir desc --data-type cslc
  create_isce3_runfiles.py 19.45:19.5,-154.915:-154.852 HawaiiPuna OPERA_L3_DISP-S1.nc --flight-dir desc --data-type cslc
+ create_isce3_runfiles.py $TE/HawaiiPunaSenD87.template --data-type cslc --dolphin-mode opera --reference-method BORDER
  create_isce3_runfiles.py $TE/HawaiiPunaSenD87.template --disp-S1 --frame-id 11115"""
     parser = argparse.ArgumentParser(
         description=(
@@ -1095,6 +1119,13 @@ def create_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--unwrap-method", metavar="NAME", help="shortcut for --unwrap-options.unwrap-method")
     parser.add_argument("--ministack-size", metavar="N", help="shortcut for --phase-linking.ministack-size")
+    parser.add_argument(
+        "--reference-method",
+        type=_normalize_reference_method,
+        default=DEFAULT_REFERENCE_METHOD,
+        metavar="METHOD",
+        help="opera-utils disp-s1-reformat reference: NONE, POINT, MEDIAN, BORDER, HIGH_COHERENCE (default: HIGH_COHERENCE)",
+    )
     parser.add_argument(
         "--copy-dolphin-inputs",
         action="store_true",
@@ -1456,7 +1487,7 @@ def _create_files(
         queue = args.queue if profile.queue_class == "short" else args.long_queue
         dolphin_cpus = int(_make_job_submit(work_dir, run_dir, queue, profile).number_of_cores_per_node)
     if workflow == "disp":
-        bodies = _disp_stage_bodies(context, work_dir)
+        bodies = _disp_stage_bodies(context, work_dir, reference_method=args.reference_method)
     elif workflow in {"safe", "cslc"}:
         bodies = _sweets_stage_bodies(
             workflow,
@@ -1479,6 +1510,7 @@ def _create_files(
                 int(args.ministack_size) if getattr(args, "ministack_size", None) else None
             ),
             dolphin_mode=dolphin_mode,
+            reference_method=args.reference_method,
         )
     else:
         bodies = None
@@ -1780,6 +1812,7 @@ def _sweets_stage_bodies(
     imported_algo: dict | None = None,
     ministack_size: int | None = None,
     dolphin_mode: str = DEFAULT_DOLPHIN_MODE,
+    reference_method: str = DEFAULT_REFERENCE_METHOD,
 ) -> dict[str, str]:
     """Resolve concrete SAFE or CSLC run-file bodies at generate time."""
     config_line = _sweets_config_line(workflow, context)
@@ -1796,7 +1829,7 @@ def _sweets_stage_bodies(
             half_window=half_window,
             strides=strides,
         )
-        reformat_disp = _reformat_disp_command(context) + "\n"
+        reformat_disp = _reformat_disp_command(context, reference_method=reference_method) + "\n"
         if phase == "download":
             return {"download_cslc": download.rstrip("\n") + f"\n{geom}\n"}
         return {
@@ -2038,6 +2071,7 @@ def _reformat_disp_command(
     context: dict[str, object],
     *,
     work_subdir: str = DISP_S1_PRODUCE_DIR,
+    reference_method: str = DEFAULT_REFERENCE_METHOD,
 ) -> str:
     """Shell command to reformat disp_s1_process .nc outputs into one stack (same as disp workflow reformat)."""
     module = runpy.run_path(str(_disp_module_path()))
@@ -2046,6 +2080,7 @@ def _reformat_disp_command(
     return format_reformat(
         input_files=f"{work_subdir}/output_*/OPERA*.nc",
         output_name=f"{project}-stack.nc",
+        reference_method=reference_method,
     )
 
 
@@ -2054,7 +2089,12 @@ def _disp_module_path() -> Path:
     return minsar_home / "minsar/utils/generate_disp-s1_commands.py"
 
 
-def _disp_stage_bodies(context: dict[str, object], work_dir: Path) -> dict[str, str]:
+def _disp_stage_bodies(
+    context: dict[str, object],
+    work_dir: Path,
+    *,
+    reference_method: str = DEFAULT_REFERENCE_METHOD,
+) -> dict[str, str]:
     """Resolve concrete DISP-S1 run-file bodies at generate time."""
     template = str(context["template"])
     if not template:
@@ -2069,6 +2109,7 @@ def _disp_stage_bodies(context: dict[str, object], work_dir: Path) -> dict[str, 
         "end_date": end_date,
         "frame_id": frame_id,
         "url_type": "HTTPS",
+        "reference_method": reference_method,
     }
 
     def build_here() -> dict[str, str]:
@@ -2089,8 +2130,9 @@ def _disp_stage_bodies(context: dict[str, object], work_dir: Path) -> dict[str, 
         "from pathlib import Path;"
         "m=runpy.run_path(sys.argv[1]);"
         "stages=m['build_stage_commands_from_template'](sys.argv[2],start_date=sys.argv[3] or None,"
-        "end_date=sys.argv[4] or None,frame_id=int(sys.argv[5]) if sys.argv[5] else None,url_type='HTTPS');"
-        "Path(sys.argv[6]).write_text(json.dumps(stages))"
+        "end_date=sys.argv[4] or None,frame_id=int(sys.argv[5]) if sys.argv[5] else None,url_type='HTTPS',"
+        "reference_method=sys.argv[6] or 'HIGH_COHERENCE');"
+        "Path(sys.argv[7]).write_text(json.dumps(stages))"
     )
     try:
         _run_in_sweets(
@@ -2104,6 +2146,7 @@ def _disp_stage_bodies(context: dict[str, object], work_dir: Path) -> dict[str, 
                 start_date or "",
                 end_date or "",
                 frame_raw,
+                reference_method,
                 str(out_json),
             ],
         )

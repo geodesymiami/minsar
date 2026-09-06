@@ -28,16 +28,18 @@ create_isce3_runfiles.py 19.45:19.5,-154.915:-154.852 HawaiiPuna --flight-dir de
 
 ## What the app passes to the generator
 
-| App command | Generator extras | Then `run_isce3_workflow.bash run_files_isce3` |
+| App command | Generator `--phase` (internal) | Then `run_isce3_workflow.bash run_files_isce3` |
 |---|---|---|
-| template only | `--phase all` | step 1 through last |
-| `--start download` | `--phase download` | `--start download --end download` (SAFE: `download_safe` through `create_cslc`) |
-| `--start dolphin_wrapped` | `--phase dolphin --dolphin-dir dolphin` | `dolphin_wrapped` through ingest |
-| `--unwrap-options.run-interpolation true` | `--phase dolphin` plus the flag (auto `DIR=dolphin_interp`) | unwrap through ingest |
-| `--start dolphin_unwrap --unwrap-method whirlwind` | `--phase dolphin --unwrap-method whirlwind` (auto `DIR=dolphin_whirlwind`) | unwrap through ingest |
-| `--start ingest_insarmaps` | `--phase dolphin` | `--dostep ingest_insarmaps` |
+| template only (no `--start` / `--dostep`) | `all` | `--start download --end ingest_insarmaps` |
+| `--start download` | `download` | `--start download --end download` (SAFE: `download_safe` through `create_cslc`) |
+| `--start dolphin_wrapped` | `dolphin` | `--start dolphin_wrapped --end ingest_insarmaps` |
+| `--unwrap-options.run-interpolation true` (no `--start`) | `all` | `--start download --end ingest_insarmaps` |
+| `--start dolphin_unwrap --unwrap-method whirlwind` | `dolphin` | `--start dolphin_unwrap --end ingest_insarmaps` |
+| `--dostep ingest_insarmaps` | `dolphin` | `--dostep ingest_insarmaps` |
 
-`--phase download` does not rewrite existing Dolphin `DIR/` trees. `--phase dolphin` requires CSLCs or GSLCs on disk; if they are missing, the generator exits with “run `--start download` first”.
+Do not pass `--phase` to the app; it is derived from `--start` / `--dostep` for `create_isce3_runfiles.py` only.
+
+Partial generator phases (`download` or `dolphin`) require CSLCs or GSLCs on disk for science-only regeneration; if they are missing, the generator exits with “run `--start download` first”. A full run (no `--start` / `--dostep`) always writes all run files.
 
 `--phase download` includes `create_cslc` for SAFE. Alias `download_create_cslc` is the same as `download`. Fine step `create_cslc` is still targetable.
 

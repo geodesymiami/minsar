@@ -43,6 +43,8 @@ options:
   --half-window Y X     phase-linking half-window (default from preset; standard 6 12)
   --stride Y X          output strides (default from preset; standard 3 6)
   --dolphin-mode MODE   CSLC path: standard (Dolphin stack) or opera (local DISP-S1 produce); default: standard
+  --reference-method METHOD
+                        disp-s1-reformat reference: NONE, POINT, MEDIAN, BORDER, HIGH_COHERENCE (default: HIGH_COHERENCE)
   --backend BACKEND     auto, local, or slurm (default: auto)
   --sleep SECS          sleep seconds before running
   --dry-run             print the generator plan without writing files or submitting
@@ -55,6 +57,7 @@ Examples:
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --data-type cslc --start download
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --data-type cslc --preset dry --stride 2 4
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --data-type cslc --preset disp-s1 --dolphin-mode opera
+  ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --data-type cslc --dolphin-mode opera --reference-method BORDER
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template dolphin_config.yaml --data-type cslc
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template OPERA_L3_DISP-S1.nc --data-type cslc
   ${SCRIPT_NAME} \$TE/HawaiiPunaSenD87.template --unwrap-options.run-interpolation true
@@ -73,7 +76,7 @@ die() {
 
 is_consume_one() {
     case "$1" in
-        --data-type|--platform|--flight-dir|--start-date|--end-date|--track|--relativeOrbit|--frame-id|--queue|--long-queue|--config|--preset|--burst-count-method|--dolphin-dir|--from-dolphin-dir|--unwrap-method|--ministack-size|--dolphin-mode|--backend|--start|--end|--stop|--dostep|--phase|--max-parallel)
+        --data-type|--platform|--flight-dir|--start-date|--end-date|--track|--relativeOrbit|--frame-id|--queue|--long-queue|--config|--preset|--burst-count-method|--dolphin-dir|--from-dolphin-dir|--unwrap-method|--ministack-size|--dolphin-mode|--reference-method|--backend|--max-parallel)
             return 0
             ;;
     esac
@@ -208,8 +211,7 @@ app_start=""
 app_end=""
 app_dostep=""
 backend=""
-phase=""
-user_phase=false
+gen_phase=""
 dry_run=false
 no_run=false
 has_science=false
@@ -247,10 +249,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --phase)
-            [[ -n "${2:-}" && "$2" != --* ]] || die "$1 requires a value"
-            phase="$2"
-            user_phase=true
-            shift 2
+            die "do not pass --phase; omit --start/--dostep for all run files, or pass --start/--dostep to limit generation and execution"
             ;;
         --dolphin-dir)
             [[ -n "${2:-}" && "$2" != --* ]] || die "$1 requires a value"
@@ -342,63 +341,39 @@ fi
 [[ -n "${SCRATCHDIR:-}" ]] || die "SCRATCHDIR is not set; source setup/environment.bash"
 work_dir="${SCRATCHDIR}/${project}"
 
-if [[ "$user_phase" != true ]]; then
-    if [[ -n "$app_dostep" ]]; then
-        if [[ "$app_dostep" =~ ^[0-9]+$ ]]; then
-            phase="all"
-        elif is_download_step "$app_dostep"; then
-            phase="download"
-        else
-            phase="dolphin"
-        fi
-    elif [[ -n "$app_start" ]]; then
-        if [[ "$app_start" =~ ^[0-9]+$ ]]; then
-            phase="all"
-        elif is_download_step "$app_start"; then
-            phase="download"
-        else
-            phase="dolphin"
-        fi
-    elif [[ "$has_science" == true ]]; then
-        phase="dolphin"
+if [[ -n "$app_dostep" ]]; then
+    if [[ "$app_dostep" =~ ^[0-9]+$ ]]; then
+        gen_phase="all"
+    elif is_download_step "$app_dostep"; then
+        gen_phase="download"
     else
-        phase="all"
+        gen_phase="dolphin"
     fi
+elif [[ -n "$app_start" ]]; then
+    if [[ "$app_start" =~ ^[0-9]+$ ]]; then
+        gen_phase="all"
+    elif is_download_step "$app_start"; then
+        gen_phase="download"
+    else
+        gen_phase="dolphin"
+    fi
+else
+    gen_phase="all"
 fi
 
 if [[ "$app_start" == "dolphin_wrapped" && "$explicit_dolphin_dir" != true && "$has_science" != true ]]; then
     gen_args+=(--dolphin-dir dolphin)
 fi
 
-has_run_stage() {
-    local stem="$1"
-    local file
-    local nullglob_state
-    nullglob_state="$(shopt -p nullglob)"
-    shopt -s nullglob
-    for file in "$work_dir/$ISCE3_RUN_DIR_NAME"/run_[0-9][0-9]_"${stem}"; do
-        if [[ -f "$file" ]]; then
-            eval "$nullglob_state"
-            return 0
-        fi
-    done
-    if [[ -f "$work_dir/$ISCE3_RUN_DIR_NAME/run_${stem}" ]]; then
-        eval "$nullglob_state"
-        return 0
-    fi
-    eval "$nullglob_state"
-    return 1
-}
-
 if [[ -n "$sleep_time" && "$dry_run" != true ]]; then
     echo "sleeping $sleep_time secs before starting ..."
     sleep "$sleep_time"
 fi
 
-echo "Running: create_isce3_runfiles.py ${positionals[*]} ${gen_args[*]} --phase ${phase}"
+echo "Running: create_isce3_runfiles.py ${positionals[*]} ${gen_args[*]} --phase ${gen_phase}"
 gen_out="$(mktemp)"
 trap 'rm -f "$gen_out"' EXIT
-"$GENERATOR" "${positionals[@]}" "${gen_args[@]}" --phase "$phase" | tee "$gen_out"
+"$GENERATOR" "${positionals[@]}" "${gen_args[@]}" --phase "$gen_phase" | tee "$gen_out"
 if resolved="$(project_from_generator_log "$gen_out")"; then
     project="$resolved"
 fi
@@ -417,17 +392,14 @@ fi
 cd "$work_dir"
 
 dolphin_dir="dolphin"
-layer="wrapped"
 dolphin_mode="standard"
 if [[ -f "$work_dir/.isce3_run_slice" ]]; then
     dolphin_dir="$(sed -n 's/^dolphin_dir=//p' "$work_dir/.isce3_run_slice" | head -1)"
-    layer="$(sed -n 's/^layer=//p' "$work_dir/.isce3_run_slice" | head -1)"
     dolphin_mode="$(sed -n 's/^dolphin_mode=//p' "$work_dir/.isce3_run_slice" | head -1)"
 fi
 dolphin_dir="${dolphin_dir:-dolphin}"
-layer="${layer:-wrapped}"
 dolphin_mode="${dolphin_mode:-standard}"
-if [[ "$phase" != "download" ]]; then
+if [[ "$gen_phase" != "download" ]]; then
     echo "Dolphin dir: ${dolphin_dir}"
     if is_opera_dolphin_mode; then
         echo "Dolphin mode: opera"
@@ -448,28 +420,6 @@ elif [[ -n "$app_start" ]]; then
     else
         run_args+=(--end ingest_insarmaps)
     fi
-elif [[ "$phase" == "download" ]]; then
-    run_args+=(--start download --end download)
-elif [[ "$phase" == "dolphin" ]]; then
-    start_from="$app_start"
-    if [[ -z "$start_from" ]]; then
-        if is_opera_dolphin_mode; then
-            start_from="disp_s1_process"
-        else
-            case "$layer" in
-                unwrap) start_from="dolphin_unwrap" ;;
-                timeseries) start_from="dolphin_timeseries" ;;
-                *) start_from="dolphin_wrapped" ;;
-            esac
-            if ! has_run_stage "$start_from" && has_run_stage dolphin; then
-                start_from="dolphin"
-            fi
-            if has_run_stage dolphin_2_hdfeos5 && ! has_run_stage dolphin_wrapped && ! has_run_stage dolphin; then
-                start_from="dolphin_2_hdfeos5"
-            fi
-        fi
-    fi
-    run_args+=(--start "$start_from" --end ingest_insarmaps)
 else
     run_args+=(--start download --end ingest_insarmaps)
 fi
