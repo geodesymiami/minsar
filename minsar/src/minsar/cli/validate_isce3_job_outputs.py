@@ -10,7 +10,7 @@ import re
 import sys
 from pathlib import Path
 
-from minsar.utils.isce3_dolphin_experiment import read_dolphin_dir_sidecar
+from minsar.utils.isce3_dolphin_experiment import read_dolphin_dir_sidecar, read_run_slice_sidecar
 
 DEFAULT_VALIDATION_FILE = Path(__file__).resolve().parents[3] / "defaults/isce3_validation.json"
 _JOB_STEM_RE = re.compile(r"^run_(\d{2})_(.+)$")
@@ -18,6 +18,8 @@ _UNNUMBERED_JOB_STEMS = {
     "run_disp_s1_process": "disp_s1_process",
     "run_reformat_disp": "reformat_disp",
 }
+# CSLC opera writes HE5/ingest under project-root timeseries/, not {DIR}/timeseries/.
+_CSLC_OPERA_DISP_PATTERN_STEPS = ("dolphin_2_hdfeos5", "ingest_insarmaps")
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -118,6 +120,31 @@ def _selected(step: dict[str, object], values: list[str] | None) -> bool:
     return any(value in {str(step["name"]), str(step["number"]), str(step["run_file"])} for value in values)
 
 
+def _read_dolphin_mode(work_dir: Path) -> str:
+    mode = read_run_slice_sidecar(work_dir).get("dolphin_mode", "standard").strip().lower()
+    return mode if mode in {"standard", "opera"} else "standard"
+
+
+def _effective_rules(
+    workflow: str,
+    rules: dict[str, list[str]],
+    workflows: dict[str, object],
+    dolphin_mode: str,
+) -> dict[str, list[str]]:
+    """Use disp-style paths for opera CSLC steps that write under project-root timeseries/."""
+    if workflow != "cslc" or dolphin_mode != "opera":
+        return rules
+    disp_rules = workflows.get("disp")
+    if not isinstance(disp_rules, dict):
+        return rules
+    out = dict(rules)
+    for step in _CSLC_OPERA_DISP_PATTERN_STEPS:
+        patterns = disp_rules.get(step)
+        if isinstance(patterns, list) and step in out:
+            out[step] = list(patterns)
+    return out
+
+
 def _validate_step(
     step: dict[str, object],
     rules: dict[str, list[str]],
@@ -146,8 +173,13 @@ def main(iargs: list[str] | None = None) -> int:
         if config.get("schema_version") != 1:
             raise ValueError("unsupported validation schema")
         steps = _discover_steps(work_dir)
+        workflows = config["workflows"]
+        if not isinstance(workflows, dict):
+            raise ValueError("validation defaults are missing workflows")
         workflow, rules = _workflow_rules(config, steps, args.data_type)
         dolphin_dir = read_dolphin_dir_sidecar(work_dir)
+        dolphin_mode = _read_dolphin_mode(work_dir)
+        rules = _effective_rules(workflow, rules, workflows, dolphin_mode)
 
         step_filters: list[str] | None = list(args.step) if args.step else None
         if args.job_files:
@@ -170,7 +202,13 @@ def main(iargs: list[str] | None = None) -> int:
 
         if step_filters and not results:
             raise ValueError("none of the requested steps exist")
-        report = {"data_type": workflow, "work_dir": str(work_dir), "ok": all(item["ok"] for item in results), "steps": results}
+        report = {
+            "data_type": workflow,
+            "dolphin_mode": dolphin_mode,
+            "work_dir": str(work_dir),
+            "ok": all(item["ok"] for item in results),
+            "steps": results,
+        }
         if args.json_output:
             args.json_output.write_text(json.dumps(report, indent=2) + "\n")
         return 0 if report["ok"] or args.allow_empty else 1
