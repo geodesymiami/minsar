@@ -35,7 +35,7 @@ set -eo pipefail
 ./setup/install_isceplus.bash
 ./setup/install_spatz.bash
 ```
-To recreate only the conda env: `RECREATE_ENV=1 ./setup/install_env.bash`. On Mac, as some packages are not available from conda-forge (isce2, pymaxflow) a `minsar_env_MacOS.yml` is created and used.
+To recreate the conda env, re-run `./setup/install_env.bash` (it removes `tools/miniforge3/envs/minsar` first). On Mac, as some packages are not available from conda-forge (isce2, pymaxflow) a `minsar_env_MacOS.yml` is created and used.
 
 ---
 ### Test your installation

@@ -1,34 +1,9 @@
 #!/usr/bin/env bash
-# Clone ISCE3/OPERA repos and install sweets via pixi (idempotent clones).
 set -eo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-cd "${REPO_ROOT}"
-export MINSAR_HOME="${MINSAR_HOME:-${REPO_ROOT}}"
-
-if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-    helptext="
-    usage: install_isce3.bash
-
-    Clone COMPASS, disp-s1, bowser, tropo, disp-nisar, OPERA_Applications, dolphin,
-    sweets; pin sweets to tools/dolphin; pixi install; optionally stage sweets pixi env.
-
-    Examples:
-        ./setup/install_isce3.bash
-    "
-    echo -e "$helptext"
-    exit 0
-fi
-
 clone_repo() {
-    local url="$1"
-    local dest="$2"
-    if [[ -e "$dest" ]]; then
-        echo "skip clone (exists): $dest"
-        return 0
-    fi
-    git clone "$url" "$dest"
+    [[ -e "$2" ]] && echo "skip clone (exists): $2" && return 0
+    git clone "$1" "$2"
 }
 
 ### Install #########################
@@ -39,39 +14,22 @@ clone_repo git@github.com:opera-adt/tropo.git tools/tropo
 clone_repo git@github.com:opera-adt/disp-nisar.git tools/disp-nisar
 clone_repo git@github.com:OPERA-Cal-Val/OPERA_Applications.git tools/OPERA_Applications
 clone_repo git@github.com:isce-framework/dolphin.git tools/dolphin
-
-# chttps://github.com/scottstanie/opera-utils.git@develop-scott"
 clone_repo https://github.com/isce-framework/sweets.git tools/sweets
 
 (
 cd tools/sweets
 
-# MinSAR ISCE3 split stages need dolphin.workflows._block_split from tools/dolphin.
-# Upstream sweets pins scottstanie/dolphin@develop-scott, which can lag that API.
-# Prefer isce-framework/dolphin (cloned as tools/dolphin); do not switch to Scott's fork.
-if [[ -d "${MINSAR_HOME}/tools/dolphin" ]]; then
+# Prefer tools/dolphin over sweets' scottstanie/dolphin pin (needs _block_split).
+if [[ -d ../dolphin ]]; then
     python3 - <<'PY'
 from pathlib import Path
 import re
-
 path = Path("pyproject.toml")
 text = path.read_text()
 replacement = 'dolphin = { path = "../dolphin", editable = false }'
-text2, n = re.subn(
-    r'^dolphin = \{ git = "https://github.com/scottstanie/dolphin\.git".*$',
-    replacement,
-    text,
-    count=1,
-    flags=re.M,
-)
+text2, n = re.subn(r'^dolphin = \{ git = "https://github.com/scottstanie/dolphin\.git".*$', replacement, text, count=1, flags=re.M)
 if n == 0:
-    text2, n = re.subn(
-        r'^dolphin = \{ path = "\.\./dolphin".*$',
-        replacement,
-        text,
-        count=1,
-        flags=re.M,
-    )
+    text2, n = re.subn(r'^dolphin = \{ path = "\.\./dolphin".*$', replacement, text, count=1, flags=re.M)
 if n == 0:
     raise SystemExit("Error: could not pin sweets dolphin to ../dolphin in pyproject.toml")
 path.write_text(text2)
@@ -79,14 +37,11 @@ print("Pinned sweets dolphin to ../dolphin (non-editable)")
 PY
 fi
 
-# isce-framework YamlModel KeyErrors on sweets Workflow unions ($ref / oneOf).
-# Apply the scottstanie/develop-scott comment-schema fix before installing into sweets.
-if [[ -f "${MINSAR_HOME}/tools/dolphin/src/dolphin/workflows/config/_yaml_model.py" ]]; then
+# Patch YamlModel for sweets oneOf/$ref schemas if needed.
+if [[ -f ../dolphin/src/dolphin/workflows/config/_yaml_model.py ]]; then
     python3 - <<'PY'
-import os
 from pathlib import Path
-
-path = Path(os.environ["MINSAR_HOME"]) / "tools/dolphin/src/dolphin/workflows/config/_yaml_model.py"
+path = Path("../dolphin/src/dolphin/workflows/config/_yaml_model.py")
 text = path.read_text()
 old = '''        if "anyOf" in val:
             #   'anyOf': [{'type': 'string'}, {'type': 'null'}],
@@ -136,18 +91,13 @@ if pixi install; then
 else
     echo "Warning: pixi install failed (lock/solve); continuing with pip dolphin fallback" >&2
 fi
-# Ensure dolphin with _block_split is in the env even if pixi lock/solve fails under HPC limits.
-if [[ -d "${MINSAR_HOME}/tools/dolphin" && -x .pixi/envs/default/bin/python ]]; then
-    .pixi/envs/default/bin/python -m pip install "${MINSAR_HOME}/tools/dolphin" --no-deps --force-reinstall
+if [[ -d ../dolphin && -x .pixi/envs/default/bin/python ]]; then
+    .pixi/envs/default/bin/python -m pip install ../dolphin --no-deps --force-reinstall
 fi
 )
 
 echo "sweets installation DONE"
 
-if [[ -f "${MINSAR_HOME}/minsar/scripts/stage_sweets_pixi_env.bash" ]]; then
-    "${MINSAR_HOME}/minsar/scripts/stage_sweets_pixi_env.bash" --force
-fi
+[[ -f minsar/scripts/stage_sweets_pixi_env.bash ]] && minsar/scripts/stage_sweets_pixi_env.bash --force
 
-echo ""
 echo "Running of install_isce3.bash DONE"
-echo ""
