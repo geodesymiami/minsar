@@ -43,9 +43,9 @@ ARGV_FIX_KW = {
 }
 
 DESCRIPTION = (
-    "Write a bash script with minsarIsce3App.bash (--safe, --data-type cslc with "
-    "--window-preset auto or standard, --disp-S1) and minsarApp.bash (--no-mintpy --miaplpy) "
-    "for the same AOI and dates. ISCE3 projects are NAME, NAMECSLC, and NAMEDISP under $SCRATCHDIR."
+    "Write a bash script with minsarIsce3App.bash (--safe, --data-type cslc, --disp-S1) "
+    "and minsarApp.bash (--no-mintpy --miaplpy) for the same AOI and dates. "
+    "ISCE3 projects are NAME, NAMECSLC, and NAMEDISP under $SCRATCHDIR."
 )
 
 EXAMPLE = """Examples:
@@ -93,8 +93,7 @@ def project_names(base: str) -> dict[str, str]:
     stem = normalize_base_name(base)
     return {
         "safe": stem,
-        "cslc_auto": f"{stem}CSLC",
-        "cslc_standard": f"{stem}CSLC",
+        "cslc": f"{stem}CSLC",
         "disp": f"{stem}DISP",
         "isce2": stem,
     }
@@ -179,18 +178,8 @@ def build_compare_script(
     lines = [
         "#!/usr/bin/env bash",
         "set -e",
-        f"# Compare SAFE, CSLC auto/standard window-preset, DISP-S1 (minsarIsce3App), and MiaplPy for {stem}",
+        f"# Compare SAFE, CSLC, DISP-S1 (minsarIsce3App), and MiaplPy for {stem}",
         _minsar_isce3_app_command(aoi, stem, flight_dir=flight_dir, start=start, end=end, data_flag="--safe", track=track, frame_id=frame_id),
-        _minsar_isce3_app_command(
-            aoi,
-            stem,
-            flight_dir=flight_dir,
-            start=start,
-            end=end,
-            preset="auto",
-            track=track,
-            frame_id=frame_id,
-        ),
         _minsar_isce3_app_command(
             aoi,
             stem,
@@ -254,7 +243,6 @@ def main(iargs: list[str] | None = None) -> int:
 
         for spec in (
             {"data_flag": "--safe", "project": stem},
-            {"preset": "auto", "project": stem},
             {"preset": "standard", "project": stem},
             {"data_flag": "--disp-S1", "project": stem},
         ):

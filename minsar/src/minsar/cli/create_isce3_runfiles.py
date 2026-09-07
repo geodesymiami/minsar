@@ -663,8 +663,7 @@ def _geometry_stitch_command(
 ) -> str:
     """stitch_sweets_geometry command with effective strides."""
     if strides is None:
-        # auto / omitted: native CSLC posting (match dolphin package strides 1×1)
-        sy, sx = 1, 1
+        sy, sx = DEFAULT_STRIDES
     else:
         sy, sx = strides
     return f"stitch_sweets_geometry.py --config {config_name} --sy {sy} --sx {sx} --overwrite"
@@ -1022,7 +1021,6 @@ def create_parser() -> argparse.ArgumentParser:
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode single-run --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --start-date 20220101 --end-date 20241212
- create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset auto --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset standard --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset dry --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset wet --start-date 20220101 --end-date 20241212
@@ -1030,6 +1028,7 @@ def create_parser() -> argparse.ArgumentParser:
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset disp-s1 --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset dry --stride 2 4 --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window 6 12 --stride 3 6 --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window 7 14 --stride 1 1 --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode single-run --window-preset disp-s1 --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --window-preset disp-s1 --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --window-preset standard --start-date 20220101 --end-date 20241212
@@ -1107,14 +1106,14 @@ def create_parser() -> argparse.ArgumentParser:
         nargs=2,
         metavar=("Y", "X"),
         default=None,
-        help=f"output strides (Y X or from --window-preset) (Default: {DEFAULT_STRIDES[0]} {DEFAULT_STRIDES[1]})",
+        help=f"output strides (Default: {DEFAULT_STRIDES[0]} {DEFAULT_STRIDES[1]})",
     )
     parser.add_argument(
         "--half-window",
         nargs=2,
         metavar=("Y", "X"),
         default=None,
-        help=f"phase-linking half-window (Y X or from --window-preset) (Default: {DEFAULT_HALF_WINDOW[0]} {DEFAULT_HALF_WINDOW[1]})",
+        help=f"phase-linking half-window or from --window-preset (Default: {DEFAULT_HALF_WINDOW[0]} {DEFAULT_HALF_WINDOW[1]})",
     )
     parser.add_argument(
         "--window-preset",
@@ -2509,7 +2508,7 @@ def main(iargs: list[str] | None = None) -> int:
                 raise ValueError("--dolphin-dir does not apply to DISP-S1")
         else:
             extra_pairs: list[tuple[str, str | None]] = []
-            if args.preset and args.preset != "auto":
+            if args.preset and args.preset != DEFAULT_PRESET:
                 extra_pairs.append(("preset", args.preset))
             dolphin_dir, _diffs, layer = resolve_dolphin_dir(
                 explicit_dir=args.dolphin_dir,

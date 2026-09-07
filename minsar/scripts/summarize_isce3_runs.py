@@ -15,6 +15,7 @@ import yaml
 
 from minsar.utils import process_utilities as putils
 from minsar.utils.dolphin_presets import (
+    DEFAULT_STRIDES,
     DOLPHIN_PRESETS,
     count_opera_cslc_bursts,
     dolphin_worker_counts,
@@ -196,14 +197,8 @@ def _infer_preset(strides_yx: str, half_window_yx: str) -> str:
         hy, hx = map(int, half_window_yx.split("x"))
     except ValueError:
         return "custom"
-    if sy == 1 and sx == 1 and hy == 7 and hx == 14:
-        return "auto"
-    for name, spec in DOLPHIN_PRESETS.items():
-        if name == "auto":
-            continue
-        strides = spec.get("strides")
-        hw = spec.get("half_window")
-        if strides and hw and sy == strides[0] and sx == strides[1] and hy == hw[0] and hx == hw[1]:
+    for name, hw in DOLPHIN_PRESETS.items():
+        if sy == DEFAULT_STRIDES[0] and sx == DEFAULT_STRIDES[1] and hy == hw[0] and hx == hw[1]:
             return name
     return "custom"
 

@@ -6,27 +6,26 @@ import argparse
 import re
 from pathlib import Path
 
-# Default half-window / stride when --window-preset standard (also CLI help defaults).
+# Default half-window / stride (also CLI help defaults). --window-preset names half-window only.
 DEFAULT_HALF_WINDOW: tuple[int, int] = (6, 12)
 DEFAULT_STRIDES: tuple[int, int] = (3, 6)
 DEFAULT_PRESET = "standard"
 
-# auto: dolphin package defaults (no --sy/--sx/--hwy/--hwx on CLI).
+# Named phase-linking half-windows (Y, X). Stride is --stride (default 3 6).
 # disp-s1: OPERA DISP-S1 base algorithm_parameters (tools/disp-s1/configs).
-DOLPHIN_PRESETS: dict[str, dict[str, tuple[int, int] | None]] = {
-    "auto": {"strides": None, "half_window": None},
-    "standard": {"strides": DEFAULT_STRIDES, "half_window": DEFAULT_HALF_WINDOW},
-    "dry": {"strides": DEFAULT_STRIDES, "half_window": (5, 11)},
-    "wet": {"strides": DEFAULT_STRIDES, "half_window": (9, 18)},
-    "arctic": {"strides": DEFAULT_STRIDES, "half_window": (9, 19)},
-    "disp-s1": {"strides": DEFAULT_STRIDES, "half_window": (8, 16)},
+DOLPHIN_PRESETS: dict[str, tuple[int, int]] = {
+    "standard": DEFAULT_HALF_WINDOW,
+    "dry": (5, 11),
+    "wet": (9, 18),
+    "arctic": (9, 19),
+    "disp-s1": (8, 16),
 }
 
 DOLPHIN_PRESET_CHOICES = tuple(DOLPHIN_PRESETS)
 
 DOLPHIN_PRESET_HELP = (
-    "auto 7x14/1x1 (dolphin defaults), standard 6x12/3x6, dry 5x11/3x6, wet 9x18/3x6, "
-    f"arctic 9x19/3x6, disp-s1 8x16/3x6 (Default: {DEFAULT_PRESET})"
+    "phase-linking half-window: standard 6x12, dry 5x11, wet 9x18, arctic 9x19, disp-s1 8x16 "
+    f"(Default: {DEFAULT_PRESET})"
 )
 
 NO_PRESET_NAMING_HELP = (
@@ -43,6 +42,8 @@ METHOD_STRING_HELP = (
 
 def normalize_dolphin_preset(value: str) -> str:
     token = str(value).strip().lower().replace("_", "-")
+    if token == "auto":
+        raise ValueError("removed --window-preset auto; use --half-window 7 14 --stride 1 1")
     if token not in DOLPHIN_PRESETS:
         raise ValueError(f"invalid --window-preset {value!r}; use {', '.join(DOLPHIN_PRESET_CHOICES)}")
     return token
@@ -101,13 +102,11 @@ def resolve_half_window_strides(
 ) -> tuple[tuple[int, int] | None, tuple[int, int] | None]:
     """Resolve effective (half_window_yx, strides_yx).
 
-    Order: preset → imported YAML → explicit CLI overrides.
-    None means omit on dolphin CLI (package defaults for ``auto``).
+    Order: --window-preset half-window and default stride → imported YAML → explicit CLI.
     """
     key = normalize_dolphin_preset(preset)
-    spec = DOLPHIN_PRESETS[key]
-    hw = spec["half_window"]
-    st = spec["strides"]
+    hw = DOLPHIN_PRESETS[key]
+    st = DEFAULT_STRIDES
     if imported is not None:
         imp_hw = half_window_yx_from_mapping(imported)
         imp_st = strides_yx_from_mapping(imported)

@@ -40,10 +40,10 @@ options:
                         source DIR for YAML comparison and interferogram inputs (default: dolphin)
   --unwrap-method NAME  shortcut for --unwrap-options.unwrap-method
   --copy-dolphin-inputs copy interferograms/unwrapped instead of symlink
-  --stride Y X          output strides (Y X or from --window-preset) (Default: 3 6)
-  --half-window Y X     phase-linking half-window (Y X or from --window-preset) (Default: 6 12)
-  --window-preset {auto,standard,dry,wet,arctic,disp-s1}
-                        auto 7x14/1x1 (dolphin defaults), standard 6x12/3x6, dry 5x11/3x6, wet 9x18/3x6, arctic 9x19/3x6, disp-s1 8x16/3x6 (Default: standard)
+  --stride Y X          output strides (Default: 3 6)
+  --half-window Y X     phase-linking half-window or from --window-preset (Default: 6 12)
+  --window-preset {standard,dry,wet,arctic,disp-s1}
+                        phase-linking half-window: standard 6x12, dry 5x11, wet 9x18, arctic 9x19, disp-s1 8x16 (Default: standard)
   --dolphin-mode MODE   CSLC path: single-run (one Dolphin stack) or opera (local DISP-S1 produce); default: single-run
   --reference-method METHOD
                         disp-s1-reformat reference: NONE, POINT, MEDIAN, BORDER, HIGH_COHERENCE (default: HIGH_COHERENCE)
@@ -58,7 +58,6 @@ Examples:
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode single-run --start-date 20220101 --end-date 20241212
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --start-date 20220101 --end-date 20241212
-  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset auto --start-date 20220101 --end-date 20241212
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset standard --start-date 20220101 --end-date 20241212
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset dry --start-date 20220101 --end-date 20241212
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset wet --start-date 20220101 --end-date 20241212
@@ -66,6 +65,7 @@ Examples:
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset disp-s1 --start-date 20220101 --end-date 20241212
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset dry --stride 2 4 --start-date 20220101 --end-date 20241212
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window 6 12 --stride 3 6 --start-date 20220101 --end-date 20241212
+  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window 7 14 --stride 1 1 --start-date 20220101 --end-date 20241212
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode single-run --window-preset disp-s1 --start-date 20220101 --end-date 20241212
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --window-preset disp-s1 --start-date 20220101 --end-date 20241212
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --window-preset standard --start-date 20220101 --end-date 20241212
