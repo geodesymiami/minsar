@@ -1717,10 +1717,18 @@ def _print_plan(
         sys.stdout.flush()
 
     _out(f"Project: {context['project']}")
-    if dolphin_dir and workflow in {"cslc", "safe"}:
-        _out(f"Dolphin dir: {dolphin_dir}")
+    start = str(context.get("start_date") or "").strip()
+    end = str(context.get("end_date") or "").strip()
+    if start or end:
+        _out(f"Dates: {start or '?'} – {end or '?'}")
     if dolphin_mode and workflow == "cslc":
         _out(f"Dolphin mode: {dolphin_mode}")
+    if dolphin_dir and workflow in {"cslc", "safe"}:
+        _out(f"Dolphin dir: {dolphin_dir}")
+    if workflow in {"cslc", "safe"} and half_window is not None:
+        _out(f"Half-window: {half_window[0]} {half_window[1]}")
+    if workflow in {"cslc", "safe"} and strides is not None:
+        _out(f"Stride: {strides[0]} {strides[1]}")
     if workflow == "disp" or (workflow in {"cslc", "safe"} and preset is not None):
         if workflow == "disp":
             _out(f"HE5 name: {OPERA_DISP_METHOD_STRING}")
@@ -1732,14 +1740,6 @@ def _print_plan(
             _out("HE5 name: dolphin (--no-preset-naming)")
     if reference_method and (workflow == "disp" or dolphin_mode == "opera"):
         _out(f"Reference method: {reference_method}")
-    start = str(context.get("start_date") or "").strip()
-    end = str(context.get("end_date") or "").strip()
-    if start or end:
-        _out(f"Dates: {start or '?'} – {end or '?'}")
-    if workflow in {"cslc", "safe"} and half_window is not None:
-        _out(f"Half-window: {half_window[0]} {half_window[1]}")
-    if workflow in {"cslc", "safe"} and strides is not None:
-        _out(f"Stride: {strides[0]} {strides[1]}")
 
 def _run_in_sweets(work_dir: Path, command: list[str]) -> None:
     """Run one command in the canonical SWEETS Pixi environment."""
