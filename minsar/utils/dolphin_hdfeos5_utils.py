@@ -255,6 +255,103 @@ def parse_dataset_name(name: str) -> dict:
     }
 
 
+def _normalize_orbit_direction(value) -> str | None:
+    """Return ASCENDING/DESCENDING from A/D/asc/desc-like strings."""
+    if value is None:
+        return None
+    text = str(value).strip().upper()
+    if not text:
+        return None
+    if text.startswith("A"):
+        return "ASCENDING"
+    if text.startswith("D"):
+        return "DESCENDING"
+    return None
+
+
+def _h5_scalar(group, name: str):
+    """Return a decoded scalar from an h5py group dataset, or None."""
+    if group is None or name not in group:
+        return None
+    obj = group[name]
+    val = obj[()] if hasattr(obj, "shape") else obj
+    if isinstance(val, (bytes, np.bytes_)):
+        return val.decode("utf-8")
+    if isinstance(val, np.generic):
+        return val.item()
+    return val
+
+
+def _orbit_from_cslc(dataset_dir: Path) -> dict:
+    """ORBIT_DIRECTION / relative_orbit from the first OPERA CSLC H5 under dataset_dir."""
+    patterns = (
+        dataset_dir / "data" / "OPERA*.h5",
+        dataset_dir / "CSLC" / "OPERA*.h5",
+        dataset_dir / "OPERA*.h5",
+    )
+    files: list[str] = []
+    for pattern in patterns:
+        files = sorted(glob.glob(str(pattern)))
+        if files:
+            break
+    if not files:
+        return {}
+    out: dict = {}
+    with h5py.File(files[0], "r") as hf:
+        idg = hf.get("identification")
+        direction = _normalize_orbit_direction(_h5_scalar(idg, "orbit_pass_direction"))
+        track = _h5_scalar(idg, "track_number")
+        if direction:
+            out["ORBIT_DIRECTION"] = direction
+            out["flight_direction"] = "A" if direction.startswith("A") else "D"
+        if track is not None:
+            out["relative_orbit"] = int(track)
+    return out
+
+
+def _orbit_from_project_config(dataset_dir: Path) -> dict:
+    """relative_orbit / ORBIT_DIRECTION from sweets_config.yaml or *.template."""
+    out: dict = {}
+    sweets = dataset_dir / "sweets_config.yaml"
+    if sweets.is_file():
+        text = sweets.read_text(errors="replace")
+        match = re.search(r"^\s*relativeOrbit:\s*(\d+)\s*$", text, re.MULTILINE)
+        if match:
+            out["relative_orbit"] = int(match.group(1))
+    for tmpl in sorted(dataset_dir.glob("*.template")):
+        text = tmpl.read_text(errors="replace")
+        if "relative_orbit" not in out:
+            match = re.search(r"^\s*ssaraopt\.relativeOrbit\s*=\s*(\d+)", text, re.MULTILINE)
+            if match:
+                out["relative_orbit"] = int(match.group(1))
+        for key in ("ssaraopt.flightDirection", "flightDirection", "orbitDirection"):
+            match = re.search(rf"^\s*{re.escape(key)}\s*=\s*(\S+)", text, re.MULTILINE | re.IGNORECASE)
+            if not match:
+                continue
+            direction = _normalize_orbit_direction(match.group(1))
+            if direction:
+                out["ORBIT_DIRECTION"] = direction
+                out["flight_direction"] = "A" if direction.startswith("A") else "D"
+            break
+    return out
+
+
+def resolve_orbit_metadata(dataset_dir: Path, parsed: dict) -> dict:
+    """Fill missing orbit fields from CSLC H5 or project config (ISCE3 AOI names)."""
+    merged = dict(parsed)
+    need_dir = not merged.get("ORBIT_DIRECTION")
+    need_orbit = merged.get("relative_orbit") is None
+    if not need_dir and not need_orbit:
+        return merged
+    for source in (_orbit_from_cslc(dataset_dir), _orbit_from_project_config(dataset_dir)):
+        for key, value in source.items():
+            if merged.get(key) is None:
+                merged[key] = value
+        if merged.get("ORBIT_DIRECTION") and merged.get("relative_orbit") is not None:
+            break
+    return merged
+
+
 def infer_dataset_name(run_dir: Path) -> str:
     """Walk parents to the MinSAR dataset directory name."""
     for parent in [run_dir, *run_dir.parents]:
@@ -957,7 +1054,7 @@ def build_metadata(
 ) -> dict:
     """Build HE5 metadata from the dataset directory name and dolphin/OPERA outputs."""
     dataset_name = infer_dataset_name(dataset_dir)
-    parsed = parse_dataset_name(dataset_name)
+    parsed = resolve_orbit_metadata(dataset_dir, parse_dataset_name(dataset_name))
     dates_str = [
         d.decode("utf-8") if isinstance(d, (bytes, np.bytes_)) else str(d)
         for d in date_list
@@ -987,8 +1084,9 @@ def build_metadata(
     if not orbit_direction:
         if require_orbit:
             raise ValueError(
-                f"Cannot determine ORBIT_DIRECTION from dataset name {dataset_name!r} "
-                "(expected e.g. HawaiiPunaSenA124)."
+                f"Cannot determine ORBIT_DIRECTION for {dataset_name!r} "
+                "(need SenA/SenD in the dataset name, OPERA CSLC identification, "
+                "or flightDirection in the template)."
             )
         orbit_direction = "ASCENDING"
     flight = parsed.get("flight_direction")
