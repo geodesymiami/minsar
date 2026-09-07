@@ -1424,10 +1424,53 @@ def compute_rerun_walltime_and_queue(job_file_path, config_file='job_defaults.cf
 
 ##########################################################################
 
+def log_removed_bursts_missing(slc_dir, line, reason=None):
+    """Append removed date + missing bursts to SLC/removed_bursts_missing.txt (dedup by date)."""
+    line = (line or '').strip()
+    if len(line) < 8 or not line[:8].isdigit():
+        return
+    date = line[:8]
+    if 'missing=' not in line:
+        line = '{} missing=unknown'.format(date)
+    log_path = os.path.join(slc_dir, 'removed_bursts_missing.txt')
+    if os.path.isfile(log_path):
+        with open(log_path) as f:
+            for existing in f:
+                if existing.startswith(date + ' ') or existing.startswith(date + '\t'):
+                    return
+    with open(log_path, 'a') as f:
+        if reason:
+            f.write('{}  # {}\n'.format(line, reason))
+        else:
+            f.write(line + '\n')
+
+
+def infer_missing_iw_from_error_file(error_file):
+    """Parse IW1/IW2/IW3 from geo2rdr FileNotFoundError paths in a *.e file."""
+    import re
+    if not os.path.isfile(error_file):
+        return None
+    with open(error_file) as f:
+        text = f.read()
+    match = re.search(r'/IW([123])\.xml', text)
+    if match:
+        return 'IW{}'.format(match.group(1))
+    return None
+
+
 def run_remove_date_from_run_files(run_files_dir, date, start_run_file):
     """ removes dates from run_files """
-    run_files=[]
-    run_files = glob.glob(run_files_dir + '/run_*_*[0-9]')
+    import re
+    run_files = []
+    for path in glob.glob(run_files_dir + '/run_[0-9][0-9]_*'):
+        base = os.path.basename(path)
+        if base.endswith('.job') or base.endswith('.o') or base.endswith('.e'):
+            continue
+        if base.endswith('.time_log') or 'error_matches' in base:
+            continue
+        if re.search(r'run_[0-9][0-9]_.*_[0-9]{8}_', base):
+            continue
+        run_files.append(path)
     run_files = natsorted(run_files)
 
     # remove run_files with index < start_run_file

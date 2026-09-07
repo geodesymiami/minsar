@@ -5,29 +5,30 @@
       "download_safe": [
         "sweets_config.yaml",
         "data/**/*.SAFE",
-        "run_files/run_02_create_cslc"
+        "run_files_isce3/run_02_create_cslc"
       ],
       "create_cslc": [
         "gslcs/**/t*.h5",
         "gslcs/**/static_*.h5"
       ],
       "dolphin": [
-        "dolphin/**/*.tif"
+        "{DIR}/**/*.tif"
       ],
       "dolphin_wrapped": [
-        "dolphin/interferograms/*.int.tif"
+        "{DIR}/*/linked_phase/*.tif",
+        "{DIR}/*/interferograms/*.int.vrt"
       ],
       "dolphin_unwrap": [
-        "dolphin/unwrapped/*.unw.tif"
+        "{DIR}/unwrapped/*.unw.tif"
       ],
       "dolphin_timeseries": [
-        "dolphin/timeseries/velocity.tif"
+        "{DIR}/timeseries/velocity.tif"
       ],
       "dolphin_2_hdfeos5": [
-        "dolphin/timeseries/*.he5"
+        "{DIR}/timeseries/*.he5"
       ],
       "ingest_insarmaps": [
-        "dolphin/timeseries/JSON*/*.mbtiles"
+        "{DIR}/timeseries/JSON*/*.mbtiles"
       ]
     },
     "cslc": {
@@ -36,22 +37,29 @@
         "data/**/*CSLC*.h5"
       ],
       "dolphin": [
-        "dolphin/**/*.tif"
+        "{DIR}/**/*.tif"
       ],
       "dolphin_wrapped": [
-        "dolphin/interferograms/*.int.tif"
+        "{DIR}/*/linked_phase/*.tif",
+        "{DIR}/*/interferograms/*.int.vrt"
       ],
       "dolphin_unwrap": [
-        "dolphin/unwrapped/*.unw.tif"
+        "{DIR}/unwrapped/*.unw.tif"
       ],
       "dolphin_timeseries": [
-        "dolphin/timeseries/velocity.tif"
+        "{DIR}/timeseries/velocity.tif"
       ],
       "dolphin_2_hdfeos5": [
-        "dolphin/timeseries/*.he5"
+        "{DIR}/timeseries/*.he5"
       ],
       "ingest_insarmaps": [
-        "dolphin/timeseries/JSON*/*.mbtiles"
+        "{DIR}/timeseries/JSON*/*.mbtiles"
+      ],
+      "disp_s1_process": [
+        "disp_s1_produce/output_*/OPERA*.nc"
+      ],
+      "reformat_disp": [
+        "*stack.nc"
       ]
     },
     "disp": {

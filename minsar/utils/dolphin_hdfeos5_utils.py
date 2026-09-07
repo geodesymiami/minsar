@@ -64,9 +64,10 @@ from minsar.utils.dolphin_presets import (
 )
 DOLPHIN2HDFEOS5_EXAMPLES = """Examples:
   dolphin2hdfeos5.py dolphin
+  dolphin2hdfeos5.py dolphin --watermask dolphin/unwrapped/warped_watermask.tif
   dolphin2hdfeos5.py dolphin -m recommended
   dolphin2hdfeos5.py dolphin --method-string dolphinStandard
-  dolphin2hdfeos5.py stack.nc --method-string operaDisp
+  dolphin2hdfeos5.py stack.nc --method-string operaDisp --watermask stack.nc
   dolphin2hdfeos5.py dolphin -m tc --vmin 0.7
   dolphin2hdfeos5.py dolphin -m similarity --vmin 0.5
   dolphin2hdfeos5.py dolphin -m tc+sim --vmin 0.7 --vmin-sim 0.5
@@ -90,12 +91,12 @@ HE5_GEOM = "HDFEOS/GRIDS/timeseries/geometry"
 
 
 def normalize_dolphin_preset(value: str) -> str:
-    """Normalize CSLC dolphin preset name (auto, standard, dry, wet, arctic)."""
+    """Normalize CSLC dolphin preset name (standard, dry, wet, arctic)."""
     return normalize_dolphin_preset_name(value)
 
 
 def dolphin_he5_method_name(preset: str, preset_naming: bool = True) -> str:
-    """HE5 post_processing_method from CSLC preset (--preset-naming on create_isce3_runfiles)."""
+    """HE5 post_processing_method from CSLC --half-window-preset (--preset-naming on create_isce3_runfiles)."""
     if not preset_naming:
         return "dolphin"
     return dolphin_method_string(preset)
@@ -254,6 +255,103 @@ def parse_dataset_name(name: str) -> dict:
     }
 
 
+def _normalize_orbit_direction(value) -> str | None:
+    """Return ASCENDING/DESCENDING from A/D/asc/desc-like strings."""
+    if value is None:
+        return None
+    text = str(value).strip().upper()
+    if not text:
+        return None
+    if text.startswith("A"):
+        return "ASCENDING"
+    if text.startswith("D"):
+        return "DESCENDING"
+    return None
+
+
+def _h5_scalar(group, name: str):
+    """Return a decoded scalar from an h5py group dataset, or None."""
+    if group is None or name not in group:
+        return None
+    obj = group[name]
+    val = obj[()] if hasattr(obj, "shape") else obj
+    if isinstance(val, (bytes, np.bytes_)):
+        return val.decode("utf-8")
+    if isinstance(val, np.generic):
+        return val.item()
+    return val
+
+
+def _orbit_from_cslc(dataset_dir: Path) -> dict:
+    """ORBIT_DIRECTION / relative_orbit from the first OPERA CSLC H5 under dataset_dir."""
+    patterns = (
+        dataset_dir / "data" / "OPERA*.h5",
+        dataset_dir / "CSLC" / "OPERA*.h5",
+        dataset_dir / "OPERA*.h5",
+    )
+    files: list[str] = []
+    for pattern in patterns:
+        files = sorted(glob.glob(str(pattern)))
+        if files:
+            break
+    if not files:
+        return {}
+    out: dict = {}
+    with h5py.File(files[0], "r") as hf:
+        idg = hf.get("identification")
+        direction = _normalize_orbit_direction(_h5_scalar(idg, "orbit_pass_direction"))
+        track = _h5_scalar(idg, "track_number")
+        if direction:
+            out["ORBIT_DIRECTION"] = direction
+            out["flight_direction"] = "A" if direction.startswith("A") else "D"
+        if track is not None:
+            out["relative_orbit"] = int(track)
+    return out
+
+
+def _orbit_from_project_config(dataset_dir: Path) -> dict:
+    """relative_orbit / ORBIT_DIRECTION from sweets_config.yaml or *.template."""
+    out: dict = {}
+    sweets = dataset_dir / "sweets_config.yaml"
+    if sweets.is_file():
+        text = sweets.read_text(errors="replace")
+        match = re.search(r"^\s*relativeOrbit:\s*(\d+)\s*$", text, re.MULTILINE)
+        if match:
+            out["relative_orbit"] = int(match.group(1))
+    for tmpl in sorted(dataset_dir.glob("*.template")):
+        text = tmpl.read_text(errors="replace")
+        if "relative_orbit" not in out:
+            match = re.search(r"^\s*ssaraopt\.relativeOrbit\s*=\s*(\d+)", text, re.MULTILINE)
+            if match:
+                out["relative_orbit"] = int(match.group(1))
+        for key in ("ssaraopt.flightDirection", "flightDirection", "orbitDirection"):
+            match = re.search(rf"^\s*{re.escape(key)}\s*=\s*(\S+)", text, re.MULTILINE | re.IGNORECASE)
+            if not match:
+                continue
+            direction = _normalize_orbit_direction(match.group(1))
+            if direction:
+                out["ORBIT_DIRECTION"] = direction
+                out["flight_direction"] = "A" if direction.startswith("A") else "D"
+            break
+    return out
+
+
+def resolve_orbit_metadata(dataset_dir: Path, parsed: dict) -> dict:
+    """Fill missing orbit fields from CSLC H5 or project config (ISCE3 AOI names)."""
+    merged = dict(parsed)
+    need_dir = not merged.get("ORBIT_DIRECTION")
+    need_orbit = merged.get("relative_orbit") is None
+    if not need_dir and not need_orbit:
+        return merged
+    for source in (_orbit_from_cslc(dataset_dir), _orbit_from_project_config(dataset_dir)):
+        for key, value in source.items():
+            if merged.get(key) is None:
+                merged[key] = value
+        if merged.get("ORBIT_DIRECTION") and merged.get("relative_orbit") is not None:
+            break
+    return merged
+
+
 def infer_dataset_name(run_dir: Path) -> str:
     """Walk parents to the MinSAR dataset directory name."""
     for parent in [run_dir, *run_dir.parents]:
@@ -264,10 +362,16 @@ def infer_dataset_name(run_dir: Path) -> str:
     return run_dir.name if run_dir.name not in SKIP_DIR_NAMES else run_dir.resolve().name
 
 
+def _is_dolphin_work_dir(path: Path) -> bool:
+    """True for ``dolphin`` or auto-named dirs like ``dolphin_standard`` / ``dolphin_disps1``."""
+    name = path.name
+    return name == "dolphin" or name.startswith("dolphin_")
+
+
 def resolve_run_paths(input_path: Path) -> tuple[Path, Path, Path]:
     """Return (dataset_dir, dolphin_dir, timeseries_dir).
 
-    ``input_path`` is typically ``dolphin`` or an absolute ``.../dolphin`` dir.
+    ``input_path`` is typically ``dolphin`` / ``dolphin_standard`` or an absolute path.
     Dataset name (HawaiiPunaSweetsSenA124) is taken from the parent folder.
     """
     path = input_path.expanduser().resolve()
@@ -277,10 +381,10 @@ def resolve_run_paths(input_path: Path) -> tuple[Path, Path, Path]:
         path = path.parent
     if path.name == "timeseries":
         ts_dir = path
-        dolphin_dir = path.parent if path.parent.name == "dolphin" else path.parent
-        dataset_dir = dolphin_dir.parent if dolphin_dir.name == "dolphin" else dolphin_dir
+        dolphin_dir = path.parent
+        dataset_dir = dolphin_dir.parent if _is_dolphin_work_dir(dolphin_dir) else dolphin_dir
         return dataset_dir, dolphin_dir, ts_dir
-    if (path / "timeseries").is_dir() and path.name == "dolphin":
+    if (path / "timeseries").is_dir() and _is_dolphin_work_dir(path):
         return path.parent, path, path / "timeseries"
     if (path / "dolphin" / "timeseries").is_dir():
         return path, path / "dolphin", path / "dolphin" / "timeseries"
@@ -400,16 +504,49 @@ def _temporal_coherence_candidates(dolphin_dir: Path, ts_dir: Path) -> list[Path
 def _watermask_candidates(dataset_dir: Path, dolphin_dir: Path, ts_dir: Path) -> list[Path]:
     return [
         ts_dir / "warped_watermask.tif",
+        dolphin_dir / "unwrapped" / "warped_watermask.tif",
         dolphin_dir / "warped_watermask.tif",
         dataset_dir / "watermask.tif",
     ]
+
+
+def read_watermask(path: Path, shape: tuple[int, int]) -> np.ndarray:
+    """Load a water mask GeoTIFF or NetCDF ``water_mask`` on the given grid."""
+    path = Path(path).expanduser().resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"Watermask not found: {path}")
+    suffix = path.suffix.lower()
+    if suffix in {".tif", ".tiff"}:
+        return _read_required_tif(path, shape)
+    if suffix == ".nc":
+        return _read_watermask_nc(path, shape)
+    raise ValueError(f"Unsupported watermask format {path.suffix} (use .tif or .nc): {path}")
+
+
+def _read_watermask_nc(path: Path, shape: tuple[int, int]) -> np.ndarray:
+    with h5py.File(path, "r") as f:
+        if "water_mask" not in f:
+            raise ValueError(f"{path} has no water_mask dataset")
+        data = np.asarray(f["water_mask"][:], dtype=np.float32)
+    if data.ndim == 3:
+        data = data[0]
+    if data.ndim != 2:
+        raise ValueError(f"{path} water_mask has shape {data.shape}, expected 2D matching {shape}")
+    if tuple(data.shape) != tuple(shape):
+        raise ValueError(f"{path} water_mask has shape {data.shape}, expected {shape}")
+    return data
 
 
 def _glob_existing(pattern: Path) -> list[Path]:
     return [Path(path) for path in sorted(glob.glob(str(pattern)))]
 
 
-def resolve_required_files(dataset_dir: Path, dolphin_dir: Path, ts_dir: Path) -> dict:
+def resolve_required_files(
+    dataset_dir: Path,
+    dolphin_dir: Path,
+    ts_dir: Path,
+    watermask_path: Path | None = None,
+) -> dict:
     """Locate required Dolphin rasters. Raise FileNotFoundError listing missing paths."""
     missing = []
     files = {}
@@ -439,11 +576,17 @@ def resolve_required_files(dataset_dir: Path, dolphin_dir: Path, ts_dir: Path) -
     else:
         missing.append(_missing_looked_for(_temporal_coherence_candidates(dolphin_dir, ts_dir)))
 
-    watermask = _first_existing_file(_watermask_candidates(dataset_dir, dolphin_dir, ts_dir))
-    if watermask is not None:
-        files["watermask"] = watermask
+    if watermask_path is not None:
+        wm = Path(watermask_path).expanduser().resolve()
+        if not wm.is_file():
+            raise FileNotFoundError(f"Watermask not found: {wm}")
+        files["watermask"] = wm
     else:
-        missing.append(_missing_looked_for(_watermask_candidates(dataset_dir, dolphin_dir, ts_dir)))
+        watermask = _first_existing_file(_watermask_candidates(dataset_dir, dolphin_dir, ts_dir))
+        if watermask is not None:
+            files["watermask"] = watermask
+        else:
+            missing.append(_missing_looked_for(_watermask_candidates(dataset_dir, dolphin_dir, ts_dir)))
 
     conn_path = ts_dir / "conncomp_intersection.tif"
     if conn_path.is_file():
@@ -526,7 +669,7 @@ def load_quality_layers(
     else:
         temp_coh = _mean_matching_tif(temp_paths, shape, required=True)
 
-    watermask = _read_required_tif(files["watermask"], shape)
+    watermask = read_watermask(files["watermask"], shape)
     conncomp = _read_required_tif(files["conncomp"], shape)
     height = _read_required_tif(files["height"], shape)
     incidence = _read_required_tif(files["incidence"], shape)
@@ -911,7 +1054,7 @@ def build_metadata(
 ) -> dict:
     """Build HE5 metadata from the dataset directory name and dolphin/OPERA outputs."""
     dataset_name = infer_dataset_name(dataset_dir)
-    parsed = parse_dataset_name(dataset_name)
+    parsed = resolve_orbit_metadata(dataset_dir, parse_dataset_name(dataset_name))
     dates_str = [
         d.decode("utf-8") if isinstance(d, (bytes, np.bytes_)) else str(d)
         for d in date_list
@@ -941,8 +1084,9 @@ def build_metadata(
     if not orbit_direction:
         if require_orbit:
             raise ValueError(
-                f"Cannot determine ORBIT_DIRECTION from dataset name {dataset_name!r} "
-                "(expected e.g. HawaiiPunaSenA124)."
+                f"Cannot determine ORBIT_DIRECTION for {dataset_name!r} "
+                "(need SenA/SenD in the dataset name, OPERA CSLC identification, "
+                "or flightDirection in the template)."
             )
         orbit_direction = "ASCENDING"
     flight = parsed.get("flight_direction")
@@ -1090,7 +1234,11 @@ def _opera_geometry_from_dir(geom_dir: Path | None, shape: tuple[int, int]):
     return height, incidence, azimuth, shadow
 
 
-def load_opera_stack(stack_nc: Path, run_dir: Path | None = None):
+def load_opera_stack(
+    stack_nc: Path,
+    run_dir: Path | None = None,
+    watermask_path: Path | None = None,
+):
     """Load displacement + quality layers from an OPERA reformatted stack NetCDF."""
     stack_nc = Path(stack_nc).expanduser().resolve()
     run_dir = Path(run_dir).expanduser().resolve() if run_dir else stack_nc.parent
@@ -1141,6 +1289,8 @@ def load_opera_stack(stack_nc: Path, run_dir: Path | None = None):
     grid = {"LENGTH": length, "WIDTH": width, "transform": transform, "crs": crs, "bbox": None}
     geom_dir = run_dir / "geometry" if (run_dir / "geometry").is_dir() else None
     height, incidence, azimuth, shadow = _opera_geometry_from_dir(geom_dir, shape)
+    if watermask_path is not None:
+        watermask = read_watermask(watermask_path, shape)
     quality = {
         "temporal_coherence": temp_coh,
         "avg_spatial_coherence": None,

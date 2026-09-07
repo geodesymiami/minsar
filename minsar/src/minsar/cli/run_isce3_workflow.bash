@@ -28,9 +28,9 @@ source "$WORKFLOW_UTILS"
 
 print_help() {
     cat <<EOF
-usage: ${SCRIPT_NAME} [OPTIONS]
+usage: ${SCRIPT_NAME} [RUN_DIR] [OPTIONS]
 
-Run ISCE3 steps from the current processing directory.
+Run ISCE3 steps from RUN_DIR (default: ./run_files_isce3). Project dir is the parent of RUN_DIR.
 
 options:
   -h, --help            show this help
@@ -42,21 +42,30 @@ options:
   --max-parallel N      local parallel tasks for launcher task lists (default: 1)
   --dry-run             print commands without executing or submitting
 
-STEP may be a step number, step name, or run-file basename.
+STEP may be a step number, step name, run-file basename, or a coarse alias:
+  download, download_create_cslc, dolphin, hdfeos5, ingest.
 
-SAFE steps:    download_safe, create_cslc, dolphin, dolphin_2_hdfeos5, ingest_insarmaps
-CSLC steps:    download_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps
-CSLC monolithic: download_cslc, dolphin, dolphin_2_hdfeos5, ingest_insarmaps (create_isce3_runfiles.py --no-dolphin-split)
+SAFE steps:    download_safe, create_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps
+CSLC steps (single-run): download_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps
+CSLC steps (opera):    download_cslc, disp_s1_process, reformat_disp, dolphin_2_hdfeos5, ingest_insarmaps
+SAFE/CSLC monolithic: dolphin instead of dolphin_wrapped/unwrap/timeseries (create_isce3_runfiles.py --no-dolphin-split)
 DISP-S1 steps: download_disp, reformat_disp, dolphin_2_hdfeos5, ingest_insarmaps
+Legacy sidecar run files (run_disp_s1_process, run_reformat_disp) remain supported for older projects.
 
 Examples:
   ${SCRIPT_NAME}
-  ${SCRIPT_NAME} --start 2
-  ${SCRIPT_NAME} --start 2 --stop 3
-  ${SCRIPT_NAME} --dostep 3
-  ${SCRIPT_NAME} --start dolphin --end dolphin_2_hdfeos5
-  ${SCRIPT_NAME} --dostep ingest_insarmaps
-  ${SCRIPT_NAME} --backend local
+  ${SCRIPT_NAME} run_files_isce3
+  ${SCRIPT_NAME} run_files_isce3 --start 2
+  ${SCRIPT_NAME} run_files_isce3 --start 2 --stop 3
+  ${SCRIPT_NAME} run_files_isce3 --dostep 3
+  ${SCRIPT_NAME} run_files_isce3 --start download --end download
+  ${SCRIPT_NAME} run_files_isce3 --start dolphin_unwrap --end ingest_insarmaps
+  ${SCRIPT_NAME} run_files_isce3 --dostep ingest_insarmaps
+  ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaFalkdispSenD87/run_files_isce3 --dostep download_cslc
+  ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaFalkdispSenD87/run_files_isce3 --dostep disp_s1_process
+  ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaFalkdispSenD87/run_files_isce3 --dostep reformat_disp
+  ${SCRIPT_NAME} run_files_isce3 --backend local
+  ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaSenD87/run_files_isce3 --start dolphin_wrapped
 EOF
 }
 
@@ -85,7 +94,8 @@ do_step=""
 max_parallel=1
 dry_run=false
 wait_time=30
-original_args=("$@")
+run_dir_arg=""
+DEFAULT_RUN_DIR_NAME="run_files_isce3"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -126,7 +136,11 @@ while [[ $# -gt 0 ]]; do
             die "unknown option: $1"
             ;;
         *)
-            die "unexpected positional argument: $1"
+            if [[ -n "$run_dir_arg" ]]; then
+                die "unexpected positional argument: $1"
+            fi
+            run_dir_arg="$1"
+            shift
             ;;
     esac
 done
@@ -159,24 +173,18 @@ if [[ "$backend" == "auto" ]]; then
 fi
 echo "Backend: $backend"
 
-work_dir="$(pwd -P)"
-# Log the full command line with SCRATCHDIR/SAMPLESDIR/TE simplified (as in run_workflow.bash)
-simplified_args=()
-for arg in "${original_args[@]}"; do
-    if [[ -n "${SCRATCHDIR:-}" && "$arg" == "$SCRATCHDIR"* ]]; then
-        simplified_args+=("\$SCRATCHDIR${arg#$SCRATCHDIR}")
-    elif [[ -n "${SAMPLESDIR:-}" && "$arg" == "$SAMPLESDIR"* ]]; then
-        simplified_args+=("\$SAMPLESDIR${arg#$SAMPLESDIR}")
-    elif [[ -n "${TE:-}" && "$arg" == "$TE"* ]]; then
-        simplified_args+=("\$TE${arg#$TE}")
-    else
-        simplified_args+=("$arg")
-    fi
-done
-echo "$(date +"%Y%m%d:%H-%M") + ${SCRIPT_NAME} ${simplified_args[*]}" >> "${work_dir}"/log
-run_dir="$work_dir/run_files"
+if [[ -z "$run_dir_arg" ]]; then
+    run_dir_arg="$DEFAULT_RUN_DIR_NAME"
+fi
+if [[ "$run_dir_arg" == /* ]]; then
+    run_dir="$run_dir_arg"
+else
+    run_dir="$(pwd -P)/$run_dir_arg"
+fi
+[[ -d "$run_dir" ]] || die "run files directory not found: $run_dir"
+run_dir="$(cd "$run_dir" && pwd -P)"
+work_dir="$(cd "$run_dir/.." && pwd -P)"
 project_name="$(basename "$work_dir")"
-[[ -d "$run_dir" ]] || die "run_files directory not found under $work_dir"
 
 job_uses_launcher() {
     local job_file="$1"
@@ -213,17 +221,8 @@ list_jobs_for_pattern() {
 }
 
 jobs_for_step() {
-    local number="$1"
-    local nn
-    local job
-    local nullglob_state
-    printf -v nn '%02d' "$number"
-    nullglob_state="$(shopt -p nullglob)"
-    shopt -s nullglob
-    for job in "$run_dir"/run_"${nn}"_*.job; do
-        printf '%s\n' "$job"
-    done
-    eval "$nullglob_state"
+    local index="$1"
+    list_jobs_for_pattern "${stage_patterns[$index]}"
 }
 
 stage_numbers=()
@@ -233,11 +232,11 @@ stage_patterns=()
 shopt -s nullglob
 all_run_files=("$run_dir"/run_[0-9][0-9]_*)
 shopt -u nullglob
-[[ "${#all_run_files[@]}" -gt 0 ]] || die "no run_NN_* run files found in $run_dir"
 
 for run_file in "${all_run_files[@]}"; do
     [[ "$run_file" == *.job ]] && continue
     run_basename="$(basename "$run_file")"
+    [[ "$run_basename" == *.* ]] && continue
     [[ "$run_basename" =~ ^run_([0-9][0-9])_(.+)$ ]] || die "invalid run filename: $run_file"
     number_token="${BASH_REMATCH[1]}"
     name="${BASH_REMATCH[2]}"
@@ -256,8 +255,70 @@ for run_file in "${all_run_files[@]}"; do
     fi
 done
 
+# Sidecar steps outside the numbered run_NN_* sequence (e.g. disp_s1_process, reformat_disp).
+for entry in "disp_s1_process:run_disp_s1_process" "reformat_disp:run_reformat_disp"; do
+    stage_name="${entry%%:*}"
+    run_basename="${entry#*:}"
+    run_file="$run_dir/$run_basename"
+    if [[ -f "$run_file" ]]; then
+        stage_numbers+=("0")
+        stage_names+=("$stage_name")
+        stage_patterns+=("$run_dir/$run_basename")
+    fi
+done
+
 stage_count="${#stage_names[@]}"
-[[ "$stage_count" -gt 0 ]] || die "no run_NN_* run files found in $run_dir"
+[[ "$stage_count" -gt 0 ]] || die "no run files found in $run_dir"
+
+stage_exists() {
+    local wanted="$1"
+    local name
+    for name in "${stage_names[@]}"; do
+        [[ "$name" == "$wanted" ]] && return 0
+    done
+    return 1
+}
+
+first_existing_stage() {
+    local name
+    for name in "$@"; do
+        if stage_exists "$name"; then
+            echo "$name"
+            return 0
+        fi
+    done
+    return 1
+}
+
+expand_step_alias() {
+    local value="$1"
+    local which="$2"
+    case "$value" in
+        download|download_create_cslc)
+            if [[ "$which" == "end" ]]; then
+                first_existing_stage create_cslc reformat_disp download_safe download_cslc download_disp || echo "$value"
+            else
+                first_existing_stage download_safe download_cslc download_disp || echo "$value"
+            fi
+            ;;
+        dolphin)
+            if [[ "$which" == "end" ]]; then
+                first_existing_stage dolphin_timeseries reformat_disp disp_s1_process dolphin dolphin_unwrap dolphin_wrapped || echo "$value"
+            else
+                first_existing_stage dolphin_wrapped disp_s1_process dolphin || echo "$value"
+            fi
+            ;;
+        hdfeos5)
+            echo "dolphin_2_hdfeos5"
+            ;;
+        ingest)
+            echo "ingest_insarmaps"
+            ;;
+        *)
+            echo "$value"
+            ;;
+    esac
+}
 
 resolve_step() {
     local value="$1"
@@ -275,7 +336,7 @@ resolve_step() {
                 echo "$index"
                 return 0
             fi
-        done < <(jobs_for_step "${stage_numbers[$index]}")
+        done < <(jobs_for_step "$index")
     done
     return 1
 }
@@ -284,18 +345,37 @@ start_index=0
 end_index=$((stage_count - 1))
 
 if [[ -n "$do_step" ]]; then
-    start_index="$(resolve_step "$do_step")" || die "unknown step: $do_step"
-    end_index="$start_index"
+    case "$do_step" in
+        download|download_create_cslc|dolphin)
+            start_index="$(resolve_step "$(expand_step_alias "$do_step" start)")" || die "unknown step: $do_step"
+            end_index="$(resolve_step "$(expand_step_alias "$do_step" end)")" || die "unknown step: $do_step"
+            ;;
+        *)
+            start_index="$(resolve_step "$(expand_step_alias "$do_step" start)")" || die "unknown step: $do_step"
+            end_index="$start_index"
+            ;;
+    esac
 else
     if [[ -n "$start_step" ]]; then
-        start_index="$(resolve_step "$start_step")" || die "unknown step: $start_step"
+        start_index="$(resolve_step "$(expand_step_alias "$start_step" start)")" || die "unknown step: $start_step"
     fi
     if [[ -n "$end_step" ]]; then
-        end_index="$(resolve_step "$end_step")" || die "unknown step: $end_step"
+        end_index="$(resolve_step "$(expand_step_alias "$end_step" end)")" || die "unknown step: $end_step"
     fi
 fi
 
 [[ "$start_index" -le "$end_index" ]] || die "--start follows --end"
+
+log_parts=("${SCRIPT_NAME}" "$run_dir_display")
+[[ "$backend" != "auto" ]] && log_parts+=(--backend "$backend")
+[[ "$dry_run" == "true" ]] && log_parts+=(--dry-run)
+[[ "$max_parallel" != "1" ]] && log_parts+=(--max-parallel "$max_parallel")
+if [[ "$start_index" -eq "$end_index" ]]; then
+    log_parts+=(--dostep "${stage_names[$start_index]}")
+else
+    log_parts+=(--start "${stage_names[$start_index]}" --stop "${stage_names[$end_index]}")
+fi
+echo "$(date +"%Y%m%d:%H-%M") + ${log_parts[*]}" >> "${work_dir}"/log
 
 run_task_list() {
     local run_file="$1"
@@ -344,6 +424,28 @@ job_path_for_display() {
         echo "${job_file#"$work_dir"/}"
     else
         echo "$job_file"
+    fi
+}
+
+print_job_stderr_tail() {
+    local job_file="$1"
+    local jobnumber="$2"
+    local err_file stderr_spec
+
+    stderr_spec="$(grep -E '^#SBATCH[[:space:]]+-e[[:space:]]+' "$job_file" | awk '{print $3}' | tail -1)" || true
+    if [[ -n "$stderr_spec" ]]; then
+        err_file="${stderr_spec//%J/$jobnumber}"
+    else
+        err_file="${job_file%.job}_${jobnumber}.e"
+    fi
+
+    echo "Job stderr (last 5 lines): $err_file"
+    if [[ -f "$err_file" && -s "$err_file" ]]; then
+        tail -n 5 "$err_file"
+    elif [[ -f "$err_file" ]]; then
+        echo "(stderr file is empty)"
+    else
+        echo "(stderr file not found)"
     fi
 }
 
@@ -397,11 +499,20 @@ run_local_stage() {
                 run_isce3_runfile "$run_file" || die "step failed: ${stage_names[$index]}"
             fi
         fi
-    done < <(jobs_for_step "${stage_numbers[$index]}")
+    done < <(jobs_for_step "$index")
 
     while IFS= read -r job_file; do
         run_job_validation "$job_file" "$step_start_epoch"
-    done < <(jobs_for_step "${stage_numbers[$index]}")
+    done < <(jobs_for_step "$index")
+}
+
+log_submit_jobs_command() {
+    local target="$1"
+    local display="$target"
+    if [[ "$target" == "$work_dir"/* ]]; then
+        display="${target#"$work_dir"/}"
+    fi
+    echo "$(date +"%Y%m%d:%H-%M") + submit_jobs.bash ${display}" >> "${work_dir}/log"
 }
 
 wait_for_slurm_jobs() {
@@ -431,6 +542,7 @@ wait_for_slurm_jobs() {
         "$STAGE_SWEETS_PIXI"
     fi
 
+    log_submit_jobs_command "$file_pattern"
     jns="$("$SUBMIT_JOBS" "$file_pattern")"
     exit_status="$?"
     [[ "$exit_status" -eq 0 ]] || die "submit_jobs.bash failed for $file_pattern"
@@ -482,6 +594,7 @@ wait_for_slurm_jobs() {
                 if [[ -f "$STAGE_SWEETS_PIXI" ]]; then
                     "$STAGE_SWEETS_PIXI"
                 fi
+                log_submit_jobs_command "${file%.*}"
                 jobnumber="$($SUBMIT_JOBS "${file%.*}")"
                 exit_status="$?"
                 if [[ "$exit_status" -eq 0 ]]; then
@@ -493,6 +606,7 @@ wait_for_slurm_jobs() {
                     die "resubmit failed for $file"
                 fi
             elif [[ "$state" == *"FAILED"* || "$state" == *"CANCELLED"* ]]; then
+                print_job_stderr_tail "$file" "$jobnumber"
                 die "job $file: state $state"
             else
                 echo "Strange job state: $state, encountered."

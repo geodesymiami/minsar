@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Print memory-aware dolphin unwrap n_parallel_jobs from stitched ifg size.
 
-Reads LENGTH x WIDTH from dolphin/interferograms/*.int.tif (after dolphin_wrapped).
+Reads LENGTH x WIDTH from dolphin/interferograms/*.int.tif (after run_dolphin_stitch.py).
 Uses the same snaphu memory model as resize_miaplpy_unwrap_jobfiles.py.
 
 Examples:
@@ -21,6 +21,7 @@ from pathlib import Path
 from minsar.utils.unwrap_memory import (
     BYTES_PER_PIXEL,
     compute_ppn,
+    fit_snaphu_tiling,
     load_queue_row,
     max_width_for_ppn48,
     mem_per_task_mib,
@@ -56,6 +57,12 @@ def create_parser() -> argparse.ArgumentParser:
         help="Dolphin YAML for unwrap_method and snaphu tile settings (default: dolphin_config.yaml)",
     )
     parser.add_argument(
+        "--dolphin-dir",
+        default=None,
+        metavar="DIR",
+        help="Dolphin work directory containing interferograms/ (default: .isce3_dolphin_dir or dolphin)",
+    )
+    parser.add_argument(
         "--bytes-per-pixel",
         type=float,
         default=BYTES_PER_PIXEL,
@@ -71,16 +78,16 @@ def resolve_project_dir(path_str: str) -> Path:
     return path
 
 
-def find_representative_ifg(project_dir: Path) -> Path:
-    ifg_dir = project_dir / "dolphin" / "interferograms"
+def find_representative_ifg(project_dir: Path, dolphin_dir: str = "dolphin") -> Path:
+    ifg_dir = project_dir / dolphin_dir / "interferograms"
     if not ifg_dir.is_dir():
         raise FileNotFoundError(
-            f"Missing {ifg_dir}. Run dolphin_wrapped first."
+            f"Missing {ifg_dir}. Run run_dolphin_stitch.py first."
         )
     candidates = sorted(ifg_dir.glob("*.int.tif"))
     if not candidates:
         raise FileNotFoundError(
-            f"No stitched *.int.tif under {ifg_dir}. Run dolphin_wrapped first."
+            f"No stitched *.int.tif under {ifg_dir}. Run run_dolphin_stitch.py first."
         )
     return candidates[0]
 
@@ -97,7 +104,7 @@ def read_ifg_size(ifg_path: Path) -> tuple[int, int]:
 
 
 def infer_queue_from_jobfiles(project_dir: Path) -> str | None:
-    run_dir = project_dir / "run_files"
+    run_dir = project_dir / "run_files_isce3"
     if not run_dir.is_dir():
         return None
     for job in sorted(run_dir.glob("run_*_dolphin_unwrap.job")):
@@ -136,6 +143,51 @@ def _unwrap_settings(config_path: Path) -> tuple[str, int, int]:
     num_tiles = max(1, ntiles[0] * ntiles[1])
     n_parallel_tiles = max(1, int(snaphu.get("n_parallel_tiles", 1)))
     return method, num_tiles, n_parallel_tiles
+
+
+def _parse_yx(value, default: tuple[int, int]) -> tuple[int, int]:
+    if isinstance(value, int):
+        return (int(value), int(value))
+    if isinstance(value, (list, tuple)) and len(value) >= 2:
+        return (int(value[0]), int(value[1]))
+    return default
+
+
+def patch_snaphu_tiling_for_ifg_size(
+    config_path: Path,
+    length: int,
+    width: int,
+) -> tuple[tuple[int, int], tuple[int, int], bool]:
+    """Rewrite snaphu ntiles/overlap in YAML when too large for the ifg.
+
+    Returns (ntiles, tile_overlap, changed).
+    """
+    cfg = _load_yaml(config_path)
+    if not cfg:
+        return (1, 1), (0, 0), False
+    unwrap = cfg.setdefault("unwrap_options", {})
+    if not isinstance(unwrap, dict):
+        return (1, 1), (0, 0), False
+    snaphu = unwrap.setdefault("snaphu_options", {})
+    if not isinstance(snaphu, dict):
+        return (1, 1), (0, 0), False
+    ntiles = _parse_yx(snaphu.get("ntiles"), (1, 1))
+    overlap = _parse_yx(snaphu.get("tile_overlap"), (0, 0))
+    fitted_tiles, fitted_overlap = fit_snaphu_tiling(length, width, ntiles, overlap)
+    changed = fitted_tiles != ntiles or fitted_overlap != overlap
+    if not changed:
+        return fitted_tiles, fitted_overlap, False
+    snaphu["ntiles"] = [int(fitted_tiles[0]), int(fitted_tiles[1])]
+    snaphu["tile_overlap"] = [int(fitted_overlap[0]), int(fitted_overlap[1])]
+    if fitted_tiles == (1, 1):
+        snaphu["n_parallel_tiles"] = 1
+    try:
+        import yaml
+    except ImportError:
+        return fitted_tiles, fitted_overlap, False
+    with config_path.open("w", encoding="utf-8") as handle:
+        yaml.safe_dump(cfg, handle, default_flow_style=False, sort_keys=False)
+    return fitted_tiles, fitted_overlap, True
 
 
 def compute_n_parallel_jobs(
@@ -178,12 +230,20 @@ def main(iargs: list[str] | None = None) -> int:
     inps = parser.parse_args(args=iargs)
 
     project_dir = resolve_project_dir(inps.project_dir)
-    ifg_path = find_representative_ifg(project_dir)
+    dolphin_dir = inps.dolphin_dir
+    if not dolphin_dir:
+        from minsar.utils.isce3_dolphin_experiment import read_dolphin_dir_sidecar
+
+        dolphin_dir = read_dolphin_dir_sidecar(project_dir)
+    ifg_path = find_representative_ifg(project_dir, dolphin_dir)
     length, width = read_ifg_size(ifg_path)
 
     config_path = inps.dolphin_config
     if not config_path.is_absolute():
         config_path = project_dir / config_path
+    fitted_tiles, fitted_overlap, tiling_changed = patch_snaphu_tiling_for_ifg_size(
+        config_path, length, width
+    )
     unwrap_method, num_snaphu_tiles, cpu_tile_parallelism = _unwrap_settings(config_path)
 
     queue_name = (
@@ -218,9 +278,14 @@ def main(iargs: list[str] | None = None) -> int:
     )
     detail = (
         f"unwrap_method={unwrap_method}  snaphu_tiles={num_snaphu_tiles}  "
+        f"ntiles={fitted_tiles[0]}x{fitted_tiles[1]}  "
+        f"tile_overlap={fitted_overlap[0]}x{fitted_overlap[1]}  "
         f"cpu_tile_parallelism={cpu_tile_parallelism}  bytes_per_pixel={inps.bytes_per_pixel:g}  "
         f"mem_per_job={mem_mib:.1f} MiB  n_parallel_jobs={n_jobs}"
     )
+    if tiling_changed:
+        detail += "  (snaphu tiling reduced to fit ifg)"
+
 
     if inps.dry_run:
         print(summary)

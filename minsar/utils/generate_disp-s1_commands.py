@@ -30,6 +30,29 @@ from minsar.utils.generate_sweets_config import (
     subset_lalo_from_options,
 )
 
+REFERENCE_METHOD_CHOICES = ("NONE", "POINT", "MEDIAN", "BORDER", "HIGH_COHERENCE")
+DEFAULT_REFERENCE_METHOD = "HIGH_COHERENCE"
+_REFERENCE_METHOD_BY_VALUE = {
+    "none": "NONE",
+    "point": "POINT",
+    "median": "MEDIAN",
+    "border": "BORDER",
+    "high_coherence": "HIGH_COHERENCE",
+}
+
+
+def normalize_reference_method(value: str) -> str:
+    """Normalize opera-utils disp-s1-reformat --reference-method (default HIGH_COHERENCE)."""
+    token = value.strip().upper().replace("-", "_")
+    if token in REFERENCE_METHOD_CHOICES:
+        return token
+    by_value = _REFERENCE_METHOD_BY_VALUE.get(value.strip().lower().replace("-", "_"))
+    if by_value:
+        return by_value
+    raise ValueError(
+        f"invalid reference method {value!r}; use {', '.join(REFERENCE_METHOD_CHOICES)}"
+    )
+
 pathObj = PathFind()
 
 DISP_S1_BASH = "download_disp-s1.bash"
@@ -63,6 +86,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--end-date", metavar="DATE", help="ssaraopt.endDate: YYYY-MM-DD or YYYYMMDD (e.g. 20241231)")
     parser.add_argument("--frame-id", type=int, metavar="ID", help="DISP-S1 frame ID (default: largest-overlap frame for AOI, track, and pass)")
     parser.add_argument("--url-type", choices=("HTTPS", "S3"), default="HTTPS", help="opera-utils download URL type (default: HTTPS)")
+    parser.add_argument("--reference-method", type=normalize_reference_method, default=DEFAULT_REFERENCE_METHOD, metavar="METHOD", help="opera-utils disp-s1-reformat reference (default: HIGH_COHERENCE)")
     return parser
 
 
@@ -212,6 +236,21 @@ def resolve_frame_id(
     return int(best["id"])
 
 
+def format_disp_s1_reformat_command(
+    *,
+    input_files: str,
+    output_name: str,
+    reference_method: str = DEFAULT_REFERENCE_METHOD,
+) -> str:
+    """Return opera-utils disp-s1-reformat command (OPERA download or local produce inputs)."""
+    method = normalize_reference_method(reference_method)
+    return (
+        f"opera-utils disp-s1-reformat --input-files {input_files} "
+        f"--output-name {output_name} --reference-method {method} "
+        f"--quality-datasets None --drop-vars shp_counts estimated_phase_quality"
+    )
+
+
 def format_disp_stage_commands(
     *,
     frame_id: int,
@@ -222,6 +261,7 @@ def format_disp_stage_commands(
     stack_name: str,
     num_workers: int = NUM_WORKERS_DEFAULT,
     output_dir: str = OUTPUT_DIR_DEFAULT,
+    reference_method: str = DEFAULT_REFERENCE_METHOD,
 ) -> dict[str, str]:
     """Return DISP-S1 run-file bodies keyed by ISCE3 stage name."""
     west, south, east, north = bbox
@@ -236,10 +276,10 @@ def format_disp_stage_commands(
         f"check_opera_download.py {output_dir} --frame-id {frame_id} "
         f"--start-datetime {start} --end-datetime {end}"
     )
-    reformat = (
-        f"opera-utils disp-s1-reformat --input-files {output_dir}/OPERA*.nc "
-        f"--output-name {stack_name} --reference-method BORDER "
-        f"--quality-datasets None --drop-vars shp_counts estimated_phase_quality"
+    reformat = format_disp_s1_reformat_command(
+        input_files=f"{output_dir}/OPERA*.nc",
+        output_name=stack_name,
+        reference_method=reference_method,
     )
     return {
         "download_disp": (
@@ -252,7 +292,7 @@ def format_disp_stage_commands(
             f"{check}\n"
         ),
         "reformat_disp": reformat,
-        "dolphin_2_hdfeos5": f"dolphin2hdfeos5.py {stack_name} --method-string {OPERA_DISP_METHOD_STRING}",
+        "dolphin_2_hdfeos5": f"dolphin2hdfeos5.py {stack_name} --method-string {OPERA_DISP_METHOD_STRING} --watermask {stack_name}",
         "ingest_insarmaps": "ingest_insarmaps.bash timeseries",
     }
 
@@ -267,6 +307,7 @@ def format_disp_s1_bash(
     stack_name: str,
     num_workers: int = NUM_WORKERS_DEFAULT,
     output_dir: str = OUTPUT_DIR_DEFAULT,
+    reference_method: str = DEFAULT_REFERENCE_METHOD,
 ) -> str:
     stages = format_disp_stage_commands(
         frame_id=frame_id,
@@ -277,6 +318,7 @@ def format_disp_s1_bash(
         stack_name=stack_name,
         num_workers=num_workers,
         output_dir=output_dir,
+        reference_method=reference_method,
     )
     return (
         stages["download_disp"].rstrip("\n") + "\n\n"
@@ -351,6 +393,7 @@ def build_from_template(
     end_date: str | None,
     frame_id: int | None,
     url_type: str,
+    reference_method: str = DEFAULT_REFERENCE_METHOD,
 ) -> tuple[str, str]:
     params = _params_from_template(
         template_file,
@@ -367,6 +410,7 @@ def build_from_template(
         end=params.end,
         url_type=params.url_type,
         stack_name=params.stack_name,
+        reference_method=reference_method,
     )
     return command, params.work_dir
 
@@ -378,6 +422,7 @@ def build_stage_commands_from_template(
     end_date: str | None,
     frame_id: int | None,
     url_type: str,
+    reference_method: str = DEFAULT_REFERENCE_METHOD,
 ) -> dict[str, str]:
     """Return ISCE3 DISP-S1 run-file bodies from a MinSAR template."""
     params = _params_from_template(
@@ -394,6 +439,7 @@ def build_stage_commands_from_template(
         end=params.end,
         url_type=params.url_type,
         stack_name=params.stack_name,
+        reference_method=reference_method,
     )
 
 
@@ -424,6 +470,7 @@ def main(iargs=None):
             end_date=inps.end_date,
             frame_id=inps.frame_id,
             url_type=inps.url_type,
+            reference_method=inps.reference_method,
         )
     except ValueError as exc:
         parser.error(str(exc))

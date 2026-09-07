@@ -33,6 +33,7 @@ usage() {
     echo "  --parallel N          Max parallel burst2stack jobs (default: 20)"
     echo "  --skip-listing        Skip asf_download --print; use existing asf_burst_listing.txt"
     echo "  --no-check-bursts-includeAOI  Skip check_if_bursts_includeAOI.py and AOI pruning"
+    echo "  --no-check-subswath-coverage  Skip subswath/burst-count repair after burst2stack"
     echo "  --help, -h            Show this help"
     echo ""
     echo "Example:"
@@ -48,6 +49,7 @@ slc_dir="SLC"
 parallel=30
 skip_listing=0
 skip_check_include_aoi=0
+skip_check_subswath_coverage=0
 relative_orbit=""
 intersects_with=""
 start_date="2000-01-01"
@@ -125,6 +127,10 @@ while [[ $# -gt 0 ]]; do
             skip_check_include_aoi=1
             shift
             ;;
+        --no-check-subswath-coverage)
+            skip_check_subswath_coverage=1
+            shift
+            ;;
         --help|-h)
             usage
             ;;
@@ -152,6 +158,11 @@ AOI_EXTENSION_ITER_MAX=5     # max iterations
 AOI_EXTENSION_INIT=0.1      # degrees per step (~1 km at mid-latitudes)
 AOI_EXTENSION_MAX=0.5       # max total extension
 AOI_EXTENSION_ITER_MAX=20     # max iterations
+
+# Lon-only extension for partial subswath coverage (small AOI on IW boundary)
+LON_EXTENSION_INIT=0.02
+LON_EXTENSION_MAX=0.15
+LON_EXTENSION_ITER_MAX=10
 
 standalone_mode=0
 if [[ -n "$relative_orbit" && -n "$intersects_with" ]]; then
@@ -522,6 +533,224 @@ if _has_overlap_errors; then
     exit 1
 fi
 
+_bbox_sn_we_from_extent() {
+    python3 -c "
+import sys
+w, s, e, n = [float(x) for x in sys.argv[1].split()]
+print(f'{s}:{n},{w}:{e}')
+" "$1"
+}
+
+_remove_slc_products_for_ymd() {
+    local ymd="$1"
+    [[ "$ymd" =~ ^[0-9]{8}$ ]] || return 0
+    shopt -s nullglob
+    for f in "$slc_dir"/*"${ymd}"T*; do
+        rm -rf "$f"
+    done
+    shopt -u nullglob
+}
+
+_log_removed_bursts_missing() {
+    local line="$1"
+    local reason="${2:-}"
+    line="$(echo "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    [[ "$line" =~ ^[0-9]{8} ]] || return 0
+    local ymd="${line:0:8}"
+    if [[ "$line" != *missing=* ]]; then
+        line="${ymd} missing=unknown"
+    fi
+    local log_file="$slc_dir/removed_bursts_missing.txt"
+    if [[ -f "$log_file" ]] && grep -q "^${ymd} " "$log_file" 2>/dev/null; then
+        return 0
+    fi
+    if [[ -n "$reason" ]]; then
+        echo "$line  # $reason" >> "$log_file"
+    else
+        echo "$line" >> "$log_file"
+    fi
+}
+
+_remove_dates_from_coverage_file() {
+    local file="$1"
+    local reason="$2"
+    [[ -f "$file" && -s "$file" ]] || return 0
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        local ymd
+        ymd="$(echo "$line" | sed -E 's/^([0-9]{8}).*/\1/')"
+        [[ "$ymd" =~ ^[0-9]{8}$ ]] || continue
+        echo "Removing SLC products for date $ymd ($reason)"
+        _log_removed_bursts_missing "$line" "$reason"
+        _remove_slc_products_for_ymd "$ymd"
+    done < "$file"
+}
+
+_extract_coverage_dates() {
+    local file="$1"
+    [[ -f "$file" ]] || return 0
+    grep -E '^[0-9]{8}' "$file" 2>/dev/null | sed -E 's/^([0-9]{8}).*/\1/' | sort -u
+}
+
+_extend_extent_lon_only() {
+    local extent_str="$1"
+    local buf="$2"
+    python3 -c "
+import sys
+w, s, e, n = [float(x) for x in sys.argv[1].split()]
+b = float(sys.argv[2])
+w -= b
+e += b
+extent = ' '.join(str(x) for x in [w, s, e, n])
+polygon = f'Polygon(({w} {s}, {e} {s}, {e} {n}, {w} {n}, {w} {s}))'
+print(extent)
+print(polygon)
+" "$extent_str" "$buf"
+}
+
+_write_burst2stack_rerun_for_dates() {
+    local extent_use="$1"
+    local out_file="$2"
+    shift 2
+    local d ymd end_d d_compact
+    : > "$out_file"
+    for d in "$@"; do
+        [[ -z "$d" ]] && continue
+        if [[ "$d" =~ ^[0-9]{8}$ ]]; then
+            ymd="$d"
+            d="${d:0:4}-${d:4:2}-${d:6:2}"
+        else
+            ymd=$(echo "$d" | tr -d '-')
+        fi
+        end_d=$(python3 -c "
+from datetime import datetime, timedelta
+d = datetime.strptime('$d', '%Y-%m-%d')
+print((d + timedelta(days=1)).strftime('%Y-%m-%d'))
+")
+        d_compact=$(echo "$d" | tr -d '-')
+        echo "burst2stack --rel-orbit $rel_orbit --start-date $d --end-date $end_d --extent $extent_use --keep-files --all-anns --pols VV 2> burst2stack_${d_compact}.e" >> "$out_file"
+    done
+}
+
+_run_burst2stack_rerun_file() {
+    local rerun_f="$1"
+    [[ -s "$rerun_f" ]] || return 0
+    echo "Running burst2stack for $(wc -l < "$rerun_f" | tr -d ' \n') date(s) from $rerun_f ..."
+    xargs -P "$num_parallel" -I {} bash -c "cd \"$work_dir/$slc_dir\" && {}" < "$rerun_f" || true
+    if [[ -f "$SCRIPT_DIR/check_SAFE_completeness.py" ]]; then
+        python3 "$SCRIPT_DIR/check_SAFE_completeness.py" "$slc_dir" || true
+    elif command -v check_SAFE_completeness.py &>/dev/null; then
+        check_SAFE_completeness.py "$slc_dir" || true
+    fi
+}
+
+extent_stack="$extent"
+missing_subswath_file="$slc_dir/dates_missing_subswath.txt"
+inconsistent_burst_file="$slc_dir/dates_inconsistent_burst_count.txt"
+extra_azimuth_file="$slc_dir/dates_extra_azimuth_bursts.txt"
+unfixable_subswath_file="$slc_dir/dates_unfixable_partial_swath.txt"
+
+# 9–11. Subswath coverage audit, lon-only repair, azimuth/burst-count homogenization
+if [[ "$skip_check_subswath_coverage" -eq 0 ]]; then
+    bbox_sn_we=$(_bbox_sn_we_from_extent "$extent_orig") || {
+        echo "ERROR: could not derive bbox from extent '$extent_orig' for subswath coverage check." >&2
+        exit 1
+    }
+
+    echo "Running check_burst_stack_coverage.py on $slc_dir ..."
+    if command -v check_burst_stack_coverage.py &>/dev/null; then
+        check_burst_stack_coverage.py "$bbox_sn_we" "$slc_dir" || true
+    elif [[ -f "$SCRIPT_DIR/check_burst_stack_coverage.py" ]]; then
+        python3 "$SCRIPT_DIR/check_burst_stack_coverage.py" "$bbox_sn_we" "$slc_dir" || true
+    else
+        echo "Warning: check_burst_stack_coverage.py not found; skipping subswath coverage check." >&2
+    fi
+
+    _run_coverage_check() {
+        if command -v check_burst_stack_coverage.py &>/dev/null; then
+            check_burst_stack_coverage.py "$bbox_sn_we" "$slc_dir" || true
+        elif [[ -f "$SCRIPT_DIR/check_burst_stack_coverage.py" ]]; then
+            python3 "$SCRIPT_DIR/check_burst_stack_coverage.py" "$bbox_sn_we" "$slc_dir" || true
+        fi
+    }
+
+    total_lon_extension=0
+    lon_iteration=0
+    subswath_rerun="$slc_dir/run_burst2stack_subswath_rerun"
+    lon_extension_log="$slc_dir/burst2stack_lon_extension.log"
+    : > "$lon_extension_log"
+
+    while [[ -s "$missing_subswath_file" ]] && [[ $lon_iteration -lt $LON_EXTENSION_ITER_MAX ]] && \
+          [[ $(echo "$total_lon_extension $LON_EXTENSION_MAX" | awk '{print ($1 < $2)}') -eq 1 ]]; do
+        if [[ $skip_listing -eq 1 ]]; then
+            echo "Warning: lon-only subswath repair requires re-fetching listing. Re-run without --skip-listing." >&2
+            break
+        fi
+
+        lon_iteration=$((lon_iteration + 1))
+        total_lon_extension=$(echo "$total_lon_extension $LON_EXTENSION_INIT" | awk '{printf "%.4f", $1 + $2}')
+        echo "Lon extension attempt $lon_iteration: extending W/E by $total_lon_extension deg (lat unchanged)"
+
+        ext_output=$(_extend_extent_lon_only "$extent_orig" "$total_lon_extension")
+        extent_stack=$(echo "$ext_output" | head -1)
+        extended_polygon=$(echo "$ext_output" | tail -1)
+        _refetch_listing_with_extended_aoi "$extended_polygon"
+
+        mapfile -t bad_ymds < <(_extract_coverage_dates "$missing_subswath_file")
+        if [[ ${#bad_ymds[@]} -eq 0 ]]; then
+            break
+        fi
+
+        for ymd in "${bad_ymds[@]}"; do
+            _remove_slc_products_for_ymd "$ymd"
+        done
+
+        _write_burst2stack_rerun_for_dates "$extent_stack" "$subswath_rerun" "${bad_ymds[@]}"
+        echo "iteration=$lon_iteration total_lon_extension=$total_lon_extension extent_stack=$extent_stack dates=${bad_ymds[*]}" >> "$lon_extension_log"
+        _run_burst2stack_rerun_file "$subswath_rerun"
+
+        _run_coverage_check
+    done
+
+    if [[ -s "$missing_subswath_file" ]]; then
+        cp "$missing_subswath_file" "$unfixable_subswath_file"
+        echo "Warning: partial subswath coverage remains after $lon_iteration lon extension(s). See $unfixable_subswath_file." >&2
+        _remove_dates_from_coverage_file "$unfixable_subswath_file" "unfixable partial subswath; excluding from stack"
+        _run_coverage_check
+    elif [[ -f "$unfixable_subswath_file" ]]; then
+        : > "$unfixable_subswath_file"
+    fi
+
+    echo "$extent_stack" > "$slc_dir/extent_stack.txt"
+
+    # Re-stack dates with extra along-track bursts or inconsistent burst counts using tight lat extent
+    extent_final="$extent_stack"
+    mapfile -t trim_ymds < <(
+        {
+            _extract_coverage_dates "$inconsistent_burst_file"
+            _extract_coverage_dates "$extra_azimuth_file"
+        } | sort -u
+    )
+
+    if [[ ${#trim_ymds[@]} -gt 0 ]]; then
+        echo "Re-stacking ${#trim_ymds[@]} date(s) with extent_final=$extent_final (homogenize burst count / trim azimuth extras) ..."
+        for ymd in "${trim_ymds[@]}"; do
+            _remove_slc_products_for_ymd "$ymd"
+        done
+        trim_rerun="$slc_dir/run_burst2stack_trim_rerun"
+        _write_burst2stack_rerun_for_dates "$extent_final" "$trim_rerun" "${trim_ymds[@]}"
+        _run_burst2stack_rerun_file "$trim_rerun"
+        _run_coverage_check
+    fi
+
+    if command -v check_file_size.py &>/dev/null || [[ -f "$SCRIPT_DIR/check_file_size.py" ]]; then
+        if [[ -f "$SCRIPT_DIR/check_file_size.py" ]]; then
+            python3 "$SCRIPT_DIR/check_file_size.py" "$slc_dir" || true
+        else
+            check_file_size.py "$slc_dir" || true
+        fi
+    fi
+fi
+
 if [[ -s "$failures_file" ]]; then
     num_fail=$(wc -l < "$failures_file" | tr -d ' \n')
     echo "Done. $num_fail date(s) failed (see $failures_file)."
@@ -532,7 +761,7 @@ else
     echo "Done."
 fi
 
-# 8. AOI coverage pruning: after all burst2stack runs completed, drop dates whose
+# 12. AOI coverage pruning: after all burst2stack runs completed, drop dates whose
 # burst GeoTIFF footprints do not fully cover the AOI bbox.
 #
 if [[ "$skip_check_include_aoi" -eq 0 ]]; then
@@ -542,14 +771,12 @@ if [[ "$skip_check_include_aoi" -eq 0 ]]; then
     #
     # This writes $slc_dir/dates_not_including_AOI.txt (one YYYYMMDD per line) and then
     # removes matching paths under $slc_dir (GeoTIFFs + SAFEs) by deleting *${ymd}T*.
-    bbox_sn_we=$(python3 -c "
-import sys
-w, s, e, n = [float(x) for x in sys.argv[1].split()]
-print(f'{s}:{n},{w}:{e}')
-" "$extent_orig") || {
-        echo "ERROR: could not derive bbox from extent '$extent_orig' for AOI pruning." >&2
-        exit 1
-    }
+    if [[ -z "${bbox_sn_we:-}" ]]; then
+        bbox_sn_we=$(_bbox_sn_we_from_extent "$extent_orig") || {
+            echo "ERROR: could not derive bbox from extent '$extent_orig' for AOI pruning." >&2
+            exit 1
+        }
+    fi
 
     check_if_bursts_includeAOI.py "$bbox_sn_we" "$slc_dir"/*.tif* || true
     ndates_file="$slc_dir/dates_not_including_AOI.txt"

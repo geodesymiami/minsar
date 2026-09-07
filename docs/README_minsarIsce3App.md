@@ -1,0 +1,113 @@
+# minsarIsce3App.bash
+
+`minsarIsce3App.bash` is the user command for ISCE3 SAFE, CSLC, and DISP-S1 processing. It always identifies the dataset the same way as `create_isce3_runfiles.py`: a MinSAR template, or AOI plus project name (and `--flight-dir` when the first argument is an AOI). Science flags alone are invalid.
+
+Work directory is `$SCRATCHDIR/<project>` from that template stem or AOI name. AOI `HawaiiPuna` becomes `HawaiiPunaSenD87`, `HawaiiPunaCSLCSenD87`, `HawaiiPunaCSLCOperaSenD87` (`--dolphin-mode opera`), or `HawaiiPunaDISPSenD87` from `--data-type` / `--dolphin-mode` and `--flight-dir`. The app writes ISCE3 run/job files under `run_files_isce3/`, then runs `run_isce3_workflow.bash run_files_isce3` from the project directory.
+
+Optional alias: `run_isce3.bash` → `minsarIsce3App.bash`.
+
+Use `--start-date` / `--end-date` for dates. `--start` / `--end` / `--dostep` are processing steps (not dates).
+
+## Commands
+
+```bash
+minsarIsce3App.bash 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --start-date 20220101 --end-date 20241212
+minsarIsce3App.bash 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212
+minsarIsce3App.bash 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --start-date 20220101 --end-date 20241212
+minsarIsce3App.bash 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window-preset dry --start-date 20220101 --end-date 20241212
+minsarIsce3App.bash 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type disp-s1 --start-date 20220101 --end-date 20241212
+minsarIsce3App.bash 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --start-date 20170101 --end-date 20211231
+minsarIsce3App.bash 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --dolphin-mode opera --half-window-preset dry --start-date 20170101 --end-date 20211231
+```
+
+```bash
+create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212 --phase download
+create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212 --phase dolphin --dolphin-dir dolphin_interp --unwrap-options.run-interpolation true
+create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --start-date 20170101 --end-date 20211231
+```
+
+## What the app passes to the generator
+
+| App command | Generator `--phase` (internal) | Then `run_isce3_workflow.bash run_files_isce3` |
+|---|---|---|
+| template only (no `--start` / `--dostep`) | `all` | `--start download --end ingest_insarmaps` |
+| `--start download` | `download` | `--start download --end download` (SAFE: `download_safe` through `create_cslc`) |
+| `--start dolphin_wrapped` | `dolphin` | `--start dolphin_wrapped --end ingest_insarmaps` |
+| `--unwrap-options.run-interpolation true` (no `--start`) | `all` | `--start download --end ingest_insarmaps` |
+| `--start dolphin_unwrap --unwrap-method whirlwind` | `dolphin` | `--start dolphin_unwrap --end ingest_insarmaps` |
+| `--dostep ingest_insarmaps` | `dolphin` | `--dostep ingest_insarmaps` |
+
+Do not pass `--phase` to the app; it is derived from `--start` / `--dostep` for `create_isce3_runfiles.py` only.
+
+Partial generator phases (`download` or `dolphin`) require CSLCs or GSLCs on disk for science-only regeneration; if they are missing, the generator exits with “run `--start download` first”. A full run (no `--start` / `--dostep`) always writes all run files.
+
+`--phase download` includes `create_cslc` for SAFE. Alias `download_create_cslc` is the same as `download`. Fine step `create_cslc` is still targetable.
+
+DISP: `--phase download` is download plus reformat; `--phase dolphin` is he5 plus ingest; `--dolphin-dir` does not apply.
+
+## Configs before jobs
+
+- `--phase download`: write `sweets_config.yaml` on the login node; download run files start at `sweets_download.py --config sweets_config.yaml`.
+- `--phase dolphin` with CSLCs/GSLCs on disk: write `{DIR}_config.yaml` on the login node (`dolphin` → `dolphin_config.yaml`); run files only `dolphin run` / unwrap / timeseries / he5 / ingest against `DIR`.
+- `--phase all` before data exist: first Dolphin job may still run `dolphin config`.
+
+SAFE Dolphin uses `dolphin config --slc-files` plus `dolphin run` on GSLC HDF5s (not `sweets run --starting-step 3`).
+
+## Auto `--dolphin-dir`
+
+Compare forwarded science flags to the source YAML (`--from-dolphin-dir`, default `dolphin/` + `dolphin_config.yaml`). Worker keys (`n_parallel_jobs`, `threads_per_worker`, `n_parallel_bursts`, `num_parallel_blocks`, `block_shape`) do not create a new dir.
+
+| Situation | Directory |
+|---|---|
+| No science overrides | `dolphin` |
+| Overrides equal source YAML | stay on source dir |
+| Overrides differ, no `--dolphin-dir` | auto-name from the diff |
+| `--dolphin-dir` given | that name always wins |
+
+Auto-name: `dolphin_` + short tokens joined by `_`, order wrapped, unwrap, timeseries.
+
+- `unwrap-options.unwrap-method whirlwind` → `whirlwind`
+- `unwrap-options.run-interpolation true` → `interp`
+- `unwrap-options.run-goldstein true` → `goldstein`
+- `phase-linking.ministack-size 50` → `ms50`
+- `timeseries-options.correlation-threshold 0.3` → `corr0p3`
+- `timeseries-options.apply-mask-to-timeseries false` → `nomaskts`
+- `ps-options.amp-dispersion-threshold 0.2` → `ampdisp0p2`
+- unknown key → last dotted component + compacted value (`true` omitted for boolean-on, `.` → `p`)
+
+`$TE/HawaiiPunaSenD87.template --unwrap-options.run-interpolation true` → `$SCRATCHDIR/HawaiiPunaSenD87`, dir `dolphin_interp`. Same template with `--unwrap-method whirlwind` → `dolphin_whirlwind`. Both flags → `dolphin_whirlwind_interp`.
+
+If the auto dir exists, reuse it. The app prints the project path and `DIR` before submit. Use `--dolphin-dir`, not `--work-directory`. Leftover `--section.option` tokens go to `dolphin config`.
+
+## Layer-aware reruns
+
+Classify each science override; start at the earliest layer. Always run he5 and ingest on `DIR`.
+
+| Layer | Typical keys | Inputs from `--from-dolphin-dir` (default `dolphin`) | Jobs |
+|---|---|---|---|
+| wrapped | `phase_linking.*`, `ps_options.*`, strides, network, `mask_file` | none | wrapped + unwrap + timeseries |
+| unwrap | `unwrap_options.*` except worker counts | `interferograms/` | unwrap + timeseries |
+| timeseries/mask | `apply_mask_to_timeseries`, `correlation_threshold`, `method`, `reference_point` | `interferograms/` and `unwrapped/` | timeseries |
+
+Those trees are **symlinked** into `DIR/`. Do not link `unwrapped/` or `timeseries/` into an unwrap experiment.
+
+## Masking options
+
+- Top-level `mask_file` (default `watermask.tif`) — 0 = ignore
+- `ps_options.amp_dispersion_threshold` — PS selection (wrapped)
+- `phase_linking.mask_input_ps`
+- `unwrap_options.zero_where_masked` — zero wrapped phase/corr on mask before unwrap
+- `unwrap_options.run_interpolation` plus `preprocess_options.interpolation_cor_threshold`, `interpolation_similarity_threshold`, `max_radius`, `zero_correlation_where_interpolating` — mask+fill low-quality wrapped pixels before unwrap
+- `timeseries_options.apply_mask_to_timeseries` — apply `mask_file` to the time series
+- `timeseries_options.correlation_threshold` — mask low-corr pixels in the inversion (default 0.2)
+
+Interpolation is unwrap preprocess, not a timeseries mask.
+
+## Coarse step aliases
+
+`run_isce3_workflow.bash` (and the app `--start` / `--end` / `--dostep`) accept:
+
+- `download` / `download_create_cslc` — download through `create_cslc` (SAFE) or the last download/reformat stage
+- `dolphin` — `dolphin_wrapped` through `dolphin_timeseries` (or monolithic `dolphin`)
+- `hdfeos5` — `dolphin_2_hdfeos5`
+- `ingest` — `ingest_insarmaps`

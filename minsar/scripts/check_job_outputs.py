@@ -24,6 +24,34 @@ def job_output_canonical_path(path):
     return os.path.normpath(os.path.abspath(path))
 
 
+def load_unfixable_partial_swath_dates(project_dir):
+    """Dates listed by burst_download as missing a subswath after lon-extension repair."""
+    return set(load_unfixable_partial_swath_entries(project_dir).keys())
+
+
+def load_unfixable_partial_swath_entries(project_dir):
+    """Map YYYYMMDD -> full line from SLC/dates_unfixable_partial_swath.txt."""
+    unfixable_file = os.path.join(project_dir, 'SLC', 'dates_unfixable_partial_swath.txt')
+    entries = {}
+    if not os.path.isfile(unfixable_file):
+        return entries
+    with open(unfixable_file) as f:
+        for line in f:
+            line = line.strip()
+            if len(line) >= 8 and line[:8].isdigit():
+                entries[line[:8]] = line
+    return entries
+
+
+def date_from_job_output_basename(path):
+    """Extract YYYYMMDD from run_*_0_YYYYMMDD_JID.e style paths."""
+    parts = os.path.basename(path).split('_')
+    for part in parts:
+        if len(part) == 8 and part.isdigit():
+            return part
+    return None
+
+
 def record_pairs_misreg_esd_errors(job_name, error_files, matched_error_strings, esd_diagnosed_e_files):
     """
     Sentinel-1 pairs misreg (*.e): ESD exhaustion — print USER ERROR once per job scan;
@@ -151,7 +179,7 @@ def main(iargs=None):
        # FA 12/22:  add miaplpy_load_data here (and remove below) once miaplpyApp.py supports run_files_tmp`
        #if 'unpack_secondary_slc' in job_name or 'miaplpy_load_data' in job_name:               
        if 'unpack_secondary_slc' in job_name:               
-          for file in out_files:
+          for file in list(out_files):
               for string in data_problems_strings_out_files:
                   if check_words_in_file(file, string):
                       date = file.split("_")[-2]
@@ -160,7 +188,7 @@ def main(iargs=None):
                       with open(run_files_dir + '/removed_dates.txt', 'a') as rd:
                           rd.writelines('run_02: removing ' + date + ', \"' + string + '\" found in ' + os.path.basename(file) + ' \n')
                       num_lines = sum(1 for line in open(run_files_dir + '/removed_dates.txt'))
-          for file in error_files:
+          for file in list(error_files):
               for string in data_problems_strings_error_files:
                   if check_words_in_file(file, string):
                       date = file.split("_")[-2]
@@ -178,13 +206,48 @@ def main(iargs=None):
                pass
 
        # this covers missing frames: run_files are generated although a frame in the middle is missing
-       if 'fullBurst_geo2rdr' in job_name:               
-          for file in error_files:
+       if 'fullBurst_geo2rdr' in job_name:
+          unfixable_swath_dates = load_unfixable_partial_swath_dates(project_dir)
+          unfixable_swath_entries = load_unfixable_partial_swath_entries(project_dir)
+          for file in list(error_files):
+              date = date_from_job_output_basename(file)
+              if date in unfixable_swath_dates:
+                  print('WARNING: partial-subswath date {} listed in SLC/dates_unfixable_partial_swath.txt: removing from run_files'.format(date))
+                  putils.log_removed_bursts_missing(
+                      os.path.join(project_dir, 'SLC'),
+                      unfixable_swath_entries.get(date, date),
+                      reason='removed at run_04 (partial subswath)',
+                  )
+                  putils.run_remove_date_from_run_files(run_files_dir=run_files_dir, date=date, start_run_file=4)
+                  for secondary_date_dir in (
+                      os.path.join(project_dir, 'secondarys', date),
+                      os.path.join(project_dir, 'coreg_secondarys', date),
+                  ):
+                      try:
+                          shutil.rmtree(secondary_date_dir)
+                      except OSError:
+                          pass
+                  with open(run_files_dir + '/removed_dates.txt', 'a') as rd:
+                      rd.writelines('run_04: removing {} (dates_unfixable_partial_swath.txt)\n'.format(date))
+                  out_dir = run_files_dir + '/stdout_run_04_fullBurst_geo2rdr'
+                  os.makedirs(out_dir, exist_ok=True)
+                  if os.path.isfile(file):
+                      shutil.move(file, out_dir + '/' + os.path.basename(file))
+                  error_files.remove(file)
+                  continue
+
               for string in data_problems_strings_run_04:
                   if check_words_in_file(file, string):
                       date = file.split("_")[-2]
+                      missing_iw = putils.infer_missing_iw_from_error_file(file)
+                      log_line = '{} missing={}'.format(date, missing_iw) if missing_iw else date
+                      putils.log_removed_bursts_missing(
+                          os.path.join(project_dir, 'SLC'),
+                          log_line,
+                          reason='removed at run_04 (FileNotFoundError)',
+                      )
                       print( 'WARNING: \"' + string + '\" found in ' + os.path.basename(file) + ': removing ' + date + ' from run_files ')
-                      putils.run_remove_date_from_run_files(run_files_dir=run_files_dir, date=date, start_run_file = 5 )
+                      putils.run_remove_date_from_run_files(run_files_dir=run_files_dir, date=date, start_run_file = 4 )
                       secondary_date_dir = project_dir + '/coreg_secondarys/' + date
                       try:
                          shutil.rmtree(secondary_date_dir)
@@ -198,9 +261,10 @@ def main(iargs=None):
                       os.makedirs(out_dir, exist_ok=True)
                       shutil.move(file, out_dir + '/' + os.path.basename(file))
                       error_files.remove(file)
+                      break
 
        if 'extract_stack_valid_region' in job_name:               
-          for file in out_files:
+          for file in list(out_files):
               string = different_number_of_bursts_string[0]
               if check_words_in_file(file, string):
                  #matched_data_problem_strings.append('Warning: \"' + string + '\" found in ' + file + '\n')

@@ -81,6 +81,7 @@ Using AOI and name as postional arguments (for options run: create_template.py -
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --flight-dir asc --miaplpy --platform S1 is optional (default platform is Sentinel-1)    \n\
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --coregistration geometry [--platform S1] --miaplpy   \n\
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --geometry [--platform S1] --miaplpy   \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --tropo no --insarmaps-dataset DS --no-mintpy --miaplpy   \n\
 To test:  \n\
       minsarApp.bash -0.86:-0.81,-91.19:-91.13 qtestGalapagos --flight-dir asc,desc --start-date 20181001 --end-date 20181231 --no-mintpy --miaplpy  \n\
                                                                                  \n\
@@ -547,8 +548,8 @@ fi
 
 # set isce_stop depending on coregistration method and workflow  (for Sentinel-1, for TSX/CSK/ENV we have --dostep ifgram but can be implemented)
 if [[ ${template[topsStack.coregistration]} == "geometry" ]]; then 
-    full_isce_run_stop=12
-    partial_isce_run_stop=8
+    full_isce_run_stop=11
+    partial_isce_run_stop=7
     if [[ ${template[topsStack.workflow]} == "slc" ]]; then
          full_isce_run_stop=8
          partial_isce_run_stop=8
@@ -596,9 +597,8 @@ if [[ "$isce_stop_cli_flag" == "1" ]]; then
 elif [[ "$platform_str" == *"SENTINEL-1"* && "$isce_start_cli_flag" == "1" ]]; then
     # For Sentinel: if user provides --isce-start but omits --isce-stop, run ifgram-only range.
     isce_stop="$partial_isce_run_stop"
-elif [[ "$platform_str" == *"SENTINEL-1"* && "$no_mintpy_cli_flag" == "1" && ${template[topsStack.coregistration]} != "geometry" ]]; then
-    # --no-mintpy (e.g. MiaplPy-only): default to partial ISCE (e.g. 1–12 for NESD burst stack), not full through unwrap (16).
-    # Geometry coregistration already uses full_isce_run_stop=12; do not override with partial_isce_run_stop=8 here.
+elif [[ "$platform_str" == *"SENTINEL-1"* && "$no_mintpy_cli_flag" == "1" ]]; then
+    # --no-mintpy (e.g. MiaplPy-only): default to partial ISCE, not full through unwrap.
     isce_stop="$partial_isce_run_stop"
 else
     isce_stop="$full_isce_run_stop"
@@ -685,6 +685,9 @@ if [[ $download_flag == "1" ]]; then
            rm -rf $files
        done
     fi
+
+    # Drop partial-subswath dates flagged by burst_download (cannot be fixed by lon extension)
+    remove_unfixable_partial_swath_dates "$download_dir"
 fi
 
 # preprocess SLCs for non-Sentinel-1 platforms and burst2safe. No preprocessing needed for slc and burst2stack.
@@ -775,6 +778,8 @@ if [[ $jobfiles_flag == "1" ]]; then
        run_command "run_download_orbits_asf.bash"
     fi
 
+    remove_unfixable_partial_swath_dates "$download_dir"
+
     # clean directory for processing and create jobfiles
     pwd=`pwd`; echo "DIR: $pwd"
     run_command "run_clean_dir.bash $PWD --runfiles --ifgram --mintpy --miaplpy"
@@ -786,6 +791,8 @@ if [[ $jobfiles_flag == "1" ]]; then
 fi
 
 if [[ $ifgram_flag == "1" ]]; then
+
+    remove_unfixable_partial_swath_dates "$download_dir"
 
     if [[ $template_file =~ (Tsx|Csk|Env) ]]; then
         OLD_PATH="$PATH"

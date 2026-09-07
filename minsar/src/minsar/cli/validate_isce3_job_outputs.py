@@ -10,14 +10,22 @@ import re
 import sys
 from pathlib import Path
 
+from minsar.utils.isce3_dolphin_experiment import read_dolphin_dir_sidecar, read_run_slice_sidecar
+
 DEFAULT_VALIDATION_FILE = Path(__file__).resolve().parents[3] / "defaults/isce3_validation.json"
 _JOB_STEM_RE = re.compile(r"^run_(\d{2})_(.+)$")
+_UNNUMBERED_JOB_STEMS = {
+    "run_disp_s1_process": "disp_s1_process",
+    "run_reformat_disp": "reformat_disp",
+}
+# CSLC opera writes HE5/ingest under project-root timeseries/, not {DIR}/timeseries/.
+_CSLC_OPERA_DISP_PATTERN_STEPS = ("dolphin_2_hdfeos5", "ingest_insarmaps")
 
 
 def create_parser() -> argparse.ArgumentParser:
     epilog = """Examples:
- validate_isce3_job_outputs.py run_files/run_02_dolphin_wrapped.job
- validate_isce3_job_outputs.py run_files/run_01_download_cslc.job
+ validate_isce3_job_outputs.py run_files_isce3/run_02_dolphin_wrapped.job
+ validate_isce3_job_outputs.py run_files_isce3/run_01_download_cslc.job
  validate_isce3_job_outputs.py --step dolphin
  validate_isce3_job_outputs.py --data-type disp --step 2
  validate_isce3_job_outputs.py --json validation_report.json"""
@@ -26,7 +34,7 @@ def create_parser() -> argparse.ArgumentParser:
         epilog=epilog,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("job_files", nargs="*", help="SLURM job file(s), e.g. run_files/run_NN_stage.job")
+    parser.add_argument("job_files", nargs="*", help="SLURM job file(s), e.g. run_files_isce3/run_NN_stage.job")
     parser.add_argument("--data-type", choices=("safe", "cslc", "disp"), help="workflow type; inferred from job files by default")
     parser.add_argument("--step", action="append", help="step name or number to check; may be repeated")
     parser.add_argument("--json", dest="json_output", type=Path, help="write a machine-readable report")
@@ -42,6 +50,9 @@ def _canonical_step_name(rest: str) -> str:
 
 def _parse_job_path(job_path: Path) -> tuple[int, str, str]:
     stem = job_path.stem if job_path.suffix == ".job" else job_path.name
+    sidecar_name = _UNNUMBERED_JOB_STEMS.get(stem)
+    if sidecar_name is not None:
+        return 0, sidecar_name, stem
     match = _JOB_STEM_RE.match(stem)
     if not match:
         raise ValueError(f"invalid job filename: {job_path}")
@@ -63,13 +74,18 @@ def _resolve_job_path(work_dir: Path, job_file: str | Path) -> Path:
 def _discover_steps(work_dir: Path) -> list[dict[str, object]]:
     """Discover ordered workflow steps from generated job filenames."""
     steps_by_number: dict[int, dict[str, object]] = {}
-    for job_file in sorted((work_dir / "run_files").glob("run_[0-9][0-9]_*.job")):
+    run_dir = work_dir / "run_files_isce3"
+    for job_file in sorted(run_dir.glob("run_[0-9][0-9]_*.job")):
         number, name, stem = _parse_job_path(job_file)
         if number not in steps_by_number:
             steps_by_number[number] = {"number": number, "name": name, "run_file": stem}
     steps = list(steps_by_number.values())
+    for stem, name in _UNNUMBERED_JOB_STEMS.items():
+        job_file = run_dir / f"{stem}.job"
+        if job_file.is_file() and not any(str(step["name"]) == name for step in steps):
+            steps.append({"number": 0, "name": name, "run_file": stem})
     if not steps:
-        raise ValueError(f"no run_NN_*.job files found in {work_dir / 'run_files'}")
+        raise ValueError(f"no ISCE3 job files found in {run_dir}")
     return steps
 
 
@@ -104,12 +120,43 @@ def _selected(step: dict[str, object], values: list[str] | None) -> bool:
     return any(value in {str(step["name"]), str(step["number"]), str(step["run_file"])} for value in values)
 
 
-def _validate_step(step: dict[str, object], rules: dict[str, list[str]], work_dir: Path) -> dict[str, object]:
+def _read_dolphin_mode(work_dir: Path) -> str:
+    mode = read_run_slice_sidecar(work_dir).get("dolphin_mode", "single-run").strip().lower()
+    return mode if mode in {"single-run", "opera"} else "single-run"
+
+
+def _effective_rules(
+    workflow: str,
+    rules: dict[str, list[str]],
+    workflows: dict[str, object],
+    dolphin_mode: str,
+) -> dict[str, list[str]]:
+    """Use disp-style paths for opera CSLC steps that write under project-root timeseries/."""
+    if workflow != "cslc" or dolphin_mode != "opera":
+        return rules
+    disp_rules = workflows.get("disp")
+    if not isinstance(disp_rules, dict):
+        return rules
+    out = dict(rules)
+    for step in _CSLC_OPERA_DISP_PATTERN_STEPS:
+        patterns = disp_rules.get(step)
+        if isinstance(patterns, list) and step in out:
+            out[step] = list(patterns)
+    return out
+
+
+def _validate_step(
+    step: dict[str, object],
+    rules: dict[str, list[str]],
+    work_dir: Path,
+    dolphin_dir: str = "dolphin",
+) -> dict[str, object]:
     checks = []
     for pattern in rules[str(step["name"])]:
-        absolute_pattern = str(work_dir / str(pattern))
+        resolved = str(pattern).replace("{DIR}", dolphin_dir)
+        absolute_pattern = str(work_dir / resolved)
         matches = sorted(glob.glob(absolute_pattern, recursive=True))
-        checks.append({"pattern": pattern, "matches": matches, "ok": bool(matches)})
+        checks.append({"pattern": resolved, "matches": matches, "ok": bool(matches)})
     ok = all(check["ok"] for check in checks)
     marker = "OK" if ok else "MISSING"
     print(f"[{marker:7}] {step['number']:02d} {step['name']}")
@@ -126,7 +173,13 @@ def main(iargs: list[str] | None = None) -> int:
         if config.get("schema_version") != 1:
             raise ValueError("unsupported validation schema")
         steps = _discover_steps(work_dir)
+        workflows = config["workflows"]
+        if not isinstance(workflows, dict):
+            raise ValueError("validation defaults are missing workflows")
         workflow, rules = _workflow_rules(config, steps, args.data_type)
+        dolphin_dir = read_dolphin_dir_sidecar(work_dir)
+        dolphin_mode = _read_dolphin_mode(work_dir)
+        rules = _effective_rules(workflow, rules, workflows, dolphin_mode)
 
         step_filters: list[str] | None = list(args.step) if args.step else None
         if args.job_files:
@@ -134,17 +187,28 @@ def main(iargs: list[str] | None = None) -> int:
             for job_file in args.job_files:
                 job_path = _resolve_job_path(work_dir, job_file)
                 number, name, stem = _parse_job_path(job_path)
-                step_filters.extend([name, str(number), stem])
+                # Unnumbered sidecars all use number 0; filtering by "0" would select every
+                # sidecar (e.g. run_disp_s1_process.job would also check reformat_disp).
+                if stem in _UNNUMBERED_JOB_STEMS:
+                    step_filters.extend([name, stem])
+                else:
+                    step_filters.extend([name, str(number), stem])
 
         results: list[dict[str, object]] = []
         for step in steps:
             if not _selected(step, step_filters):
                 continue
-            results.append(_validate_step(step, rules, work_dir))
+            results.append(_validate_step(step, rules, work_dir, dolphin_dir=dolphin_dir))
 
         if step_filters and not results:
             raise ValueError("none of the requested steps exist")
-        report = {"data_type": workflow, "work_dir": str(work_dir), "ok": all(item["ok"] for item in results), "steps": results}
+        report = {
+            "data_type": workflow,
+            "dolphin_mode": dolphin_mode,
+            "work_dir": str(work_dir),
+            "ok": all(item["ok"] for item in results),
+            "steps": results,
+        }
         if args.json_output:
             args.json_output.write_text(json.dumps(report, indent=2) + "\n")
         return 0 if report["ok"] or args.allow_empty else 1
