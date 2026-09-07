@@ -1702,17 +1702,15 @@ def _print_plan(
 ) -> None:
     """Print resolved project summary as soon as names are known.
 
-    Progress (mintpy.plot, burst_ids) goes to stderr and shows immediately under
-    ``minsarIsce3App.bash … | tee``. Plan lines also go to stderr so they appear
-    right after template create — before sweets/pixi. ``Project:`` is duplicated
-    on stdout so the app can parse the tee log.
+    Under ``minsarIsce3App.bash`` the generator runs with ``2>&1 | tee`` and
+    ``PYTHONUNBUFFERED=1``, so one stdout stream stays live and ordered.
     """
     del stages, specs, queue, long_queue, phase, layer, platform, unwrap_method
 
     def _out(msg: str) -> None:
-        print(msg, file=sys.stderr, flush=True)
-        if msg.startswith("Project:"):
-            print(msg, flush=True)
+        # One write avoids stdout/stderr mid-line interleaving under tee.
+        sys.stdout.write(msg + "\n")
+        sys.stdout.flush()
 
     _out(f"Project: {context['project']}")
     if dolphin_dir and workflow in {"cslc", "safe"}:

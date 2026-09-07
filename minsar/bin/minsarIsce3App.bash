@@ -370,7 +370,7 @@ fi
 echo "Running: create_isce3_runfiles.py ${positionals[*]} ${gen_args[*]} --phase ${gen_phase}"
 gen_out="$(mktemp)"
 trap 'rm -f "$gen_out"' EXIT
-PYTHONUNBUFFERED=1 "$GENERATOR" "${positionals[@]}" "${gen_args[@]}" --phase "$gen_phase" | tee "$gen_out"
+PYTHONUNBUFFERED=1 "$GENERATOR" "${positionals[@]}" "${gen_args[@]}" --phase "$gen_phase" 2>&1 | tee "$gen_out"
 if resolved="$(project_from_generator_log "$gen_out")"; then
     project="$resolved"
 fi
