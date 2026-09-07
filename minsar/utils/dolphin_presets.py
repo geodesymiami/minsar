@@ -31,10 +31,12 @@ NO_PRESET_NAMING_HELP = (
 )
 
 OPERA_DISP_METHOD_STRING = "operaDisp"
+# HE5 label for --data-type cslc --dolphin-mode opera (local DISP-S1 produce).
+MODE_OPERA_DISP_METHOD_STRING = "modeOperaDisp"
 
 METHOD_STRING_HELP = (
-    "HE5 post_processing_method label (e.g. dolphinAuto, dolphinStandard, operaDisp); "
-    "used in .he5 filename and metadata (default: dolphin or operaDisp by input kind)"
+    "HE5 post_processing_method label (e.g. dolphinAuto, dolphinStandard, operaDisp, modeOperaDisp); "
+    "used in .he5 filename and metadata (default: dolphin, operaDisp, or modeOperaDisp by input kind)"
 )
 
 

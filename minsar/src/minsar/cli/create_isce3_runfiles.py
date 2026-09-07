@@ -31,6 +31,7 @@ from minsar.utils.dolphin_presets import (
     DOLPHIN_PRESET_CHOICES,
     DOLPHIN_PRESET_HELP,
     NO_PRESET_NAMING_HELP,
+    MODE_OPERA_DISP_METHOD_STRING,
     OPERA_DISP_METHOD_STRING,
     count_opera_cslc_bursts,
     dolphin_method_string,
@@ -731,7 +732,10 @@ def _opera_hdfeos5_command(context: dict[str, object]) -> str:
     """dolphin2hdfeos5 from a locally produced DISP-S1 stack NetCDF."""
     project = str(context["project"])
     stack = f"{project}-stack.nc"
-    return f"dolphin2hdfeos5.py {stack} --method-string {OPERA_DISP_METHOD_STRING} --watermask {stack}"
+    return (
+        f"dolphin2hdfeos5.py {stack} --method-string {MODE_OPERA_DISP_METHOD_STRING} "
+        f"--watermask {stack}"
+    )
 
 
 def _opera_ingest_command() -> str:
@@ -1718,8 +1722,10 @@ def _print_plan(
     if dolphin_mode and workflow == "cslc":
         _out(f"Dolphin mode: {dolphin_mode}")
     if workflow == "disp" or (workflow in {"cslc", "safe"} and preset is not None):
-        if workflow == "disp" or dolphin_mode == "opera":
+        if workflow == "disp":
             _out(f"HE5 name: {OPERA_DISP_METHOD_STRING}")
+        elif dolphin_mode == "opera":
+            _out(f"HE5 name: {MODE_OPERA_DISP_METHOD_STRING}")
         elif preset_naming:
             _out(f"HE5 name: {_hdfeos5_method_string(preset)}")
         else:
