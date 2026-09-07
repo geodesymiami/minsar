@@ -29,7 +29,7 @@ ln -sf "$MINSAR_HOME/tools/isce2/contrib/stack/topsStack/fetchOrbit.py" \
     "$ISCE_STACK/topsStack/fetchOrbit.py"
 ```
 
-Fresh installs: [`setup/install_minsar.bash`](../setup/install_minsar.bash) creates the same symlink when `tools/isce2/.../fetchOrbit.py` exists.
+Fresh installs: [`setup/install_additions.bash`](../setup/install_additions.bash) creates the same symlink when `tools/isce2/.../fetchOrbit.py` exists.
 
 ### Copernicus Data Space credentials (download step only)
 
@@ -61,7 +61,7 @@ When you bump the lockfile, **remove the temporary symlink** — the conda packa
 
 ### Required when upgrading to 2.6.4
 
-1. In [`setup/install_minsar.bash`](../setup/install_minsar.bash), **delete** the block between:
+1. In [`setup/install_additions.bash`](../setup/install_additions.bash), **delete** the block between:
    - `# TEMPORARY (isce2<2.6.4): Copernicus Data Space fetchOrbit`
    - and the next `#FA 1/2026:` comment (the `_fetch_orbit_*` variables and `ln -sf`).
 
@@ -73,7 +73,7 @@ When you bump the lockfile, **remove the temporary symlink** — the conda packa
    mamba create --prefix tools/miniforge3/envs/minsar --file conda-lock.yml --yes
    ```
 
-3. Re-run non-conda steps from `install_minsar.bash` (pip `-e` MintPy/MiaplPy, other `additions/isce2` symlinks).
+3. Re-run `install_env.bash` (pip `-e`) and `install_additions.bash` (other `additions/isce2` symlinks).
 
 4. Verify:
 
@@ -97,4 +97,4 @@ When you bump the lockfile, **remove the temporary symlink** — the conda packa
 - topsStack ionosphere and related fixes (if used)
 - GPU topo/geo2rdr and compiler compatibility fixes (situational)
 
-After upgrade, review other `additions/isce2` symlinks in `install_minsar.bash` — some may override fixes already in 2.6.4 (especially `Sentinel1.py` for S1C).
+After upgrade, review other `additions/isce2` symlinks in `install_additions.bash` — some may override fixes already in 2.6.4 (especially `Sentinel1.py` for S1C).

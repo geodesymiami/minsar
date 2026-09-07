@@ -324,7 +324,7 @@ hv_geom_for_save_qgis_he5() {
     return 0
 }
 
-# Ensure MinSAR patched save_qgis (HDFEOS .he5) is linked into MintPy (install_minsar.bash step).
+# Ensure MinSAR patched save_qgis (HDFEOS .he5) is linked into MintPy (install_additions.bash step).
 hv_ensure_minsar_save_qgis_links() {
     local mh="${MINSAR_HOME:-}"
     local mod cli mintpy_src

@@ -24,11 +24,18 @@ cd minsar
 env -i HOME=$HOME PATH=/usr/bin:/bin:/sbin SHELL=/bin/bash SCRATCH=$SCRATCH USER=circleci bash --noprofile --norc
 set -eo pipefail
 ./setup/install_python.bash
-./setup/install_minsar.bash
+./setup/install_tools.bash
+./setup/install_env.bash
+./setup/install_additions.bash
+./setup/install_isce3.bash
 ./setup/install_credential_files.bash
 ./setup/setup_orbit_dirs.bash
+
+# optional: course env (isceplus) and SpaTZ
+./setup/install_isceplus.bash
+./setup/install_spatz.bash
 ```
-The `install_python.bash` command is [here](https://github.com/geodesymiami/minsar/blob/master/setup/install_python.bash) and `install_minsar.bash`  is  [here](https://github.com/geodesymiami/minsar/blob/master/setup/install_minsar.bash)  and  `install_credential_files.bash`  is  [here](https://github.com/geodesymiami/minsar/blob/master/setup/install_credential_files.bash).    On Mac, as some packages are not available from conda-forge (isce2, pymaxflow) a   minsar_env_MacOS.yml is created and used.
+To recreate only the conda env: `RECREATE_ENV=1 ./setup/install_env.bash`. On Mac, as some packages are not available from conda-forge (isce2, pymaxflow) a `minsar_env_MacOS.yml` is created and used.
 
 ---
 ### Test your installation

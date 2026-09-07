@@ -3,7 +3,7 @@ channels:
   - conda-forge
 dependencies:
   - python=3.12
-  - isce2     # [linux]; interim fetchOrbit: docs/ISCE2_UPGRADE.md — remove symlink in install_minsar.bash when isce2=2.6.4
+  - isce2     # [linux]; interim fetchOrbit: docs/ISCE2_UPGRADE.md — remove symlink in install_additions.bash when isce2=2.6.4
   - gdal
   - mintpy
   - sardem

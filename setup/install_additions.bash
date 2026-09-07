@@ -1,78 +1,39 @@
 #!/usr/bin/env bash
+# Build SNAPHU (if needed) and link MinSAR additions into MintPy/MiaplPy/ISCE2.
 set -eo pipefail
 
-### git clone the code   #################
-git clone git@github.com:insarlab/MintPy.git tools/MintPy
-git clone git@github.com:insarlab/MiaplPy.git tools/MiaplPy
-git clone git@github.com:geodesymiami/insarmaps_scripts.git tools/insarmaps_scripts
-git clone git@github.com:geodesymiami/insarmaps.git tools/insarmaps
-git clone git@github.com:isce-framework/isce2.git tools/isce2
-git clone git@github.com:geodesymiami/MimtPy.git tools/MimtPy
-git clone git@github.com:geodesymiami/geodmod.git tools/geodmod
-git clone https://gitlab.com/earthscope/public/sar/ssara_client.git tools/ssara_client
-git clone git@github.com:TACC/launcher.git tools/launcher
-git clone git@github.com:geodesymiami/PlotData tools/PlotData
-git clone git@github.com:geodesymiami/PlotDataFA tools/PlotDataFA
-git clone git@github.com:geodesymiami/precip tools/Precip
-git clone git@github.com:geodesymiami/Precip_web tools/Precip_web
-git clone git@github.com:geodesymiami/VolcDef_web tools/VolcDef_web
-git clone git@github.com:geodesymiami/webconfig tools/webconfig
-git clone git@github.com:geodesymiami/emirhan_insarmaps_utils.git  tools/emirhan_insarmaps_utils
-git clone git@github.com:scottstanie/sardem tools/sardem
-git clone git@github.com:luhipi/sarvey tools/sarvey
-git clone git@github.com:falkamelung/sarplotter-main.git tools/sarplotter-main
-git clone git@github.com:isce-framework/dolphin.git tools/dolphin
-git clone git@github.com:geodesymiami/notebooks tools/notebooks
-#git clone https://github.com/JavieraAlvarez/etna-slider tools/etna-slider
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${REPO_ROOT}"
+MINSAR_HOME="${REPO_ROOT}"
 
-#git clone git@github.com:geodesymiami/SourceInversion.git tools/SourceInversion
-#git clone https://github.com/EliTras/VSM.git tools/SourceInversion/src/VSM
-#touch tools/SourceInversion/src/VSM/__init__.py
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    helptext="
+    usage: install_additions.bash
 
-### Install code into minsar environment  #################
-if [[ "$(uname)" == "Darwin" ]]; then
-    cp minsar_env.yml minsar_env_macOS.yml
-    sed -i '' '/- isce/ s/^/# /' minsar_env_MacOS.yml
-    sed -i '' '/gdal$/ s/gdal$/gdal=3.6\*/' minsar_env_MacOS.yml                  # only gdal=3.6 ships with the built-in postgresQL
-    sed -i '' '/- pymaxflow/ s/^/# /' minsar_env_MacOS.yml                        # out-comment conda pymaxflow installation
-    sed -i '' '/#- pymaxflow/ s/#- pymaxflow/- pymaxflow/' minsar_env_MacOS.yml   # activate pip pymaxflow installation
+    Install SNAPHU under tools/ and symlink additions/ into MintPy, MiaplPy, and ISCE2.
+
+    Examples:
+        ./setup/install_additions.bash
+    "
+    echo -e "$helptext"
+    exit 0
 fi
-
-if [[ "$(uname)" == "Linux" ]]; then
-    if [[ -f conda-lock.yml ]]; then
-       echo "Lock file conda-lock.yml found. Using it for installation" #8/26: create lockfile using tools/miniforge3/bin/conda-lock -f minsar_env.yml --lockfile conda-lock.yml --platform linux-64
-       tools/miniforge3/bin/mamba create --prefix tools/miniforge3/envs/minsar --file conda-lock.yml --yes
-    else
-       tools/miniforge3/bin/mamba --verbose env create -f minsar_env.yml --yes
-    fi
-elif [[ "$(uname)" == "Darwin" ]]; then    # FA 9/2025 lockfile for macOS did not work as pip failed to build wheels (need to try pixi)
-    tools/miniforge3/bin/mamba --verbose env create -f minsar_env_MacOS.yml --yes
-fi
-
-source tools/miniforge3/etc/profile.d/conda.sh
-set +u         # needed for circleCI
-conda activate minsar
-
-pip install -e tools/MintPy
-pip install -e tools/MiaplPy
-pip install -e tools/sardem
-pip install -e tools/sarvey[dev] --no-deps
-
-###  Reduce miniforge3 directory size #################
-rm -rf tools/miniforge3/pkgs
 
 ###  Install SNAPHU #################
-wget --no-check-certificate  https://web.stanford.edu/group/radar/softwareandlinks/sw/snaphu/snaphu-v2.0.7.tar.gz  -P tools
-tar -xvf tools/snaphu-v2.0.7.tar.gz -C tools
-perl -pi -e 's/\/usr\/local/\$(PWD)\/snaphu-v2.0.7/g' tools/snaphu-v2.0.7/src/Makefile
-if [[ "$(uname)" == "Linux" ]]; then
-    perl -pi -e 's/-arch\s+\S+\s+//g' tools/snaphu-v2.0.7/src/Makefile
+if [[ -x tools/snaphu-v2.0.7/bin/snaphu ]]; then
+    echo "skip SNAPHU build (exists): tools/snaphu-v2.0.7/bin/snaphu"
+else
+    wget --no-check-certificate https://web.stanford.edu/group/radar/softwareandlinks/sw/snaphu/snaphu-v2.0.7.tar.gz -P tools
+    tar -xvf tools/snaphu-v2.0.7.tar.gz -C tools
+    perl -pi -e 's/\/usr\/local/\$(PWD)\/snaphu-v2.0.7/g' tools/snaphu-v2.0.7/src/Makefile
+    if [[ "$(uname)" == "Linux" ]]; then
+        perl -pi -e 's/-arch\s+\S+\s+//g' tools/snaphu-v2.0.7/src/Makefile
+    fi
+    make -C tools/snaphu-v2.0.7/src
 fi
-cc=tools/miniforge3/bin/cc
-make -C tools/snaphu-v2.0.7/src
 
 ### Adding not-commited MintPy fixes
-MINSAR_HOME="$(pwd)"
 ln -sf $MINSAR_HOME/additions/mintpy/plot_network.py $MINSAR_HOME/tools/MintPy/src/mintpy
 ln -sf $MINSAR_HOME/additions/mintpy/save_hdfeos5.py $MINSAR_HOME/tools/MintPy/src/mintpy
 ln -sf $MINSAR_HOME/additions/mintpy/cli/save_hdfeos5.py $MINSAR_HOME/tools/MintPy/src/mintpy/cli
@@ -117,5 +78,5 @@ ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/stripmapStack/referenceStackCo
 fi
 
 echo ""
-echo "Running of install_minsar.bash DONE"
+echo "Running of install_additions.bash DONE"
 echo ""
