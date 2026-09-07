@@ -25,9 +25,8 @@ DOLPHIN_PRESETS: dict[str, dict[str, tuple[int, int] | None]] = {
 DOLPHIN_PRESET_CHOICES = tuple(DOLPHIN_PRESETS)
 
 DOLPHIN_PRESET_HELP = (
-    "auto, standard, dry, wet, arctic, disp-s1 (default: standard). "
-    "hw: auto 7x14, standard 6x12, dry 5x11, wet 9x18, arctic 9x19, disp-s1 8x16. "
-    "stride: auto 1x1, others 3x6 (override with --stride)."
+    "auto 7x14/1x1 (dolphin defaults), standard 6x12/3x6, dry 5x11/3x6, wet 9x18/3x6, "
+    f"arctic 9x19/3x6, disp-s1 8x16/3x6 (Default: {DEFAULT_PRESET})"
 )
 
 NO_PRESET_NAMING_HELP = (
