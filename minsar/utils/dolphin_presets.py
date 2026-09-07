@@ -12,19 +12,17 @@ DEFAULT_STRIDES: tuple[int, int] = (3, 6)
 DEFAULT_PRESET = "standard"
 
 # Named phase-linking half-windows (Y, X). Stride is --stride (default 3 6).
-# disp-s1: OPERA DISP-S1 base algorithm_parameters (tools/disp-s1/configs).
 DOLPHIN_PRESETS: dict[str, tuple[int, int]] = {
     "standard": DEFAULT_HALF_WINDOW,
     "dry": (5, 11),
     "wet": (9, 18),
     "arctic": (9, 19),
-    "disp-s1": (8, 16),
 }
 
 DOLPHIN_PRESET_CHOICES = tuple(DOLPHIN_PRESETS)
 
 DOLPHIN_PRESET_HELP = (
-    "phase-linking half-window: standard 6x12, dry 5x11, wet 9x18, arctic 9x19, disp-s1 8x16 "
+    "phase-linking half-window: standard 6x12, dry 5x11, wet 9x18, arctic 9x19 "
     f"(Default: {DEFAULT_PRESET})"
 )
 
@@ -44,6 +42,8 @@ def normalize_dolphin_preset(value: str) -> str:
     token = str(value).strip().lower().replace("_", "-")
     if token == "auto":
         raise ValueError("removed --half-window-preset auto; use --half-window 7 14 --stride 1 1")
+    if token == "disp-s1":
+        raise ValueError("removed --half-window-preset disp-s1; use --half-window 8 16")
     if token not in DOLPHIN_PRESETS:
         raise ValueError(f"invalid --half-window-preset {value!r}; use {', '.join(DOLPHIN_PRESET_CHOICES)}")
     return token
@@ -52,8 +52,6 @@ def normalize_dolphin_preset(value: str) -> str:
 def dolphin_method_string(preset: str) -> str:
     """HE5 post_processing_method label for a dolphin CSLC preset (e.g. dolphinStandard)."""
     key = normalize_dolphin_preset(preset)
-    if key == "disp-s1":
-        return "dolphinDispS1"
     return "dolphin" + key.capitalize()
 
 

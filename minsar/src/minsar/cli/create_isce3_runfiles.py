@@ -1025,12 +1025,10 @@ def create_parser() -> argparse.ArgumentParser:
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window-preset dry --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window-preset wet --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window-preset arctic --start-date 20220101 --end-date 20241212
- create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window-preset disp-s1 --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window-preset dry --stride 2 4 --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window 6 12 --stride 3 6 --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window 7 14 --stride 1 1 --start-date 20220101 --end-date 20241212
- create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode single-run --half-window-preset disp-s1 --start-date 20220101 --end-date 20241212
- create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --half-window-preset disp-s1 --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window 8 16 --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --half-window-preset standard --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --reference-method BORDER --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna dolphin_config.yaml --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212
@@ -1042,7 +1040,7 @@ def create_parser() -> argparse.ArgumentParser:
  create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --dolphin-mode single-run --start-date 20170101 --end-date 20211231
  create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --dolphin-mode opera --start-date 20170101 --end-date 20211231
  create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --half-window-preset dry --start-date 20170101 --end-date 20211231
- create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --dolphin-mode opera --half-window-preset disp-s1 --start-date 20170101 --end-date 20211231
+ create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --dolphin-mode opera --start-date 20170101 --end-date 20211231
  create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type disp-s1 --start-date 20170101 --end-date 20211231
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212 --phase download
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212 --no-dolphin-split"""

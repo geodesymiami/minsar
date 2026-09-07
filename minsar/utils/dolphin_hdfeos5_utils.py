@@ -91,7 +91,7 @@ HE5_GEOM = "HDFEOS/GRIDS/timeseries/geometry"
 
 
 def normalize_dolphin_preset(value: str) -> str:
-    """Normalize CSLC dolphin preset name (standard, dry, wet, arctic, disp-s1)."""
+    """Normalize CSLC dolphin preset name (standard, dry, wet, arctic)."""
     return normalize_dolphin_preset_name(value)
 
 

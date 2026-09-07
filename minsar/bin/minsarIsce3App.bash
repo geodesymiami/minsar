@@ -37,8 +37,8 @@ options:
   --copy-dolphin-inputs copy interferograms/unwrapped instead of symlink
   --half-window Y X     phase-linking half-window or from --half-window-preset (Default: 6 12)
   --stride Y X          output strides (Default: 3 6)
-  --half-window-preset {standard,dry,wet,arctic,disp-s1}
-                        phase-linking half-window: standard 6x12, dry 5x11, wet 9x18, arctic 9x19, disp-s1 8x16 (Default: standard)
+  --half-window-preset {standard,dry,wet,arctic}
+                        phase-linking half-window: standard 6x12, dry 5x11, wet 9x18, arctic 9x19 (Default: standard)
   --dolphin-mode MODE   {single-run,opera} (one Dolphin stack or local DISP-S1) (Default: single-run)
   --reference-method METHOD
                         disp-s1-reformat reference: NONE, POINT, MEDIAN, BORDER, HIGH_COHERENCE (Default: HIGH_COHERENCE)
