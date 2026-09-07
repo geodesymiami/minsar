@@ -1062,14 +1062,14 @@ def create_parser() -> argparse.ArgumentParser:
         nargs=2,
         metavar=("Y", "X"),
         default=None,
-        help=f"output strides Y X (default from --window-preset; standard {DEFAULT_STRIDES[0]} {DEFAULT_STRIDES[1]})",
+        help=f"output strides (Y X or from --window-preset) (default: {DEFAULT_STRIDES[0]} {DEFAULT_STRIDES[1]})",
     )
     parser.add_argument(
         "--half-window",
         nargs=2,
         metavar=("Y", "X"),
         default=None,
-        help=f"phase-linking half-window Y X (default from --window-preset; standard {DEFAULT_HALF_WINDOW[0]} {DEFAULT_HALF_WINDOW[1]})",
+        help=f"phase-linking half-window (Y X or from --window-preset) (default: {DEFAULT_HALF_WINDOW[0]} {DEFAULT_HALF_WINDOW[1]})",
     )
     parser.add_argument(
         "--window-preset",
