@@ -181,11 +181,21 @@ def _normalize_reference_method(value: str) -> str:
 _DATA_TYPE_NAME_TOKEN = {"cslc": "CSLC", "disp": "DISP"}
 _DATA_TYPE_NAME_SUFFIX_RE = re.compile(r"(CSLC|DISP)$", re.IGNORECASE)
 _LEGACY_DOLPHIN_MODE_SUFFIX_RE = re.compile(r"(Opera|Standard)$", re.IGNORECASE)
+_ORBIT_LABEL_SUFFIX_RE = re.compile(
+    r"(?P<sat>Sen|S1|TSX|ALOS2|CSK|RS2|ENV|Nisar|Alos2)(?P<pass>[AD])(?P<orbit>\d+)$",
+    re.IGNORECASE,
+)
+
+
+def _strip_orbit_label_suffix(name: str) -> str:
+    """Remove trailing SenD87 / NisarA159-style orbit label from a project basename."""
+    return _ORBIT_LABEL_SUFFIX_RE.sub("", str(name).strip())
 
 
 def _aoi_name_with_data_type(name: str, workflow: str) -> str:
-    """Append CSLC or DISP to an AOI project basename from --data-type (safe: no suffix)."""
+    """Append CSLC or DISP to an AOI basename (orbit label is added later; safe: no data-type token)."""
     base = _LEGACY_DOLPHIN_MODE_SUFFIX_RE.sub("", str(name).strip())
+    base = _strip_orbit_label_suffix(base)
     if not base:
         base = str(name).strip()
     stripped = _DATA_TYPE_NAME_SUFFIX_RE.sub("", base)
@@ -195,6 +205,40 @@ def _aoi_name_with_data_type(name: str, workflow: str) -> str:
     if not token:
         return stripped
     return f"{stripped}{token}"
+
+
+def _s1_orbit_label(flight_dir: str, track: int) -> str:
+    """Return SenA87 / SenD87 from --flight-dir and relative orbit."""
+    letter = "A" if str(flight_dir).strip().lower().startswith("a") else "D"
+    return f"Sen{letter}{int(track)}"
+
+
+def _resolve_aoi_orbit_label(aoi: str, flight_dir: str, track: int | None = None) -> str:
+    """Orbit label (SenD87) from --track or get_sar_coverage for the AOI pass."""
+    if track is not None:
+        return _s1_orbit_label(flight_dir, track)
+    from minsar.scripts.create_template import (
+        _effective_flight_dir_for_coverage,
+        _run_get_sar_coverage,
+        _validate_coverage_for_flight_dir,
+    )
+
+    coverage = _run_get_sar_coverage(aoi, "S1")
+    flight_dir_eff = _effective_flight_dir_for_coverage(flight_dir, coverage)
+    msg = _validate_coverage_for_flight_dir(coverage, flight_dir_eff)
+    if msg:
+        raise ValueError(msg)
+    if flight_dir_eff in ("desc", "desc,asc"):
+        return str(coverage["desc_label"])
+    return str(coverage["asc_label"])
+
+
+def _aoi_project_name(name: str, workflow: str, aoi: str, flight_dir: str, track: int | None = None) -> str:
+    """Full AOI project name: HawaiiPunaCSLCSenD87 (data-type token + platform/pass/orbit)."""
+    base = _aoi_name_with_data_type(name, workflow)
+    if _ORBIT_LABEL_SUFFIX_RE.search(base):
+        return base
+    return f"{base}{_resolve_aoi_orbit_label(aoi, flight_dir, track)}"
 
 
 def _normalize_phase(value: str) -> str:
@@ -1009,7 +1053,8 @@ def create_parser() -> argparse.ArgumentParser:
         description=(
             "Create run files and SLURM job files for SAFE, CSLC, or DISP-S1 processing. "
             "Default data type: safe. "
-            "AOI NAME HawaiiPuna becomes HawaiiPuna, HawaiiPunaCSLC, or HawaiiPunaDISP from --data-type. "
+            "AOI NAME HawaiiPuna becomes HawaiiPunaSenD87, HawaiiPunaCSLCSenD87, or HawaiiPunaDISPSenD87 "
+            "from --data-type and --flight-dir (platform + pass + relative orbit). "
             "Workflow: --data-type {safe,cslc,disp-S1,disp-NI} or --safe / --cslc / --disp-S1. "
             "--phase download writes sweets_config.yaml and download jobs; "
             "--phase dolphin writes DIR YAML when CSLCs/GSLCs exist. "
@@ -1020,7 +1065,7 @@ def create_parser() -> argparse.ArgumentParser:
         allow_abbrev=False,
     )
     parser.add_argument("input", help="MinSAR template, or AOI when followed by NAME")
-    parser.add_argument("name", nargs="?", help="project name when INPUT is an AOI; CSLC or DISP is appended from --data-type")
+    parser.add_argument("name", nargs="?", help="AOI project basename; full name adds CSLC|DISP and SenA/D## (e.g. HawaiiPuna -> HawaiiPunaCSLCSenD87)")
     parser.add_argument(
         "dolphin_config",
         nargs="?",
@@ -1350,7 +1395,11 @@ def _templates_dir() -> Path:
 
 
 def _create_template_from_aoi(args: argparse.Namespace) -> Path:
-    """Create the MinSAR template under $TE, independent of the invocation directory."""
+    """Create the MinSAR template under $TE, independent of the invocation directory.
+
+    ``create_template`` writes ``{NAME}{SenA/D##}.template`` (e.g. HawaiiPunaCSLCSenD87).
+    That full stem is the project directory name.
+    """
     from minsar.scripts.create_template import main as create_template
 
     if not args.name:
@@ -1373,10 +1422,6 @@ def _create_template_from_aoi(args: argparse.Namespace) -> Path:
     if status or template_file is None:
         raise RuntimeError("create_template.py could not resolve the AOI into a MinSAR template")
     path = Path(template_file).resolve()
-    desired = (path.parent / f"{args.name}.template").resolve()
-    if desired != path:
-        desired.write_text(path.read_text())
-        path = desired
     _fill_aoi_subset_lines(path, args.input)
     return path
 
@@ -2437,7 +2482,14 @@ def main(iargs: list[str] | None = None) -> int:
         input_path = Path(args.input).expanduser()
         input_is_template = input_path.is_file()
         if not input_is_template and args.name:
-            args.name = _aoi_name_with_data_type(args.name, workflow)
+            if args.dry_run:
+                # Full project name for the plan (create_template is skipped on dry-run).
+                args.name = _aoi_project_name(
+                    args.name, workflow, args.input, args.flight_dir, args.track
+                )
+            else:
+                # create_template appends SenA/D##; keep only the data-type token here.
+                args.name = _aoi_name_with_data_type(args.name, workflow)
         if input_is_template:
             context = _template_context(input_path.resolve(), args)
         elif args.dry_run:

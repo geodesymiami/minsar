@@ -23,7 +23,7 @@ Processing steps (single-run CSLC): download_cslc, dolphin_wrapped, dolphin_unwr
 Processing steps (--dolphin-mode opera): download_cslc, disp_s1_process, reformat_disp, dolphin_2_hdfeos5, ingest_insarmaps
 Additional steps for data-type safe, disp-S1: create_cslc, reformat_disp respectively
 Optional DOLPHIN_CONFIG is a .yaml/.yml or OPERA DISP-S1 .nc (prefers metadata/dolphin_workflow_config).
-AOI NAME HawaiiPuna becomes HawaiiPuna, HawaiiPunaCSLC, or HawaiiPunaDISP from --data-type.
+AOI NAME HawaiiPuna becomes HawaiiPunaSenD87, HawaiiPunaCSLCSenD87, or HawaiiPunaDISPSenD87 from --data-type and --flight-dir.
 
 options:
   -h, --help            show this help
