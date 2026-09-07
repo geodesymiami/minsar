@@ -12,16 +12,15 @@ ISCE3_RUN_DIR_NAME="run_files_isce3"
 
 print_help() {
     cat <<EOF
-usage: ${SCRIPT_NAME} TEMPLATE [DOLPHIN_CONFIG] [OPTIONS]
-       ${SCRIPT_NAME} AOI NAME [DOLPHIN_CONFIG] --flight-dir {asc,desc} [OPTIONS]
+usage: ${SCRIPT_NAME} TEMPLATE [OPTIONS]
+       ${SCRIPT_NAME} AOI NAME --flight-dir {asc,desc} [OPTIONS]
 
 Run an ISCE3 SAFE/CSLC/DISP workflow. Use --start --end --dostep for processing steps.
 single-run steps: [download, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps]
 opera steps: [download, disp_s1_process, reformat_disp, dolphin_2_hdfeos5, ingest_insarmaps]
-Additional steps: data-type safe: create_cslc; data-type disp-s1: reformat_disp
-Optional config from DOLPHIN_CONFIG.yaml or OPERA_DISP-S1.nc (uses metadata/dolphin_workflow_config).
-Leftover --section.option flags go to dolphin config.
-AOI NAME HawaiiPuna becomes HawaiiPunaSenD87, HawaiiPunaCSLCSenD87, or HawaiiPunaDISPSenD87 from --data-type.
+Additional step for data-type safe: create_cslc. For disp-s1: reformat_disp
+Supports dolphin config from config.yaml or OPERA_DISP-S1.nc (uses metadata/dolphin_workflow_config).
+Additional --section.option flags go to dolphin config.
 
 options:
   -h, --help            show this help
@@ -36,9 +35,9 @@ options:
   --dolphin-dir DIR     work directory (Default: dolphin, or auto-name from diffs)
   --unwrap-method NAME  shortcut for --unwrap-options.unwrap-method (Default: snaphu)
   --copy-dolphin-inputs copy interferograms/unwrapped instead of symlink
-  --half-window Y X     phase-linking half-window or from --window-preset (Default: 6 12)
+  --half-window Y X     phase-linking half-window or from --half-window-preset (Default: 6 12)
   --stride Y X          output strides (Default: 3 6)
-  --window-preset {standard,dry,wet,arctic,disp-s1}
+  --half-window-preset {standard,dry,wet,arctic,disp-s1}
                         phase-linking half-window: standard 6x12, dry 5x11, wet 9x18, arctic 9x19, disp-s1 8x16 (Default: standard)
   --dolphin-mode MODE   {single-run,opera} (one Dolphin stack or local DISP-S1) (Default: single-run)
   --reference-method METHOD
@@ -54,7 +53,7 @@ Examples:
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type disp-s1 --start-date 20220101 --end-date 20241212
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --start-date 20220101 --end-date 20241212
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window 6 12 --stride 3 6 --start-date 20220101 --end-date 20241212
-  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset dry --start-date 20220101 --end-date 20241212
+  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window-preset dry --start-date 20220101 --end-date 20241212
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --reference-method BORDER --start-date 20220101 --end-date 20241212
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna dolphin_config.yaml --flight-dir desc --start-date 20220101 --end-date 20241212
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna OPERA_L3_DISP-S1.nc --flight-dir desc --start-date 20220101 --end-date 20241212
@@ -70,7 +69,7 @@ die() {
 
 is_consume_one() {
     case "$1" in
-        --data-type|--platform|--flight-dir|--start-date|--end-date|--track|--relativeOrbit|--frame-id|--queue|--long-queue|--config|--window-preset|--burst-count-method|--dolphin-dir|--from-dolphin-dir|--unwrap-method|--ministack-size|--dolphin-mode|--reference-method|--backend|--max-parallel)
+        --data-type|--platform|--flight-dir|--start-date|--end-date|--track|--relativeOrbit|--frame-id|--queue|--long-queue|--config|--half-window-preset|--burst-count-method|--dolphin-dir|--from-dolphin-dir|--unwrap-method|--ministack-size|--dolphin-mode|--reference-method|--backend|--max-parallel)
             return 0
             ;;
     esac
@@ -111,7 +110,7 @@ is_opera_dolphin_mode() {
 
 is_science_token() {
     case "$1" in
-        --unwrap-method|--dolphin-dir|--from-dolphin-dir|--copy-dolphin-inputs|--ministack-size|--half-window|--stride|--window-preset|--dolphin-mode)
+        --unwrap-method|--dolphin-dir|--from-dolphin-dir|--copy-dolphin-inputs|--ministack-size|--half-window|--stride|--half-window-preset|--dolphin-mode)
             return 0
             ;;
     esac
@@ -272,6 +271,9 @@ while [[ $# -gt 0 ]]; do
             ;;
         --disp)
             die "use --disp-S1 or --data-type disp-s1, not --disp"
+            ;;
+        --preset|--window-preset)
+            die "use --half-window-preset, not $1"
             ;;
         --work-directory|--work-dir)
             die "use --dolphin-dir, not --work-directory"

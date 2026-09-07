@@ -133,7 +133,7 @@ def _minsar_isce3_app_command(
         end,
     ]
     if preset is not None:
-        parts.extend(["--data-type", "cslc", "--window-preset", preset])
+        parts.extend(["--data-type", "cslc", "--half-window-preset", preset])
     elif data_flag is not None:
         parts.append(data_flag)
     else:

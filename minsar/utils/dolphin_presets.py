@@ -6,7 +6,7 @@ import argparse
 import re
 from pathlib import Path
 
-# Default half-window / stride (also CLI help defaults). --window-preset names half-window only.
+# Default half-window / stride (also CLI help defaults). --half-window-preset names half-window only.
 DEFAULT_HALF_WINDOW: tuple[int, int] = (6, 12)
 DEFAULT_STRIDES: tuple[int, int] = (3, 6)
 DEFAULT_PRESET = "standard"
@@ -43,9 +43,9 @@ METHOD_STRING_HELP = (
 def normalize_dolphin_preset(value: str) -> str:
     token = str(value).strip().lower().replace("_", "-")
     if token == "auto":
-        raise ValueError("removed --window-preset auto; use --half-window 7 14 --stride 1 1")
+        raise ValueError("removed --half-window-preset auto; use --half-window 7 14 --stride 1 1")
     if token not in DOLPHIN_PRESETS:
-        raise ValueError(f"invalid --window-preset {value!r}; use {', '.join(DOLPHIN_PRESET_CHOICES)}")
+        raise ValueError(f"invalid --half-window-preset {value!r}; use {', '.join(DOLPHIN_PRESET_CHOICES)}")
     return token
 
 
@@ -102,7 +102,7 @@ def resolve_half_window_strides(
 ) -> tuple[tuple[int, int] | None, tuple[int, int] | None]:
     """Resolve effective (half_window_yx, strides_yx).
 
-    Order: --window-preset half-window and default stride → imported YAML → explicit CLI.
+    Order: --half-window-preset half-window and default stride → imported YAML → explicit CLI.
     """
     key = normalize_dolphin_preset(preset)
     hw = DOLPHIN_PRESETS[key]

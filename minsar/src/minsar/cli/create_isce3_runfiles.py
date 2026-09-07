@@ -125,7 +125,7 @@ ARGV_FIX_KW = {
         "--long-queue",
         "--config",
         "--sleep",
-        "--window-preset",
+        "--half-window-preset",
         "--burst-count-method",
         "--phase",
         "--dolphin-dir",
@@ -1021,17 +1021,17 @@ def create_parser() -> argparse.ArgumentParser:
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode single-run --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --start-date 20220101 --end-date 20241212
- create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset standard --start-date 20220101 --end-date 20241212
- create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset dry --start-date 20220101 --end-date 20241212
- create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset wet --start-date 20220101 --end-date 20241212
- create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset arctic --start-date 20220101 --end-date 20241212
- create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset disp-s1 --start-date 20220101 --end-date 20241212
- create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset dry --stride 2 4 --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window-preset standard --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window-preset dry --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window-preset wet --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window-preset arctic --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window-preset disp-s1 --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window-preset dry --stride 2 4 --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window 6 12 --stride 3 6 --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window 7 14 --stride 1 1 --start-date 20220101 --end-date 20241212
- create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode single-run --window-preset disp-s1 --start-date 20220101 --end-date 20241212
- create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --window-preset disp-s1 --start-date 20220101 --end-date 20241212
- create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --window-preset standard --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode single-run --half-window-preset disp-s1 --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --half-window-preset disp-s1 --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --half-window-preset standard --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --reference-method BORDER --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna dolphin_config.yaml --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna OPERA_L3_DISP-S1.nc --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212
@@ -1041,8 +1041,8 @@ def create_parser() -> argparse.ArgumentParser:
  create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --start-date 20170101 --end-date 20211231
  create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --dolphin-mode single-run --start-date 20170101 --end-date 20211231
  create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --dolphin-mode opera --start-date 20170101 --end-date 20211231
- create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --window-preset dry --start-date 20170101 --end-date 20211231
- create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --dolphin-mode opera --window-preset disp-s1 --start-date 20170101 --end-date 20211231
+ create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --half-window-preset dry --start-date 20170101 --end-date 20211231
+ create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --dolphin-mode opera --half-window-preset disp-s1 --start-date 20170101 --end-date 20211231
  create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type disp-s1 --start-date 20170101 --end-date 20211231
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212 --phase download
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212 --no-dolphin-split"""
@@ -1110,10 +1110,10 @@ def create_parser() -> argparse.ArgumentParser:
         nargs=2,
         metavar=("Y", "X"),
         default=None,
-        help=f"phase-linking half-window or from --window-preset (Default: {DEFAULT_HALF_WINDOW[0]} {DEFAULT_HALF_WINDOW[1]})",
+        help=f"phase-linking half-window or from --half-window-preset (Default: {DEFAULT_HALF_WINDOW[0]} {DEFAULT_HALF_WINDOW[1]})",
     )
     parser.add_argument(
-        "--window-preset",
+        "--half-window-preset",
         type=_normalize_dolphin_preset,
         choices=DOLPHIN_PRESET_CHOICES,
         default=DEFAULT_PRESET,
@@ -2426,7 +2426,9 @@ def main(iargs: list[str] | None = None) -> int:
     args, extras = create_parser().parse_known_args(argv)
     try:
         if any(token == "--preset" or token.startswith("--preset=") for token in (*argv, *extras)):
-            raise ValueError("use --window-preset, not --preset")
+            raise ValueError("use --half-window-preset, not --preset")
+        if any(token == "--window-preset" or token.startswith("--window-preset=") for token in (*argv, *extras)):
+            raise ValueError("use --half-window-preset, not --window-preset")
         _normalize_dolphin_config_positionals(args)
         half_window_cli = None
         if args.half_window is not None:
