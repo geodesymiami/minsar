@@ -1685,30 +1685,60 @@ def _print_plan(
     phase: str | None = None,
     layer: str | None = None,
     dolphin_mode: str | None = None,
+    half_window: tuple[int, int] | None = None,
+    strides: tuple[int, int] | None = None,
+    reference_method: str | None = None,
+    unwrap_method: str | None = None,
 ) -> None:
+    """Print resolved project and options (call before writing files)."""
     print(f"Workflow: {workflow.upper()} ({platform})")
     print(f"Project:  $SCRATCHDIR/{context['project']}")
     print(f"Run dir:  {RUN_FILES_DIRNAME}")
     template = str(context.get("template") or "").strip()
     if template:
         print(f"Template: {_format_template_path(template)}")
+    start = str(context.get("start_date") or "").strip()
+    end = str(context.get("end_date") or "").strip()
+    if start or end:
+        print(f"Dates:    {start or '?'} – {end or '?'}")
+    flight = str(context.get("flight_direction") or "").strip()
+    track = context.get("track")
+    if flight or track is not None:
+        track_txt = f" track {track}" if track is not None else ""
+        print(f"Orbit:    {flight or '?'}{track_txt}")
+    frame_id = str(context.get("frame_id") or "").strip()
+    if frame_id and workflow == "disp":
+        print(f"Frame ID: {frame_id}")
     if phase:
         print(f"Phase:    {phase}")
+    print("Options:")
+    print(f"  --data-type {workflow if workflow != 'disp' else 'disp-s1'}")
     if dolphin_mode and workflow == "cslc":
-        print(f"Dolphin mode: {dolphin_mode}")
+        print(f"  --dolphin-mode {dolphin_mode}")
     if dolphin_dir and workflow in {"cslc", "safe"}:
-        print(f"Dolphin:  {dolphin_dir}")
+        print(f"  --dolphin-dir {dolphin_dir}")
     if layer and workflow in {"cslc", "safe"} and dolphin_mode != "opera":
-        print(f"Layer:    {layer}")
+        print(f"  layer {layer}")
+    if workflow in {"cslc", "safe"}:
+        if preset:
+            print(f"  --half-window-preset {preset}")
+        if half_window is not None:
+            print(f"  --half-window {half_window[0]} {half_window[1]}")
+        if strides is not None:
+            print(f"  --stride {strides[0]} {strides[1]}")
+        if unwrap_method:
+            print(f"  --unwrap-method {unwrap_method}")
+    if reference_method and (workflow == "disp" or dolphin_mode == "opera"):
+        print(f"  --reference-method {reference_method}")
     if preset is not None and workflow in {"cslc", "safe"}:
         if dolphin_mode == "opera":
-            print(f"HE5 name: {OPERA_DISP_METHOD_STRING}")
+            print(f"  HE5 name: {OPERA_DISP_METHOD_STRING}")
         elif preset_naming:
-            print(f"HE5 name: {_hdfeos5_method_string(preset)}")
+            print(f"  HE5 name: {_hdfeos5_method_string(preset)}")
         else:
-            print("HE5 name: dolphin (--no-preset-naming)")
+            print("  HE5 name: dolphin (--no-preset-naming)")
     if queue is not None:
-        print(f"Queue:    {queue} (long: {long_queue})")
+        print(f"  queue {queue} (long: {long_queue})")
     if stages is None:
         run_files = [
             f"run_{number:02d}_{name}"
@@ -1716,7 +1746,8 @@ def _print_plan(
             if not phase or _stage_in_phase(name, workflow, phase)
         ]
         print(f"run_files to create: {', '.join(run_files)}")
-
+    else:
+        print(f"run_files created: {', '.join(f'run_{s.number:02d}_{s.name}' for s in stages)}")
 
 def _run_in_sweets(work_dir: Path, command: list[str]) -> None:
     """Run one command in the canonical SWEETS Pixi environment."""
@@ -2519,13 +2550,26 @@ def main(iargs: list[str] | None = None) -> int:
             workflow, context, split_dolphin=split_dolphin, dolphin_mode=args.dolphin_mode
         )
         _log_command_line([invocation_dir, work_dir], Path(__file__).name, argv)
+        _print_plan(
+            workflow,
+            platform,
+            context,
+            None,
+            specs,
+            args.queue,
+            args.long_queue,
+            preset=args.preset,
+            preset_naming=args.preset_naming,
+            dolphin_dir=dolphin_dir,
+            phase=args.phase,
+            layer=layer,
+            dolphin_mode=args.dolphin_mode,
+            half_window=args.half_window_yx,
+            strides=args.strides_yx,
+            reference_method=args.reference_method,
+            unwrap_method=getattr(args, "unwrap_method", None),
+        )
         if args.dry_run:
-            _print_plan(
-                workflow, platform, context, None, specs, args.queue, args.long_queue,
-                preset=args.preset, preset_naming=args.preset_naming,
-                dolphin_dir=dolphin_dir, phase=args.phase, layer=layer,
-                dolphin_mode=args.dolphin_mode,
-            )
             return 0
         work_dir.mkdir(parents=True, exist_ok=True)
         template_src = Path(str(context.get("template") or ""))
@@ -2564,12 +2608,7 @@ def main(iargs: list[str] | None = None) -> int:
             extra_flags=extra_flags,
             embed_config=embed_config,
         )
-        _print_plan(
-            workflow, platform, context, stages, queue=args.queue, long_queue=args.long_queue,
-            preset=args.preset, preset_naming=args.preset_naming,
-            dolphin_dir=dolphin_dir, phase=args.phase, layer=layer,
-            dolphin_mode=args.dolphin_mode,
-        )
+        print(f"Wrote {len(stages)} run/job pairs under {RUN_FILES_DIRNAME}/")
         if args.run:
             if args.sleep:
                 print(f"Sleeping {args.sleep} seconds before starting ...")
