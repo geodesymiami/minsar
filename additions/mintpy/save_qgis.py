@@ -5,8 +5,11 @@
 ############################################################
 # MinSAR: support timeseries or HDFEOS (.he5), geo or radar;
 # always estimate velocity (MintPy polynomial=1); apply mask;
-# default GeoPackage (.gpkg); --no-gpkg for shapefile.
+# default GeoPackage (.gpkg); --no-gpkg for shapefile;
+# GPKG writes use batched OGR transactions (avoids per-feature SQLite autocommit).
 
+# Features per GPKG transaction (ogr2ogr default -gt is 100000).
+GPKG_TRANSACTION_SIZE = 100000
 
 import errno
 import os
@@ -459,6 +462,12 @@ def write_vector_file(fDict, out_file, box=None, zero_first=False, atr=None):
         # Start counter
         counter = 1
         prog_bar = ptime.progressBar(maxValue=max(nValid, 1))
+        # GPKG/SQLite autocommits each CreateFeature unless batched — fatal on Lustre.
+        use_txn = driver_name == 'GPKG'
+        pending = 0
+        if use_txn:
+            if layer.StartTransaction() != 0:
+                raise RuntimeError('failed to start GeoPackage write transaction')
 
         # For each line
         for i in range(length):
@@ -499,9 +508,21 @@ def write_vector_file(fDict, out_file, box=None, zero_first=False, atr=None):
                 layer.CreateFeature(feature)
                 feature = None
 
+                if use_txn:
+                    pending += 1
+                    if pending >= GPKG_TRANSACTION_SIZE:
+                        if layer.CommitTransaction() != 0:
+                            raise RuntimeError('failed to commit GeoPackage write transaction')
+                        if layer.StartTransaction() != 0:
+                            raise RuntimeError('failed to start GeoPackage write transaction')
+                        pending = 0
+
                 # update counter / progress bar
                 counter += 1
                 prog_bar.update(counter, every=100, suffix=f"line {counter}/{nValid}")
+        if use_txn and pending:
+            if layer.CommitTransaction() != 0:
+                raise RuntimeError('failed to commit GeoPackage write transaction')
         prog_bar.close()
 
     # flush / close datasource (important for GPKG)
