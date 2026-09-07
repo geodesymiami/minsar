@@ -1691,9 +1691,9 @@ def _print_plan(
     unwrap_method: str | None = None,
 ) -> None:
     """Print resolved project and options (call before writing files)."""
+    del queue, long_queue, layer  # kept in signature for call-site compatibility
     print(f"Workflow: {workflow.upper()} ({platform})")
     print(f"Project:  $SCRATCHDIR/{context['project']}")
-    print(f"Run dir:  {RUN_FILES_DIRNAME}")
     template = str(context.get("template") or "").strip()
     if template:
         print(f"Template: {_format_template_path(template)}")
@@ -1701,27 +1701,16 @@ def _print_plan(
     end = str(context.get("end_date") or "").strip()
     if start or end:
         print(f"Dates:    {start or '?'} – {end or '?'}")
-    flight = str(context.get("flight_direction") or "").strip()
-    track = context.get("track")
-    if flight or track is not None:
-        track_txt = f" track {track}" if track is not None else ""
-        print(f"Orbit:    {flight or '?'}{track_txt}")
     frame_id = str(context.get("frame_id") or "").strip()
     if frame_id and workflow == "disp":
         print(f"Frame ID: {frame_id}")
-    if phase:
-        print(f"Phase:    {phase}")
     print("Options:")
     print(f"  --data-type {workflow if workflow != 'disp' else 'disp-s1'}")
     if dolphin_mode and workflow == "cslc":
         print(f"  --dolphin-mode {dolphin_mode}")
     if dolphin_dir and workflow in {"cslc", "safe"}:
         print(f"  --dolphin-dir {dolphin_dir}")
-    if layer and workflow in {"cslc", "safe"} and dolphin_mode != "opera":
-        print(f"  layer {layer}")
     if workflow in {"cslc", "safe"}:
-        if preset:
-            print(f"  --half-window-preset {preset}")
         if half_window is not None:
             print(f"  --half-window {half_window[0]} {half_window[1]}")
         if strides is not None:
@@ -1737,8 +1726,6 @@ def _print_plan(
             print(f"  HE5 name: {_hdfeos5_method_string(preset)}")
         else:
             print("  HE5 name: dolphin (--no-preset-naming)")
-    if queue is not None:
-        print(f"  queue {queue} (long: {long_queue})")
     if stages is None:
         run_files = [
             f"run_{number:02d}_{name}"
@@ -1748,6 +1735,7 @@ def _print_plan(
         print(f"run_files to create: {', '.join(run_files)}")
     else:
         print(f"run_files created: {', '.join(f'run_{s.number:02d}_{s.name}' for s in stages)}")
+
 
 def _run_in_sweets(work_dir: Path, command: list[str]) -> None:
     """Run one command in the canonical SWEETS Pixi environment."""
