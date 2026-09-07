@@ -95,3 +95,46 @@ def max_width_for_ppn48(
     max_mem_per_task = mem_per_node_mb / float(cpus_for_ref)
     max_pixels = max_mem_per_task * (1024.0 ** 2) / bytes_per_pixel
     return max(1, int(math.floor(max_pixels / length)))
+
+
+def fit_snaphu_tiling(
+    length: int,
+    width: int,
+    ntiles: tuple[int, int],
+    tile_overlap: tuple[int, int],
+    *,
+    min_interior: int = 32,
+) -> tuple[tuple[int, int], tuple[int, int]]:
+    """Shrink SNAPHU ntiles/overlap so each tile fits the raster.
+
+    Avoids snaphu's "tiles too small or overlap too large for given input"
+    on small AOIs (defaults like 5x5 with 400-px overlap need large scenes).
+    """
+    ny = max(1, int(ntiles[0]))
+    nx = max(1, int(ntiles[1]))
+    oy = max(0, int(tile_overlap[0]))
+    ox = max(0, int(tile_overlap[1]))
+    length = max(1, int(length))
+    width = max(1, int(width))
+
+    def _ok(n_along: int, size: int, overlap: int) -> bool:
+        if n_along <= 1:
+            return True
+        span = size // n_along
+        return span > overlap and (span - overlap) >= min_interior
+
+    while ny > 1 and not _ok(ny, length, oy):
+        ny -= 1
+    while nx > 1 and not _ok(nx, width, ox):
+        nx -= 1
+
+    if ny == 1 and nx == 1:
+        return (1, 1), (0, 0)
+
+    span_y = max(1, length // ny)
+    span_x = max(1, width // nx)
+    oy = min(oy, max(0, span_y // 2))
+    ox = min(ox, max(0, span_x // 2))
+    if not _ok(ny, length, oy) or not _ok(nx, width, ox):
+        return (1, 1), (0, 0)
+    return (ny, nx), (oy, ox)

@@ -107,9 +107,9 @@ run_minsar_app() {
     ) 2>&1
 }
 
-test_isce_start_implies_ifgram_and_geometry_stop_8() {
+test_isce_start_implies_ifgram_and_geometry_stop_7() {
     print_test_start "ISCE start implies ifgram (geometry)" \
-        "Verifies --isce-start without --start auto-runs ifgram and defaults to stop=8 for geometry."
+        "Verifies --isce-start without --start auto-runs ifgram and defaults to stop=7 for geometry."
     setup_minsar_app_test_env
 
     local tpl="$TEMPLATES/testproj.template"
@@ -117,13 +117,51 @@ test_isce_start_implies_ifgram_and_geometry_stop_8() {
     local output
     output="$(run_minsar_app "$tpl" --no-mintpy --miaplpy --isce-start 6)"
 
-    assert_contains "$output" "Running.... run_workflow.bash --start 6 --stop 8" \
-        "Geometry defaults to stop=8 when --isce-start is provided without --isce-stop"
+    assert_contains "$output" "Running.... run_workflow.bash --start 6 --stop 7" \
+        "Geometry defaults to stop=7 when --isce-start is provided without --isce-stop"
     assert_not_contains "$output" "run_download_orbits_asf.bash" \
         "Orbit download is skipped when inferred start is ifgram"
 
     teardown_test_workspace
     print_test_end "ISCE start implies ifgram (geometry)"
+}
+
+test_no_mintpy_geometry_defaults_to_stop_7() {
+    print_test_start "--no-mintpy geometry stop" \
+        "Verifies --no-mintpy with geometry coregistration stops at merge SLC (7), not unwrap (11)."
+    setup_minsar_app_test_env
+
+    local tpl="$TEMPLATES/testproj.template"
+    write_template "$tpl" "geometry"
+    local output
+    output="$(run_minsar_app "$tpl" --no-mintpy --miaplpy --start ifgram --skip-miaplpy)"
+
+    assert_contains "$output" "ISCE steps to process: 1-7" \
+        "Geometry --no-mintpy prints ISCE range 1-7"
+    assert_contains "$output" "Running.... run_workflow.bash --start 1 --stop 7" \
+        "Geometry --no-mintpy runs through merge_reference_secondary_slc"
+
+    teardown_test_workspace
+    print_test_end "--no-mintpy geometry stop"
+}
+
+test_geometry_mintpy_defaults_to_stop_11() {
+    print_test_start "geometry MintPy stop" \
+        "Verifies geometry with MintPy runs through unwrap (11)."
+    setup_minsar_app_test_env
+
+    local tpl="$TEMPLATES/testproj.template"
+    write_template "$tpl" "geometry"
+    local output
+    output="$(run_minsar_app "$tpl" --start ifgram --skip-mintpy --skip-miaplpy)"
+
+    assert_contains "$output" "ISCE steps to process: 1-11" \
+        "Geometry with MintPy prints ISCE range 1-11"
+    assert_contains "$output" "Running.... run_workflow.bash --start 1 --stop 11" \
+        "Geometry with MintPy runs through unwrap"
+
+    teardown_test_workspace
+    print_test_end "geometry MintPy stop"
 }
 
 test_isce_start_defaults_to_stop_12_for_nesd_auto() {
@@ -284,7 +322,9 @@ test_summary_prints_session_upload_insarmaps_log_tails() {
 
 print_header "MINSARAPP OPTION RESOLUTION TEST SUITE"
 
-test_isce_start_implies_ifgram_and_geometry_stop_8
+test_isce_start_implies_ifgram_and_geometry_stop_7
+test_no_mintpy_geometry_defaults_to_stop_7
+test_geometry_mintpy_defaults_to_stop_11
 test_isce_start_defaults_to_stop_12_for_nesd_auto
 test_miaplpy_start_without_start_disables_orbit_download
 test_geometry_does_not_disable_mintpy

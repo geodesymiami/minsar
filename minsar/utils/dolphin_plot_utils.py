@@ -12,6 +12,12 @@ import rasterio
 TC_VMIN = 0.6
 
 
+def _is_dolphin_work_dir(path: Path) -> bool:
+    """True for ``dolphin`` or auto-named dirs like ``dolphin_standard`` / ``dolphin_disps1``."""
+    name = path.name
+    return name == "dolphin" or name.startswith("dolphin_")
+
+
 def resolve_run_paths(input_path: Path) -> tuple[Path, Path, Path]:
     """Return (dataset_dir, dolphin_dir, timeseries_dir)."""
     path = input_path.expanduser().resolve()
@@ -21,10 +27,10 @@ def resolve_run_paths(input_path: Path) -> tuple[Path, Path, Path]:
         path = path.parent
     if path.name == "timeseries":
         ts_dir = path
-        dolphin_dir = path.parent if path.parent.name == "dolphin" else path.parent
-        dataset_dir = dolphin_dir.parent if dolphin_dir.name == "dolphin" else dolphin_dir
+        dolphin_dir = path.parent
+        dataset_dir = dolphin_dir.parent if _is_dolphin_work_dir(dolphin_dir) else dolphin_dir
         return dataset_dir, dolphin_dir, ts_dir
-    if (path / "timeseries").is_dir() and path.name == "dolphin":
+    if (path / "timeseries").is_dir() and _is_dolphin_work_dir(path):
         return path.parent, path, path / "timeseries"
     if (path / "dolphin" / "timeseries").is_dir():
         return path, path / "dolphin", path / "dolphin" / "timeseries"
