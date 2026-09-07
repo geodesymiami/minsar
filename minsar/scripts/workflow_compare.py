@@ -44,8 +44,8 @@ ARGV_FIX_KW = {
 
 DESCRIPTION = (
     "Write a bash script with minsarIsce3App.bash (--safe, --data-type cslc with "
-    "--preset auto or standard, --disp-S1) and minsarApp.bash (--no-mintpy --miaplpy) "
-    "for the same AOI and dates. Each pipeline uses a separate project name under $SCRATCHDIR."
+    "--window-preset auto or standard, --disp-S1) and minsarApp.bash (--no-mintpy --miaplpy) "
+    "for the same AOI and dates. ISCE3 projects are NAME, NAMECSLC, and NAMEDISP under $SCRATCHDIR."
 )
 
 EXAMPLE = """Examples:
@@ -64,7 +64,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("aoi", metavar="AOI", help="area of interest (S:N,W:E bounds or WKT POLYGON)")
     parser.add_argument(
         "name",
-        help="project base name; ISCE3 pipelines get SAFE/CSLCAuto/CSLCStandard/DISP suffixes; MiaplPy uses the base name",
+        help="project base name; ISCE3 AOI runs become NAME, NAMECSLC, or NAMEDISP from --data-type; MiaplPy uses the base name",
     )
     parser.add_argument("--flight-dir", choices=("asc", "desc"), required=True, help="orbit pass for AOI-based setup")
     parser.add_argument("--start-date", "--start", dest="start_date", required=True, metavar="DATE", help="first date YYYYMMDD or YYYY-MM-DD")
@@ -92,9 +92,9 @@ def project_names(base: str) -> dict[str, str]:
     """Return scratch project names for each compare pipeline."""
     stem = normalize_base_name(base)
     return {
-        "safe": f"{stem}SAFE",
-        "cslc_auto": f"{stem}CSLCAuto",
-        "cslc_standard": f"{stem}CSLCStandard",
+        "safe": stem,
+        "cslc_auto": f"{stem}CSLC",
+        "cslc_standard": f"{stem}CSLC",
         "disp": f"{stem}DISP",
         "isce2": stem,
     }
@@ -134,7 +134,7 @@ def _minsar_isce3_app_command(
         end,
     ]
     if preset is not None:
-        parts.extend(["--data-type", "cslc", "--preset", preset])
+        parts.extend(["--data-type", "cslc", "--window-preset", preset])
     elif data_flag is not None:
         parts.append(data_flag)
     else:
@@ -179,11 +179,11 @@ def build_compare_script(
     lines = [
         "#!/usr/bin/env bash",
         "set -e",
-        f"# Compare SAFE, CSLC auto/standard, DISP-S1 (minsarIsce3App), and MiaplPy for {stem}",
-        _minsar_isce3_app_command(aoi, names["safe"], flight_dir=flight_dir, start=start, end=end, data_flag="--safe", track=track, frame_id=frame_id),
+        f"# Compare SAFE, CSLC auto/standard window-preset, DISP-S1 (minsarIsce3App), and MiaplPy for {stem}",
+        _minsar_isce3_app_command(aoi, stem, flight_dir=flight_dir, start=start, end=end, data_flag="--safe", track=track, frame_id=frame_id),
         _minsar_isce3_app_command(
             aoi,
-            names["cslc_auto"],
+            stem,
             flight_dir=flight_dir,
             start=start,
             end=end,
@@ -193,7 +193,7 @@ def build_compare_script(
         ),
         _minsar_isce3_app_command(
             aoi,
-            names["cslc_standard"],
+            stem,
             flight_dir=flight_dir,
             start=start,
             end=end,
@@ -201,7 +201,7 @@ def build_compare_script(
             track=track,
             frame_id=frame_id,
         ),
-        _minsar_isce3_app_command(aoi, names["disp"], flight_dir=flight_dir, start=start, end=end, data_flag="--disp-S1", track=track, frame_id=frame_id),
+        _minsar_isce3_app_command(aoi, stem, flight_dir=flight_dir, start=start, end=end, data_flag="--disp-S1", track=track, frame_id=frame_id),
         _minsar_app_command(aoi, names["isce2"], flight_dir=flight_dir, start=start, end=end),
         "",
     ]
@@ -253,10 +253,10 @@ def main(iargs: list[str] | None = None) -> int:
         import subprocess
 
         for spec in (
-            {"data_flag": "--safe", "project": names["safe"]},
-            {"preset": "auto", "project": names["cslc_auto"]},
-            {"preset": "standard", "project": names["cslc_standard"]},
-            {"data_flag": "--disp-S1", "project": names["disp"]},
+            {"data_flag": "--safe", "project": stem},
+            {"preset": "auto", "project": stem},
+            {"preset": "standard", "project": stem},
+            {"data_flag": "--disp-S1", "project": stem},
         ):
             command = _minsar_isce3_app_command(
                 inps.aoi,

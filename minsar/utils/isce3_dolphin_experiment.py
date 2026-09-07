@@ -10,6 +10,7 @@ DOLPHIN_DIR_SIDECAR = ".isce3_dolphin_dir"
 RUN_SLICE_SIDECAR = ".isce3_run_slice"
 DEFAULT_DOLPHIN_DIR = "dolphin"
 DEFAULT_FROM_DIR = "dolphin"
+DEFAULT_DOLPHIN_MODE = "single-run"
 UNWRAP_TOKEN_ORDER = ("whirlwind", "goldstein", "interp")
 
 WORKER_KEY_PARTS = (
@@ -59,6 +60,16 @@ def write_dolphin_dir_sidecar(work_dir: Path, dolphin_dir: str) -> None:
     path.write_text(str(dolphin_dir).strip() + "\n", encoding="utf-8")
 
 
+def canonical_dolphin_mode(value: str | None) -> str:
+    """Map stored or CLI dolphin-mode tokens to single-run or opera."""
+    token = (value or DEFAULT_DOLPHIN_MODE).strip().lower().replace("_", "-")
+    if token in {"standard", "single-run", "singlerun"}:
+        return "single-run"
+    if token == "opera":
+        return "opera"
+    return DEFAULT_DOLPHIN_MODE
+
+
 def write_run_slice_sidecar(
     work_dir: Path,
     *,
@@ -66,12 +77,13 @@ def write_run_slice_sidecar(
     layer: str,
     phase: str,
     yaml_name: str,
-    dolphin_mode: str = "standard",
+    dolphin_mode: str = DEFAULT_DOLPHIN_MODE,
 ) -> None:
     """Record resolved DIR/layer so minsarIsce3App.bash can choose workflow --start."""
     path = Path(work_dir) / RUN_SLICE_SIDECAR
+    mode = canonical_dolphin_mode(dolphin_mode)
     path.write_text(
-        f"dolphin_dir={dolphin_dir}\nlayer={layer}\nphase={phase}\nyaml={yaml_name}\ndolphin_mode={dolphin_mode}\n",
+        f"dolphin_dir={dolphin_dir}\nlayer={layer}\nphase={phase}\nyaml={yaml_name}\ndolphin_mode={mode}\n",
         encoding="utf-8",
     )
 
@@ -86,6 +98,8 @@ def read_run_slice_sidecar(work_dir: Path) -> dict[str, str]:
         if "=" in line:
             key, value = line.split("=", 1)
             out[key.strip()] = value.strip()
+    if "dolphin_mode" in out:
+        out["dolphin_mode"] = canonical_dolphin_mode(out["dolphin_mode"])
     return out
 
 

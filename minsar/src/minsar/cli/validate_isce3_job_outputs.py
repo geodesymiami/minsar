@@ -121,8 +121,8 @@ def _selected(step: dict[str, object], values: list[str] | None) -> bool:
 
 
 def _read_dolphin_mode(work_dir: Path) -> str:
-    mode = read_run_slice_sidecar(work_dir).get("dolphin_mode", "standard").strip().lower()
-    return mode if mode in {"standard", "opera"} else "standard"
+    mode = read_run_slice_sidecar(work_dir).get("dolphin_mode", "single-run").strip().lower()
+    return mode if mode in {"single-run", "opera"} else "single-run"
 
 
 def _effective_rules(

@@ -1,17 +1,17 @@
-# Dolphin mode: standard vs opera — ministack chaining and compressed SLCs
+# Dolphin mode: single-run vs opera — ministack chaining and compressed SLCs
 
-MinSAR ISCE3 CSLC workflows (`minsarIsce3App.bash --data-type cslc`) support two Dolphin paths via `--dolphin-mode {standard, opera}` (see `create_isce3_runfiles.py`).
+MinSAR ISCE3 CSLC workflows (`minsarIsce3App.bash --data-type cslc`) support two Dolphin paths via `--dolphin-mode {single-run, opera}` (see `create_isce3_runfiles.py`).
 
 | Mode | Entry point | Output layout |
 |------|-------------|---------------|
-| **standard** | One `dolphin run` over all CSLCs | `dolphin/` tree → timeseries HE5 |
+| **single-run** | One `dolphin run` over all CSLCs | `dolphin/` tree → timeseries HE5 |
 | **opera** | `disp_s1_process.py` batches → `reformat_disp` | `disp_s1_produce/` → `*-stack.nc` → HE5 |
 
 Both use the same Dolphin/DISP-S1 core algorithms, but they differ in **how time is segmented**, **how compressed SLCs (CCSLCs) are created and reused**, and **how displacement is rebased into a continuous stack**.
 
 ---
 
-## 1. Standard mode — one continuous run
+## 1. Single-run mode — one continuous run
 
 ### Workflow
 
@@ -42,7 +42,7 @@ All 88 Puna CSLCs are in **one** config. Dolphin advances ministack windows inte
 
 ### Partial final ministack (46 or 47 SLCs, `ministack_size: 15`)
 
-Standard mode still processes **every** date in the single run. Dolphin groups the stack into consecutive windows:
+Single-run mode still processes **every** date in the single run. Dolphin groups the stack into consecutive windows:
 
 | Total SLCs | Full ministacks (×15) | Remainder dates | Behavior |
 |------------|------------------------|-----------------|----------|
@@ -52,7 +52,7 @@ Standard mode still processes **every** date in the single run. Dolphin groups t
 
 There is **no** MinSAR guard that skips dates when fewer than 4 reals remain (that rule exists only in opera **forward** batches; see below).
 
-### Default ministack size in standard mode
+### Default ministack size in single-run mode
 
 MinSAR and OPERA DISP-S1 both default to **`ministack_size: 15`** (`DEFAULT_DISP_S1_MINISTACK_SIZE` in `create_isce3_runfiles.py`; Dolphin CSLC guide uses the same).
 
@@ -182,7 +182,7 @@ Timeline (88 dates, ms=15):
 comp_slcs/:  [CCSLC₀] → [CCSLC₀,₁] → ... → [up to 5 per burst] ──used──→ forward batches
 ```
 
-Standard mode covers the same 88 dates in **one** Dolphin run; it does not label batches “historical” or “forward,” and does not emit per-date `.nc` before reformat.
+Single-run mode covers the same 88 dates in **one** Dolphin run; it does not label batches “historical” or “forward,” and does not emit per-date `.nc` before reformat.
 
 ---
 
@@ -215,7 +215,7 @@ So with opera mode, a short tail after the last **full** historical ministack is
 
 **Operational implication:** After adding 1–2 new CSLCs to an existing stack, opera mode may produce **zero** new forward products until enough trailing reals accumulate (or until a new full historical ministack is warranted — which would require re-architecting the batch schedule).
 
-### Standard mode
+### Single-run mode
 
 The trailing 1–2 dates are part of the **last internal ministack** in the single `dolphin run`. No `MIN_FORWARD_REALS` skip. Linking quality on a 1–2 date window may be poor, but the dates are not dropped by MinSAR.
 
@@ -228,7 +228,7 @@ Only N date(s) (< ministack size 15); need at least one full historical ministac
 to bootstrap compressed SLCs for forward mode.
 ```
 
-Standard mode can run with fewer than 15 dates (subject to Dolphin’s own minimum network requirements).
+Single-run mode can run with fewer than 15 dates (subject to Dolphin’s own minimum network requirements).
 
 ---
 
@@ -236,7 +236,7 @@ Standard mode can run with fewer than 15 dates (subject to Dolphin’s own minim
 
 Matching `--half-window`, `--stride`, and merged algorithm YAML is **not sufficient** for identical displacement or velocity. Structural differences remain:
 
-| Factor | Standard | Opera |
+| Factor | Single-run | Opera |
 |--------|----------|-------|
 | **Reference frame** | Single global ministack reference policy (`output_reference_idx: 4`, `always_first`) for the whole run | Moving reference **per batch**; `reformat_disp` rebases to one stack reference (`--reference-method`, e.g. BORDER, HIGH_COHERENCE) |
 | **Time segmentation** | One continuous interferogram network (`max_bandwidth: 4` on Puna standard) | Many smaller networks per batch (`max_bandwidth: 3` in opera `make_cfg`) |
@@ -346,7 +346,7 @@ ASF-only product fields (in `algorithm_parameters_yaml`): `spatial_wavelength_cu
 
 **For scientific consistency on a fixed, complete stack (full reprocess):**
 
-- **Prefer standard mode** — one reference framework, one network inversion, no per-batch rebase artifacts, no forward skip gaps, simpler interpretation.
+- **Prefer single-run mode** — one reference framework, one network inversion, no per-batch rebase artifacts, no forward skip gaps, simpler interpretation.
 
 **When results must match OPERA DISP-S1 production or published L3 products:**
 
@@ -364,11 +364,11 @@ ASF-only product fields (in `algorithm_parameters_yaml`): `spatial_wavelength_cu
 
 ## 8. Processing time — which mode is faster?
 
-**Short answer:** For a **full reprocess of the same stack**, **`--dolphin-mode standard` is expected to be faster**. Opera mode is faster only when **incremental** updates or **batch-level resume** matter more than total walltime.
+**Short answer:** For a **full reprocess of the same stack**, **`--dolphin-mode single-run` is expected to be faster**. Opera mode is faster only when **incremental** updates or **batch-level resume** matter more than total walltime.
 
-### Why standard wins on total walltime (full stack)
+### Why single-run wins on total walltime (full stack)
 
-| Factor | Standard | Opera |
+| Factor | Single-run | Opera |
 |--------|----------|-------|
 | Job count | 1 Dolphin displacement run (optionally split into wrapped/unwrap/timeseries stages) | 5 historical + 10 forward batches on Puna (15+ separate Dolphin/DISP runs) + `reformat_disp` |
 | Overlap | Each date linked/unwrap once in one network | Same dates re-enter overlapping batch windows; forward batches reuse trailing reals |
@@ -378,10 +378,10 @@ ASF-only product fields (in `algorithm_parameters_yaml`): `spatial_wavelength_cu
 
 Walltime scales roughly as:
 
-- **Standard:** `T ≈ T_dolphin(all dates)`
+- **Single-run:** `T ≈ T_dolphin(all dates)`
 - **Opera:** `T ≈ Σ T_batch(i) + T_reformat` (batches run **in series** inside `disp_s1_process`; see `architecture_docs/ISCE3_HPC_opportunities.md` §7)
 
-On Puna (88 CSLCs), opera runs **15** batch jobs where standard runs **1**. Even if each opera batch is smaller, the sum of batch runtimes plus reformat typically exceeds one monolithic run, unless individual batches are parallelized on separate nodes (MinSAR’s default opera path does **not** do that — batches are sequential in one `disp_s1_process` job).
+On Puna (88 CSLCs), opera runs **15** batch jobs where single-run runs **1**. Even if each opera batch is smaller, the sum of batch runtimes plus reformat typically exceeds one monolithic run, unless individual batches are parallelized on separate nodes (MinSAR’s default opera path does **not** do that — batches are sequential in one `disp_s1_process` job).
 
 ### When opera can be “faster” operationally
 
@@ -394,7 +394,7 @@ On Puna (88 CSLCs), opera runs **15** batch jobs where standard runs **1**. Even
 
 These are **operational** wins, not raw compute efficiency on a from-scratch reprocess.
 
-### Standard mode — usually faster for a **full** reprocess
+### Single-run mode — usually faster for a **full** reprocess
 
 | Advantage | Why |
 |-----------|-----|
@@ -422,7 +422,7 @@ Walltime is roughly **one** Dolphin displacement run (subject to queue limits; l
 | Incremental forward | New dates only need new forward batches (when ≥4 reals allow) |
 | OPERA-compatible intermediates | Direct comparison to ASF/NASA L3 DISP-S1 |
 
-**Rule of thumb:** Full-stack reprocess with no ops constraints → **standard is more efficient**. Long-running operational stream with periodic new acquisitions → **opera is more efficient** (and may be the only practical option without redoing the entire stack).
+**Rule of thumb:** Full-stack reprocess with no ops constraints → **single-run is more efficient**. Long-running operational stream with periodic new acquisitions → **opera is more efficient** (and may be the only practical option without redoing the entire stack).
 
 ---
 
@@ -455,14 +455,14 @@ Total .nc ≈ 84 before reformat
 
 MinSAR and OPERA DISP-S1 use several YAML layers. They are **not** interchangeable copies of the same file.
 
-### Standard mode (`--dolphin-mode standard`)
+### Single-run mode (`--dolphin-mode single-run`)
 
 | File | When created | Role |
 |------|--------------|------|
 | **`dolphin_config.yaml`** (or `dolphin_standard_config.yaml`) | `create_isce3_runfiles.py` / `dolphin config` | **The** config for one continuous run: full `cslc_file_list`, `work_directory`, worker settings, and all algorithm blocks (`phase_linking`, `unwrap_options`, …). |
 | **`.minsar_imported_algo.yaml`** | Runfile generation when a third positional `.nc` or `.yaml` is passed | Stripped algorithm overlay merged into the generated config (ministack/CCSLC keys removed — see below). |
 
-Standard mode has **one** YAML per project run. Ministack/CCSLC policy is set once in `phase_linking` and applied internally by Dolphin.
+Single-run mode has **one** YAML per project run. Ministack/CCSLC policy is set once in `phase_linking` and applied internally by Dolphin.
 
 ### Opera mode (`--dolphin-mode opera`)
 
@@ -529,14 +529,14 @@ Output (from `minsar/utils/extract_dolphin_config_yaml.py`):
 
 So the extracted file is the **batch-local full Dolphin config**, not a project-wide standard config.
 
-### Using a downloaded ASF `DISP-S1` `.nc` with `--dolphin-mode standard`
+### Using a downloaded ASF `DISP-S1` `.nc` with `--dolphin-mode single-run`
 
 A single ASF L3 product reflects **one** historical or forward batch (moving reference, specific CCSLC+real inputs). You cannot paste it verbatim as a standard-mode config for a full-stack run. Use it for **algorithm parameters** only.
 
 **Recommended MinSAR path** — pass the `.nc` as the optional third positional; MinSAR merges algorithm fields into the generated config:
 
 ```bash
-create_isce3_runfiles.py $TE/Puna.template --data-type cslc --dolphin-mode standard \
+create_isce3_runfiles.py $TE/Puna.template --data-type cslc --dolphin-mode single-run \
   /path/to/OPERA_L3_DISP-S1_*.nc --half-window 6 12 --stride 3 6
 ```
 
@@ -550,7 +550,7 @@ This calls `load_algo_mapping()` → prefers `metadata/dolphin_workflow_config` 
 
 | From product | Action |
 |--------------|--------|
-| `ministack_size`, `max_num_compressed`, `compressed_slc_plan` | **Dropped** — standard mode uses MinSAR defaults (`ministack_size` 15, `always_first`, etc.) or `--ministack-size` |
+| `ministack_size`, `max_num_compressed`, `compressed_slc_plan` | **Dropped** — single-run mode uses MinSAR defaults (`ministack_size` 15, `always_first`, etc.) or `--ministack-size` |
 | `output_reference_idx` | **Dropped** with other ministack keys |
 | `cslc_file_list`, `work_directory`, `worker_settings`, `input_options`, `mask_file` | **Kept from generated target** |
 | `output_options.bounds`, `bounds_epsg`, `bounds_wkt` | **Kept from target** (your AOI) |
@@ -606,7 +606,7 @@ merge_dolphin_algo_config.py --target dolphin_standard_config.yaml --from OPERA_
 Standard:
 
 ```bash
-minsarIsce3App.bash $TE/Puna.template --data-type cslc --dolphin-mode standard --half-window 6 12 --stride 3 6
+minsarIsce3App.bash $TE/Puna.template --data-type cslc --dolphin-mode single-run --half-window 6 12 --stride 3 6
 ```
 
 Opera:

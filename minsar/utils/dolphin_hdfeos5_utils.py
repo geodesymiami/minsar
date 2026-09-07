@@ -96,7 +96,7 @@ def normalize_dolphin_preset(value: str) -> str:
 
 
 def dolphin_he5_method_name(preset: str, preset_naming: bool = True) -> str:
-    """HE5 post_processing_method from CSLC preset (--preset-naming on create_isce3_runfiles)."""
+    """HE5 post_processing_method from CSLC --window-preset (--preset-naming on create_isce3_runfiles)."""
     if not preset_naming:
         return "dolphin"
     return dolphin_method_string(preset)

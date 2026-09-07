@@ -2,7 +2,7 @@
 
 `minsarIsce3App.bash` is the user command for ISCE3 SAFE, CSLC, and DISP-S1 processing. It always identifies the dataset the same way as `create_isce3_runfiles.py`: a MinSAR template, or AOI plus project name (and `--flight-dir` when the first argument is an AOI). Science flags alone are invalid.
 
-Work directory is `$SCRATCHDIR/<project>` from that template stem or name. The app writes ISCE3 run/job files under `run_files_isce3/`, then runs `run_isce3_workflow.bash run_files_isce3` from the project directory.
+Work directory is `$SCRATCHDIR/<project>` from that template stem or AOI name. AOI `HawaiiPuna` becomes `HawaiiPuna`, `HawaiiPunaCSLC`, or `HawaiiPunaDISP` from `--data-type`. The app writes ISCE3 run/job files under `run_files_isce3/`, then runs `run_isce3_workflow.bash run_files_isce3` from the project directory.
 
 Optional alias: `run_isce3.bash` → `minsarIsce3App.bash`.
 
@@ -11,19 +11,19 @@ Use `--start-date` / `--end-date` for dates. `--start` / `--end` / `--dostep` ar
 ## Commands
 
 ```bash
-minsarIsce3App.bash $TE/HawaiiPunaSenD87.template
-minsarIsce3App.bash $TE/HawaiiPunaSenD87.template --data-type cslc --start download
-minsarIsce3App.bash $TE/HawaiiPunaSenD87.template --unwrap-options.run-interpolation true
-minsarIsce3App.bash $TE/HawaiiPunaSenD87.template --start dolphin_unwrap --unwrap-method whirlwind
-minsarIsce3App.bash $TE/HawaiiPunaSenD87.template --start ingest_insarmaps
-minsarIsce3App.bash 19.45:19.5,-154.915:-154.852 HawaiiPuna --flight-dir desc
-minsarIsce3App.bash 19.45:19.5,-154.915:-154.852 HawaiiPuna --flight-dir desc --unwrap-options.run-interpolation true
+minsarIsce3App.bash 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --start-date 20220101 --end-date 20241212
+minsarIsce3App.bash 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212
+minsarIsce3App.bash 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --start-date 20220101 --end-date 20241212
+minsarIsce3App.bash 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset dry --start-date 20220101 --end-date 20241212
+minsarIsce3App.bash 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type disp --start-date 20220101 --end-date 20241212
+minsarIsce3App.bash 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --start-date 20170101 --end-date 20211231
+minsarIsce3App.bash 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --dolphin-mode opera --window-preset disp-s1 --start-date 20170101 --end-date 20211231
 ```
 
 ```bash
-create_isce3_runfiles.py $TE/HawaiiPunaSenD87.template --data-type cslc --phase download
-create_isce3_runfiles.py $TE/HawaiiPunaSenD87.template --data-type cslc --phase dolphin --dolphin-dir dolphin_interp --unwrap-options.run-interpolation true
-create_isce3_runfiles.py 19.45:19.5,-154.915:-154.852 HawaiiPuna --flight-dir desc --data-type cslc --phase all
+create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212 --phase download
+create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212 --phase dolphin --dolphin-dir dolphin_interp --unwrap-options.run-interpolation true
+create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --start-date 20170101 --end-date 20211231
 ```
 
 ## What the app passes to the generator

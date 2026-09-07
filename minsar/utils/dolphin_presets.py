@@ -6,7 +6,7 @@ import argparse
 import re
 from pathlib import Path
 
-# Default half-window / stride when --preset standard (also CLI help defaults).
+# Default half-window / stride when --window-preset standard (also CLI help defaults).
 DEFAULT_HALF_WINDOW: tuple[int, int] = (6, 12)
 DEFAULT_STRIDES: tuple[int, int] = (3, 6)
 DEFAULT_PRESET = "standard"
@@ -45,7 +45,7 @@ METHOD_STRING_HELP = (
 def normalize_dolphin_preset(value: str) -> str:
     token = str(value).strip().lower().replace("_", "-")
     if token not in DOLPHIN_PRESETS:
-        raise ValueError(f"invalid preset {value!r}; use {', '.join(DOLPHIN_PRESET_CHOICES)}")
+        raise ValueError(f"invalid --window-preset {value!r}; use {', '.join(DOLPHIN_PRESET_CHOICES)}")
     return token
 
 

@@ -83,8 +83,8 @@ PIXI_STAGES = frozenset({
     "dolphin_timeseries",
 })
 DOLPHIN_SPLIT_STAGES = ("dolphin_wrapped", "dolphin_unwrap", "dolphin_timeseries")
-DOLPHIN_MODE_CHOICES = ("standard", "opera")
-DEFAULT_DOLPHIN_MODE = "standard"
+DOLPHIN_MODE_CHOICES = ("single-run", "opera")
+DEFAULT_DOLPHIN_MODE = "single-run"
 REFERENCE_METHOD_CHOICES = ("NONE", "POINT", "MEDIAN", "BORDER", "HIGH_COHERENCE")
 DEFAULT_REFERENCE_METHOD = "HIGH_COHERENCE"
 _REFERENCE_METHOD_BY_VALUE = {
@@ -125,7 +125,7 @@ ARGV_FIX_KW = {
         "--long-queue",
         "--config",
         "--sleep",
-        "--preset",
+        "--window-preset",
         "--burst-count-method",
         "--phase",
         "--dolphin-dir",
@@ -155,7 +155,7 @@ ARGV_FIX_KW = {
 
 
 def _normalize_dolphin_mode(value: str) -> str:
-    """Normalize --dolphin-mode to standard or opera."""
+    """Normalize --dolphin-mode to single-run or opera."""
     token = value.strip().lower().replace("_", "-")
     if token not in DOLPHIN_MODE_CHOICES:
         raise argparse.ArgumentTypeError(
@@ -177,17 +177,23 @@ def _normalize_reference_method(value: str) -> str:
     )
 
 
-_DOLPHIN_MODE_NAME_TOKEN = {"standard": "Standard", "opera": "Opera"}
-_DOLPHIN_MODE_NAME_SUFFIX_RE = re.compile(r"(Opera|Standard)$", re.IGNORECASE)
+_DATA_TYPE_NAME_TOKEN = {"cslc": "CSLC", "disp": "DISP"}
+_DATA_TYPE_NAME_SUFFIX_RE = re.compile(r"(CSLC|DISP)$", re.IGNORECASE)
+_LEGACY_DOLPHIN_MODE_SUFFIX_RE = re.compile(r"(Opera|Standard)$", re.IGNORECASE)
 
 
-def _aoi_name_with_dolphin_mode(name: str, dolphin_mode: str) -> str:
-    """Append Opera/Standard to an AOI project basename (strip a prior mode suffix first)."""
-    token = _DOLPHIN_MODE_NAME_TOKEN[dolphin_mode]
-    base = _DOLPHIN_MODE_NAME_SUFFIX_RE.sub("", str(name).strip())
+def _aoi_name_with_data_type(name: str, workflow: str) -> str:
+    """Append CSLC or DISP to an AOI project basename from --data-type (safe: no suffix)."""
+    base = _LEGACY_DOLPHIN_MODE_SUFFIX_RE.sub("", str(name).strip())
     if not base:
         base = str(name).strip()
-    return f"{base}{token}"
+    stripped = _DATA_TYPE_NAME_SUFFIX_RE.sub("", base)
+    if not stripped:
+        stripped = base
+    token = _DATA_TYPE_NAME_TOKEN.get(workflow, "")
+    if not token:
+        return stripped
+    return f"{stripped}{token}"
 
 
 def _normalize_phase(value: str) -> str:
@@ -966,28 +972,43 @@ def _parse_data_type(value: str) -> str:
 def create_parser() -> argparse.ArgumentParser:
     """Create the command-line parser."""
     epilog = """Examples:
- create_isce3_runfiles.py $TE/HawaiiPunaSenD87.template
- create_isce3_runfiles.py $TE/HawaiiPunaSenD87.template --data-type cslc
- create_isce3_runfiles.py $TE/HawaiiPunaSenD87.template --data-type cslc --phase download
- create_isce3_runfiles.py $TE/HawaiiPunaSenD87.template --data-type cslc --phase dolphin --dolphin-dir dolphin_interp --unwrap-options.run-interpolation true
- create_isce3_runfiles.py $TE/HawaiiPunaSenD87.template --data-type cslc --no-dolphin-split
- create_isce3_runfiles.py $TE/HawaiiPunaSenD87.template --data-type disp-S1 --run
- create_isce3_runfiles.py $TE/HawaiiPunaSenD87.template --data-type cslc --preset standard
- create_isce3_runfiles.py $TE/HawaiiPunaSenD87.template --data-type cslc --preset dry --stride 2 4
- create_isce3_runfiles.py $TE/HawaiiPunaSenD87.template --data-type cslc --preset disp-s1 --dolphin-mode opera
- create_isce3_runfiles.py $TE/HawaiiPunaSenD87.template --half-window 6 12 --stride 3 6 --data-type cslc --dolphin-mode opera
- create_isce3_runfiles.py $TE/HawaiiPunaSenD87.template dolphin_config.yaml --data-type cslc
- create_isce3_runfiles.py $TE/HawaiiPunaSenD87.template OPERA_L3_DISP-S1.nc --data-type cslc
- create_isce3_runfiles.py 19.45:19.5,-154.915:-154.852 HawaiiPunaCSLC --flight-dir desc --data-type cslc --dolphin-mode opera
- create_isce3_runfiles.py 19.45:19.5,-154.915:-154.852 HawaiiPuna --flight-dir desc --data-type cslc --phase all
- create_isce3_runfiles.py 19.45:19.5,-154.915:-154.852 HawaiiPuna dolphin_config.yaml --flight-dir desc --data-type cslc
- create_isce3_runfiles.py 19.45:19.5,-154.915:-154.852 HawaiiPuna OPERA_L3_DISP-S1.nc --flight-dir desc --data-type cslc
- create_isce3_runfiles.py $TE/HawaiiPunaSenD87.template --data-type cslc --dolphin-mode opera --reference-method BORDER
- create_isce3_runfiles.py $TE/HawaiiPunaSenD87.template --disp-S1 --frame-id 11115"""
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type safe --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode single-run --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset auto --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset standard --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset dry --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset wet --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset arctic --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset disp-s1 --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset dry --stride 2 4 --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window 6 12 --stride 3 6 --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode single-run --window-preset disp-s1 --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --window-preset disp-s1 --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --window-preset standard --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --reference-method BORDER --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna dolphin_config.yaml --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna OPERA_L3_DISP-S1.nc --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type disp --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type disp-S1 --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --start-date 20170101 --end-date 20211231
+ create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type safe --start-date 20170101 --end-date 20211231
+ create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --start-date 20170101 --end-date 20211231
+ create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --dolphin-mode single-run --start-date 20170101 --end-date 20211231
+ create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --dolphin-mode opera --start-date 20170101 --end-date 20211231
+ create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --window-preset dry --start-date 20170101 --end-date 20211231
+ create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --dolphin-mode opera --window-preset disp-s1 --start-date 20170101 --end-date 20211231
+ create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type disp --start-date 20170101 --end-date 20211231
+ create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type disp-S1 --start-date 20170101 --end-date 20211231
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212 --phase download
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212 --no-dolphin-split"""
     parser = argparse.ArgumentParser(
         description=(
             "Create run files and SLURM job files for SAFE, CSLC, or DISP-S1 processing. "
             "Default data type: safe. "
+            "AOI NAME HawaiiPuna becomes HawaiiPuna, HawaiiPunaCSLC, or HawaiiPunaDISP from --data-type. "
             "Workflow: --data-type {safe,cslc,disp-S1,disp-NI} or --safe / --cslc / --disp-S1. "
             "--phase download writes sweets_config.yaml and download jobs; "
             "--phase dolphin writes DIR YAML when CSLCs/GSLCs exist. "
@@ -998,7 +1019,7 @@ def create_parser() -> argparse.ArgumentParser:
         allow_abbrev=False,
     )
     parser.add_argument("input", help="MinSAR template, or AOI when followed by NAME")
-    parser.add_argument("name", nargs="?", help="project name when INPUT is an AOI")
+    parser.add_argument("name", nargs="?", help="project name when INPUT is an AOI; CSLC or DISP is appended from --data-type")
     parser.add_argument(
         "dolphin_config",
         nargs="?",
@@ -1036,9 +1057,10 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--long-queue", default="skx", help="SLURM partition for unsafe or unknown restart behavior")
     parser.add_argument("--config", type=Path, help="ISCE3 job defaults file")
     parser.add_argument(
-        "--preset",
+        "--window-preset",
         type=_normalize_dolphin_preset,
         default=DEFAULT_PRESET,
+        dest="preset",
         metavar="NAME",
         help=DOLPHIN_PRESET_HELP,
     )
@@ -1047,14 +1069,14 @@ def create_parser() -> argparse.ArgumentParser:
         nargs=2,
         metavar=("Y", "X"),
         default=None,
-        help=f"phase-linking half-window Y X (default from preset; standard {DEFAULT_HALF_WINDOW[0]} {DEFAULT_HALF_WINDOW[1]})",
+        help=f"phase-linking half-window Y X (default from --window-preset; standard {DEFAULT_HALF_WINDOW[0]} {DEFAULT_HALF_WINDOW[1]})",
     )
     parser.add_argument(
         "--stride",
         nargs=2,
         metavar=("Y", "X"),
         default=None,
-        help=f"output strides Y X (default from preset; standard {DEFAULT_STRIDES[0]} {DEFAULT_STRIDES[1]})",
+        help=f"output strides Y X (default from --window-preset; standard {DEFAULT_STRIDES[0]} {DEFAULT_STRIDES[1]})",
     )
     parser.add_argument(
         "--preset-naming",
@@ -1073,17 +1095,14 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--no-dolphin-split",
         action="store_true",
-        help="SAFE/CSLC standard mode: one dolphin stage instead of dolphin_wrapped, dolphin_unwrap, dolphin_timeseries",
+        help="SAFE/CSLC single-run mode: one dolphin stage instead of dolphin_wrapped, dolphin_unwrap, dolphin_timeseries",
     )
     parser.add_argument(
         "--dolphin-mode",
         type=_normalize_dolphin_mode,
         default=DEFAULT_DOLPHIN_MODE,
         metavar="MODE",
-        help=(
-            "CSLC path: standard (Dolphin stack) or opera (local DISP-S1 produce); default: standard. "
-            "AOI runs append Standard/Opera to the template and project name"
-        ),
+        help="CSLC path: single-run (one Dolphin stack) or opera (local DISP-S1 produce); default: single-run",
     )
     parser.add_argument(
         "--sleep",
@@ -1353,6 +1372,10 @@ def _create_template_from_aoi(args: argparse.Namespace) -> Path:
     if status or template_file is None:
         raise RuntimeError("create_template.py could not resolve the AOI into a MinSAR template")
     path = Path(template_file).resolve()
+    desired = (path.parent / f"{args.name}.template").resolve()
+    if desired != path:
+        desired.write_text(path.read_text())
+        path = desired
     _fill_aoi_subset_lines(path, args.input)
     return path
 
@@ -2360,6 +2383,8 @@ def main(iargs: list[str] | None = None) -> int:
     argv = fix_argv_for_negative_bbox_sn_we(argv, **ARGV_FIX_KW, multiple_initial_positionals=True)
     args, extras = create_parser().parse_known_args(argv)
     try:
+        if any(token == "--preset" or token.startswith("--preset=") for token in (*argv, *extras)):
+            raise ValueError("use --window-preset, not --preset")
         _normalize_dolphin_config_positionals(args)
         half_window_cli = None
         if args.half_window is not None:
@@ -2410,12 +2435,8 @@ def main(iargs: list[str] | None = None) -> int:
             raise ValueError("NISAR is accepted but processing is not implemented until RSLC/GSLC commands are defined")
         input_path = Path(args.input).expanduser()
         input_is_template = input_path.is_file()
-        if (
-            not input_is_template
-            and workflow == "cslc"
-            and args.name
-        ):
-            args.name = _aoi_name_with_dolphin_mode(args.name, args.dolphin_mode)
+        if not input_is_template and args.name:
+            args.name = _aoi_name_with_data_type(args.name, workflow)
         if input_is_template:
             context = _template_context(input_path.resolve(), args)
         elif args.dry_run:
