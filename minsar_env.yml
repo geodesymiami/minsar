@@ -12,6 +12,8 @@ dependencies:
   - xarray
   - netcdf4
   - packaging
+  - zarr
+  - uv
 # Mintpy
   - cartopy
   - cvxopt
