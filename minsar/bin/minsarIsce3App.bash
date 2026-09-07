@@ -34,7 +34,6 @@ options:
   --flight-dir DIR      asc or desc
   --dolphin-dir DIR     work directory (Default: dolphin, or auto-name from diffs)
   --unwrap-method NAME  shortcut for --unwrap-options.unwrap-method (Default: snaphu)
-  --copy-dolphin-inputs copy interferograms/unwrapped instead of symlink
   --half-window Y X     phase-linking half-window or from --half-window-preset (Default: 6 12)
   --stride Y X          output strides (Default: 3 6)
   --half-window-preset {standard,dry,wet,arctic}
