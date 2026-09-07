@@ -15,74 +15,51 @@ print_help() {
 usage: ${SCRIPT_NAME} TEMPLATE [DOLPHIN_CONFIG] [OPTIONS]
        ${SCRIPT_NAME} AOI NAME [DOLPHIN_CONFIG] --flight-dir {asc,desc} [OPTIONS]
 
-Run an ISCE3 SAFE/CSLC/DISP workflow: write configs and run/job files, then submit.
-Always pass a MinSAR template or AOI plus project name. Science flags alone are invalid.
-Use --start-date/--end-date for dates; --start/--end/--dostep are processing steps.
-Leftover --section.option flags go to dolphin config. Use --dolphin-dir, not --work-directory.
-Processing steps (single-run CSLC): download_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps
-Processing steps (--dolphin-mode opera): download_cslc, disp_s1_process, reformat_disp, dolphin_2_hdfeos5, ingest_insarmaps
-Additional steps for data-type safe, disp-S1: create_cslc, reformat_disp respectively
-Optional DOLPHIN_CONFIG is a .yaml/.yml or OPERA DISP-S1 .nc (prefers metadata/dolphin_workflow_config).
-AOI NAME HawaiiPuna becomes HawaiiPunaSenD87, HawaiiPunaCSLCSenD87, or HawaiiPunaDISPSenD87 from --data-type and --flight-dir.
+Run an ISCE3 SAFE/CSLC/DISP workflow. Use --start --end --dostep for processing steps.
+single-run steps: [download, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps]
+opera steps: [download, disp_s1_process, reformat_disp, dolphin_2_hdfeos5, ingest_insarmaps]
+Additional steps: data-type safe: create_cslc; data-type disp-s1: reformat_disp
+Optional config from DOLPHIN_CONFIG.yaml or OPERA_DISP-S1.nc (uses metadata/dolphin_workflow_config).
+Leftover --section.option flags go to dolphin config.
+AOI NAME HawaiiPuna becomes HawaiiPunaSenD87, HawaiiPunaCSLCSenD87, or HawaiiPunaDISPSenD87 from --data-type.
 
 options:
   -h, --help            show this help
-  --data-type TYPE      safe, cslc, or disp-S1 (default: safe)
+  --data-type TYPE      safe, cslc, or disp-s1 (Default: safe)
   --start STEP          first step
   --end STEP, --stop STEP
                         last step, inclusive
   --dostep STEP         run one step only
-  --start-date DATE     first date YYYYMMDD (forwarded to the generator)
+  --start-date DATE     first date YYYYMMDD
   --end-date DATE       last date YYYYMMDD
-  --flight-dir DIR      asc or desc (required for AOI input)
-  --dolphin-dir DIR     Dolphin work directory (default: dolphin, or auto-name from diffs)
-  --from-dolphin-dir DIR
-                        source DIR for YAML comparison and interferogram inputs (default: dolphin)
-  --unwrap-method NAME  shortcut for --unwrap-options.unwrap-method
+  --flight-dir DIR      asc or desc
+  --dolphin-dir DIR     work directory (Default: dolphin, or auto-name from diffs)
+  --unwrap-method NAME  shortcut for --unwrap-options.unwrap-method (Default: snaphu)
   --copy-dolphin-inputs copy interferograms/unwrapped instead of symlink
-  --stride Y X          output strides (Default: 3 6)
   --half-window Y X     phase-linking half-window or from --window-preset (Default: 6 12)
+  --stride Y X          output strides (Default: 3 6)
   --window-preset {standard,dry,wet,arctic,disp-s1}
                         phase-linking half-window: standard 6x12, dry 5x11, wet 9x18, arctic 9x19, disp-s1 8x16 (Default: standard)
-  --dolphin-mode MODE   CSLC path: single-run (one Dolphin stack) or opera (local DISP-S1 produce); default: single-run
+  --dolphin-mode MODE   {single-run,opera} (one Dolphin stack or local DISP-S1) (Default: single-run)
   --reference-method METHOD
-                        disp-s1-reformat reference: NONE, POINT, MEDIAN, BORDER, HIGH_COHERENCE (default: HIGH_COHERENCE)
-  --backend BACKEND     auto, local, or slurm (default: auto)
+                        disp-s1-reformat reference: NONE, POINT, MEDIAN, BORDER, HIGH_COHERENCE (Default: HIGH_COHERENCE)
+  --backend BACKEND     auto, local, or slurm (Default: auto)
   --sleep SECS          sleep seconds before running
   --dry-run             print the generator plan without writing files or submitting
   --no-run              write run/job files without starting run_isce3_workflow.bash
 
 Examples:
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --start-date 20220101 --end-date 20241212
-  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type safe --start-date 20220101 --end-date 20241212
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212
-  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode single-run --start-date 20220101 --end-date 20241212
+  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type disp-s1 --start-date 20220101 --end-date 20241212
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --start-date 20220101 --end-date 20241212
-  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset standard --start-date 20220101 --end-date 20241212
-  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset dry --start-date 20220101 --end-date 20241212
-  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset wet --start-date 20220101 --end-date 20241212
-  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset arctic --start-date 20220101 --end-date 20241212
-  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset disp-s1 --start-date 20220101 --end-date 20241212
-  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset dry --stride 2 4 --start-date 20220101 --end-date 20241212
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window 6 12 --stride 3 6 --start-date 20220101 --end-date 20241212
-  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window 7 14 --stride 1 1 --start-date 20220101 --end-date 20241212
-  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode single-run --window-preset disp-s1 --start-date 20220101 --end-date 20241212
-  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --window-preset disp-s1 --start-date 20220101 --end-date 20241212
-  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --window-preset standard --start-date 20220101 --end-date 20241212
+  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --window-preset dry --start-date 20220101 --end-date 20241212
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --reference-method BORDER --start-date 20220101 --end-date 20241212
-  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna dolphin_config.yaml --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212
-  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna OPERA_L3_DISP-S1.nc --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212
-  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type disp --start-date 20220101 --end-date 20241212
-  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type disp-S1 --start-date 20220101 --end-date 20241212
+  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna dolphin_config.yaml --flight-dir desc --start-date 20220101 --end-date 20241212
+  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna OPERA_L3_DISP-S1.nc --flight-dir desc --start-date 20220101 --end-date 20241212
   ${SCRIPT_NAME} 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --start-date 20170101 --end-date 20211231
-  ${SCRIPT_NAME} 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type safe --start-date 20170101 --end-date 20211231
   ${SCRIPT_NAME} 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --start-date 20170101 --end-date 20211231
-  ${SCRIPT_NAME} 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --dolphin-mode single-run --start-date 20170101 --end-date 20211231
-  ${SCRIPT_NAME} 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --dolphin-mode opera --start-date 20170101 --end-date 20211231
-  ${SCRIPT_NAME} 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --window-preset dry --start-date 20170101 --end-date 20211231
-  ${SCRIPT_NAME} 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --dolphin-mode opera --window-preset disp-s1 --start-date 20170101 --end-date 20211231
-  ${SCRIPT_NAME} 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type disp --start-date 20170101 --end-date 20211231
-  ${SCRIPT_NAME} 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type disp-S1 --start-date 20170101 --end-date 20211231
 EOF
 }
 
@@ -112,7 +89,7 @@ is_consume_two() {
 
 is_flag() {
     case "$1" in
-        --safe|--cslc|--disp|--disp-S1|--dry-run|--no-dolphin-split|--preset-naming|--no-preset-naming|--copy-dolphin-inputs)
+        --safe|--cslc|--disp-S1|--dry-run|--no-dolphin-split|--preset-naming|--no-preset-naming|--copy-dolphin-inputs)
             return 0
             ;;
     esac
@@ -292,6 +269,9 @@ while [[ $# -gt 0 ]]; do
             ;;
         --run)
             die "do not pass --run; ${SCRIPT_NAME} submits via run_isce3_workflow.bash"
+            ;;
+        --disp)
+            die "use --disp-S1 or --data-type disp-s1, not --disp"
             ;;
         --work-directory|--work-dir)
             die "use --dolphin-dir, not --work-directory"

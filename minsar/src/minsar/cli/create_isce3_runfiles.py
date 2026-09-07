@@ -58,7 +58,6 @@ SWEETS_CONFIG = "sweets_config.yaml"
 DATA_TYPE_ALIASES = {
     "safe": "safe",
     "cslc": "cslc",
-    "disp": "disp",
     "disps1": "disp",
     "disp-s1": "disp",
     "disp-ni": "disp-ni",
@@ -143,7 +142,6 @@ ARGV_FIX_KW = {
     "flags": (
         "--safe",
         "--cslc",
-        "--disp",
         "--disp-S1",
         "--dry-run",
         "--run",
@@ -1008,8 +1006,10 @@ class Isce3JobAdapter:
 def _parse_data_type(value: str) -> str:
     """Normalize --data-type to an internal workflow name."""
     token = value.strip().lower().replace("_", "-")
+    if token == "disp":
+        raise argparse.ArgumentTypeError("use disp-s1, not disp (project name still uses DISP)")
     if token not in DATA_TYPE_ALIASES:
-        raise argparse.ArgumentTypeError(f"invalid data type {value!r}; use safe, cslc, disp-S1, or disp-NI")
+        raise argparse.ArgumentTypeError(f"invalid data type {value!r}; use safe, cslc, disp-s1, or disp-NI")
     return DATA_TYPE_ALIASES[token]
 
 
@@ -1035,8 +1035,7 @@ def create_parser() -> argparse.ArgumentParser:
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --reference-method BORDER --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna dolphin_config.yaml --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna OPERA_L3_DISP-S1.nc --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212
- create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type disp --start-date 20220101 --end-date 20241212
- create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type disp-S1 --start-date 20220101 --end-date 20241212
+ create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type disp-s1 --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --start-date 20170101 --end-date 20211231
  create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type safe --start-date 20170101 --end-date 20211231
  create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --start-date 20170101 --end-date 20211231
@@ -1044,8 +1043,7 @@ def create_parser() -> argparse.ArgumentParser:
  create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --dolphin-mode opera --start-date 20170101 --end-date 20211231
  create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --window-preset dry --start-date 20170101 --end-date 20211231
  create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --dolphin-mode opera --window-preset disp-s1 --start-date 20170101 --end-date 20211231
- create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type disp --start-date 20170101 --end-date 20211231
- create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type disp-S1 --start-date 20170101 --end-date 20211231
+ create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type disp-s1 --start-date 20170101 --end-date 20211231
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212 --phase download
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212 --no-dolphin-split"""
     parser = argparse.ArgumentParser(
@@ -1054,7 +1052,7 @@ def create_parser() -> argparse.ArgumentParser:
             "Default data type: safe. "
             "AOI NAME HawaiiPuna becomes HawaiiPunaSenD87, HawaiiPunaCSLCSenD87, or HawaiiPunaDISPSenD87 "
             "from --data-type and --flight-dir (platform + pass + relative orbit). "
-            "Workflow: --data-type {safe,cslc,disp-S1,disp-NI} or --safe / --cslc / --disp-S1. "
+            "Workflow: --data-type {safe,cslc,disp-s1,disp-NI} or --safe / --cslc / --disp-S1. "
             "--phase download writes sweets_config.yaml and download jobs; "
             "--phase dolphin writes DIR YAML when CSLCs/GSLCs exist. "
             "Leftover --section.option flags go to dolphin config. Use --dolphin-dir, not --work-directory."
@@ -1077,23 +1075,22 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cslc", action="store_true", help="CSLC workflow (same as --data-type cslc)")
     parser.add_argument(
         "--disp-S1",
-        "--disp",
         dest="disp",
         action="store_true",
-        help="DISP-S1 workflow (same as --data-type disp-S1); use --frame-id for OPERA frame",
+        help="DISP-S1 workflow (same as --data-type disp-s1); use --frame-id for OPERA frame",
     )
     parser.add_argument(
         "--data-type",
         type=_parse_data_type,
         metavar="TYPE",
-        help="data type {safe,cslc,disp-S1,disp-NI}; default safe (or use --safe, --cslc, --disp-S1)",
+        help="data type {safe,cslc,disp-s1,disp-NI}; default safe (or use --safe, --cslc, --disp-S1)",
     )
     parser.add_argument("--platform", default="S1", help="platform: S1 or NISAR/NI")
     parser.add_argument("--flight-dir", choices=("asc", "desc"), help="flight direction for AOI input")
     parser.add_argument("--start-date", "--start", dest="start_date", help="first date YYYYMMDD (default: ssaraopt.startDate from template)")
     parser.add_argument("--end-date", "--end", dest="end_date", help="last date YYYYMMDD (default: ssaraopt.endDate from template)")
     parser.add_argument("--track", "--relativeOrbit", type=int, dest="track", help="relative orbit (overrides template ssaraopt.relativeOrbit)")
-    parser.add_argument("--frame-id", type=int, help="OPERA DISP-S1 frame ID (required for --disp-S1 / --data-type disp-S1)")
+    parser.add_argument("--frame-id", type=int, help="OPERA DISP-S1 frame ID (required for --disp-S1 / --data-type disp-s1)")
     parser.add_argument(
         "--queue",
         default=os.getenv("QUEUENAME"),

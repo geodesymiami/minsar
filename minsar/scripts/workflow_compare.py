@@ -140,7 +140,7 @@ def _minsar_isce3_app_command(
         raise ValueError("data_flag or preset is required")
     if track is not None:
         parts.extend(["--track", str(track)])
-    if frame_id is not None and data_flag in {"--disp-S1", "--disp"}:
+    if frame_id is not None and data_flag == "--disp-S1":
         parts.extend(["--frame-id", str(frame_id)])
     return " ".join(parts)
 
