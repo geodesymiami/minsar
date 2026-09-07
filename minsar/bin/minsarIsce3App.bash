@@ -87,7 +87,7 @@ is_consume_two() {
 
 is_flag() {
     case "$1" in
-        --safe|--cslc|--disp-S1|--dry-run|--no-dolphin-split|--preset-naming|--no-preset-naming|--copy-dolphin-inputs)
+        --safe|--cslc|--disp-S1|--dry-run|--no-dolphin-split|--preset-naming|--no-preset-naming)
             return 0
             ;;
     esac
@@ -109,7 +109,7 @@ is_opera_dolphin_mode() {
 
 is_science_token() {
     case "$1" in
-        --unwrap-method|--dolphin-dir|--from-dolphin-dir|--copy-dolphin-inputs|--ministack-size|--half-window|--stride|--half-window-preset|--dolphin-mode)
+        --unwrap-method|--dolphin-dir|--from-dolphin-dir|--ministack-size|--half-window|--stride|--half-window-preset|--dolphin-mode)
             return 0
             ;;
     esac
@@ -273,6 +273,9 @@ while [[ $# -gt 0 ]]; do
             ;;
         --preset|--window-preset)
             die "use --half-window-preset, not $1"
+            ;;
+        --copy-dolphin-inputs)
+            die "removed --copy-dolphin-inputs; inputs are always symlinked"
             ;;
         --work-directory|--work-dir)
             die "use --dolphin-dir, not --work-directory"

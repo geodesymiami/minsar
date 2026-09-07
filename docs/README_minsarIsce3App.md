@@ -89,7 +89,7 @@ Classify each science override; start at the earliest layer. Always run he5 and 
 | unwrap | `unwrap_options.*` except worker counts | `interferograms/` | unwrap + timeseries |
 | timeseries/mask | `apply_mask_to_timeseries`, `correlation_threshold`, `method`, `reference_point` | `interferograms/` and `unwrapped/` | timeseries |
 
-Default **symlink** those trees into `DIR/`; `--copy-dolphin-inputs` for copies. Do not link `unwrapped/` or `timeseries/` into an unwrap experiment.
+Those trees are **symlinked** into `DIR/`. Do not link `unwrapped/` or `timeseries/` into an unwrap experiment.
 
 ## Masking options
 

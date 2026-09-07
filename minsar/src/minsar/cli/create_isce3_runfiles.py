@@ -148,7 +148,6 @@ ARGV_FIX_KW = {
         "--no-dolphin-split",
         "--preset-naming",
         "--no-preset-naming",
-        "--copy-dolphin-inputs",
     ),
 }
 
@@ -1184,11 +1183,6 @@ def create_parser() -> argparse.ArgumentParser:
         default=DEFAULT_REFERENCE_METHOD,
         metavar="METHOD",
         help="opera-utils disp-s1-reformat reference: NONE, POINT, MEDIAN, BORDER, HIGH_COHERENCE (default: HIGH_COHERENCE)",
-    )
-    parser.add_argument(
-        "--copy-dolphin-inputs",
-        action="store_true",
-        help="copy interferograms/unwrapped from --from-dolphin-dir instead of symlink",
     )
     parser.add_argument("--run", action="store_true", help="after creating files, run run_isce3_workflow.bash run_files_isce3 --start 1 --end N")
     return parser
@@ -2427,6 +2421,8 @@ def main(iargs: list[str] | None = None) -> int:
             raise ValueError("use --half-window-preset, not --preset")
         if any(token == "--window-preset" or token.startswith("--window-preset=") for token in (*argv, *extras)):
             raise ValueError("use --half-window-preset, not --window-preset")
+        if any(token == "--copy-dolphin-inputs" or token.startswith("--copy-dolphin-inputs=") for token in (*argv, *extras)):
+            raise ValueError("removed --copy-dolphin-inputs; inputs are always symlinked")
         _normalize_dolphin_config_positionals(args)
         half_window_cli = None
         if args.half_window is not None:
@@ -2547,7 +2543,6 @@ def main(iargs: list[str] | None = None) -> int:
                     src_dir=args.from_dolphin_dir,
                     dst_dir=dolphin_dir,
                     layer=layer,
-                    copy=args.copy_dolphin_inputs,
                 )
             write_dolphin_dir_sidecar(work_dir, dolphin_dir)
             write_run_slice_sidecar(

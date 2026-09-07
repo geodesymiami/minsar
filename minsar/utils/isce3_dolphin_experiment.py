@@ -291,9 +291,8 @@ def stage_dolphin_inputs(
     src_dir: str,
     dst_dir: str,
     layer: str,
-    copy: bool = False,
 ) -> None:
-    """Symlink (or copy) interferograms/unwrapped from src into dst for unwrap/timeseries reruns."""
+    """Symlink interferograms/unwrapped from src into dst for unwrap/timeseries reruns."""
     if src_dir == dst_dir or layer == "wrapped":
         return
     names = ["interferograms"]
@@ -311,12 +310,7 @@ def stage_dolphin_inputs(
             )
         if dst.exists() or dst.is_symlink():
             continue
-        if copy:
-            import shutil
-
-            shutil.copytree(src, dst, symlinks=True)
-        else:
-            dst.symlink_to(src.resolve(), target_is_directory=src.is_dir())
+        dst.symlink_to(src.resolve(), target_is_directory=src.is_dir())
 
 
 def has_cslc_or_gslc(work_dir: Path, workflow: str) -> bool:
