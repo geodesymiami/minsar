@@ -185,8 +185,6 @@ fi
 run_dir="$(cd "$run_dir" && pwd -P)"
 work_dir="$(cd "$run_dir/.." && pwd -P)"
 project_name="$(basename "$work_dir")"
-run_dir_display="${run_dir#"$work_dir"/}"
-echo "Run files: $run_dir_display"
 
 job_uses_launcher() {
     local job_file="$1"

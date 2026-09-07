@@ -41,7 +41,9 @@ from minsar.utils.dolphin_presets import (
 )
 from minsar.utils.isce3_dolphin_experiment import (
     DEFAULT_DOLPHIN_DIR,
+    DEFAULT_DOLPHIN_MODE,
     DEFAULT_FROM_DIR,
+    canonical_dolphin_mode,
     config_yaml_name,
     has_cslc_or_gslc,
     parse_passthrough_pairs,
@@ -84,7 +86,6 @@ PIXI_STAGES = frozenset({
 })
 DOLPHIN_SPLIT_STAGES = ("dolphin_wrapped", "dolphin_unwrap", "dolphin_timeseries")
 DOLPHIN_MODE_CHOICES = ("single-run", "opera")
-DEFAULT_DOLPHIN_MODE = "single-run"
 REFERENCE_METHOD_CHOICES = ("NONE", "POINT", "MEDIAN", "BORDER", "HIGH_COHERENCE")
 DEFAULT_REFERENCE_METHOD = "HIGH_COHERENCE"
 _REFERENCE_METHOD_BY_VALUE = {
@@ -189,8 +190,8 @@ def _strip_orbit_label_suffix(name: str) -> str:
     return _ORBIT_LABEL_SUFFIX_RE.sub("", str(name).strip())
 
 
-def _aoi_name_with_data_type(name: str, workflow: str) -> str:
-    """Append CSLC or DISP to an AOI basename (orbit label is added later; safe: no data-type token)."""
+def _aoi_name_with_data_type(name: str, workflow: str, dolphin_mode: str = DEFAULT_DOLPHIN_MODE) -> str:
+    """Append CSLC/DISP and Opera (non-default) to an AOI basename; orbit label is added later."""
     base = _LEGACY_DOLPHIN_MODE_SUFFIX_RE.sub("", str(name).strip())
     base = _strip_orbit_label_suffix(base)
     if not base:
@@ -199,9 +200,11 @@ def _aoi_name_with_data_type(name: str, workflow: str) -> str:
     if not stripped:
         stripped = base
     token = _DATA_TYPE_NAME_TOKEN.get(workflow, "")
-    if not token:
-        return stripped
-    return f"{stripped}{token}"
+    out = f"{stripped}{token}" if token else stripped
+    mode = canonical_dolphin_mode(dolphin_mode)
+    if mode == "opera" and workflow == "cslc":
+        out = f"{out}Opera"
+    return out
 
 
 def _s1_orbit_label(flight_dir: str, track: int) -> str:
@@ -230,9 +233,16 @@ def _resolve_aoi_orbit_label(aoi: str, flight_dir: str, track: int | None = None
     return str(coverage["asc_label"])
 
 
-def _aoi_project_name(name: str, workflow: str, aoi: str, flight_dir: str, track: int | None = None) -> str:
-    """Full AOI project name: HawaiiPunaCSLCSenD87 (data-type token + platform/pass/orbit)."""
-    base = _aoi_name_with_data_type(name, workflow)
+def _aoi_project_name(
+    name: str,
+    workflow: str,
+    aoi: str,
+    flight_dir: str,
+    track: int | None = None,
+    dolphin_mode: str = DEFAULT_DOLPHIN_MODE,
+) -> str:
+    """Full AOI project name: HawaiiPunaCSLCSenD87 or HawaiiPunaCSLCOperaSenD87."""
+    base = _aoi_name_with_data_type(name, workflow, dolphin_mode=dolphin_mode)
     if _ORBIT_LABEL_SUFFIX_RE.search(base):
         return base
     return f"{base}{_resolve_aoi_orbit_label(aoi, flight_dir, track)}"
@@ -1047,8 +1057,8 @@ def create_parser() -> argparse.ArgumentParser:
         description=(
             "Create run files and SLURM job files for SAFE, CSLC, or DISP-S1 processing. "
             "Default data type: safe. "
-            "AOI NAME HawaiiPuna becomes HawaiiPunaSenD87, HawaiiPunaCSLCSenD87, or HawaiiPunaDISPSenD87 "
-            "from --data-type and --flight-dir (platform + pass + relative orbit). "
+            "AOI NAME HawaiiPuna becomes HawaiiPunaSenD87, HawaiiPunaCSLCSenD87, HawaiiPunaCSLCOperaSenD87, or HawaiiPunaDISPSenD87 "
+            "from --data-type, --dolphin-mode, and --flight-dir (platform + pass + relative orbit). "
             "Workflow: --data-type {safe,cslc,disp-s1,disp-NI} or --safe / --cslc / --disp-S1. "
             "--phase download writes sweets_config.yaml and download jobs; "
             "--phase dolphin writes DIR YAML when CSLCs/GSLCs exist. "
@@ -1059,7 +1069,7 @@ def create_parser() -> argparse.ArgumentParser:
         allow_abbrev=False,
     )
     parser.add_argument("input", help="MinSAR template, or AOI when followed by NAME")
-    parser.add_argument("name", nargs="?", help="AOI project basename; full name adds CSLC|DISP and SenA/D## (e.g. HawaiiPuna -> HawaiiPunaCSLCSenD87)")
+    parser.add_argument("name", nargs="?", help="AOI project basename; full name adds CSLC|DISP, Opera if --dolphin-mode opera, and SenA/D##")
     parser.add_argument(
         "dolphin_config",
         nargs="?",
@@ -1690,51 +1700,30 @@ def _print_plan(
     reference_method: str | None = None,
     unwrap_method: str | None = None,
 ) -> None:
-    """Print resolved project and options (call before writing files)."""
-    del queue, long_queue, layer  # kept in signature for call-site compatibility
-    print(f"Workflow: {workflow.upper()} ({platform})")
-    print(f"Project:  $SCRATCHDIR/{context['project']}")
-    template = str(context.get("template") or "").strip()
-    if template:
-        print(f"Template: {_format_template_path(template)}")
+    """Print resolved project summary as soon as names are known."""
+    del stages, specs, queue, long_queue, phase, layer, platform, unwrap_method
+    print(f"Project: {context['project']}")
+    if dolphin_dir and workflow in {"cslc", "safe"}:
+        print(f"Dolphin dir: {dolphin_dir}")
+    if dolphin_mode and workflow == "cslc":
+        print(f"Dolphin mode: {dolphin_mode}")
+    if workflow == "disp" or (workflow in {"cslc", "safe"} and preset is not None):
+        if workflow == "disp" or dolphin_mode == "opera":
+            print(f"HE5 name: {OPERA_DISP_METHOD_STRING}")
+        elif preset_naming:
+            print(f"HE5 name: {_hdfeos5_method_string(preset)}")
+        else:
+            print("HE5 name: dolphin (--no-preset-naming)")
+    if reference_method and (workflow == "disp" or dolphin_mode == "opera"):
+        print(f"Reference method: {reference_method}")
     start = str(context.get("start_date") or "").strip()
     end = str(context.get("end_date") or "").strip()
     if start or end:
-        print(f"Dates:    {start or '?'} – {end or '?'}")
-    frame_id = str(context.get("frame_id") or "").strip()
-    if frame_id and workflow == "disp":
-        print(f"Frame ID: {frame_id}")
-    print("Options:")
-    print(f"  --data-type {workflow if workflow != 'disp' else 'disp-s1'}")
-    if dolphin_mode and workflow == "cslc":
-        print(f"  --dolphin-mode {dolphin_mode}")
-    if dolphin_dir and workflow in {"cslc", "safe"}:
-        print(f"  --dolphin-dir {dolphin_dir}")
-    if workflow in {"cslc", "safe"}:
-        if half_window is not None:
-            print(f"  --half-window {half_window[0]} {half_window[1]}")
-        if strides is not None:
-            print(f"  --stride {strides[0]} {strides[1]}")
-        if unwrap_method:
-            print(f"  --unwrap-method {unwrap_method}")
-    if reference_method and (workflow == "disp" or dolphin_mode == "opera"):
-        print(f"  --reference-method {reference_method}")
-    if preset is not None and workflow in {"cslc", "safe"}:
-        if dolphin_mode == "opera":
-            print(f"  HE5 name: {OPERA_DISP_METHOD_STRING}")
-        elif preset_naming:
-            print(f"  HE5 name: {_hdfeos5_method_string(preset)}")
-        else:
-            print("  HE5 name: dolphin (--no-preset-naming)")
-    if stages is None:
-        run_files = [
-            f"run_{number:02d}_{name}"
-            for number, (name, _, _) in enumerate(specs or [], 1)
-            if not phase or _stage_in_phase(name, workflow, phase)
-        ]
-        print(f"run_files to create: {', '.join(run_files)}")
-    else:
-        print(f"run_files created: {', '.join(f'run_{s.number:02d}_{s.name}' for s in stages)}")
+        print(f"Dates: {start or '?'} – {end or '?'}")
+    if workflow in {"cslc", "safe"} and half_window is not None:
+        print(f"Half-window: {half_window[0]} {half_window[1]}")
+    if workflow in {"cslc", "safe"} and strides is not None:
+        print(f"Stride: {strides[0]} {strides[1]}")
 
 
 def _run_in_sweets(work_dir: Path, command: list[str]) -> None:
@@ -2496,11 +2485,18 @@ def main(iargs: list[str] | None = None) -> int:
             if args.dry_run:
                 # Full project name for the plan (create_template is skipped on dry-run).
                 args.name = _aoi_project_name(
-                    args.name, workflow, args.input, args.flight_dir, args.track
+                    args.name,
+                    workflow,
+                    args.input,
+                    args.flight_dir,
+                    args.track,
+                    dolphin_mode=args.dolphin_mode,
                 )
             else:
-                # create_template appends SenA/D##; keep only the data-type token here.
-                args.name = _aoi_name_with_data_type(args.name, workflow)
+                # create_template appends SenA/D##; keep data-type (+ Opera) token here.
+                args.name = _aoi_name_with_data_type(
+                    args.name, workflow, dolphin_mode=args.dolphin_mode
+                )
         if input_is_template:
             context = _template_context(input_path.resolve(), args)
         elif args.dry_run:
@@ -2518,6 +2514,13 @@ def main(iargs: list[str] | None = None) -> int:
         if workflow == "disp":
             if args.dolphin_dir:
                 raise ValueError("--dolphin-dir does not apply to DISP-S1")
+        elif workflow == "cslc" and args.dolphin_mode == "opera":
+            dolphin_dir = args.dolphin_dir or DISP_S1_PRODUCE_DIR
+            yaml_name = config_yaml_name(dolphin_dir) if args.dolphin_dir else "dolphin_config.yaml"
+            if args.phase == "dolphin" and not has_cslc_or_gslc(work_dir, workflow):
+                raise ValueError("CSLCs/GSLCs not found; run `--start download` first")
+            data_ready = has_cslc_or_gslc(work_dir, workflow)
+            embed_config = not (args.phase in {"dolphin", "all"} and data_ready)
         else:
             extra_pairs: list[tuple[str, str | None]] = []
             if args.preset and args.preset != DEFAULT_PRESET:

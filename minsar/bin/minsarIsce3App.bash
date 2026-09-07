@@ -103,10 +103,6 @@ is_download_step() {
     return 1
 }
 
-is_opera_dolphin_mode() {
-    [[ "${dolphin_mode:-single-run}" == "opera" ]]
-}
-
 is_science_token() {
     case "$1" in
         --unwrap-method|--dolphin-dir|--from-dolphin-dir|--ministack-size|--half-window|--stride|--half-window-preset|--dolphin-mode)
@@ -380,7 +376,6 @@ if resolved="$(project_from_generator_log "$gen_out")"; then
 fi
 work_dir="${SCRATCHDIR}/${project}"
 log_app_command "$invoke_dir" "$work_dir"
-echo "Project: \$SCRATCHDIR/${project}"
 if [[ "$dry_run" == true ]]; then
     exit 0
 fi
@@ -392,20 +387,11 @@ fi
 [[ -d "$work_dir/$ISCE3_RUN_DIR_NAME" ]] || die "$ISCE3_RUN_DIR_NAME not found under $work_dir"
 cd "$work_dir"
 
-dolphin_dir="dolphin"
 dolphin_mode="single-run"
 if [[ -f "$work_dir/.isce3_run_slice" ]]; then
-    dolphin_dir="$(sed -n 's/^dolphin_dir=//p' "$work_dir/.isce3_run_slice" | head -1)"
     dolphin_mode="$(sed -n 's/^dolphin_mode=//p' "$work_dir/.isce3_run_slice" | head -1)"
 fi
-dolphin_dir="${dolphin_dir:-dolphin}"
 dolphin_mode="${dolphin_mode:-single-run}"
-if [[ "$gen_phase" != "download" ]]; then
-    echo "Dolphin dir: ${dolphin_dir}"
-    if is_opera_dolphin_mode; then
-        echo "Dolphin mode: opera"
-    fi
-fi
 
 run_args=()
 [[ -n "$backend" ]] && run_args+=(--backend "$backend")
