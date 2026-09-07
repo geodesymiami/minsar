@@ -40,9 +40,10 @@ options:
                         source DIR for YAML comparison and interferogram inputs (default: dolphin)
   --unwrap-method NAME  shortcut for --unwrap-options.unwrap-method
   --copy-dolphin-inputs copy interferograms/unwrapped instead of symlink
-  --window-preset NAME  auto, standard, dry, wet, arctic, disp-s1 (default: standard)
-  --half-window Y X     phase-linking half-window (default from --window-preset; standard 6 12)
   --stride Y X          output strides (default from --window-preset; standard 3 6)
+  --half-window Y X     phase-linking half-window (default from --window-preset; standard 6 12)
+  --window-preset {auto,standard,dry,wet,arctic,disp-s1}
+                        default: standard. hw auto 7x14, standard 6x12, dry 5x11, wet 9x18, arctic 9x19, disp-s1 8x16; stride auto 1x1, others 3x6
   --dolphin-mode MODE   CSLC path: single-run (one Dolphin stack) or opera (local DISP-S1 produce); default: single-run
   --reference-method METHOD
                         disp-s1-reformat reference: NONE, POINT, MEDIAN, BORDER, HIGH_COHERENCE (default: HIGH_COHERENCE)

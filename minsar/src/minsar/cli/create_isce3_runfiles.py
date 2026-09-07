@@ -28,6 +28,7 @@ from minsar.utils.dolphin_presets import (
     DEFAULT_HALF_WINDOW,
     DEFAULT_PRESET,
     DEFAULT_STRIDES,
+    DOLPHIN_PRESET_CHOICES,
     DOLPHIN_PRESET_HELP,
     NO_PRESET_NAMING_HELP,
     OPERA_DISP_METHOD_STRING,
@@ -1057,12 +1058,11 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--long-queue", default="skx", help="SLURM partition for unsafe or unknown restart behavior")
     parser.add_argument("--config", type=Path, help="ISCE3 job defaults file")
     parser.add_argument(
-        "--window-preset",
-        type=_normalize_dolphin_preset,
-        default=DEFAULT_PRESET,
-        dest="preset",
-        metavar="NAME",
-        help=DOLPHIN_PRESET_HELP,
+        "--stride",
+        nargs=2,
+        metavar=("Y", "X"),
+        default=None,
+        help=f"output strides Y X (default from --window-preset; standard {DEFAULT_STRIDES[0]} {DEFAULT_STRIDES[1]})",
     )
     parser.add_argument(
         "--half-window",
@@ -1072,11 +1072,12 @@ def create_parser() -> argparse.ArgumentParser:
         help=f"phase-linking half-window Y X (default from --window-preset; standard {DEFAULT_HALF_WINDOW[0]} {DEFAULT_HALF_WINDOW[1]})",
     )
     parser.add_argument(
-        "--stride",
-        nargs=2,
-        metavar=("Y", "X"),
-        default=None,
-        help=f"output strides Y X (default from --window-preset; standard {DEFAULT_STRIDES[0]} {DEFAULT_STRIDES[1]})",
+        "--window-preset",
+        type=_normalize_dolphin_preset,
+        choices=DOLPHIN_PRESET_CHOICES,
+        default=DEFAULT_PRESET,
+        dest="preset",
+        help=DOLPHIN_PRESET_HELP,
     )
     parser.add_argument(
         "--preset-naming",
