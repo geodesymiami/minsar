@@ -10,10 +10,10 @@ if [[ "$(uname)" == "Darwin" ]]; then
     sed -i '' '/- isce2/ s/^/# /' tools/isceplus/S07_Installing_the_course_environment_with_conda/isceplus2026_MacOS.yml
     sed -i '' '/- pv/ s/^/# /' tools/isceplus/S07_Installing_the_course_environment_with_conda/isceplus2026_MacOS.yml  # pv needs to be installed on Mac using "brew install pv"
     sed -i '' '/- whirlwind-insar/ s/^/# /' tools/isceplus/S07_Installing_the_course_environment_with_conda/isceplus2026_MacOS.yml
-    mamba env create -f tools/isceplus/S07_Installing_the_course_environment_with_conda/isceplus2026_MacOS.yml
+    mamba env create -f tools/isceplus/S07_Installing_the_course_environment_with_conda/isceplus2026_MacOS.yml --yes
 fi
 
-mamba env create -f tools/isceplus/S07_Installing_the_course_environment_with_conda/isceplus2026.yml
+mamba env create -f tools/isceplus/S07_Installing_the_course_environment_with_conda/isceplus2026.yml --yes
 
 
 
