@@ -715,6 +715,7 @@ def main(
         f"mintpy.plot = {mintpy_plot} "
         f"(CLI override={inps.mintpy_plot_cli!r}; span from ssaraopt dates)",
         file=sys.stderr,
+        flush=True,
     )
 
     content = dummy_path.read_text()
@@ -741,7 +742,7 @@ def main(
 
     out_path = out_dir / f"{out_base}.template"
     out_path.write_text(content)
-    print(f"Wrote {out_path}")
+    print(f"Wrote {out_path}", flush=True)
 
     if flight_dir_eff in ("both", "asc,desc", "desc,asc"):
         same_dir = out_path.parent

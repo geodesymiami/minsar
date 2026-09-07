@@ -1700,31 +1700,34 @@ def _print_plan(
     reference_method: str | None = None,
     unwrap_method: str | None = None,
 ) -> None:
-    """Print resolved project summary as soon as names are known."""
+    """Print resolved project summary as soon as names are known (flush for tee/pipes)."""
     del stages, specs, queue, long_queue, phase, layer, platform, unwrap_method
-    print(f"Project: {context['project']}")
+
+    def _out(msg: str) -> None:
+        print(msg, flush=True)
+
+    _out(f"Project: {context['project']}")
     if dolphin_dir and workflow in {"cslc", "safe"}:
-        print(f"Dolphin dir: {dolphin_dir}")
+        _out(f"Dolphin dir: {dolphin_dir}")
     if dolphin_mode and workflow == "cslc":
-        print(f"Dolphin mode: {dolphin_mode}")
+        _out(f"Dolphin mode: {dolphin_mode}")
     if workflow == "disp" or (workflow in {"cslc", "safe"} and preset is not None):
         if workflow == "disp" or dolphin_mode == "opera":
-            print(f"HE5 name: {OPERA_DISP_METHOD_STRING}")
+            _out(f"HE5 name: {OPERA_DISP_METHOD_STRING}")
         elif preset_naming:
-            print(f"HE5 name: {_hdfeos5_method_string(preset)}")
+            _out(f"HE5 name: {_hdfeos5_method_string(preset)}")
         else:
-            print("HE5 name: dolphin (--no-preset-naming)")
+            _out("HE5 name: dolphin (--no-preset-naming)")
     if reference_method and (workflow == "disp" or dolphin_mode == "opera"):
-        print(f"Reference method: {reference_method}")
+        _out(f"Reference method: {reference_method}")
     start = str(context.get("start_date") or "").strip()
     end = str(context.get("end_date") or "").strip()
     if start or end:
-        print(f"Dates: {start or '?'} – {end or '?'}")
+        _out(f"Dates: {start or '?'} – {end or '?'}")
     if workflow in {"cslc", "safe"} and half_window is not None:
-        print(f"Half-window: {half_window[0]} {half_window[1]}")
+        _out(f"Half-window: {half_window[0]} {half_window[1]}")
     if workflow in {"cslc", "safe"} and strides is not None:
-        print(f"Stride: {strides[0]} {strides[1]}")
-
+        _out(f"Stride: {strides[0]} {strides[1]}")
 
 def _run_in_sweets(work_dir: Path, command: list[str]) -> None:
     """Run one command in the canonical SWEETS Pixi environment."""
@@ -2503,8 +2506,8 @@ def main(iargs: list[str] | None = None) -> int:
             context = _aoi_context(args)
         else:
             context = _template_context(_create_template_from_aoi(args).resolve(), args)
-        config = args.config or Path(__file__).resolve().parents[3] / "defaults/job_defaults_isce3.cfg"
-        profiles = _read_profiles(config)
+            sys.stdout.flush()
+            sys.stderr.flush()
         scratch_dir = Path(os.environ["SCRATCHDIR"]).expanduser().resolve()
         work_dir = scratch_dir / str(context["project"])
         layer = "wrapped"
@@ -2537,16 +2540,12 @@ def main(iargs: list[str] | None = None) -> int:
                 raise ValueError("CSLCs/GSLCs not found; run `--start download` first")
             data_ready = has_cslc_or_gslc(work_dir, workflow)
             embed_config = not (args.phase in {"dolphin", "all"} and data_ready)
-        specs = _build_stage_specs(
-            workflow, context, split_dolphin=split_dolphin, dolphin_mode=args.dolphin_mode
-        )
-        _log_command_line([invocation_dir, work_dir], Path(__file__).name, argv)
         _print_plan(
             workflow,
             platform,
             context,
             None,
-            specs,
+            None,
             args.queue,
             args.long_queue,
             preset=args.preset,
@@ -2562,6 +2561,12 @@ def main(iargs: list[str] | None = None) -> int:
         )
         if args.dry_run:
             return 0
+        config = args.config or Path(__file__).resolve().parents[3] / "defaults/job_defaults_isce3.cfg"
+        profiles = _read_profiles(config)
+        specs = _build_stage_specs(
+            workflow, context, split_dolphin=split_dolphin, dolphin_mode=args.dolphin_mode
+        )
+        _log_command_line([invocation_dir, work_dir], Path(__file__).name, argv)
         work_dir.mkdir(parents=True, exist_ok=True)
         template_src = Path(str(context.get("template") or ""))
         if template_src.is_file():
