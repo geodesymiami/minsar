@@ -1700,11 +1700,19 @@ def _print_plan(
     reference_method: str | None = None,
     unwrap_method: str | None = None,
 ) -> None:
-    """Print resolved project summary as soon as names are known (flush for tee/pipes)."""
+    """Print resolved project summary as soon as names are known.
+
+    Progress (mintpy.plot, burst_ids) goes to stderr and shows immediately under
+    ``minsarIsce3App.bash … | tee``. Plan lines also go to stderr so they appear
+    right after template create — before sweets/pixi. ``Project:`` is duplicated
+    on stdout so the app can parse the tee log.
+    """
     del stages, specs, queue, long_queue, phase, layer, platform, unwrap_method
 
     def _out(msg: str) -> None:
-        print(msg, flush=True)
+        print(msg, file=sys.stderr, flush=True)
+        if msg.startswith("Project:"):
+            print(msg, flush=True)
 
     _out(f"Project: {context['project']}")
     if dolphin_dir and workflow in {"cslc", "safe"}:

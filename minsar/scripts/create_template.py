@@ -742,7 +742,7 @@ def main(
 
     out_path = out_dir / f"{out_base}.template"
     out_path.write_text(content)
-    print(f"Wrote {out_path}", flush=True)
+    print(f"Wrote {out_path}", file=sys.stderr, flush=True)
 
     if flight_dir_eff in ("both", "asc,desc", "desc,asc"):
         same_dir = out_path.parent
