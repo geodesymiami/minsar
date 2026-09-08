@@ -6,6 +6,20 @@ clone_repo() {
     git clone "$1" "$2"
 }
 
+clone_branch() {
+    local url="$1" dest="$2" branch="$3"
+    if [[ -e "$dest" ]]; then
+        echo "skip clone (exists): $dest"
+        # Ensure tags exist so setuptools_scm reports a real version for path pins.
+        git -C "$dest" fetch --tags --quiet 2>/dev/null || true
+        return 0
+    fi
+    # Full branch history (not --depth 1): shallow clones break setuptools_scm versions
+    # (opera-utils becomes 0.0.post1, which conflicts with dolphin's opera-utils>=0.25.7).
+    git clone --branch "$branch" --single-branch "$url" "$dest"
+    git -C "$dest" fetch --tags --quiet 2>/dev/null || true
+}
+
 ### Install #########################
 clone_repo git@github.com:opera-adt/COMPASS.git tools/COMPASS
 clone_repo git@github.com:opera-adt/disp-s1.git tools/disp-s1
@@ -16,26 +30,77 @@ clone_repo git@github.com:OPERA-Cal-Val/OPERA_Applications.git tools/OPERA_Appli
 clone_repo git@github.com:isce-framework/dolphin.git tools/dolphin
 clone_repo https://github.com/isce-framework/sweets.git tools/sweets
 
+# scottstanie forks used by sweets pyproject (path pins avoid git fetches inside pixi/uv).
+clone_branch https://github.com/scottstanie/s1-reader.git tools/s1-reader develop-scott
+clone_branch https://github.com/scottstanie/COMPASS.git tools/COMPASS_scott develop-scott
+clone_branch https://github.com/scottstanie/opera-utils.git tools/opera-utils develop-scott
+clone_branch https://github.com/scottstanie/spurt.git tools/spurt develop-scott
+
 (
 cd tools/sweets
 
-# Prefer tools/dolphin over sweets' scottstanie/dolphin pin (needs _block_split).
-if [[ -d ../dolphin ]]; then
-    python3 - <<'PY'
+# Prefer local clones over sweets' scottstanie git pins (HPC: uv git-fetch hits nproc limits).
+python3 - <<'PY'
 from pathlib import Path
 import re
+
 path = Path("pyproject.toml")
 text = path.read_text()
-replacement = 'dolphin = { path = "../dolphin", editable = false }'
-text2, n = re.subn(r'^dolphin = \{ git = "https://github.com/scottstanie/dolphin\.git".*$', replacement, text, count=1, flags=re.M)
+replacements = [
+    (
+        r'^s1reader = \{ git = "https://github.com/scottstanie/s1-reader\.git".*$',
+        's1reader = { path = "../s1-reader", editable = false }',
+        r'^s1reader = \{ path = "\.\./s1-reader".*$',
+    ),
+    (
+        r'^compass = \{ git = "https://github.com/scottstanie/COMPASS\.git".*$',
+        'compass = { path = "../COMPASS_scott", editable = false }',
+        r'^compass = \{ path = "\.\./COMPASS_scott".*$',
+    ),
+    (
+        r'^dolphin = \{ git = "https://github.com/scottstanie/dolphin\.git".*$',
+        'dolphin = { path = "../dolphin", editable = false }',
+        r'^dolphin = \{ path = "\.\./dolphin".*$',
+    ),
+    (
+        r'^spurt = \{ git = "https://github.com/scottstanie/spurt\.git".*$',
+        'spurt = { path = "../spurt", editable = false }',
+        r'^spurt = \{ path = "\.\./spurt".*$',
+    ),
+]
+for git_pat, path_line, path_pat in replacements:
+    text2, n = re.subn(git_pat, path_line, text, count=1, flags=re.M)
+    if n == 0:
+        text2, n = re.subn(path_pat, path_line, text, count=1, flags=re.M)
+    if n == 0:
+        raise SystemExit(f"Error: could not pin sweets dependency to path: {path_line}")
+    text = text2
+    print(f"Pinned {path_line}")
+
+# opera-utils may be multi-line (extras list).
+opera_path = '''opera-utils = { path = "../opera-utils", editable = false, extras = [
+  "asf",
+  "disp",
+  "nisar",
+  "tropo",
+] }'''
+opera_pat = re.compile(
+    r'^opera-utils = \{ git = "https://github.com/scottstanie/opera-utils\.git".*?\n\] \}',
+    re.M | re.S,
+)
+text2, n = opera_pat.subn(opera_path, text, count=1)
 if n == 0:
-    text2, n = re.subn(r'^dolphin = \{ path = "\.\./dolphin".*$', replacement, text, count=1, flags=re.M)
+    opera_pat2 = re.compile(
+        r'^opera-utils = \{ path = "\.\./opera-utils".*?\n\] \}',
+        re.M | re.S,
+    )
+    text2, n = opera_pat2.subn(opera_path, text, count=1)
 if n == 0:
-    raise SystemExit("Error: could not pin sweets dolphin to ../dolphin in pyproject.toml")
-path.write_text(text2)
-print("Pinned sweets dolphin to ../dolphin (non-editable)")
+    raise SystemExit("Error: could not pin sweets opera-utils to ../opera-utils")
+text = text2
+print("Pinned opera-utils to ../opera-utils (non-editable)")
+path.write_text(text)
 PY
-fi
 
 # Patch YamlModel for sweets oneOf/$ref schemas if needed.
 if [[ -f ../dolphin/src/dolphin/workflows/config/_yaml_model.py ]]; then
@@ -86,65 +151,71 @@ else:
 PY
 fi
 
-# sweets pins scottstanie/opera-utils@develop-scott; shipped pixi.lock + dolphin
-# egg-info can still advertise opera-utils>=0.25.7 against an old 0.25.5.dev0
-# lock entry. Relax metadata for the solve, drop the lock, install default only.
-dolphin_req="../dolphin/requirements.txt"
-dolphin_req_bak=""
-if [[ -f "$dolphin_req" ]] && grep -q 'opera-utils>=0\.25\.7' "$dolphin_req"; then
-    dolphin_req_bak="${dolphin_req}.minsar.bak"
-    cp "$dolphin_req" "$dolphin_req_bak"
-    python3 - <<'PY'
+# Pixi solves the lockfile for every workspace platform. On Linux that means it
+# also tries to fetch/solve osx-arm64 PyPI/conda packages (and vice versa). That
+# cross-platform solve often fails on HPC and leaves a half-installed env.
+# Restrict platforms to the host before install; sweets already lists both.
+case "$(uname -s)-$(uname -m)" in
+    Linux-x86_64) host_pixi_platform="linux-64" ;;
+    Darwin-arm64) host_pixi_platform="osx-arm64" ;;
+    Darwin-x86_64) host_pixi_platform="osx-64" ;;
+    *)
+        echo "Error: unsupported host for sweets pixi: $(uname -s) $(uname -m)" >&2
+        exit 1
+        ;;
+esac
+python3 - <<PY
 from pathlib import Path
-p = Path("../dolphin/requirements.txt")
-text = p.read_text()
-text2 = text.replace("opera-utils>=0.25.7", "opera-utils>=0.25.5", 1)
-if text2 == text:
-    raise SystemExit("Error: could not relax dolphin opera-utils pin")
-p.write_text(text2)
-egg = Path("../dolphin/src/dolphin.egg-info")
-for name in ("requires.txt", "PKG-INFO"):
-    meta = egg / name
-    if meta.is_file():
-        meta.write_text(meta.read_text().replace("opera-utils>=0.25.7", "opera-utils>=0.25.5"))
-print("Relaxed dolphin opera-utils pin for sweets develop-scott solve")
+import re
+path = Path("pyproject.toml")
+text = path.read_text()
+text2, n = re.subn(
+    r"^platforms = \[.*?\]$",
+    'platforms = ["${host_pixi_platform}"]',
+    text,
+    count=1,
+    flags=re.M,
+)
+if n != 1:
+    raise SystemExit("Error: could not set tool.pixi platforms to host-only in pyproject.toml")
+path.write_text(text2)
+print(f"Restricted sweets pixi platforms to ${host_pixi_platform} for this install")
 PY
+
+# Prefer local disk for rattler/pixi cache when HOME cache is on Lustre/NFS.
+if [[ -z "${PIXI_CACHE_DIR:-}" ]]; then
+    export PIXI_CACHE_DIR="${TMPDIR:-/tmp}/pixi-cache-${USER}"
+    mkdir -p "$PIXI_CACHE_DIR"
+    echo "Using PIXI_CACHE_DIR=$PIXI_CACHE_DIR"
 fi
 
-restore_dolphin_req() {
-    if [[ -n "$dolphin_req_bak" && -f "$dolphin_req_bak" ]]; then
-        mv "$dolphin_req_bak" "$dolphin_req"
-    fi
-}
-
-# Path-pinning dolphin invalidates sweets' lock (was scottstanie/dolphin git).
-rm -f pixi.lock
-
-# default env is what MinSAR stages/runs; full `pixi install` also solves gpu
-# (including osx-arm64 / linux-cuda) and is unnecessary here.
-if ! pixi install -e default; then
-    restore_dolphin_req
-    echo "Error: pixi install failed (lock/solve)" >&2
-    exit 1
-fi
+# Login/interactive nodes often hit process/thread ulimits during uv/rayon PyPI solves.
+# Prefer a dedicated sbatch/idev shell (not Cursor) if install fails with WouldBlock.
+export RAYON_NUM_THREADS="${RAYON_NUM_THREADS:-1}"
+export TOKIO_WORKER_THREADS="${TOKIO_WORKER_THREADS:-2}"
+export UV_CONCURRENCY="${UV_CONCURRENCY:-1}"
+export PIXI_NO_PROGRESS=true
+# Fallback when path clones still lack reachable tags for setuptools_scm.
+export SETUPTOOLS_SCM_PRETEND_VERSION_FOR_OPERA_UTILS="${SETUPTOOLS_SCM_PRETEND_VERSION_FOR_OPERA_UTILS:-0.25.8}"
+pixi install --no-progress --concurrent-solves "${PIXI_CONCURRENT_SOLVES:-1}" --concurrent-downloads "${PIXI_CONCURRENT_DOWNLOADS:-4}"
 pixi upgrade asf_search || true
 
-if [[ ! -x .pixi/envs/default/bin/python ]]; then
-    restore_dolphin_req
-    echo "Error: SWEETS pixi default env missing after pixi install: $(pwd)/.pixi/envs/default" >&2
+sweets_python=".pixi/envs/default/bin/python"
+[[ -x "$sweets_python" ]] || {
+    echo "Error: sweets pixi python missing after install: $sweets_python" >&2
     exit 1
-fi
+}
 if [[ -d ../dolphin ]]; then
-    .pixi/envs/default/bin/python -m pip install ../dolphin --no-deps --force-reinstall
+    "$sweets_python" -m pip install ../dolphin --no-deps --force-reinstall
 fi
-restore_dolphin_req
+if [[ -d ../opera-utils ]]; then
+    SETUPTOOLS_SCM_PRETEND_VERSION=0.25.8 "$sweets_python" -m pip install ../opera-utils --force-reinstall
+fi
+"$sweets_python" -c "import opera_utils, shapely; print('Verified opera_utils + shapely in sweets env')"
 )
 
 echo "sweets installation DONE"
 
-# Scratch staging is for SLURM compute nodes (often noexec on $MINSAR_HOME).
-if [[ "$(uname)" == "Linux" && -f minsar/scripts/stage_sweets_pixi_env.bash ]]; then
-    minsar/scripts/stage_sweets_pixi_env.bash --force
-fi
+[[ -f minsar/scripts/stage_sweets_pixi_env.bash ]] && minsar/scripts/stage_sweets_pixi_env.bash --force
 
 echo "Running of install_isce3.bash DONE"

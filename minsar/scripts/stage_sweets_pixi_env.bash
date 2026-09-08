@@ -49,12 +49,24 @@ done
 src="${MINSAR_HOME}/tools/sweets/.pixi/envs/default"
 stage="${SCRATCHDIR}/minsar_sweets_pixi_default"
 
-[[ -d "$src/bin" ]] || {
-    echo "Error: SWEETS pixi env not found: $src" >&2
+src_python=""
+if [[ -x "$src/bin/python" ]]; then
+    src_python="$src/bin/python"
+elif [[ -x "$src/bin/python3" ]]; then
+    src_python="$src/bin/python3"
+fi
+[[ -n "$src_python" ]] || {
+    echo "Error: SWEETS pixi env incomplete (no python): $src" >&2
+    echo "Re-run: setup/install_isce3.bash" >&2
+    exit 1
+}
+"$src_python" -c "import opera_utils" >/dev/null 2>&1 || {
+    echo "Error: SWEETS pixi env cannot import opera_utils: $src" >&2
+    echo "Re-run: setup/install_isce3.bash" >&2
     exit 1
 }
 
-if [[ "$force" != "true" ]] && [[ -x "$stage/bin/python3" ]] && "$stage/bin/python3" -c "pass" >/dev/null 2>&1; then
+if [[ "$force" != "true" ]] && [[ -x "$stage/bin/python3" ]] && "$stage/bin/python3" -c "import opera_utils" >/dev/null 2>&1; then
     echo "SWEETS pixi env already staged: $stage"
     exit 0
 fi
@@ -62,4 +74,8 @@ fi
 echo "Staging SWEETS pixi env: $src -> $stage"
 mkdir -p "$stage"
 rsync -a "$src/" "$stage/"
+"$stage/bin/python" -c "import opera_utils" >/dev/null 2>&1 || {
+    echo "Error: staged SWEETS env cannot import opera_utils: $stage" >&2
+    exit 1
+}
 echo "Done. Batch jobs should use SWEETS_ENV=$stage"
