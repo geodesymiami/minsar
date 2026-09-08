@@ -39,6 +39,7 @@ Examples:
     $SCRIPT_NAME miaplpy/network_single_reference --suffix auto
     $SCRIPT_NAME mintpy --submit
     $SCRIPT_NAME hvGalapagosSenD128/mintpy --ref-lalo -0.81,-91.190 --submit
+    $SCRIPT_NAME mintpy --dataset geo --insarmapshost \$INSARMAPSHOST2
 
   Options:
       --ref-lalo LAT,LON or LAT LON   Reference point (lat,lon or lat lon)
@@ -46,6 +47,7 @@ Examples:
                                           Use comma-separated values to ingest multiple types: --dataset PS,DS or --dataset PS,DS,filt*DS
       --suffix TAG or auto              Append _TAG to .he5/.csv basename for ingest (mbtiles/dataset name)
                                           auto reads miaplpy.timeseries.minTempCoh from ../miaplpyApp.cfg (0.85 -> coh085)
+      --insarmapshost HOST[,HOST...]  Override INSARMAPSHOST_RECENTDATA / INSARMAPSHOST_OLDDATA for upload
       --hdfeos5_2json_mbtiles         Run only HDFEOS5 → JSON/mbtiles (no insarmaps upload); same as --step 1
                                       For a .csv input, step 1 runs hdfeos5_or_csv_2json_mbtiles.py instead of hdfeos5_2json_mbtiles.py
       --json_mbtiles2insarmaps        Run only insarmaps upload (assumes step 1 succeeded); same as --step 2
@@ -58,8 +60,9 @@ Examples:
       --debug                         Enable debug mode (set -x)
       Default (no step flags): run both steps in order.
 
-      Uses environment variables 
+      Uses environment variables
       - INSARMAPSHOST_RECENTDATA : when filename contains XXXXXXXX, else INSARMAPSHOST_OLDDATA
+      - --insarmapshost overrides both when given
 
   Output: With --ref-lalo the selected .he5 in the input dir is modified in place. insarmaps.log appended. No backup files.
 
@@ -100,6 +103,7 @@ num_workers_cli=""
 mbtiles_num_workers_cli=""
 quiet_summary=0
 suffix=""
+insarmaps_host_cli=""
 
 # Apply ingest step from numeric argument (1 or 2), long flags, or --step N
 _apply_ingest_step_arg() {
@@ -154,6 +158,15 @@ do
         --suffix)
             [[ $# -lt 2 ]] && { echo "Error: --suffix requires a TAG" >&2; exit 1; }
             suffix="$2"
+            shift 2
+            ;;
+        --insarmapshost=*)
+            insarmaps_host_cli="${key#--insarmapshost=}"
+            shift
+            ;;
+        --insarmapshost)
+            [[ $# -lt 2 ]] && { echo "Error: --insarmapshost requires a HOST" >&2; exit 1; }
+            insarmaps_host_cli="$2"
             shift 2
             ;;
         --debug)
@@ -470,6 +483,7 @@ ingest_submit_slurm_job() {
     fi
     [[ -n "$dataset" ]] && cmd+=(--dataset "$dataset")
     [[ -n "$suffix" ]] && cmd+=(--suffix "$suffix")
+    [[ -n "$insarmaps_host_cli" ]] && cmd+=(--insarmapshost "$insarmaps_host_cli")
     [[ $debug_flag == 1 ]] && cmd+=(--debug)
     [[ $quiet_summary == 1 ]] && cmd+=(--quiet-summary)
     [[ -n "$num_workers_cli" ]] && cmd+=(--num-workers "$num_workers_cli")
@@ -521,7 +535,10 @@ for ingest_file in "${ingest_files[@]}"; do
     fi
     echo "####################################"
     echo "Processing: $ingest_file"
-    if [[ "$ingest_file" == *"XXXXXXXX"* ]]; then
+    if [[ -n "$insarmaps_host_cli" ]]; then
+        INSARMAPS_HOSTS="$insarmaps_host_cli"
+        echo "InsarMaps host (CLI --insarmapshost): $INSARMAPS_HOSTS"
+    elif [[ "$ingest_file" == *"XXXXXXXX"* ]]; then
         INSARMAPS_HOSTS="${INSARMAPSHOST_RECENTDATA:-}"
     else
         INSARMAPS_HOSTS="${INSARMAPSHOST_OLDDATA:-}"
