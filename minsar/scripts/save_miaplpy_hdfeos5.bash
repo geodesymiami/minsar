@@ -6,7 +6,7 @@
 # geocode of aux products in parallel, then add_ref_lalo_to_file on HE5s.
 #
 # Usage:
-#   save_miaplpy_hdfeos5.bash [--dir DIR] [-t FILE] [--prefix NAME] [--filter PAR] [--no-filter] [--mask-thresh VAL]
+#   save_miaplpy_hdfeos5.bash [--dir DIR] [-t FILE] [--prefix NAME] [--filter PAR] [--no-filter] [--mask-thresh VAL] [--extra-suffix TAG]
 #
 
 set -eo pipefail
@@ -27,11 +27,12 @@ usage() {
     echo "  --filter PAR        Lowpass gaussian filter parameter (default: 0.7)"
     echo "  --no-filter         Skip spatial_filter and filtered HE5/geocode products"
     echo "  --mask-thresh VAL   Threshold for generate_mask.py (default: from template or 0.7)"
+    echo "  --extra-suffix TAG  Append _TAG after PS/DS/filtDS in HE5 names (e.g. 065 -> *Del4DS_065.he5)"
     echo "  --help, -h          Show this help"
     echo ""
     echo "Examples:"
     echo "  $SCRIPT_NAME --dir network_delaunay_4 -t smallbaselineApp.cfg --prefix Del4 --filter 0.7"
-    echo "  $SCRIPT_NAME --dir . --prefix Sing --mask-thresh 0.75"
+    echo "  $SCRIPT_NAME --dir . --prefix Sing --mask-thresh 0.75 --extra-suffix 065"
     echo "  $SCRIPT_NAME --dir network_single_reference --no-filter"
     exit 0
 }
@@ -42,6 +43,7 @@ prefix=""
 filter_par="0.7"
 do_filter=1
 mask_thresh=""
+extra_suffix=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -73,6 +75,11 @@ while [[ $# -gt 0 ]]; do
         --mask-thresh)
             [[ $# -lt 2 ]] && { echo "Error: --mask-thresh requires an argument" >&2; exit 1; }
             mask_thresh="$2"
+            shift 2
+            ;;
+        --extra-suffix)
+            [[ $# -lt 2 ]] && { echo "Error: --extra-suffix requires an argument" >&2; exit 1; }
+            extra_suffix="$2"
             shift 2
             ;;
         --help|-h)
@@ -143,6 +150,11 @@ if [[ -z "$prefix" ]]; then
     prefix="$(get_network_prefix "$(basename "$work_dir")")" || exit 1
 fi
 
+extra_suffix="${extra_suffix#_}"
+extra_suffix="${extra_suffix%_}"
+extra=""
+[[ -n "$extra_suffix" ]] && extra="_${extra_suffix}"
+
 if [[ ! -f "$template_file" ]]; then
     echo "Error: template not found: $template_file" >&2
     exit 1
@@ -170,21 +182,21 @@ if [[ $do_filter -eq 1 ]]; then
     generate_mask.py temporalCoherence_lowpass_gaussian.h5 -m "$mask_thresh"
 fi
 
-echo "Running save_hdfeos5.py in parallel (prefix=$prefix) ..."
+echo "Running save_hdfeos5.py in parallel (prefix=$prefix extra_suffix=${extra_suffix:-none}) ..."
 pids=()
 save_hdfeos5.py timeseries_*demErr.h5 --tc temporalCoherence.h5 --asc avgSpatialCoh.h5 \
     -m ../maskPS.h5 -g inputs/geometryRadar.h5 --dem-error demErr.h5 \
-    -t "$template_file" --suffix "${prefix}PS" &
+    -t "$template_file" --suffix "${prefix}PS${extra}" &
 pids+=($!)
 save_hdfeos5.py timeseries_*demErr.h5 --tc temporalCoherence.h5 --asc avgSpatialCoh.h5 \
     -m maskTempCoh.h5 -g inputs/geometryRadar.h5 --dem-error demErr.h5 \
-    -t "$template_file" --suffix "${prefix}DS" &
+    -t "$template_file" --suffix "${prefix}DS${extra}" &
 pids+=($!)
 
 if [[ $do_filter -eq 1 ]]; then
     save_hdfeos5.py timeseries_*demErr.h5 --tc temporalCoherence_lowpass_gaussian.h5 \
         --asc avgSpatialCoh.h5 -m maskTempCoh_lowpass_gaussian.h5 --dem-error demErr.h5 \
-        -g inputs/geometryRadar.h5 -t "$template_file" --suffix "filt${prefix}DS" &
+        -g inputs/geometryRadar.h5 -t "$template_file" --suffix "filt${prefix}DS${extra}" &
     pids+=($!)
 fi
 
@@ -204,19 +216,19 @@ pids+=($!)
 wait_pids "${pids[@]}" || { echo "Error: one or more geocode.py jobs failed" >&2; exit 1; }
 
 echo "Adding REF_LAT/REF_LON to HE5 files ..."
-# Match *_${prefix}DS.he5 but not *_filt${prefix}DS.he5
-h5file=$(ls ./*_"${prefix}"PS.he5 2>/dev/null | head -1)
-[[ -n "$h5file" ]] || { echo "Error: ${prefix}PS.he5 not found" >&2; exit 1; }
+# Match *_${prefix}DS${extra}.he5 but not *_filt${prefix}DS${extra}.he5
+h5file=$(ls ./*_"${prefix}"PS"${extra}".he5 2>/dev/null | head -1)
+[[ -n "$h5file" ]] || { echo "Error: ${prefix}PS${extra}.he5 not found" >&2; exit 1; }
 add_ref_lalo_to_file "$h5file"
 
-h5file=$(ls ./*_"${prefix}"DS.he5 2>/dev/null | grep -v "_filt${prefix}DS\\.he5\$" | head -1)
-[[ -n "$h5file" ]] || { echo "Error: ${prefix}DS.he5 not found" >&2; exit 1; }
+h5file=$(ls ./*_"${prefix}"DS"${extra}".he5 2>/dev/null | grep -v "_filt${prefix}DS${extra}\\.he5\$" | head -1)
+[[ -n "$h5file" ]] || { echo "Error: ${prefix}DS${extra}.he5 not found" >&2; exit 1; }
 add_ref_lalo_to_file "$h5file"
 
 if [[ $do_filter -eq 1 ]]; then
-    h5file=$(ls ./*_filt"${prefix}"DS.he5 2>/dev/null | head -1)
-    [[ -n "$h5file" ]] || { echo "Error: filt${prefix}DS.he5 not found" >&2; exit 1; }
+    h5file=$(ls ./*_filt"${prefix}"DS"${extra}".he5 2>/dev/null | head -1)
+    [[ -n "$h5file" ]] || { echo "Error: filt${prefix}DS${extra}.he5 not found" >&2; exit 1; }
     add_ref_lalo_to_file "$h5file"
 fi
 
-echo "Done: save_miaplpy_hdfeos5.bash (prefix=$prefix)"
+echo "Done: save_miaplpy_hdfeos5.bash (prefix=$prefix extra_suffix=${extra_suffix:-none})"

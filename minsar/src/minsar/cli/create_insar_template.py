@@ -284,6 +284,7 @@ miaplpy.interferograms.networkType   = delaunay # network
 miaplpy.unwrap.snaphu.tileNumPixels  = 10000000000     # number of pixels in a tile, auto for 10000000
 ######################################################
 minsar.miaplpyDir.addition           = date  #[name / lalo / no] auto for no (miaply_$name_startDate_endDate))
+minsar.product.suffix                = auto  #[auto / no / coherenceThreshold / TAG] auto for no extra suffix
 mintpy.subset.lalo                   = {lat1}:{lat2},{lon1}:{lon2}
 miaplpy.subset.lalo                  = {lat1}:{lat2},{mia_lon1}:{mia_lon2}  #[S:N,W:E / no], auto for no
 miaplpy.load.startDate               = auto  # 20200101

@@ -480,6 +480,36 @@ function get_exclude_season_suffix() {
 }
 
 ###########################################
+function get_product_suffix() {
+# Extra tag from minsar.product.suffix for miaplpy/mintpy dirs and HE5 names.
+# auto/no/empty -> ""; coherenceThreshold -> _065 from minTempCoh; else _TAG.
+    local raw="${template[minsar.product.suffix]:-}"
+    local key coh tag
+    raw="${raw#"${raw%%[![:space:]]*}"}"
+    raw="${raw%"${raw##*[![:space:]]}"}"
+    raw="${raw#_}"
+    raw="${raw%_}"
+    key=$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')
+    if [[ -z "$key" || "$key" == "auto" || "$key" == "no" ]]; then
+        echo ""
+        return 0
+    fi
+    if [[ "$key" == "coherencethreshold" ]]; then
+        coh="${template[miaplpy.timeseries.minTempCoh]:-}"
+        if [[ -z "$coh" || "$coh" == "auto" ]]; then
+            coh="${template[mintpy.networkInversion.minTempCoh]:-}"
+        fi
+        if [[ -z "$coh" || "$coh" == "auto" ]]; then
+            coh="0.5"
+        fi
+        tag=$(python3 -c "v=float('${coh}'); print(f'{int(round(v*100)):03d}')")
+        echo "_${tag}"
+        return 0
+    fi
+    echo "_${raw}"
+}
+
+###########################################
 function list_slcstack_load_dates() {
 # Dates under merged/SLC (or $1) that MiaplPy would load into slcStack.h5.
 # Same window as additions/miaplpy/utils.py: include date if
@@ -523,6 +553,7 @@ function get_date_str() {
 function get_miaplpy_dir_name() {
 # assign miaplpyDir.Addition  lalo,dirname or 'miaplpy' for 'auto'
 # Appends _exMMDD-MMDD when ssaraopt.excludeSeason is set (template only; not from disk).
+# Appends get_product_suffix (minsar.product.suffix) after that.
 date_str=$(get_date_str)
 if [ -z ${template[minsar.miaplpyDir.addition]} ] || [ ${template[minsar.miaplpyDir.addition]} == "auto" ]; then
    miaplpy_dir_name="miaplpy"
@@ -549,12 +580,13 @@ else
    miaplpy_dir_name=miaplpy_"${template[minsar.miaplpyDir.addition]}"_${date_str}
 fi
 unset IFS
-echo "${miaplpy_dir_name}$(get_exclude_season_suffix)"
+echo "${miaplpy_dir_name}$(get_exclude_season_suffix)$(get_product_suffix)"
 }
 ###########################################
 function get_mintpy_dir_name() {
 # assign mintpyDir.addition  lalo, date, name, or 'mintpy' for 'auto'
 # Appends _exMMDD-MMDD when ssaraopt.excludeSeason is set (template only; not from disk).
+# Appends get_product_suffix (minsar.product.suffix) after that.
 date_str=$(get_date_str)
 if [ -z ${template[minsar.mintpyDir.addition]} ] || [ ${template[minsar.mintpyDir.addition]} == "auto" ]; then
    mintpy_dir_name="mintpy"
@@ -581,7 +613,7 @@ else
    mintpy_dir_name=mintpy_"${template[minsar.mintpyDir.addition]}"_${date_str}
 fi
 unset IFS
-echo "${mintpy_dir_name}$(get_exclude_season_suffix)"
+echo "${mintpy_dir_name}$(get_exclude_season_suffix)$(get_product_suffix)"
 }
 ###########################################
 function get_network_type {

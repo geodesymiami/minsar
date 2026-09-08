@@ -63,6 +63,31 @@ class TestBuildJobCommands(unittest.TestCase):
         self.assertIn('"$plot_val" == "false"', body)
         self.assertIn('"$plot_val" == "0"', body)
 
+    def test_extra_suffix_flag(self):
+        cmds = MOD.build_job_commands('/tmp/n', 'Del4', 0.7, 0.65, extra_suffix='065')
+        body = '\n'.join(cmds)
+        self.assertIn('--extra-suffix 065', body)
+
+    def test_no_extra_suffix_by_default(self):
+        body = '\n'.join(MOD.build_job_commands('/tmp/n', 'Del4', 0.7, 0.75))
+        self.assertNotIn('--extra-suffix', body)
+
+
+class TestProductSuffixTag(unittest.TestCase):
+
+    def test_auto_empty(self):
+        self.assertEqual(MOD.product_suffix_tag({'minsar.product.suffix': 'auto'}), '')
+
+    def test_coherence_threshold(self):
+        opts = {
+            'minsar.product.suffix': 'coherenceThreshold',
+            'miaplpy.timeseries.minTempCoh': '0.65',
+        }
+        self.assertEqual(MOD.product_suffix_tag(opts), '065')
+
+    def test_literal(self):
+        self.assertEqual(MOD.product_suffix_tag({'minsar.product.suffix': '065'}), '065')
+
 
 if __name__ == '__main__':
     unittest.main()

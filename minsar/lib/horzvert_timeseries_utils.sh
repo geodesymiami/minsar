@@ -126,12 +126,12 @@ hv_promote_short_he5_to_corner_filename() {
     # --- MiaplPy: long form with corner suffix + optional filt*DS suffix ---
     long_prefix=""
     long_suffix=""
-    if [[ "$base" =~ ^(S1_[^_]+_[^_]+_miaplpy_[0-9]{8}_[0-9]{8})_N[^_]+_N[^_]+_N[^_]+_N[^_]+_(filt.*DS|filtSingDS)$ ]]; then
+    if [[ "$base" =~ ^(S1_[^_]+_[^_]+_miaplpy_[0-9]{8}_[0-9]{8})_N[^_]+_N[^_]+_N[^_]+_N[^_]+_(filt.*DS|filtSingDS)(_[^_]+)?$ ]]; then
         long_prefix="${BASH_REMATCH[1]}"
-        long_suffix="${BASH_REMATCH[2]}"
-    elif [[ "$base" =~ ^(S1_[^_]+_[^_]+_miaplpy_[0-9]{8}_XXXXXXXX)_N[^_]+_N[^_]+_N[^_]+_N[^_]+_(filt.*DS|filtSingDS)$ ]]; then
+        long_suffix="${BASH_REMATCH[2]}${BASH_REMATCH[3]}"
+    elif [[ "$base" =~ ^(S1_[^_]+_[^_]+_miaplpy_[0-9]{8}_XXXXXXXX)_N[^_]+_N[^_]+_N[^_]+_N[^_]+_(filt.*DS|filtSingDS)(_[^_]+)?$ ]]; then
         long_prefix="${BASH_REMATCH[1]}"
-        long_suffix="${BASH_REMATCH[2]}"
+        long_suffix="${BASH_REMATCH[2]}${BASH_REMATCH[3]}"
     fi
     if [[ -n "$long_prefix" && -n "$long_suffix" ]]; then
         short_sibling="${dir}/${long_prefix}_${long_suffix}.he5"
@@ -172,12 +172,12 @@ hv_promote_short_he5_to_corner_filename() {
     # --- MiaplPy: short form only ---
     prefix=""
     suffix=""
-    if [[ "$base" =~ ^(S1_[^_]+_[^_]+_miaplpy_[0-9]{8}_[0-9]{8})_(filt.*DS|filtSingDS)$ ]]; then
+    if [[ "$base" =~ ^(S1_[^_]+_[^_]+_miaplpy_[0-9]{8}_[0-9]{8})_(filt.*DS|filtSingDS)(_[^_]+)?$ ]]; then
         prefix="${BASH_REMATCH[1]}"
-        suffix="${BASH_REMATCH[2]}"
-    elif [[ "$base" =~ ^(S1_[^_]+_[^_]+_miaplpy_[0-9]{8}_XXXXXXXX)_(filt.*DS|filtSingDS)$ ]]; then
+        suffix="${BASH_REMATCH[2]}${BASH_REMATCH[3]}"
+    elif [[ "$base" =~ ^(S1_[^_]+_[^_]+_miaplpy_[0-9]{8}_XXXXXXXX)_(filt.*DS|filtSingDS)(_[^_]+)?$ ]]; then
         prefix="${BASH_REMATCH[1]}"
-        suffix="${BASH_REMATCH[2]}"
+        suffix="${BASH_REMATCH[2]}${BASH_REMATCH[3]}"
     fi
     if [[ -n "$prefix" && -n "$suffix" && "$base" == "${prefix}_${suffix}" ]]; then
         n_matches=0
