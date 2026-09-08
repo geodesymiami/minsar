@@ -787,7 +787,7 @@ class JOB_SUBMIT:
         job_file_lines = [
             "#! " + shell,
             prefix + name_option.format(os.path.basename(job_name)),
-            prefix + project_option.format(os.getenv('JOBSHEDULER_PROJECTNAME'))
+            prefix + project_option.format(os.getenv('JOBSCHEDULER_PROJECTNAME'))
         ]
 
         if self.email_notif:

@@ -373,7 +373,7 @@ def _require_job_env() -> None:
     """Fail early when MinSAR job-submission environment is incomplete."""
     missing = [
         name
-        for name in ("JOBSHEDULER_PROJECTNAME", "JOBSCHEDULER", "PLATFORM_NAME", "MINSAR_HOME")
+        for name in ("JOBSCHEDULER_PROJECTNAME", "JOBSCHEDULER", "PLATFORM_NAME", "MINSAR_HOME")
         if not os.getenv(name)
     ]
     if missing:

@@ -36,7 +36,7 @@ setup_minsar_app_test_env() {
     export SCRATCHDIR="$TEST_TMP/scratch"
     export TEMPLATES="$TEST_TMP/templates"
     export SAMPLESDIR="$TEST_TMP/samples"
-    export JOBSHEDULER_PROJECTNAME="A-TEST"
+    export JOBSCHEDULER_PROJECTNAME="A-TEST"
     export QUEUENAME="normal"
     export PLATFORM_NAME="stampede3"
     export ISCE_STACK="$TEST_TMP/isce_stack"

@@ -18,7 +18,7 @@ Options:
 
 Environment variables (if not overridden by flags):
   NOTIFICATIONEMAIL         e.g. falk.amelung@gmail.com
-  JOBSHEDULER_PROJECTNAME   e.g. TG-EAR200012
+  JOBSCHEDULER_PROJECTNAME   e.g. TG-EAR200012
   QUEUENAME                 e.g. skx
   PLATFORM_NAME             e.g. stampede3, frontera, etc.
 
@@ -85,7 +85,7 @@ done
 # Check environment variables
 ###############################################################################
 : "${NOTIFICATIONEMAIL:?Environment variable NOTIFICATIONEMAIL not set or empty.}"
-: "${JOBSHEDULER_PROJECTNAME:?Environment variable JOBSHEDULER_PROJECTNAME not set or empty.}"
+: "${JOBSCHEDULER_PROJECTNAME:?Environment variable JOBSCHEDULER_PROJECTNAME not set or empty.}"
 
 # If queue is still empty, default to \$QUEUENAME or "skx"
 if [[ -z "${queue}" ]]; then
@@ -151,7 +151,7 @@ job_file="${job_name}.job"
 cat << EOF > "$job_file"
 #!/bin/bash
 #SBATCH -J $job_name
-#SBATCH -A $JOBSHEDULER_PROJECTNAME
+#SBATCH -A $JOBSCHEDULER_PROJECTNAME
 #SBATCH --mail-user=$NOTIFICATIONEMAIL
 #SBATCH --mail-type=fail
 #SBATCH -N 1

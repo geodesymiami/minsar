@@ -23,7 +23,7 @@ if [[ ${USER} == *circleci* ]]
 then
   export PLATFORM_NAME=circleci
   export JOBSCHEDULER=SLURM
-  export JOBSHEDULER_PROJECTNAME=TG-EAR200012
+  export JOBSCHEDULER_PROJECTNAME=TG-EAR200012
   export WORKDIR=${HOME}
   export SCRATCHDIR=${HOME}
   export QUEUE_NORMAL=skx
@@ -74,7 +74,7 @@ then
   : "${CONDA_PREFIX:=$MINSAR_HOME/tools/miniforge3}"
   # export PLATFORM_NAME=circleci         # for testing
   export JOBSCHEDULER=SLURM
-  export JOBSHEDULER_PROJECTNAME=TG-EAR200012
+  export JOBSCHEDULER_PROJECTNAME=TG-EAR200012
   export WORKDIR=$(dirname -- "${WORK2:-/work2/05861/$USER}")/stampede2/insarlab
   export SCRATCHDIR=${SCRATCH}
   export QUEUE_NORMAL=skx
@@ -87,7 +87,7 @@ if [[ ${HOSTNAME} == *frontera* ]] || [[ ${TACC_SYSTEM:-} == *frontera* ]]
 then
   export PLATFORM_NAME=frontera
   export JOBSCHEDULER=SLURM
-  export JOBSHEDULER_PROJECTNAME=EAR20011
+  export JOBSCHEDULER_PROJECTNAME=EAR20011
   export WORKDIR=$(dirname -- "$WORK2")/stampede2/insarlab
   export SCRATCHDIR=${SCRATCH}
   export SCRATCHDIR=$(echo $HOME | sed  's/home1/scratch2/')
@@ -107,7 +107,7 @@ then
   export MAX_MEMORY_PER_NODE=20000
   export NUMBER_OF_CORES_PER_NODE=24
   export NUMBER_OF_THREADS_PER_CORE=1
-  export JOBSHEDULER_PROJECTNAME=TG-EAR180012
+  export JOBSCHEDULER_PROJECTNAME=TG-EAR180012
   export WORKDIR=${HOME}/insarlab
   export SCRATCHDIR=/oasis/scratch/comet/$USER/temp_project
 fi

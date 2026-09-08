@@ -200,7 +200,7 @@ no_mintpy_cli_flag=0
 skip_mintpy_flag=0
 skip_miaplpy_flag=0
 
-srun_cmd="srun -n1 -N1 -A $JOBSHEDULER_PROJECTNAME -p $QUEUENAME  -t 00:25:00 "
+srun_cmd="srun -n1 -N1 -A $JOBSCHEDULER_PROJECTNAME -p $QUEUENAME  -t 00:25:00 "
 ##################################
 
 while [[ $# -gt 0 ]]
@@ -382,7 +382,7 @@ ingest_suffix_opt=""
 [[ -n "$ingest_suffix_tag" ]] && ingest_suffix_opt="--suffix ${ingest_suffix_tag}"
 
 # Refresh after possible --queue (QUEUENAME may have changed in the parse loop)
-srun_cmd="srun -n1 -N1 -A $JOBSHEDULER_PROJECTNAME -p $QUEUENAME  -t 00:25:00 "
+srun_cmd="srun -n1 -N1 -A $JOBSCHEDULER_PROJECTNAME -p $QUEUENAME  -t 00:25:00 "
 
 if [[ ${#POSITIONAL[@]} -gt 1 ]]; then
     if [[ "$2" == -* ]]; then
