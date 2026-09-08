@@ -267,6 +267,9 @@ while [[ $# -gt 0 ]]; do
         --disp)
             die "use --disp-S1 or --data-type disp-s1, not --disp"
             ;;
+        --dataset|--dataset=*)
+            die "use --data-type, not --dataset"
+            ;;
         --preset|--window-preset)
             die "use --half-window-preset, not $1"
             ;;
@@ -287,7 +290,7 @@ while [[ $# -gt 0 ]]; do
                 [[ -n "${2:-}" && "$2" != --* && -n "${3:-}" && "$3" != --* ]] || die "$1 requires Y X"
                 gen_args+=("$1" "$2" "$3")
                 shift 3
-            elif is_consume_one "$1" || [[ "$1" == --* ]]; then
+            elif is_consume_one "$1"; then
                 if [[ -n "${2:-}" && "$2" != --* ]]; then
                     gen_args+=("$1" "$2")
                     shift 2
