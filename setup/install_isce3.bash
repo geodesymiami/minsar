@@ -178,8 +178,19 @@ text2, n = re.subn(
 )
 if n != 1:
     raise SystemExit("Error: could not set tool.pixi platforms to host-only in pyproject.toml")
+text = text2
+
+# Keep sweets HDF5 on 1.14.x so *-stack.nc VDS is readable by minsar conda
+# dolphin2hdfeos5 (HDF5 1.14.6). Unpinned solves now pull HDF5 2.x (VDS heap v1).
+hdf5_line = 'hdf5 = ">=1.14,<2"'
+text2, n = re.subn(r'^hdf5 = .*$', hdf5_line, text, count=1, flags=re.M)
+if n == 0:
+    text2, n = re.subn(r'^(h5py = .*)$', rf'\1\n{hdf5_line}', text, count=1, flags=re.M)
+if n != 1:
+    raise SystemExit("Error: could not pin hdf5 >=1.14,<2 in sweets pyproject.toml")
 path.write_text(text2)
 print(f"Restricted sweets pixi platforms to ${host_pixi_platform} for this install")
+print(f"Pinned sweets pixi {hdf5_line} (minsar dolphin2hdfeos5 compatibility)")
 PY
 
 # Prefer local disk for rattler/pixi cache when HOME cache is on Lustre/NFS.
@@ -212,6 +223,7 @@ if [[ -d ../opera-utils ]]; then
     SETUPTOOLS_SCM_PRETEND_VERSION=0.25.8 "$sweets_python" -m pip install ../opera-utils --force-reinstall
 fi
 "$sweets_python" -c "import opera_utils, shapely; print('Verified opera_utils + shapely in sweets env')"
+"$sweets_python" -c "import h5py; v=h5py.version.hdf5_version; assert v.startswith('1.'), f'expected HDF5 1.x, got {v}'; print(f'Verified sweets HDF5 {v} (h5py {h5py.__version__})')"
 )
 
 echo "sweets installation DONE"
