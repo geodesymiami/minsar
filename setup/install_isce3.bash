@@ -86,18 +86,65 @@ else:
 PY
 fi
 
-if pixi install; then
-    pixi upgrade asf_search || true
-else
-    echo "Warning: pixi install failed (lock/solve); continuing with pip dolphin fallback" >&2
+# sweets pins scottstanie/opera-utils@develop-scott; shipped pixi.lock + dolphin
+# egg-info can still advertise opera-utils>=0.25.7 against an old 0.25.5.dev0
+# lock entry. Relax metadata for the solve, drop the lock, install default only.
+dolphin_req="../dolphin/requirements.txt"
+dolphin_req_bak=""
+if [[ -f "$dolphin_req" ]] && grep -q 'opera-utils>=0\.25\.7' "$dolphin_req"; then
+    dolphin_req_bak="${dolphin_req}.minsar.bak"
+    cp "$dolphin_req" "$dolphin_req_bak"
+    python3 - <<'PY'
+from pathlib import Path
+p = Path("../dolphin/requirements.txt")
+text = p.read_text()
+text2 = text.replace("opera-utils>=0.25.7", "opera-utils>=0.25.5", 1)
+if text2 == text:
+    raise SystemExit("Error: could not relax dolphin opera-utils pin")
+p.write_text(text2)
+egg = Path("../dolphin/src/dolphin.egg-info")
+for name in ("requires.txt", "PKG-INFO"):
+    meta = egg / name
+    if meta.is_file():
+        meta.write_text(meta.read_text().replace("opera-utils>=0.25.7", "opera-utils>=0.25.5"))
+print("Relaxed dolphin opera-utils pin for sweets develop-scott solve")
+PY
 fi
-if [[ -d ../dolphin && -x .pixi/envs/default/bin/python ]]; then
+
+restore_dolphin_req() {
+    if [[ -n "$dolphin_req_bak" && -f "$dolphin_req_bak" ]]; then
+        mv "$dolphin_req_bak" "$dolphin_req"
+    fi
+}
+
+# Path-pinning dolphin invalidates sweets' lock (was scottstanie/dolphin git).
+rm -f pixi.lock
+
+# default env is what MinSAR stages/runs; full `pixi install` also solves gpu
+# (including osx-arm64 / linux-cuda) and is unnecessary here.
+if ! pixi install -e default; then
+    restore_dolphin_req
+    echo "Error: pixi install failed (lock/solve)" >&2
+    exit 1
+fi
+pixi upgrade asf_search || true
+
+if [[ ! -x .pixi/envs/default/bin/python ]]; then
+    restore_dolphin_req
+    echo "Error: SWEETS pixi default env missing after pixi install: $(pwd)/.pixi/envs/default" >&2
+    exit 1
+fi
+if [[ -d ../dolphin ]]; then
     .pixi/envs/default/bin/python -m pip install ../dolphin --no-deps --force-reinstall
 fi
+restore_dolphin_req
 )
 
 echo "sweets installation DONE"
 
-[[ -f minsar/scripts/stage_sweets_pixi_env.bash ]] && minsar/scripts/stage_sweets_pixi_env.bash --force
+# Scratch staging is for SLURM compute nodes (often noexec on $MINSAR_HOME).
+if [[ "$(uname)" == "Linux" && -f minsar/scripts/stage_sweets_pixi_env.bash ]]; then
+    minsar/scripts/stage_sweets_pixi_env.bash --force
+fi
 
 echo "Running of install_isce3.bash DONE"

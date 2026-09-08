@@ -5,6 +5,7 @@ dependencies:
   - python=3.12
   - isce2     # [linux]; interim fetchOrbit: docs/ISCE2_UPGRADE.md — remove symlink in install_additions.bash when isce2=2.6.4
   - gdal
+  - libgdal-pg     # PostgreSQL/PostGIS vector driver (split out of libgdal since ~3.9.1) #FA 9/26 added to avoid pinning gdal3.6 (was not included for ock file generation)
   - mintpy
   - sardem
   - numpy
