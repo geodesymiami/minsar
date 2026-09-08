@@ -200,6 +200,10 @@ if [[ -z "${PIXI_CACHE_DIR:-}" ]]; then
     echo "Using PIXI_CACHE_DIR=$PIXI_CACHE_DIR"
 fi
 
+# A sourced minsar env (s.bw2) puts MintPy/sarvey/etc on PYTHONPATH; pip then
+# reports unrelated "dependency conflicts" and can install into the wrong context.
+unset PYTHONPATH PYTHONHOME || true
+
 # Login/interactive nodes often hit process/thread ulimits during uv/rayon PyPI solves.
 # Prefer a dedicated sbatch/idev shell (not Cursor) if install fails with WouldBlock.
 export RAYON_NUM_THREADS="${RAYON_NUM_THREADS:-1}"
@@ -216,11 +220,13 @@ sweets_python=".pixi/envs/default/bin/python"
     echo "Error: sweets pixi python missing after install: $sweets_python" >&2
     exit 1
 }
+# Path deps are already in pyproject; --no-deps avoids pip wheels (e.g. h5py)
+# overwriting conda-forge packages and breaking the hdf5 1.14.x pin.
 if [[ -d ../dolphin ]]; then
     "$sweets_python" -m pip install ../dolphin --no-deps --force-reinstall
 fi
 if [[ -d ../opera-utils ]]; then
-    SETUPTOOLS_SCM_PRETEND_VERSION=0.25.8 "$sweets_python" -m pip install ../opera-utils --force-reinstall
+    SETUPTOOLS_SCM_PRETEND_VERSION=0.25.8 "$sweets_python" -m pip install ../opera-utils --no-deps --force-reinstall
 fi
 "$sweets_python" -c "import opera_utils, shapely; print('Verified opera_utils + shapely in sweets env')"
 "$sweets_python" -c "import h5py; v=h5py.version.hdf5_version; assert v.startswith('1.'), f'expected HDF5 1.x, got {v}'; print(f'Verified sweets HDF5 {v} (h5py {h5py.__version__})')"
