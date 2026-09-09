@@ -646,6 +646,8 @@ helptext="                                       \n\
   Create real directories and absolute file      \n\
   symlinks (so rm only removes links in DST):    \n\
       network_*/  (dirs real; files linked)      \n\
+      inputs/baselines/  (dirs real; files linked)\n\
+      inputs/reference/  (dirs real; files linked)\n\
       inputs/slcStack.h5                         \n\
       inputs/geometryRadar.h5                    \n\
       inverted/tempCoh_full                      \n\
@@ -673,13 +675,17 @@ local tempcoh
 local ifgram
 local slcstack
 local geom
+local baselines
+local reference
 local m
 local d
 local f
 local rel
 local linkpath
-local n_dirs=0
-local n_links=0
+local treesrc
+local treedst
+local n_dirs
+local n_links
 local -a maskps=()
 
 [[ -d "$src" ]] || { echo "Error: source not found: $src" >&2; return 1; }
@@ -697,6 +703,12 @@ slcstack="$src/inputs/slcStack.h5"
 
 geom="$src/inputs/geometryRadar.h5"
 [[ -f "$geom" ]] || { echo "Error: missing $geom" >&2; return 1; }
+
+baselines="$src/inputs/baselines"
+[[ -d "$baselines" ]] || { echo "Error: missing $baselines" >&2; return 1; }
+
+reference="$src/inputs/reference"
+[[ -d "$reference" ]] || { echo "Error: missing $reference" >&2; return 1; }
 
 tempcoh="$src/inverted/tempCoh_full"
 [[ -e "$tempcoh" ]] || { echo "Error: missing $tempcoh" >&2; return 1; }
@@ -718,33 +730,46 @@ if [[ -L "$dst/$netname" ]]; then
     return 1
 fi
 
-# Real dirs under network_*; file symlinks only (rm -rf dir stays in DST).
-while IFS= read -r -d '' d; do
-    if [[ "$d" == "$net" ]]; then
-        mkdir -p "$dst/$netname"
-    else
-        rel="${d#"$net"/}"
-        mkdir -p "$dst/$netname/$rel"
+# Real dirs; file/symlink entries linked (rm -rf on DST dirs does not remove SRC).
+for treesrc in "$net" "$baselines" "$reference"; do
+    case "$treesrc" in
+        "$net") treedst="$dst/$netname" ;;
+        "$baselines") treedst="$dst/inputs/baselines" ;;
+        "$reference") treedst="$dst/inputs/reference" ;;
+    esac
+    if [[ -L "$treedst" ]]; then
+        echo "Error: $treedst is a directory symlink; remove it so a real directory can be created" >&2
+        return 1
     fi
-    n_dirs=$((n_dirs + 1))
-done < <(find "$net" -type d -print0)
-
-while IFS= read -r -d '' f; do
-    rel="${f#"$net"/}"
-    linkpath="$dst/$netname/$rel"
-    if [[ -e "$linkpath" || -L "$linkpath" ]]; then
-        if [[ -L "$linkpath" ]]; then
-            rm -f "$linkpath"
+    n_dirs=0
+    n_links=0
+    while IFS= read -r -d '' d; do
+        if [[ "$d" == "$treesrc" ]]; then
+            mkdir -p "$treedst"
         else
-            echo "Error: exists and is not a symlink: $linkpath" >&2
-            return 1
+            rel="${d#"$treesrc"/}"
+            mkdir -p "$treedst/$rel"
         fi
-    fi
-    ln -s "$f" "$linkpath"
-    n_links=$((n_links + 1))
-done < <(find "$net" \( -type f -o -type l \) -print0)
+        n_dirs=$((n_dirs + 1))
+    done < <(find "$treesrc" -type d -print0)
 
-echo "Created $n_dirs real dir(s) and $n_links file symlink(s) under $dst/$netname"
+    while IFS= read -r -d '' f; do
+        rel="${f#"$treesrc"/}"
+        linkpath="$treedst/$rel"
+        if [[ -e "$linkpath" || -L "$linkpath" ]]; then
+            if [[ -L "$linkpath" ]]; then
+                rm -f "$linkpath"
+            else
+                echo "Error: exists and is not a symlink: $linkpath" >&2
+                return 1
+            fi
+        fi
+        ln -s "$f" "$linkpath"
+        n_links=$((n_links + 1))
+    done < <(find "$treesrc" \( -type f -o -type l \) -print0)
+
+    echo "Created $n_dirs real dir(s) and $n_links file symlink(s) under $treedst"
+done
 
 mkdir -p "$dst/inputs" "$dst/inverted"
 
