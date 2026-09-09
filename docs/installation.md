@@ -34,15 +34,13 @@ set -eo pipefail
 # optional: disp-s1 conda env (required for --dolphin-mode opera)
 ./setup/install_disp-s1.bash
 
-<<<<<<< Updated upstream
 # optional:  isceplus course env 
 ./setup/install_isceplus.bash
 
-# optional: Spatz
-=======
-# optional: course env (isceplus) and SpaTZ
+
+# optional: course env (isceplus) and SpaTZ 
 ./setup/install_isceplus_env.bash
->>>>>>> Stashed changes
+
 ./setup/install_spatz.bash
 ```
 To recreate the conda env, re-run `./setup/install_minsar_env.bash` (it removes `tools/miniforge3/envs/minsar` first). On Mac, as some packages are not available from conda-forge (isce2, pymaxflow) a `minsar_env_MacOS.yml` is created and used.
