@@ -1105,7 +1105,7 @@ def create_parser() -> argparse.ArgumentParser:
         help="SLURM partition for restart-safe jobs (default: $QUEUENAME)",
     )
     parser.add_argument("--long-queue", default="skx", help="SLURM partition for unsafe or unknown restart behavior")
-    parser.add_argument("--config", type=Path, help="ISCE3 job defaults file")
+    parser.add_argument("--config", type=Path, help="job defaults file (default: minsar/defaults/job_defaults.cfg)")
     parser.add_argument(
         "--stride",
         nargs=2,
@@ -2570,7 +2570,7 @@ def main(iargs: list[str] | None = None) -> int:
         )
         if args.dry_run:
             return 0
-        config = args.config or Path(__file__).resolve().parents[3] / "defaults/job_defaults_isce3.cfg"
+        config = args.config or Path(__file__).resolve().parents[3] / "defaults/job_defaults.cfg"
         profiles = _read_profiles(config)
         specs = _build_stage_specs(
             workflow, context, split_dolphin=split_dolphin, dolphin_mode=args.dolphin_mode

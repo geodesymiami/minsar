@@ -9,7 +9,7 @@ export MINSAR_HOME="${MINSAR_HOME:-$(cd "${SCRIPT_DIR}/../../../.." && pwd)}"
 MINSAR_UTILS="${MINSAR_HOME}/minsar/lib/utils.sh"
 WORKFLOW_UTILS="${MINSAR_HOME}/minsar/lib/workflow_utils.sh"
 SUBMIT_JOBS="${MINSAR_HOME}/minsar/bin/submit_jobs.bash"
-ISCE3_JOB_DEFAULTS="job_defaults_isce3.cfg"
+ISCE3_JOB_DEFAULTS="job_defaults.cfg"
 STAGE_SWEETS_PIXI="${MINSAR_HOME}/minsar/scripts/stage_sweets_pixi_env.bash"
 [[ -f "$MINSAR_UTILS" ]] || {
     echo "Error: MinSAR utilities not found: $MINSAR_UTILS" >&2
