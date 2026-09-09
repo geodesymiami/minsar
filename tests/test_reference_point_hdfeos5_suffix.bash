@@ -27,6 +27,10 @@ suffix_for() {
         s = $(NF-1);
         if (s == "XXXXXXXX")            { print ""; next }
         if (s ~ /^[0-9]{8}$/)           { print ""; next }
+        if (s ~ /^[0-9]{3}$/ && NF >= 3) {
+            prev = $(NF-2);
+            if (prev ~ /(Del|Sing|Seq|Mini|DS|PS)/) { print prev "_" s; next }
+        }
         if (length(s) < 11)             { print s;  next }
         if (length(s) == 11 && s !~ /^[SN]/) { print s; next }
         print "";
@@ -73,13 +77,28 @@ test_suffix_corner_segment_is_not_a_suffix() {
     assert_equals "" "$out" "Corner segment is not a SUFFIX"
 }
 
-test_script_uses_updated_suffix_logic() {
-    print_test_start "script source contains hardened SUFFIX awk" \
-        "reference_point_hdfeos5.bash must reject XXXXXXXX and 8-digit dates in SUFFIX detection."
+test_suffix_del4ds_065_detected() {
+    print_test_start "SUFFIX detects Del4DS_065" \
+        "Product tag 065 after Del4DS is part of the dataset suffix, not a separate last token."
+    local out
+    out=$(suffix_for "S1_desc_012_miaplpy_20150110_XXXXXXXX_N1961W10355_N1963W10366_N1946W10369_N1944W10358_Del4DS_065.he5")
+    assert_equals "Del4DS_065" "$out" "Del4DS_065 detected"
+}
+
+test_suffix_filt_del4ds_065_detected() {
+    print_test_start "SUFFIX detects filtDel4DS_065" \
+        "Product tag 065 after filtDel4DS is part of the dataset suffix."
+    local out
+    out=$(suffix_for "S1_asc_049_miaplpy_20150101_XXXXXXXX_N1944W10366_N1946W10355_N1963W10358_N1961W10369_filtDel4DS_065.he5")
+    assert_equals "filtDel4DS_065" "$out" "filtDel4DS_065 detected"
+}
+
+test_script_uses_inplace_python() {
+    print_test_start "script re-references in place" \
+        "reference_point_hdfeos5.bash must call the Python in-place updater (no save_hdfeos5 re-save / suffix rewrite)."
     local content
     content=$(cat "$REF_PT_SCRIPT")
-    assert_contains "$content" 'if (s == "XXXXXXXX")'    "Script awk skips XXXXXXXX"
-    assert_contains "$content" 'if (s ~ /^[0-9]{8}$/)'   "Script awk skips 8-digit dates"
+    assert_contains "$content" 'reference_point_hdfeos5.py' "Wrapper invokes Python in-place updater"
 }
 
 print_header "REFERENCE_POINT_HDFEOS5 SUFFIX TESTS"
@@ -88,8 +107,10 @@ test_suffix_xxxxxxxx_is_not_a_suffix
 test_suffix_literal_date_is_not_a_suffix
 test_suffix_filt_del4ds_detected
 test_suffix_del4ds_detected
+test_suffix_del4ds_065_detected
+test_suffix_filt_del4ds_065_detected
 test_suffix_corner_segment_is_not_a_suffix
-test_script_uses_updated_suffix_logic
+test_script_uses_inplace_python
 
 print_summary
 exit $?

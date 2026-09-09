@@ -1,0 +1,8 @@
+# Rerun scripts: `cd` first
+
+When the user asks to rerun a script (e.g. "rerun `X`", "run it again", "rerun minsarApp..."), always:
+1. `cd` into the project directory first (the repo root where `minsar/` lives).
+2. Then execute the command.
+
+Rationale: several MinSAR bash launchers use `pwd` to decide where logs/jobfiles are written (e.g. `WORKDIR=$(pwd)`), so the working directory matters.
+

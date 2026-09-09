@@ -33,6 +33,7 @@ miaplpy.interferograms.delaunayTempThresh = 90     # [days] temporal threshold f
 miaplpy.interferograms.networkType   = delaunay            # network
 ##########################################
 minsar.miaplpyDir.addition           = date          #[name / lalo / no ]  auto for no (miaply_$name_startDate_endDate))
+minsar.product.suffix                = auto          #[auto / no / coherenceThreshold / TAG] auto for no extra suffix
 mintpy.subset.lalo                   = 10.8:10.841,-85.371:-85.306    #[S:N,W:E / no], auto for no
 miaplpy.subset.lalo                  = 10.8:10.841,-85.371:-85.306    #[S:N,W:E / no], auto for no
 ##########################################

@@ -212,6 +212,17 @@ def build_commands(params):
     return plot_data_cmd_parts, ts2velocity_cmd, extract_cmd, view_cmd, viewsPS1_cmd, viewsPS2_cmd ,viewsPS3_cmd, viewsPS4_cmd
 
 
+def he5_dataset_name_token(he5_file):
+    """Return dataset token through end of basename (e.g. filtDel4DS.he5 or filtDel4DS_065.he5)."""
+    base = os.path.basename(str(he5_file))
+    for marker in ('filtDel', 'filtSing', 'filtSeq', 'filtMini', 'Del', 'Sing', 'Seq', 'Mini'):
+        idx = base.find(marker)
+        if idx != -1:
+            return base[idx:]
+    last = base.split('_')[-1]
+    return last if 'Del' in last else ''
+
+
 def get_dir_log_remote_hdfeos5(he5_file):
     # Get environment variables
     REMOTEHOST_DATA = os.getenv('REMOTEHOST_DATA')
@@ -239,7 +250,7 @@ def get_dir_log_remote_hdfeos5(he5_file):
         raise ValueError(f"Unexpected line format: {target_line}")
 
     dir = os.path.dirname(path)
-    suffix = [he5_file.split('_')[-1] if 'Del' in he5_file.split('_')[-1] else ''][0]  # e.g., filtDel4DS.he5
+    suffix = he5_dataset_name_token(he5_file)
 
     # Extract prefix like RaungSenDT105
     target_prefix = path.split('/')[0]

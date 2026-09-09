@@ -102,9 +102,6 @@ LEGACY_UNNUMBERED_RUN_BASENAMES = (
     "run_disp_s1_process",
     "run_reformat_disp",
 )
-PROFILE_ALIASES = {
-    "disp_s1_process": "run_disp_s1_process",
-}
 DISP_S1_PRODUCE_DIR = "disp_s1_produce"
 DISP_S1_PROCESS_CMD = "disp_s1_process.py"
 DEFAULT_DISP_S1_MINISTACK_SIZE = 15

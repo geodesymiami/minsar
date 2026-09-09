@@ -381,6 +381,14 @@ set -- "${POSITIONAL[@]}" # restore positional parameters
 ingest_suffix_opt=""
 [[ -n "$ingest_suffix_tag" ]] && ingest_suffix_opt="--suffix ${ingest_suffix_tag}"
 
+product_sfx="$(get_product_suffix)"
+if [[ -n "$product_sfx" ]]; then
+    if [[ -n "$ingest_suffix_tag" ]]; then
+        echo "Warning: minsar.product.suffix is set (${product_sfx#_}); ignoring CLI --suffix ${ingest_suffix_tag} (HE5 name already includes the product tag)" >&2
+    fi
+    ingest_suffix_opt=""
+fi
+
 # Refresh after possible --queue (QUEUENAME may have changed in the parse loop)
 srun_cmd="srun -n1 -N1 -A $JOBSCHEDULER_PROJECTNAME -p $QUEUENAME  -t 00:25:00 "
 

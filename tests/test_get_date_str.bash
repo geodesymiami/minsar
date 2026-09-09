@@ -140,6 +140,69 @@ test_mintpy_dir_name_date_with_season() {
     assert_equals "mintpy_201411_202606_ex0101-0630" "$out" "mintpy date + season"
 }
 
+test_product_suffix_auto_empty() {
+    declare -gA template=()
+    template[minsar.product.suffix]="auto"
+    local out
+    out=$(get_product_suffix)
+    assert_equals "" "$out" "auto -> no product suffix"
+}
+
+test_product_suffix_no_empty() {
+    declare -gA template=()
+    template[minsar.product.suffix]="no"
+    local out
+    out=$(get_product_suffix)
+    assert_equals "" "$out" "no -> no product suffix"
+}
+
+test_product_suffix_coherence_threshold() {
+    declare -gA template=()
+    template[minsar.product.suffix]="coherenceThreshold"
+    template[miaplpy.timeseries.minTempCoh]="0.65"
+    local out
+    out=$(get_product_suffix)
+    assert_equals "_065" "$out" "0.65 -> _065"
+}
+
+test_product_suffix_literal() {
+    declare -gA template=()
+    template[minsar.product.suffix]="065"
+    local out
+    out=$(get_product_suffix)
+    assert_equals "_065" "$out" "literal 065 -> _065"
+}
+
+test_miaplpy_dir_name_date_with_product_suffix() {
+    setup_test_workspace
+    cd "$TEST_WORKSPACE" || return 1
+    mkdir -p merged/SLC/20141123 merged/SLC/20260630
+    declare -gA template=()
+    template[minsar.miaplpyDir.addition]="date"
+    template[minsar.product.suffix]="coherenceThreshold"
+    template[miaplpy.timeseries.minTempCoh]="0.65"
+    template[miaplpy.load.startDate]="auto"
+    template[miaplpy.load.endDate]="auto"
+    local out
+    out=$(get_miaplpy_dir_name)
+    assert_equals "miaplpy_201411_202606_065" "$out" "date + coherenceThreshold"
+}
+
+test_mintpy_dir_name_date_with_product_suffix() {
+    setup_test_workspace
+    cd "$TEST_WORKSPACE" || return 1
+    mkdir -p merged/SLC/20141123 merged/SLC/20260630
+    declare -gA template=()
+    template[minsar.mintpyDir.addition]="date"
+    template[minsar.product.suffix]="coherenceThreshold"
+    template[mintpy.networkInversion.minTempCoh]="0.75"
+    template[miaplpy.load.startDate]="auto"
+    template[miaplpy.load.endDate]="auto"
+    local out
+    out=$(get_mintpy_dir_name)
+    assert_equals "mintpy_201411_202606_075" "$out" "mintpy date + coherenceThreshold"
+}
+
 test_get_slcstack_load_dates_script() {
     setup_test_workspace
     mkdir -p "$TEST_WORKSPACE/merged/SLC/20141123" "$TEST_WORKSPACE/merged/SLC/20200315" "$TEST_WORKSPACE/merged/SLC/20210630"
@@ -166,5 +229,11 @@ test_miaplpy_dir_name_auto_with_season
 test_miaplpy_dir_name_date_with_season
 test_miaplpy_dir_name_custom_without_season
 test_mintpy_dir_name_date_with_season
+test_product_suffix_auto_empty
+test_product_suffix_no_empty
+test_product_suffix_coherence_threshold
+test_product_suffix_literal
+test_miaplpy_dir_name_date_with_product_suffix
+test_mintpy_dir_name_date_with_product_suffix
 test_get_slcstack_load_dates_script
 print_summary

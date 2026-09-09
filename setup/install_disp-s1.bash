@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-MINSAR_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Run from the MinSAR repo root (same as other setup/install_*.bash).
+# Uses an explicit prefix so the env is not nested under an active minsar env.
 
-source "$MINSAR_HOME/tools/miniforge3/etc/profile.d/conda.sh"
+source tools/miniforge3/etc/profile.d/conda.sh
 set +u
 
-conda env create -n disp-s1-env -f "$MINSAR_HOME/tools/disp-s1/conda-env.yml"
-conda activate disp-s1-env
+conda activate base
+conda env create -p "$PWD/tools/miniforge3/envs/disp-s1-env" -f tools/disp-s1/conda-env.yml
+conda activate "$PWD/tools/miniforge3/envs/disp-s1-env"
 
-ln -sf "$MINSAR_HOME/additions/disp-s1/disp_s1_process.py" "$MINSAR_HOME/tools/disp-s1/scripts/disp_s1_process.py"
-ln -sf "$MINSAR_HOME/additions/disp-s1/product.py" "$MINSAR_HOME/tools/disp-s1/src/disp_s1/product.py"
+ln -sf "$PWD/additions/disp-s1/disp_s1_process.py" tools/disp-s1/scripts/disp_s1_process.py
+ln -sf "$PWD/additions/disp-s1/product.py" tools/disp-s1/src/disp_s1/product.py
 
-pip install -e "$MINSAR_HOME/tools/disp-s1"
+pip install -e tools/disp-s1
+pip install 'zarr>=2,<4'
 
 echo "disp-s1 installation DONE"

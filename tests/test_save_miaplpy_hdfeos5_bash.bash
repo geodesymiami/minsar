@@ -14,6 +14,7 @@ help_out=$("$BASH_SCRIPT" --help)
 assert_contains "$help_out" "save_miaplpy_hdfeos5.bash" "Help shows script name"
 assert_contains "$help_out" "--prefix" "Help documents --prefix"
 assert_contains "$help_out" "--no-filter" "Help documents --no-filter"
+assert_contains "$help_out" "--extra-suffix" "Help documents --extra-suffix"
 
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT

@@ -24,6 +24,7 @@ from minsar.objects import message_rsmas
 from minsar.objects.auto_defaults import PathFind
 from minsar.objects.dataset_template import Template
 from minsar.utils.ssaraopt_to_mintpy_plot import parse_ssaraopt_date
+from minsar.utils.sweets_pixi import invoke_via_sweets_pixi, opera_utils_importable
 
 pathObj = PathFind()
 
@@ -225,6 +226,18 @@ def burst_ids_covering_aoi(
     flight_direction: str | None = None,
 ) -> list[str]:
     """Sorted OPERA burst_id_jpl values (e.g. t143_305969_iw2) intersecting the AOI."""
+    if not opera_utils_importable():
+        return list(
+            invoke_via_sweets_pixi(
+                module="minsar.utils.generate_sweets_config",
+                func_name="burst_ids_covering_aoi",
+                kwargs={
+                    "subset_lalo": subset_lalo,
+                    "track": track,
+                    "flight_direction": flight_direction,
+                },
+            )
+        )
     hit = _burst_gdf_for_aoi(subset_lalo, track=track, flight_direction=flight_direction)
     if "burst_id_jpl" not in hit.columns:
         raise RuntimeError("OPERA burst footprints missing burst_id_jpl column")
@@ -254,7 +267,21 @@ def bursts_covering_aoi(
     ``orbit_pass``). Equivalent idea to CLI frame lookup via
     ``opera-utils disp-s1-intersects``, but returns the intersecting IW swaths
     rather than whole DISP frames.
+
+    When ``opera_utils`` is not in this env (typical minsar conda), the query runs
+    under the sweets pixi environment.
     """
+    if not opera_utils_importable():
+        track_out, swaths = invoke_via_sweets_pixi(
+            module="minsar.utils.generate_sweets_config",
+            func_name="bursts_covering_aoi",
+            kwargs={
+                "subset_lalo": subset_lalo,
+                "track": track,
+                "flight_direction": flight_direction,
+            },
+        )
+        return int(track_out), list(swaths)
     print(f"Querying opera_utils burst footprints for AOI {subset_lalo} ...", file=sys.stderr)
     hit = _burst_gdf_for_aoi(subset_lalo, track=track, flight_direction=flight_direction)
 

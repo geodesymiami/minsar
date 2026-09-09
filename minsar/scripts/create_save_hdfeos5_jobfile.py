@@ -62,11 +62,30 @@ def get_network_prefix(network_dir):
     return prefix
 
 
-def build_job_commands(processing_dir, prefix, filter_par, mask_thresh):
+def product_suffix_tag(options):
+    """Return extra HE5/dir tag from minsar.product.suffix (no leading underscore), or ''."""
+    raw = str(options.get('minsar.product.suffix', 'auto') or 'auto').strip().strip('_')
+    key = raw.lower()
+    if key in ('', 'auto', 'no'):
+        return ''
+    if key == 'coherencethreshold':
+        coh = '0.5'
+        for opt_key in ('miaplpy.timeseries.minTempCoh', 'mintpy.networkInversion.minTempCoh'):
+            val = str(options.get(opt_key, '') or '').split('#')[0].strip()
+            if val and val.lower() != 'auto':
+                coh = val
+                break
+        return f"{int(round(float(coh) * 100)):03d}"
+    return raw
+
+
+def build_job_commands(processing_dir, prefix, filter_par, mask_thresh, extra_suffix=''):
     """Build shell command lines for the save_hdfeos5_radar job body."""
     command = [f'cd {processing_dir}']
 
     save_cmd = f'save_miaplpy_hdfeos5.bash -t smallbaselineApp.cfg --prefix {prefix} --mask-thresh {mask_thresh}'
+    if extra_suffix:
+        save_cmd += f' --extra-suffix {extra_suffix}'
     if filter_par is None:
         save_cmd += ' --no-filter'
     else:
@@ -105,11 +124,14 @@ def main(iargs=None):
     message_rsmas.log(inps.work_dir, os.path.basename(__file__) + ' ' + ' '.join(input_arguments))
 
     dataset_template = Template(inps.custom_template_file)
+    options = dataset_template.get_options()
 
     try:
-        min_temp_coh = dataset_template.get_options()['mintpy.networkInversion.minTempCoh']
+        min_temp_coh = options['mintpy.networkInversion.minTempCoh']
     except Exception:
         min_temp_coh = 0.7
+
+    extra_suffix = product_suffix_tag(options)
 
     inps.prefix = 'tops'   # in create_runfiles.py it was just there
 
@@ -125,7 +147,7 @@ def main(iargs=None):
     job_file_name = job_name
 
     mask_thresh = min_temp_coh
-    command = build_job_commands(processing_dir, prefix, inps.filter_par, mask_thresh)
+    command = build_job_commands(processing_dir, prefix, inps.filter_par, mask_thresh, extra_suffix)
     final_command = ['\n'.join(command)]
 
     # create job file
