@@ -552,14 +552,102 @@ $cmd
 }
 
 ###########################################
+function old_copy_miaplpy_network() {
+if [[ "$1" == "--help" || "$1" == "-h" ]]; then
+helptext="                                       \n\
+  usage: old_copy_miaplpy_network SRC_MIAPLPY_DIR DST_MIAPLPY_DIR\n\
+                                                 \n\
+  Legacy: absolute symlink of whole network_*    \n\
+  (and inputs / inverted / maskPS*). Prefer      \n\
+  copy_miaplpy_network (real dirs, file links).  \n\
+                                                 \n\
+  Examples:                                      \n\
+      old_copy_miaplpy_network miaplpy_SN_201606_201608 miaplpy_SN_201606_201608_050\n\
+"
+    printf "$helptext"
+    return 0
+fi
+
+if [[ $# -ne 2 ]]; then
+    echo "Usage: old_copy_miaplpy_network SRC_MIAPLPY_DIR DST_MIAPLPY_DIR" >&2
+    echo "Use old_copy_miaplpy_network --help for examples" >&2
+    return 1
+fi
+
+local src="${1%/}"
+local dst="${2%/}"
+local net
+local netname
+local tempcoh
+local ifgram
+local slcstack
+local geom
+local m
+local linkpath
+local -a maskps=()
+local -a link_targets=()
+local -a link_paths=()
+local i
+
+[[ -d "$src" ]] || { echo "Error: source not found: $src" >&2; return 1; }
+src="$(cd "$src" && pwd)" || return 1
+
+net=$(find "$src" -maxdepth 1 -type d -name 'network_*' | sort | head -n1)
+[[ -n "$net" ]] || { echo "Error: no network_* under $src" >&2; return 1; }
+netname=$(basename "$net")
+
+ifgram="$net/inputs/ifgramStack.h5"
+[[ -f "$ifgram" ]] || { echo "Error: missing $ifgram" >&2; return 1; }
+
+slcstack="$src/inputs/slcStack.h5"
+[[ -f "$slcstack" ]] || { echo "Error: missing $slcstack" >&2; return 1; }
+
+geom="$src/inputs/geometryRadar.h5"
+[[ -f "$geom" ]] || { echo "Error: missing $geom" >&2; return 1; }
+
+tempcoh="$src/inverted/tempCoh_full"
+[[ -e "$tempcoh" ]] || { echo "Error: missing $tempcoh" >&2; return 1; }
+
+shopt -s nullglob
+maskps=("$src"/maskPS*)
+shopt -u nullglob
+[[ ${#maskps[@]} -gt 0 ]] || { echo "Error: no maskPS* under $src" >&2; return 1; }
+
+mkdir -p "$dst" "$dst/inverted" "$dst/inputs"
+dst="$(cd "$dst" && pwd)" || return 1
+
+link_targets=("$net" "$slcstack" "$geom" "$tempcoh")
+link_paths=("$dst/$netname" "$dst/inputs/slcStack.h5" "$dst/inputs/geometryRadar.h5" "$dst/inverted/$(basename "$tempcoh")")
+for m in "${maskps[@]}"; do
+    link_targets+=("$m")
+    link_paths+=("$dst/$(basename "$m")")
+done
+
+for i in "${!link_targets[@]}"; do
+    linkpath="${link_paths[$i]}"
+    if [[ -e "$linkpath" || -L "$linkpath" ]]; then
+        if [[ -L "$linkpath" ]]; then
+            rm -f "$linkpath"
+        else
+            echo "Error: exists and is not a symlink: $linkpath" >&2
+            return 1
+        fi
+    fi
+    ln -s "${link_targets[$i]}" "$linkpath"
+    echo "Linked $linkpath -> ${link_targets[$i]}"
+done
+}
+
 function copy_miaplpy_network() {
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
 helptext="                                       \n\
   usage: copy_miaplpy_network SRC_MIAPLPY_DIR DST_MIAPLPY_DIR\n\
                                                  \n\
-  Copy with cp -a:                               \n\
-      network_*/                                 \n\
-      network_*/inputs/ifgramStack.h5            \n\
+  Create real directories and absolute file      \n\
+  symlinks (so rm only removes links in DST):    \n\
+      network_*/  (dirs real; files linked)      \n\
+      inputs/slcStack.h5                         \n\
+      inputs/geometryRadar.h5                    \n\
       inverted/tempCoh_full                      \n\
       maskPS*                                    \n\
                                                  \n\
@@ -583,9 +671,19 @@ local net
 local netname
 local tempcoh
 local ifgram
+local slcstack
+local geom
+local m
+local d
+local f
+local rel
+local linkpath
+local n_dirs=0
+local n_links=0
 local -a maskps=()
 
 [[ -d "$src" ]] || { echo "Error: source not found: $src" >&2; return 1; }
+src="$(cd "$src" && pwd)" || return 1
 
 net=$(find "$src" -maxdepth 1 -type d -name 'network_*' | sort | head -n1)
 [[ -n "$net" ]] || { echo "Error: no network_* under $src" >&2; return 1; }
@@ -594,24 +692,92 @@ netname=$(basename "$net")
 ifgram="$net/inputs/ifgramStack.h5"
 [[ -f "$ifgram" ]] || { echo "Error: missing $ifgram" >&2; return 1; }
 
+slcstack="$src/inputs/slcStack.h5"
+[[ -f "$slcstack" ]] || { echo "Error: missing $slcstack" >&2; return 1; }
+
+geom="$src/inputs/geometryRadar.h5"
+[[ -f "$geom" ]] || { echo "Error: missing $geom" >&2; return 1; }
+
 tempcoh="$src/inverted/tempCoh_full"
 [[ -e "$tempcoh" ]] || { echo "Error: missing $tempcoh" >&2; return 1; }
+if [[ -d "$tempcoh" && ! -L "$tempcoh" ]]; then
+    echo "Error: inverted/tempCoh_full is a directory; expected a file: $tempcoh" >&2
+    return 1
+fi
 
 shopt -s nullglob
 maskps=("$src"/maskPS*)
 shopt -u nullglob
 [[ ${#maskps[@]} -gt 0 ]] || { echo "Error: no maskPS* under $src" >&2; return 1; }
 
-# Do not mkdir "$dst/$netname" first: if it exists, cp -a nests as
-# $dst/$netname/$netname and leaves an empty $dst/$netname/inputs.
-mkdir -p "$dst" "$dst/inverted"
-cp -a "$net" "$dst/"
-echo "Copied $net -> $dst/$netname"
-cp -a "$ifgram" "$dst/$netname/inputs/ifgramStack.h5"
-echo "Copied $ifgram -> $dst/$netname/inputs/ifgramStack.h5"
-cp -a "$tempcoh" "$dst/inverted/"
-echo "Copied $tempcoh -> $dst/inverted/$(basename "$tempcoh")"
-cp -a "${maskps[@]}" "$dst/"
-echo "Copied ${#maskps[@]} maskPS* file(s) -> $dst/"
+mkdir -p "$dst"
+dst="$(cd "$dst" && pwd)" || return 1
+
+if [[ -L "$dst/$netname" ]]; then
+    echo "Error: $dst/$netname is a directory symlink; remove it so a real directory can be created" >&2
+    return 1
+fi
+
+# Real dirs under network_*; file symlinks only (rm -rf dir stays in DST).
+while IFS= read -r -d '' d; do
+    if [[ "$d" == "$net" ]]; then
+        mkdir -p "$dst/$netname"
+    else
+        rel="${d#"$net"/}"
+        mkdir -p "$dst/$netname/$rel"
+    fi
+    n_dirs=$((n_dirs + 1))
+done < <(find "$net" -type d -print0)
+
+while IFS= read -r -d '' f; do
+    rel="${f#"$net"/}"
+    linkpath="$dst/$netname/$rel"
+    if [[ -e "$linkpath" || -L "$linkpath" ]]; then
+        if [[ -L "$linkpath" ]]; then
+            rm -f "$linkpath"
+        else
+            echo "Error: exists and is not a symlink: $linkpath" >&2
+            return 1
+        fi
+    fi
+    ln -s "$f" "$linkpath"
+    n_links=$((n_links + 1))
+done < <(find "$net" \( -type f -o -type l \) -print0)
+
+echo "Created $n_dirs real dir(s) and $n_links file symlink(s) under $dst/$netname"
+
+mkdir -p "$dst/inputs" "$dst/inverted"
+
+for f in "$slcstack" "$geom" "$tempcoh"; do
+    if [[ "$f" == "$slcstack" || "$f" == "$geom" ]]; then
+        linkpath="$dst/inputs/$(basename "$f")"
+    else
+        linkpath="$dst/inverted/$(basename "$f")"
+    fi
+    if [[ -e "$linkpath" || -L "$linkpath" ]]; then
+        if [[ -L "$linkpath" ]]; then
+            rm -f "$linkpath"
+        else
+            echo "Error: exists and is not a symlink: $linkpath" >&2
+            return 1
+        fi
+    fi
+    ln -s "$f" "$linkpath"
+    echo "Linked $linkpath -> $f"
+done
+
+for m in "${maskps[@]}"; do
+    linkpath="$dst/$(basename "$m")"
+    if [[ -e "$linkpath" || -L "$linkpath" ]]; then
+        if [[ -L "$linkpath" ]]; then
+            rm -f "$linkpath"
+        else
+            echo "Error: exists and is not a symlink: $linkpath" >&2
+            return 1
+        fi
+    fi
+    ln -s "$m" "$linkpath"
+    echo "Linked $linkpath -> $m"
+done
 }
 
