@@ -57,12 +57,12 @@ elif [[ -x "$src/bin/python3" ]]; then
 fi
 [[ -n "$src_python" ]] || {
     echo "Error: SWEETS pixi env incomplete (no python): $src" >&2
-    echo "Re-run: setup/install_isce3.bash" >&2
+    echo "Re-run: setup/install_sweets_env.bash" >&2
     exit 1
 }
 "$src_python" -c "import opera_utils" >/dev/null 2>&1 || {
     echo "Error: SWEETS pixi env cannot import opera_utils: $src" >&2
-    echo "Re-run: setup/install_isce3.bash" >&2
+    echo "Re-run: setup/install_sweets_env.bash" >&2
     exit 1
 }
 

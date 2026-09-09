@@ -155,7 +155,7 @@ ISCE3 run files therefore set `SWEETS_ENV` explicitly and rely on **scratch stag
 | `minsar/src/minsar/cli/create_isce3_runfiles.py` | SWEETS env in run files; no `pixi run`; staging selection; dolphin via `python3` |
 | `minsar/scripts/stage_sweets_pixi_env.bash` | Login-node copy of pixi env to SCRATCH |
 | `minsar/src/minsar/cli/run_isce3_workflow.bash` | Stage before submit and before timeout resubmit |
-| `setup/install_isce3.bash` | Stage after `pixi install` |
+| `setup/install_sweets_env.bash` | Stage after `pixi install` |
 
 ---
 

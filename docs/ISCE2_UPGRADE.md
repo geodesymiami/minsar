@@ -73,7 +73,7 @@ When you bump the lockfile, **remove the temporary symlink** — the conda packa
    mamba create --prefix tools/miniforge3/envs/minsar --file conda-lock.yml --yes
    ```
 
-3. Re-run `install_env.bash` (pip `-e`) and `install_additions.bash` (other `additions/isce2` symlinks).
+3. Re-run `install_minsar_env.bash` (pip `-e`) and `install_additions.bash` (other `additions/isce2` symlinks).
 
 4. Verify:
 

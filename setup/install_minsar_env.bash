@@ -38,4 +38,4 @@ pip install -e tools/sarvey[dev] --no-deps
 
 rm -rf tools/miniforge3/pkgs
 
-echo "Running of install_env.bash DONE"
+echo "Running of install_minsar_env.bash DONE"
