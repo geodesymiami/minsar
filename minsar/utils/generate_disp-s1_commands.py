@@ -192,6 +192,20 @@ def resolve_frame_id(
     flight_direction: str | None,
 ) -> int:
     """Pick the DISP-S1 frame that matches pass/track and covers the most of the AOI."""
+    from minsar.utils.sweets_pixi import invoke_via_sweets_pixi, opera_utils_importable
+
+    if not opera_utils_importable():
+        return int(
+            invoke_via_sweets_pixi(
+                script_relpath="minsar/utils/generate_disp-s1_commands.py",
+                func_name="resolve_frame_id",
+                kwargs={
+                    "bbox": list(bbox),
+                    "track": track,
+                    "flight_direction": flight_direction,
+                },
+            )
+        )
     opera_utils, Bbox, box, shape = _opera_utils()
     west, south, east, north = (float(v) for v in bbox)
     aoi = box(west, south, east, north)

@@ -102,6 +102,62 @@ print("Pinned opera-utils to ../opera-utils (non-editable)")
 path.write_text(text)
 PY
 
+# MinSAR generate_sweets_config passes --burst-ids for opera-cslc; upstream ConfigCli
+# hides search and does not expose that flat flag. Re-apply the local CLI wire-up.
+python3 - <<'PY'
+from pathlib import Path
+
+path = Path("src/sweets/cli.py")
+text = path.read_text()
+if "burst_ids: Optional[list[str]]" in text and 'search["burst_ids"]' in text:
+    print("sweets ConfigCli already has --burst-ids")
+else:
+    needle = '''    swaths: Optional[list[str]] = Field(
+        default=None,
+        description=(
+            "Restrict to specific subswaths (e.g. ['IW2']). Only"
+            " honored by --source safe."
+        ),
+        exclude=True,
+    )
+    out_dir: Path = Field('''
+    insert = '''    swaths: Optional[list[str]] = Field(
+        default=None,
+        description=(
+            "Restrict to specific subswaths (e.g. ['IW2']). Only"
+            " honored by --source safe."
+        ),
+        exclude=True,
+    )
+    burst_ids: Optional[list[str]] = Field(
+        default=None,
+        description=(
+            "Restrict to specific OPERA burst IDs (e.g. t078_165573_iw2)."
+            " Only honored by --source opera-cslc."
+        ),
+        exclude=True,
+    )
+    out_dir: Path = Field('''
+    if needle not in text:
+        raise SystemExit("Error: could not insert sweets ConfigCli burst_ids field")
+    text = text.replace(needle, insert, 1)
+    needle2 = '''            elif src == "opera-cslc":
+                if data.get("track") is not None:
+                    search["track"] = data["track"]
+            elif src == "nisar-gslc":'''
+    insert2 = '''            elif src == "opera-cslc":
+                if data.get("track") is not None:
+                    search["track"] = data["track"]
+                if data.get("burst_ids") is not None:
+                    search["burst_ids"] = data["burst_ids"]
+            elif src == "nisar-gslc":'''
+    if needle2 not in text:
+        raise SystemExit("Error: could not wire sweets ConfigCli burst_ids into search")
+    text = text.replace(needle2, insert2, 1)
+    path.write_text(text)
+    print("Patched sweets ConfigCli for --burst-ids (opera-cslc)")
+PY
+
 # Patch YamlModel for sweets oneOf/$ref schemas if needed.
 if [[ -f ../dolphin/src/dolphin/workflows/config/_yaml_model.py ]]; then
     python3 - <<'PY'
@@ -228,7 +284,9 @@ fi
 if [[ -d ../opera-utils ]]; then
     SETUPTOOLS_SCM_PRETEND_VERSION=0.25.8 "$sweets_python" -m pip install ../opera-utils --no-deps --force-reinstall
 fi
-"$sweets_python" -c "import opera_utils, shapely; print('Verified opera_utils + shapely in sweets env')"
+# disp_s1_process (ISCE3 opera mode) needs cmap; not always pulled by sweets alone.
+"$sweets_python" -m pip install 'cmap' --quiet
+"$sweets_python" -c "import opera_utils, shapely, cmap; print('Verified opera_utils + shapely + cmap in sweets env')"
 "$sweets_python" -c "import h5py; v=h5py.version.hdf5_version; assert v.startswith('1.'), f'expected HDF5 1.x, got {v}'; print(f'Verified sweets HDF5 {v} (h5py {h5py.__version__})')"
 )
 

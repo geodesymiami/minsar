@@ -551,3 +551,67 @@ echo running ... $cmd
 $cmd
 }
 
+###########################################
+function copy_miaplpy_network() {
+if [[ "$1" == "--help" || "$1" == "-h" ]]; then
+helptext="                                       \n\
+  usage: copy_miaplpy_network SRC_MIAPLPY_DIR DST_MIAPLPY_DIR\n\
+                                                 \n\
+  Copy with cp -a:                               \n\
+      network_*/                                 \n\
+      network_*/inputs/ifgramStack.h5            \n\
+      inverted/tempCoh_full                      \n\
+      maskPS*                                    \n\
+                                                 \n\
+  Examples:                                      \n\
+      copy_miaplpy_network miaplpy_SN_201606_201608 miaplpy_SN_201606_201608_050\n\
+      copy_miaplpy_network miaplpy_202504_202606 miaplpy_202504_202606_065\n\
+"
+    printf "$helptext"
+    return 0
+fi
+
+if [[ $# -ne 2 ]]; then
+    echo "Usage: copy_miaplpy_network SRC_MIAPLPY_DIR DST_MIAPLPY_DIR" >&2
+    echo "Use copy_miaplpy_network --help for examples" >&2
+    return 1
+fi
+
+local src="${1%/}"
+local dst="${2%/}"
+local net
+local netname
+local tempcoh
+local ifgram
+local -a maskps=()
+
+[[ -d "$src" ]] || { echo "Error: source not found: $src" >&2; return 1; }
+
+net=$(find "$src" -maxdepth 1 -type d -name 'network_*' | sort | head -n1)
+[[ -n "$net" ]] || { echo "Error: no network_* under $src" >&2; return 1; }
+netname=$(basename "$net")
+
+ifgram="$net/inputs/ifgramStack.h5"
+[[ -f "$ifgram" ]] || { echo "Error: missing $ifgram" >&2; return 1; }
+
+tempcoh="$src/inverted/tempCoh_full"
+[[ -e "$tempcoh" ]] || { echo "Error: missing $tempcoh" >&2; return 1; }
+
+shopt -s nullglob
+maskps=("$src"/maskPS*)
+shopt -u nullglob
+[[ ${#maskps[@]} -gt 0 ]] || { echo "Error: no maskPS* under $src" >&2; return 1; }
+
+# Do not mkdir "$dst/$netname" first: if it exists, cp -a nests as
+# $dst/$netname/$netname and leaves an empty $dst/$netname/inputs.
+mkdir -p "$dst" "$dst/inverted"
+cp -a "$net" "$dst/"
+echo "Copied $net -> $dst/$netname"
+cp -a "$ifgram" "$dst/$netname/inputs/ifgramStack.h5"
+echo "Copied $ifgram -> $dst/$netname/inputs/ifgramStack.h5"
+cp -a "$tempcoh" "$dst/inverted/"
+echo "Copied $tempcoh -> $dst/inverted/$(basename "$tempcoh")"
+cp -a "${maskps[@]}" "$dst/"
+echo "Copied ${#maskps[@]} maskPS* file(s) -> $dst/"
+}
+
