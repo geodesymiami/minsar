@@ -128,6 +128,11 @@ project_from_generator_log() {
 }
 
 log_app_command() {
+    local echo_stdout=true
+    if [[ "${1:-}" == "--file-only" ]]; then
+        echo_stdout=false
+        shift
+    fi
     local dests=("$@")
     local arg
     local simplified_args=()
@@ -148,8 +153,10 @@ log_app_command() {
     done
     banner="#############################################################################################"
     line="$(date +"%Y%m%d:%H-%M") * ${SCRIPT_NAME} ${simplified_args[*]}"
-    echo "$banner"
-    echo "$line"
+    if [[ "$echo_stdout" == true ]]; then
+        echo "$banner"
+        echo "$line"
+    fi
     for dest in "${dests[@]}"; do
         mkdir -p "$dest"
         real="$(cd "$dest" && pwd -P)"
@@ -340,6 +347,7 @@ else
 fi
 [[ -n "${SCRATCHDIR:-}" ]] || die "SCRATCHDIR is not set; source setup/environment.bash"
 work_dir="${SCRATCHDIR}/${project}"
+log_app_command "$invoke_dir"
 
 if [[ -n "$app_dostep" ]]; then
     if [[ "$app_dostep" =~ ^[0-9]+$ ]]; then
@@ -378,7 +386,10 @@ if resolved="$(project_from_generator_log "$gen_out")"; then
     project="$resolved"
 fi
 work_dir="${SCRATCHDIR}/${project}"
-log_app_command "$invoke_dir" "$work_dir"
+mkdir -p "$work_dir"
+if [[ "$(cd "$work_dir" && pwd -P)" != "$invoke_dir" ]]; then
+    log_app_command --file-only "$work_dir"
+fi
 if [[ "$dry_run" == true ]]; then
     exit 0
 fi

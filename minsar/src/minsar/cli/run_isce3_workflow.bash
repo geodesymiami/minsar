@@ -10,7 +10,6 @@ MINSAR_UTILS="${MINSAR_HOME}/minsar/lib/utils.sh"
 WORKFLOW_UTILS="${MINSAR_HOME}/minsar/lib/workflow_utils.sh"
 SUBMIT_JOBS="${MINSAR_HOME}/minsar/bin/submit_jobs.bash"
 ISCE3_JOB_DEFAULTS="job_defaults.cfg"
-STAGE_SWEETS_PIXI="${MINSAR_HOME}/minsar/scripts/stage_sweets_pixi_env.bash"
 [[ -f "$MINSAR_UTILS" ]] || {
     echo "Error: MinSAR utilities not found: $MINSAR_UTILS" >&2
     exit 1
@@ -538,10 +537,6 @@ wait_for_slurm_jobs() {
         return 0
     fi
 
-    if [[ -f "$STAGE_SWEETS_PIXI" ]]; then
-        "$STAGE_SWEETS_PIXI"
-    fi
-
     log_submit_jobs_command "$file_pattern"
     jns="$("$SUBMIT_JOBS" "$file_pattern")"
     exit_status="$?"
@@ -591,9 +586,6 @@ wait_for_slurm_jobs() {
                 fi
                 jobnumbers=($(remove_from_list "$jobnumber" "${jobnumbers[@]}"))
                 files=($(remove_from_list "$file" "${files[@]}"))
-                if [[ -f "$STAGE_SWEETS_PIXI" ]]; then
-                    "$STAGE_SWEETS_PIXI"
-                fi
                 log_submit_jobs_command "${file%.*}"
                 jobnumber="$($SUBMIT_JOBS "${file%.*}")"
                 exit_status="$?"
@@ -650,13 +642,8 @@ find_project_template() {
 }
 
 sweets_pixi_prefix() {
-    local staged="${SCRATCHDIR:-}/minsar_sweets_pixi_default"
     if [[ -n "${SWEETS_ENV:-}" ]]; then
         echo "$SWEETS_ENV"
-        return
-    fi
-    if [[ -n "${SCRATCHDIR:-}" && -d "${staged}/share/proj" ]]; then
-        echo "$staged"
         return
     fi
     echo "${MINSAR_HOME}/tools/sweets/.pixi/envs/default"

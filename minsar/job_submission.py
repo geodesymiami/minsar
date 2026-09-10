@@ -1437,15 +1437,10 @@ class JOB_SUBMIT:
 
 
 def sweets_pixi_prefix():
-    """Return SWEETS pixi env prefix (scratch stage, SWEETS_ENV, or $MINSAR_HOME)."""
+    """Return SWEETS pixi env prefix ($SWEETS_ENV or $MINSAR_HOME/tools/sweets/.pixi)."""
     sweets_env = os.environ.get("SWEETS_ENV")
     if sweets_env:
         return sweets_env
-    scratch = os.environ.get("SCRATCHDIR")
-    if scratch:
-        staged = os.path.join(scratch, "minsar_sweets_pixi_default")
-        if os.path.isdir(os.path.join(staged, "share", "proj")):
-            return staged
     minsar_home = os.environ.get("MINSAR_HOME")
     if minsar_home:
         return os.path.join(minsar_home, "tools", "sweets", ".pixi", "envs", "default")
@@ -1458,7 +1453,7 @@ def create_cslc_pixi_gdal_proj_exports(batch_file):
         return []
     prefix = sweets_pixi_prefix()
     if not prefix:
-        raise RuntimeError("create_cslc job needs SWEETS_ENV, SCRATCHDIR, or MINSAR_HOME for pixi PROJ/GDAL")
+        raise RuntimeError("create_cslc job needs SWEETS_ENV or MINSAR_HOME for pixi PROJ/GDAL")
     proj = os.path.join(prefix, "share", "proj")
     gdal = os.path.join(prefix, "share", "gdal")
     if not os.path.isdir(proj):

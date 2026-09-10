@@ -1242,6 +1242,23 @@ def _normalize_platform(value: str) -> str:
     raise ValueError(f"unknown platform {value!r}; use S1 or NISAR")
 
 
+def _parse_c_memory_mb(raw: str, *, path: Path, line_number: int) -> int:
+    """Parse job_defaults.cfg c_memory; 'all' means $MAX_MEMORY_PER_NODE (same as scale_memory)."""
+    token = raw.strip()
+    if token.lower() == "all":
+        env = os.getenv("MAX_MEMORY_PER_NODE")
+        if not env:
+            raise ValueError(
+                f"{path}:{line_number}: c_memory is 'all' but MAX_MEMORY_PER_NODE is unset; "
+                "source setup/environment.bash first"
+            )
+        return int(float(env))
+    try:
+        return int(token)
+    except ValueError as exc:
+        raise ValueError(f"{path}:{line_number}: invalid c_memory {raw!r}") from exc
+
+
 def _read_profiles(path: Path) -> dict[str, ResourceProfile]:
     columns = [
         "jobname",
@@ -1285,7 +1302,7 @@ def _read_profiles(path: Path) -> dict[str, ResourceProfile]:
         profiles[name] = ResourceProfile(
             mode,
             values["c_walltime"],
-            int(values["c_memory"]),
+            _parse_c_memory_mb(values["c_memory"], path=path, line_number=line_number),
             int(values["num_threads"]),
             queue_class,
         )
@@ -1493,7 +1510,7 @@ def _build_stage_specs(
 
 
 def _profile_for(name: str, profiles: dict[str, ResourceProfile]) -> ResourceProfile:
-    return profiles.get(PROFILE_ALIASES.get(name, name), profiles["default"])
+    return profiles.get(name, profiles["default"])
 
 
 def _write_run_file(path: Path, title: str, command: str, task_list: bool = False, raw: bool = False) -> None:

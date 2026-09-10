@@ -234,6 +234,4 @@ fi
 
 echo "sweets installation DONE"
 
-[[ -f minsar/scripts/stage_sweets_pixi_env.bash ]] && minsar/scripts/stage_sweets_pixi_env.bash --force
-
 echo "Running of install_sweets_env.bash DONE"
