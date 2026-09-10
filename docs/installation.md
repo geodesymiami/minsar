@@ -28,17 +28,12 @@ set -eo pipefail
 ./setup/install_minsar_env.bash
 ./setup/install_additions.bash
 ./setup/install_sweets_env.bash
-./setup/install_disp-s1_env.bash
+./setup/install_disp-s1_env.bash             (# optional, required for dolphin mode)
 ./setup/install_credential_files.bash
 ./setup/setup_orbit_dirs.bash
-# optional: disp-s1 conda env (required for --dolphin-mode opera)
-./setup/install_disp-s1.bash
-
-# optional:  isceplus course env 
-./setup/install_isceplus.bash
 
 
-# optional: course env (isceplus) and SpaTZ 
+# optional: isceplus course env and SpaTZ 
 ./setup/install_isceplus_env.bash
 
 ./setup/install_spatz.bash
