@@ -31,6 +31,12 @@ set -eo pipefail
 ./setup/install_disp-s1_env.bash             (# optional, required for dolphin mode)
 ./setup/install_credential_files.bash
 ./setup/setup_orbit_dirs.bash
+<<<<<<< Updated upstream
+=======
+
+# optional:  isceplus course env 
+./setup/install_isceplus.bash
+>>>>>>> Stashed changes
 
 
 # optional: isceplus course env and SpaTZ 

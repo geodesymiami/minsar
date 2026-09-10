@@ -45,7 +45,7 @@ if [[ -n "${DISP_S1_PYTHON:-}" ]]; then
     return 0 2>/dev/null || exit 0
 fi
 
-# Canonical location from setup/install_disp-s1.bash (ignore stale CONDA_* from sbatch).
+# Canonical location from setup/install_disp-s1_env.bash (ignore stale CONDA_* from sbatch).
 if [[ -x "${_minsar_env_dir}/bin/python" ]]; then
     _disp_s1_use_env_dir "${_minsar_env_dir}"
     return 0 2>/dev/null || exit 0
@@ -73,6 +73,6 @@ fi
 
 echo "Error: disp-s1 conda env '${_env_name}' not found at:" >&2
 echo "  ${_minsar_env_dir}" >&2
-echo "Create it with: bash ${MINSAR_HOME}/setup/install_disp-s1.bash" >&2
+echo "Create it with: bash ${MINSAR_HOME}/setup/install_disp-s1_env.bash" >&2
 echo "Or set DISP_S1_PYTHON to that env's python." >&2
 exit 1
