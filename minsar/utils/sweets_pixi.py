@@ -1,8 +1,11 @@
 """Run MinSAR helpers that need opera_utils under the sweets pixi env.
 
 The minsar conda env typically lacks opera_utils; sweets pixi has it. Login-node
-tools (generate_sweets_config, generate_disp-s1_commands) call into pixi when
-import fails so create_isce3_runfiles can stay on minsar.
+tools (generate_sweets_config, generate_disp-s1_commands) call the sweets env
+python when import fails so create_isce3_runfiles can stay on minsar.
+
+Prefer the installed env binaries under tools/sweets/.pixi (or $SWEETS_ENV)
+instead of ``pixi run``, which is slow on HPC (rattler/repodata checks).
 """
 
 from __future__ import annotations
@@ -14,8 +17,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# Set in the pixi child so helpers never recurse if opera_utils is still missing.
+# Set in the sweets child so helpers never recurse if opera_utils is still missing.
 _SWEETS_PIXI_NEST = "MINSAR_SWEETS_PIXI_NEST"
+
+# Bash: put sweets bin first (honors $SWEETS_ENV override).
+SWEETS_PATH_EXPORT = (
+    'export PATH="${SWEETS_ENV:-$MINSAR_HOME/tools/sweets/.pixi/envs/default}/bin:$PATH"'
+)
 
 
 def opera_utils_importable() -> bool:
@@ -28,6 +36,61 @@ def opera_utils_importable() -> bool:
         return False
 
 
+def sweets_env_prefix() -> Path:
+    """Return sweets pixi env prefix ($SWEETS_ENV or $MINSAR_HOME/tools/sweets/.pixi/...)."""
+    sweets_env = os.environ.get("SWEETS_ENV")
+    if sweets_env:
+        return Path(sweets_env).expanduser()
+    minsar_home = os.environ.get("MINSAR_HOME")
+    if not minsar_home:
+        raise ModuleNotFoundError(
+            "MINSAR_HOME is unset; source setup/environment.bash or set SWEETS_ENV"
+        )
+    return Path(minsar_home) / "tools" / "sweets" / ".pixi" / "envs" / "default"
+
+
+def sweets_env_bin_dir() -> Path:
+    """Return ``bin`` under the sweets pixi env prefix."""
+    return sweets_env_prefix() / "bin"
+
+
+def sweets_env_python() -> Path:
+    """Return sweets env python; raise if the env looks incomplete."""
+    bin_dir = sweets_env_bin_dir()
+    for name in ("python", "python3"):
+        candidate = bin_dir / name
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    raise FileNotFoundError(
+        f"SWEETS pixi python not found under {bin_dir}; "
+        "re-run setup/install_isce3.bash or setup/install_sweets_env.bash"
+    )
+
+
+def sweets_env_environ(base: dict[str, str] | None = None) -> dict[str, str]:
+    """Copy env with sweets bin prepended and MINSAR_HOME / PYTHONPATH set."""
+    env = dict(base if base is not None else os.environ)
+    minsar_home = env.get("MINSAR_HOME") or os.environ.get("MINSAR_HOME")
+    if not minsar_home:
+        raise ModuleNotFoundError(
+            "MINSAR_HOME is unset; source setup/environment.bash or set SWEETS_ENV"
+        )
+    env["MINSAR_HOME"] = minsar_home
+    bin_dir = str(sweets_env_bin_dir())
+    env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = minsar_home if not existing else f"{minsar_home}{os.pathsep}{existing}"
+    prefix = sweets_env_prefix()
+    proj = prefix / "share" / "proj"
+    gdal = prefix / "share" / "gdal"
+    if proj.is_dir():
+        env["PROJ_LIB"] = str(proj)
+        env["PROJ_DATA"] = str(proj)
+    if gdal.is_dir():
+        env["GDAL_DATA"] = str(gdal)
+    return env
+
+
 def invoke_via_sweets_pixi(
     *,
     func_name: str,
@@ -35,7 +98,7 @@ def invoke_via_sweets_pixi(
     module: str | None = None,
     script_relpath: str | None = None,
 ) -> Any:
-    """Run ``module.func_name(**kwargs)`` (or a hyphenated script via runpy) under sweets pixi.
+    """Run ``module.func_name(**kwargs)`` (or a hyphenated script via runpy) under sweets python.
 
     Pass exactly one of ``module`` (importable dotted name) or ``script_relpath``
     (path under ``$MINSAR_HOME``, e.g. ``minsar/utils/generate_disp-s1_commands.py``).
@@ -53,9 +116,6 @@ def invoke_via_sweets_pixi(
             "No module named 'opera_utils' inside sweets pixi; "
             "re-run setup/install_isce3.bash so tools/opera-utils is installed"
         )
-    manifest = os.path.join(minsar_home, "tools/sweets/pyproject.toml")
-    if not os.path.isfile(manifest):
-        raise FileNotFoundError(f"sweets pixi manifest not found: {manifest}")
     if script_relpath is not None:
         code = (
             "import json, os, runpy, sys\n"
@@ -79,24 +139,10 @@ def invoke_via_sweets_pixi(
             "json.dump(out, sys.stdout)\n"
         )
         payload_obj = {"func": func_name, "kwargs": kwargs, "module": module}
-    env = os.environ.copy()
-    env["MINSAR_HOME"] = minsar_home
+    env = sweets_env_environ()
     env[_SWEETS_PIXI_NEST] = "1"
-    existing = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = minsar_home if not existing else f"{minsar_home}{os.pathsep}{existing}"
-    pixi_bin = str(Path.home() / ".pixi" / "bin")
-    env["PATH"] = f"{pixi_bin}{os.pathsep}{env.get('PATH', '')}"
-    cmd = [
-        "pixi",
-        "run",
-        "--as-is",
-        "--manifest-path",
-        manifest,
-        "--",
-        "python",
-        "-c",
-        code,
-    ]
+    python = sweets_env_python()
+    cmd = [str(python), "-c", code]
     payload = json.dumps(payload_obj)
     label = script_relpath or module
     print(f"  (opera_utils via sweets pixi: {label}.{func_name})", file=sys.stderr)

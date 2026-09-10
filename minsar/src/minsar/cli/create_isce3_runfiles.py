@@ -174,8 +174,9 @@ def _normalize_reference_method(value: str) -> str:
     )
 
 
-_DATA_TYPE_NAME_TOKEN = {"cslc": "CSLC", "disp": "DISP"}
-_DATA_TYPE_NAME_SUFFIX_RE = re.compile(r"(CSLC|DISP)$", re.IGNORECASE)
+_DATA_TYPE_NAME_TOKEN = {"safe": "SAFE", "cslc": "CSLC", "disp": "DISPS1"}
+# Longer tokens first so DISPS1 is not partially stripped as DISP.
+_DATA_TYPE_NAME_SUFFIX_RE = re.compile(r"(DISPS1|CSLC|SAFE|DISP)$", re.IGNORECASE)
 _LEGACY_DOLPHIN_MODE_SUFFIX_RE = re.compile(r"(Opera|Standard)$", re.IGNORECASE)
 _ORBIT_LABEL_SUFFIX_RE = re.compile(
     r"(?P<sat>Sen|S1|TSX|ALOS2|CSK|RS2|ENV|Nisar|Alos2)(?P<pass>[AD])(?P<orbit>\d+)$",
@@ -189,7 +190,7 @@ def _strip_orbit_label_suffix(name: str) -> str:
 
 
 def _aoi_name_with_data_type(name: str, workflow: str, dolphin_mode: str = DEFAULT_DOLPHIN_MODE) -> str:
-    """Append CSLC/DISP and Opera (non-default) to an AOI basename; orbit label is added later."""
+    """Append SAFE/CSLC/DISPS1 and Opera (non-default) to an AOI basename; orbit label is added later."""
     base = _LEGACY_DOLPHIN_MODE_SUFFIX_RE.sub("", str(name).strip())
     base = _strip_orbit_label_suffix(base)
     if not base:
@@ -239,7 +240,7 @@ def _aoi_project_name(
     track: int | None = None,
     dolphin_mode: str = DEFAULT_DOLPHIN_MODE,
 ) -> str:
-    """Full AOI project name: HawaiiPunaCSLCSenD87 or HawaiiPunaCSLCOperaSenD87."""
+    """Full AOI project name: HawaiiPunaSAFESenD87, HawaiiPunaCSLCSenD87, HawaiiPunaDISPS1SenD87."""
     base = _aoi_name_with_data_type(name, workflow, dolphin_mode=dolphin_mode)
     if _ORBIT_LABEL_SUFFIX_RE.search(base):
         return base
@@ -563,18 +564,17 @@ def _strip_bash_script_header(text: str) -> str:
 
 def _pixi_run_script(commands: str) -> str:
     """Executable run file that runs stage commands inside the SWEETS pixi environment."""
+    from minsar.utils.sweets_pixi import SWEETS_PATH_EXPORT
+
     body = _strip_bash_script_header(commands)
     if not body:
         body = "true"
     return (
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
-        'pixi run --as-is --manifest-path "$MINSAR_HOME/tools/sweets/pyproject.toml" -- bash <<\'ISCE3_PIXI_BODY\'\n'
-        "set -euo pipefail\n"
+        f"{SWEETS_PATH_EXPORT}\n"
         "\n"
         f"{body}\n"
-        "\n"
-        "ISCE3_PIXI_BODY\n"
     )
 
 
@@ -594,20 +594,22 @@ def _disp_s1_run_script(commands: str) -> str:
 
 
 def _pixi_run_script_with_tail(pixi_commands: str, tail_commands: list[str]) -> str:
-    """Pixi heredoc for SWEETS/dolphin, then minsar-env commands (e.g. create_html needs MintPy)."""
+    """Sweets-env body for dolphin, then minsar-env commands (create_html needs MintPy)."""
+    from minsar.utils.sweets_pixi import SWEETS_PATH_EXPORT
+
     pixi_body = _strip_bash_script_header(pixi_commands)
     if not pixi_body:
         pixi_body = "true"
+    # Indent body for the subshell (PATH only applies to sweets commands).
+    indented = "\n".join(f"  {line}" if line else "" for line in pixi_body.splitlines())
     tail = "\n".join(tail_commands) + "\n" if tail_commands else ""
     return (
         "#!/usr/bin/env bash\n"
         "set -euo pipefail\n"
-        'pixi run --as-is --manifest-path "$MINSAR_HOME/tools/sweets/pyproject.toml" -- bash <<\'ISCE3_PIXI_BODY\'\n'
-        "set -euo pipefail\n"
-        "\n"
-        f"{pixi_body}\n"
-        "\n"
-        "ISCE3_PIXI_BODY\n"
+        "(\n"
+        f"  {SWEETS_PATH_EXPORT}\n"
+        f"{indented}\n"
+        ")\n"
         f"{tail}"
     )
 
@@ -1017,7 +1019,7 @@ def _parse_data_type(value: str) -> str:
     """Normalize --data-type to an internal workflow name."""
     token = value.strip().lower().replace("_", "-")
     if token == "disp":
-        raise argparse.ArgumentTypeError("use disp-s1, not disp (project name still uses DISP)")
+        raise argparse.ArgumentTypeError("use disp-s1, not disp (project name still uses DISPS1)")
     if token not in DATA_TYPE_ALIASES:
         raise argparse.ArgumentTypeError(f"invalid data type {value!r}; use safe, cslc, disp-s1, or disp-NI")
     return DATA_TYPE_ALIASES[token]
@@ -1058,7 +1060,7 @@ def create_parser() -> argparse.ArgumentParser:
         description=(
             "Create run files and SLURM job files for SAFE, CSLC, or DISP-S1 processing. "
             "Default data type: safe. "
-            "AOI NAME HawaiiPuna becomes HawaiiPunaSenD87, HawaiiPunaCSLCSenD87, HawaiiPunaCSLCOperaSenD87, or HawaiiPunaDISPSenD87 "
+            "AOI NAME HawaiiPuna becomes HawaiiPunaSAFESenD87, HawaiiPunaCSLCSenD87, HawaiiPunaCSLCOperaSenD87, or HawaiiPunaDISPS1SenD87 "
             "from --data-type, --dolphin-mode, and --flight-dir (platform + pass + relative orbit). "
             "Workflow: --data-type {safe,cslc,disp-s1,disp-NI} or --safe / --cslc / --disp-S1. "
             "--phase download writes sweets_config.yaml and download jobs; "
@@ -1070,7 +1072,7 @@ def create_parser() -> argparse.ArgumentParser:
         allow_abbrev=False,
     )
     parser.add_argument("input", help="MinSAR template, or AOI when followed by NAME")
-    parser.add_argument("name", nargs="?", help="AOI project basename; full name adds CSLC|DISP, Opera if --dolphin-mode opera, and SenA/D##")
+    parser.add_argument("name", nargs="?", help="AOI project basename; full name adds SAFE|CSLC|DISPS1, Opera if --dolphin-mode opera, and SenA/D##")
     parser.add_argument(
         "dolphin_config",
         nargs="?",
@@ -1413,7 +1415,7 @@ def _templates_dir() -> Path:
 def _create_template_from_aoi(args: argparse.Namespace) -> Path:
     """Create the MinSAR template under $TE, independent of the invocation directory.
 
-    ``create_template`` writes ``{NAME}{SenA/D##}.template`` (e.g. HawaiiPunaCSLCSenD87).
+    ``create_template`` writes ``{NAME}{SenA/D##}.template`` (e.g. HawaiiPunaSAFESenD87).
     That full stem is the project directory name.
     """
     from minsar.scripts.create_template import main as create_template
@@ -1443,7 +1445,9 @@ def _create_template_from_aoi(args: argparse.Namespace) -> Path:
 
 
 def _runner_command(command: str) -> str:
-    return f'pixi run --as-is --manifest-path "$MINSAR_HOME/tools/sweets/pyproject.toml" {command}'
+    from minsar.utils.sweets_pixi import SWEETS_PATH_EXPORT
+
+    return f"{SWEETS_PATH_EXPORT}\n{command}"
 
 
 def _use_dolphin_split(workflow: str, no_dolphin_split: bool) -> bool:
@@ -1756,22 +1760,15 @@ def _print_plan(
         _out(f"Reference method: {reference_method}")
 
 def _run_in_sweets(work_dir: Path, command: list[str]) -> None:
-    """Run one command in the canonical SWEETS Pixi environment."""
+    """Run one command with sweets pixi env binaries on PATH (no ``pixi run``)."""
+    from minsar.utils.sweets_pixi import sweets_env_environ
+
     minsar_home = Path(os.environ.get("MINSAR_HOME", Path(__file__).resolve().parents[4]))
-    pixi_command = [
-        "pixi",
-        "run",
-        "--as-is",
-        "--manifest-path",
-        str(minsar_home / "tools/sweets/pyproject.toml"),
-        *command,
-    ]
-    env = os.environ.copy()
+    env = sweets_env_environ()
     env["MINSAR_HOME"] = str(minsar_home)
-    env["PYTHONPATH"] = str(minsar_home)
-    pixi_bin = Path.home() / ".pixi" / "bin"
-    env["PATH"] = f"{pixi_bin}:{env.get('PATH', '')}"
-    subprocess.run(pixi_command, cwd=work_dir, env=env, check=True)
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = str(minsar_home) if not existing else f"{minsar_home}{os.pathsep}{existing}"
+    subprocess.run(command, cwd=work_dir, env=env, check=True)
 
 
 def _configure_sweets(workflow: str, template: Path, work_dir: Path) -> None:

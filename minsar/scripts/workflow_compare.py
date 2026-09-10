@@ -45,7 +45,7 @@ ARGV_FIX_KW = {
 DESCRIPTION = (
     "Write a bash script with minsarIsce3App.bash (--safe, --data-type cslc, --disp-S1) "
     "and minsarApp.bash (--no-mintpy --miaplpy) for the same AOI and dates. "
-    "ISCE3 projects are NAME, NAMECSLC, and NAMEDISP under $SCRATCHDIR."
+    "ISCE3 projects are NAME SAFE, NAMECSLC, and NAMEDISPS1 under $SCRATCHDIR."
 )
 
 EXAMPLE = """Examples:
@@ -64,7 +64,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("aoi", metavar="AOI", help="area of interest (S:N,W:E bounds or WKT POLYGON)")
     parser.add_argument(
         "name",
-        help="project base name; ISCE3 AOI runs become NAME, NAMECSLC, or NAMEDISP from --data-type; MiaplPy uses the base name",
+        help="project base name; ISCE3 AOI runs become NAMESAFE, NAMECSLC, or NAMEDISPS1 from --data-type; MiaplPy uses the base name",
     )
     parser.add_argument("--flight-dir", choices=("asc", "desc"), required=True, help="orbit pass for AOI-based setup")
     parser.add_argument("--start-date", "--start", dest="start_date", required=True, metavar="DATE", help="first date YYYYMMDD or YYYY-MM-DD")
@@ -92,9 +92,9 @@ def project_names(base: str) -> dict[str, str]:
     """Return scratch project names for each compare pipeline."""
     stem = normalize_base_name(base)
     return {
-        "safe": stem,
+        "safe": f"{stem}SAFE",
         "cslc": f"{stem}CSLC",
-        "disp": f"{stem}DISP",
+        "disp": f"{stem}DISPS1",
         "isce2": stem,
     }
 
