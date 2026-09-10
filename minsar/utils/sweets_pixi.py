@@ -20,10 +20,13 @@ from typing import Any
 # Set in the sweets child so helpers never recurse if opera_utils is still missing.
 _SWEETS_PIXI_NEST = "MINSAR_SWEETS_PIXI_NEST"
 
-# Bash: put sweets bin first (honors $SWEETS_ENV override).
-SWEETS_PATH_EXPORT = (
-    'export PATH="${SWEETS_ENV:-$MINSAR_HOME/tools/sweets/.pixi/envs/default}/bin:$PATH"'
-)
+# Bash: sweets bin + GDAL/PROJ so inherited minsar conda plugins are not used.
+SWEETS_PATH_EXPORT = """_s="${SWEETS_ENV:-$MINSAR_HOME/tools/sweets/.pixi/envs/default}"
+export PATH="$_s/bin:$PATH"
+export GDAL_DRIVER_PATH="$_s/lib/gdalplugins"
+export GDAL_DATA="$_s/share/gdal"
+export PROJ_LIB="$_s/share/proj"
+export PROJ_DATA="$_s/share/proj\""""
 
 
 def opera_utils_importable() -> bool:
@@ -88,6 +91,9 @@ def sweets_env_environ(base: dict[str, str] | None = None) -> dict[str, str]:
         env["PROJ_DATA"] = str(proj)
     if gdal.is_dir():
         env["GDAL_DATA"] = str(gdal)
+    plugins = prefix / "lib" / "gdalplugins"
+    if plugins.is_dir():
+        env["GDAL_DRIVER_PATH"] = str(plugins)
     return env
 
 
