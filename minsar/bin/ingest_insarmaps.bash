@@ -52,7 +52,7 @@ Examples:
                                       For a .csv input, step 1 runs hdfeos5_or_csv_2json_mbtiles.py instead of hdfeos5_2json_mbtiles.py
       --json_mbtiles2insarmaps        Run only insarmaps upload (assumes step 1 succeeded); same as --step 2
       --step N                        N is 1 or 2; same effect as the long names above. Also --step=N
-      --num-workers N                 Parallel workers for hdfeos5_2json_mbtiles (sets HDFEOS_NUM_WORKERS; default 6 or env)
+      --num-workers N                 Parallel workers for hdfeos5_2json_mbtiles (sets HDFEOS_NUM_WORKERS; default 1 or env)
       --mbtiles-num-workers N         Parallel workers for json_mbtiles2insarmaps (sets MBTILES_NUM_WORKERS; default 6 or env)
       --quiet-summary                 suppress printing generated insarmaps URLs (still appends to insarmaps.log)
       --submit                        Run ingest now (inline on Mac/Jetstream; jobfile + run_workflow on SLURM login)
@@ -66,7 +66,7 @@ Examples:
 
   Output: With --ref-lalo the selected .he5 in the input dir is modified in place. insarmaps.log appended. No backup files.
 
-  Memory: If the HDF5 conversion is killed (OOM), use --num-workers 2 or 1, or set HDFEOS_NUM_WORKERS in the environment.
+  Memory: Default --num-workers is 1 to limit RAM. Increase only if you have enough memory, or set HDFEOS_NUM_WORKERS.
     "
     printf "$helptext"
     exit 0
@@ -516,11 +516,11 @@ if [[ -n "$SSARAHOME" ]]; then
     DB_PASS=$(python3 -c "import sys; sys.path.insert(0, '$SSARAHOME'); import password_config; print(password_config.docker_databasepass)" 2>/dev/null || echo "")
 fi
 
-# Parallelism: env defaults 6; CLI overrides env for the respective step
+# Parallelism: CLI overrides env; else HDFEOS_NUM_WORKERS default 1, MBTILES_NUM_WORKERS default 6
 if [[ -n "$num_workers_cli" ]]; then
     HDFEOS_NUM_WORKERS="$num_workers_cli"
 else
-    HDFEOS_NUM_WORKERS="${HDFEOS_NUM_WORKERS:-6}"
+    HDFEOS_NUM_WORKERS="${HDFEOS_NUM_WORKERS:-1}"
 fi
 if [[ -n "$mbtiles_num_workers_cli" ]]; then
     MBTILES_NUM_WORKERS="$mbtiles_num_workers_cli"

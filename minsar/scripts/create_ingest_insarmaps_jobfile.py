@@ -64,7 +64,7 @@ def create_parser():
     parser.add_argument('--quiet-summary', dest='quiet_summary', action='store_true',
                         help='pass --quiet-summary to ingest_insarmaps.bash')
     parser.add_argument('--num-workers', dest='num_workers', type=_positive_int, default=None, metavar='N',
-                        help='HDFEOS_NUM_WORKERS for hdfeos5_2json_mbtiles (default: env HDFEOS_NUM_WORKERS or 6)')
+                        help='HDFEOS_NUM_WORKERS for hdfeos5_2json_mbtiles (default: env HDFEOS_NUM_WORKERS or 1)')
     parser.add_argument('--mbtiles-num-workers', dest='mbtiles_num_workers', type=_positive_int, default=None, metavar='N',
                         help='MBTILES_NUM_WORKERS for json_mbtiles2insarmaps (default: env MBTILES_NUM_WORKERS or 6)')
 
