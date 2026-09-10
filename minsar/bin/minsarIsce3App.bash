@@ -42,13 +42,15 @@ options:
   --reference-method METHOD
                         disp-s1-reformat reference: NONE, POINT, MEDIAN, BORDER, HIGH_COHERENCE (Default: HIGH_COHERENCE)
   --backend BACKEND     auto, local, or slurm (Default: auto)
+  --max-parallel N      override local launcher PPN (default: LAUNCHER_PPN from the job file)
   --sleep SECS          sleep seconds before running
   --dry-run             print the generator plan without writing files or submitting
   --no-run              write run/job files without starting run_isce3_workflow.bash
 
 Examples:
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20220331
-  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type safe --start-date 20220101 --end-date 20220331       # (also OK w/o --data-type safe)
+  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type safe --start-date 20220101 --end-date 20220331
+  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type safe --start-date 20220101 --end-date 20220331 --backend local --max-parallel 12
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type disp-s1 --start-date 20220101 --end-date 20230331
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --start-date 20220101 --end-date 20220331
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --stride 2 4 --half-window 6 12  --start-date 20220101 --end-date 20241212
@@ -68,7 +70,7 @@ die() {
 
 is_consume_one() {
     case "$1" in
-        --data-type|--platform|--flight-dir|--start-date|--end-date|--track|--relativeOrbit|--frame-id|--queue|--long-queue|--config|--half-window-preset|--burst-count-method|--dolphin-dir|--from-dolphin-dir|--unwrap-method|--ministack-size|--dolphin-mode|--reference-method|--backend|--max-parallel)
+        --data-type|--platform|--flight-dir|--start-date|--end-date|--track|--relativeOrbit|--frame-id|--queue|--long-queue|--config|--half-window-preset|--burst-count-method|--dolphin-dir|--from-dolphin-dir|--unwrap-method|--ministack-size|--dolphin-mode|--reference-method|--backend)
             return 0
             ;;
     esac
@@ -206,6 +208,7 @@ app_start=""
 app_end=""
 app_dostep=""
 backend=""
+max_parallel=""
 gen_phase=""
 dry_run=false
 no_run=false
@@ -241,6 +244,12 @@ while [[ $# -gt 0 ]]; do
         --backend)
             [[ -n "${2:-}" && "$2" != --* ]] || die "$1 requires a value"
             backend="$2"
+            shift 2
+            ;;
+        --max-parallel)
+            [[ -n "${2:-}" && "$2" != --* ]] || die "$1 requires a value"
+            [[ "$2" =~ ^[1-9][0-9]*$ ]] || die "$1 must be a positive integer"
+            max_parallel="$2"
             shift 2
             ;;
         --phase)
@@ -409,6 +418,7 @@ dolphin_mode="${dolphin_mode:-single-run}"
 
 run_args=()
 [[ -n "$backend" ]] && run_args+=(--backend "$backend")
+[[ -n "$max_parallel" ]] && run_args+=(--max-parallel "$max_parallel")
 
 if [[ -n "$app_dostep" ]]; then
     run_args+=(--dostep "$app_dostep")

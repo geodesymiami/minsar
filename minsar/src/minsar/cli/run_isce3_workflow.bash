@@ -38,7 +38,7 @@ options:
   --end STEP, --stop STEP
                         last step, inclusive
   --dostep STEP         run one step only
-  --max-parallel N      local parallel tasks for launcher task lists (default: 1)
+  --max-parallel N      override local launcher PPN (default: LAUNCHER_PPN from the job file)
   --dry-run             print commands without executing or submitting
 
 STEP may be a step number, step name, run-file basename, or a coarse alias:
@@ -64,6 +64,7 @@ Examples:
   ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaFalkdispSenD87/run_files_isce3 --dostep disp_s1_process
   ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaFalkdispSenD87/run_files_isce3 --dostep reformat_disp
   ${SCRIPT_NAME} run_files_isce3 --backend local
+  ${SCRIPT_NAME} run_files_isce3 --backend local --max-parallel 12
   ${SCRIPT_NAME} \$SCRATCHDIR/HawaiiPunaSenD87/run_files_isce3 --start dolphin_wrapped
 EOF
 }
@@ -90,7 +91,7 @@ backend="auto"
 start_step=""
 end_step=""
 do_step=""
-max_parallel=1
+max_parallel=""
 dry_run=false
 wait_time=30
 run_dir_arg=""
@@ -145,7 +146,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ "$backend" == "auto" || "$backend" == "local" || "$backend" == "slurm" ]] || die "--backend must be auto, local, or slurm"
-[[ "$max_parallel" =~ ^[1-9][0-9]*$ ]] || die "--max-parallel must be a positive integer"
+[[ -z "$max_parallel" || "$max_parallel" =~ ^[1-9][0-9]*$ ]] || die "--max-parallel must be a positive integer"
 [[ -z "$do_step" || ( -z "$start_step" && -z "$end_step" ) ]] || die "--dostep cannot be combined with --start or --end"
 
 if [[ "${SHORT_JOB_COMPLETION_WAITTIME:-}" == [Tt]rue ]]; then
@@ -192,6 +193,32 @@ job_uses_launcher() {
         [[ "$line" == "export LAUNCHER_JOB_FILE="* ]] && return 0
     done < "$job_file"
     return 1
+}
+
+job_export_value() {
+    local job_file="$1"
+    local var="$2"
+    local prefix="export ${var}="
+    local line
+    while IFS= read -r line; do
+        if [[ "$line" == "${prefix}"* ]]; then
+            echo "${line#"$prefix"}"
+            return 0
+        fi
+    done < "$job_file"
+    return 1
+}
+
+local_launcher_parallel() {
+    local job_file="$1"
+    local n
+    if [[ -n "$max_parallel" ]]; then
+        echo "$max_parallel"
+        return 0
+    fi
+    n="$(job_export_value "$job_file" LAUNCHER_PPN || true)"
+    [[ "$n" =~ ^[1-9][0-9]*$ ]] || n=1
+    echo "$n"
 }
 
 step_prefix() {
@@ -368,7 +395,7 @@ fi
 log_parts=("${SCRIPT_NAME}" "$run_dir_display")
 [[ "$backend" != "auto" ]] && log_parts+=(--backend "$backend")
 [[ "$dry_run" == "true" ]] && log_parts+=(--dry-run)
-[[ "$max_parallel" != "1" ]] && log_parts+=(--max-parallel "$max_parallel")
+[[ -n "$max_parallel" ]] && log_parts+=(--max-parallel "$max_parallel")
 if [[ "$start_index" -eq "$end_index" ]]; then
     log_parts+=(--dostep "${stage_names[$start_index]}")
 else
@@ -378,10 +405,18 @@ echo "$(date +"%Y%m%d:%H-%M") + ${log_parts[*]}" >> "${work_dir}"/log
 
 run_task_list() {
     local run_file="$1"
+    local job_file="${2:-${run_file}.job}"
     local task
     local pid
     local failed=0
     local pids=()
+    local n_parallel nthreads
+
+    n_parallel="$(local_launcher_parallel "$job_file")"
+    nthreads="$(job_export_value "$job_file" OMP_NUM_THREADS || true)"
+    [[ "$nthreads" =~ ^[1-9][0-9]*$ ]] || nthreads=1
+    export OMP_NUM_THREADS="$nthreads"
+    echo "Local launcher: ${n_parallel} parallel tasks (OMP_NUM_THREADS=${nthreads})"
 
     if [[ "$(basename "$run_file")" == *create_cslc* ]]; then
         export_sweets_pixi_gdal_proj
@@ -396,7 +431,7 @@ run_task_list() {
         fi
         bash -c "$task" &
         pids+=("$!")
-        if [[ "${#pids[@]}" -ge "$max_parallel" ]]; then
+        if [[ "${#pids[@]}" -ge "$n_parallel" ]]; then
             if ! wait "${pids[0]}"; then
                 failed=1
             fi
@@ -492,7 +527,7 @@ run_local_stage() {
         [[ -f "$run_file" ]] || die "run file not found: $run_file"
         print_step_banner "Running:    $(basename "$run_file")"
         if job_uses_launcher "$job_file"; then
-            run_task_list "$run_file" || die "task list failed: $run_file"
+            run_task_list "$run_file" "$job_file" || die "task list failed: $run_file"
         else
             if [[ "$dry_run" != "true" ]]; then
                 run_isce3_runfile "$run_file" || die "step failed: ${stage_names[$index]}"
