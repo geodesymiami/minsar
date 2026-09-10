@@ -307,7 +307,7 @@ def format_disp_stage_commands(
         ),
         "reformat_disp": reformat,
         "dolphin_2_hdfeos5": f"dolphin2hdfeos5.py {stack_name} --method-string {OPERA_DISP_METHOD_STRING} --watermask {stack_name}",
-        "ingest_insarmaps": "ingest_insarmaps.bash timeseries",
+        "ingest_insarmaps": "ingest_insarmaps.bash .",
     }
 
 

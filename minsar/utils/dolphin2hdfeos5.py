@@ -82,7 +82,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--output",
         dest="outfile",
         default=None,
-        help="Output .he5 path (default: dolphin/timeseries/ or OPERA run timeseries/)",
+        help="Output .he5 path (default: dolphin/timeseries/ for GeoTIFF; project dir for *-stack.nc)",
     )
     parser.add_argument(
         "--no-update",
@@ -229,8 +229,7 @@ def run_opera(inps, vmin, vmin_sim, suffix: str) -> Path:
         post_processing_method=method_name,
         require_orbit=False,
     )
-    out_dir = run_dir / "timeseries"
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = run_dir
     return _write_he5(
         inps, out_dir, stack, date_list, grid, quality, mask, latitude, longitude, metadata, suffix, bperp=bperp
     )

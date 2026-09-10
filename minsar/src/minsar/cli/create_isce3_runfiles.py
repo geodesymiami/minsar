@@ -738,8 +738,8 @@ def _opera_hdfeos5_command(context: dict[str, object]) -> str:
 
 
 def _opera_ingest_command() -> str:
-    """Ingest HE5 written from an OPERA-style stack at project timeseries/."""
-    return "ingest_insarmaps.bash timeseries"
+    """Ingest HE5 written from an OPERA-style stack in the project directory."""
+    return "ingest_insarmaps.bash ."
 
 
 def _cslc_slc_files_arg(context: dict[str, object]) -> str:
