@@ -63,7 +63,7 @@ EOF
     set +u
     conda activate "$ENV_PREFIX"
     pip install -e "$DISP_DIR"
-    pip install 'dolphin>=0.42.7' 'opera-utils>=0.25.7' 'spurt>=0.1.0' 'zarr>=2,<4'
+    pip install 'dolphin>=0.42.7' 'opera-utils>=0.25.7' 'spurt>=0.1.0'
 else
     source "$CONDA_SH"
     set +u
@@ -73,6 +73,9 @@ else
     conda activate "$ENV_NAME"
     pip install -e "$DISP_DIR"
 fi
+# MinSAR disp_s1_process.py writes a zarr stack; not in upstream conda-env.yml.
+pip install 'zarr>=2,<4'
+python -c "import zarr; print('Verified zarr in disp-s1-env')"
 
 ln -sf "$MINSAR_HOME/additions/disp-s1/disp_s1_process.py" "$DISP_DIR/scripts/disp_s1_process.py"
 ln -sf "$MINSAR_HOME/additions/disp-s1/product.py" "$DISP_DIR/src/disp_s1/product.py"

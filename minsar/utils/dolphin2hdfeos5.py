@@ -9,6 +9,7 @@ DISP-S1 recommended_mask (TC 0.6 / similarity 0.4).
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -283,7 +284,14 @@ def run(inps) -> Path:
     return run_opera(inps, vmin, vmin_sim, suffix)
 
 
+def _clear_sweets_gdal_proj_env() -> None:
+    """Drop sweets pixi GDAL/PROJ vars so minsar pyproj uses its own proj.db."""
+    for key in ("GDAL_DRIVER_PATH", "GDAL_DATA", "PROJ_LIB", "PROJ_DATA"):
+        os.environ.pop(key, None)
+
+
 def main(iargs=None):
+    _clear_sweets_gdal_proj_env()
     parser = create_parser()
     inps = parser.parse_args(args=iargs)
     try:

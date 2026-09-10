@@ -418,10 +418,6 @@ run_task_list() {
     export OMP_NUM_THREADS="$nthreads"
     echo "Local launcher: ${n_parallel} parallel tasks (OMP_NUM_THREADS=${nthreads})"
 
-    if [[ "$(basename "$run_file")" == *create_cslc* ]]; then
-        export_sweets_pixi_gdal_proj
-    fi
-
     while IFS= read -r task || [[ -n "$task" ]]; do
         [[ -n "${task//[[:space:]]/}" ]] || continue
         [[ "$task" != \#* ]] || continue
@@ -429,7 +425,14 @@ run_task_list() {
             echo "$task"
             continue
         fi
-        bash -c "$task" &
+        if [[ "$(basename "$run_file")" == *create_cslc* ]]; then
+            (
+                export_sweets_pixi_gdal_proj
+                bash -c "$task"
+            ) &
+        else
+            bash -c "$task" &
+        fi
         pids+=("$!")
         if [[ "${#pids[@]}" -ge "$n_parallel" ]]; then
             if ! wait "${pids[0]}"; then
@@ -449,6 +452,7 @@ run_task_list() {
 }
 
 run_isce3_runfile() {
+    unset GDAL_DRIVER_PATH GDAL_DATA PROJ_LIB PROJ_DATA
     bash "$1"
 }
 
@@ -687,9 +691,11 @@ sweets_pixi_prefix() {
 export_sweets_pixi_gdal_proj() {
     local prefix
     prefix="$(sweets_pixi_prefix)"
+    export PATH="${prefix}/bin:${PATH}"
     export PROJ_LIB="${prefix}/share/proj"
     export PROJ_DATA="${prefix}/share/proj"
     export GDAL_DATA="${prefix}/share/gdal"
+    export GDAL_DRIVER_PATH="${prefix}/lib/gdalplugins"
 }
 
 write_create_cslc_jobfile() {
