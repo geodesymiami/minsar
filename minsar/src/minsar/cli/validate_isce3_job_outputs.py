@@ -18,7 +18,7 @@ _UNNUMBERED_JOB_STEMS = {
     "run_disp_s1_process": "disp_s1_process",
     "run_reformat_disp": "reformat_disp",
 }
-# CSLC opera writes HE5/ingest under project-root timeseries/, not {DIR}/timeseries/.
+# CSLC opera / DISP stack HE5+ingest live in the project root (not dolphin/timeseries/).
 _CSLC_OPERA_DISP_PATTERN_STEPS = ("dolphin_2_hdfeos5", "ingest_insarmaps")
 
 
@@ -131,7 +131,7 @@ def _effective_rules(
     workflows: dict[str, object],
     dolphin_mode: str,
 ) -> dict[str, list[str]]:
-    """Use disp-style paths for opera CSLC steps that write under project-root timeseries/."""
+    """Use DISP project-root HE5/ingest patterns for CSLC opera stack steps."""
     if workflow != "cslc" or dolphin_mode != "opera":
         return rules
     disp_rules = workflows.get("disp")

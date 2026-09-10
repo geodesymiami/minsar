@@ -70,10 +70,10 @@
         "*stack.nc"
       ],
       "dolphin_2_hdfeos5": [
-        "timeseries/*.he5"
+        "*.he5"
       ],
       "ingest_insarmaps": [
-        "timeseries/JSON*/*.mbtiles"
+        "JSON*/*.mbtiles"
       ]
     }
   }
