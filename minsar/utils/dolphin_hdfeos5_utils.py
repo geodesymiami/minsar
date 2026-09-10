@@ -52,12 +52,13 @@ SKIP_DIR_NAMES = {
     "unwrapped",
 }
 S1_WAVELENGTH = 0.05546576
-MASK_SOURCES = ("recommended", "tc", "similarity", "tc+sim", "recommendedDensity")
+MASK_SOURCES = ("recommended", "tc", "similarity", "tc+sim", "recommendedDensity", "psDensity")
 RECOMMENDED_VMIN = 0.6
 RECOMMENDED_VMIN_SIM = 0.4
 TC_VMIN = 0.6
 SIMILARITY_VMIN = 0.4
 RECOMMENDED_DENSITY_VMIN = 0.9
+PS_DENSITY_VMIN = 0.0
 from minsar.utils.dolphin_presets import (
     dolphin_method_string,
     normalize_dolphin_preset as normalize_dolphin_preset_name,
@@ -73,6 +74,8 @@ DOLPHIN2HDFEOS5_EXAMPLES = """Examples:
   dolphin2hdfeos5.py dolphin -m tc+sim --vmin 0.7 --vmin-sim 0.5
   dolphin2hdfeos5.py dolphin -m recommendedDensity
   dolphin2hdfeos5.py dolphin -m recommendedDensity --vmin 0.95
+  dolphin2hdfeos5.py stack.nc --method-string operaDisp -m psDensity
+  dolphin2hdfeos5.py stack.nc --method-string operaDisp -m psDensity --vmin 0.5
 """
 REMASK_HDFEOS5_EXAMPLES = """Examples:
   remask_hdfeos5.py S1_….he5 -m tc --vmin 0.7
@@ -80,10 +83,12 @@ REMASK_HDFEOS5_EXAMPLES = """Examples:
   remask_hdfeos5.py S1_….he5 -m tc+sim --vmin 0.7 --vmin-sim 0.5
   remask_hdfeos5.py S1_….he5 -m recommendedDensity
   remask_hdfeos5.py S1_….he5 -m recommendedDensity --vmin 0.95
+  remask_hdfeos5.py S1_….he5 -m psDensity
+  remask_hdfeos5.py S1_….he5 -m psDensity --vmin 0.5
   remask_hdfeos5.py S1_…_tc070_sim050.he5 -m recommended
 """
 MASK_SUFFIX_RE = re.compile(
-    r"_(?:tc\d{3}_sim\d{3}|tc\d{3}|sim\d{3}|dens\d{3}|rec\d{3}(?:_\d{3})?|coh\d{3}(?:_sim\d{3})?)$"
+    r"_(?:tc\d{3}_sim\d{3}|tc\d{3}|sim\d{3}|dens\d{3}|ps\d{3}|rec\d{3}(?:_\d{3})?|coh\d{3}(?:_sim\d{3})?)$"
 )
 HE5_QUALITY = "HDFEOS/GRIDS/timeseries/quality"
 HE5_OBS = "HDFEOS/GRIDS/timeseries/observation"
@@ -111,17 +116,25 @@ def add_mask_arguments(parser: argparse.ArgumentParser) -> None:
         default="recommended",
         metavar="MASK",
         help=(
-            "{recommended,tc,similarity,tc+sim,recommendedDensity} (default: recommended). "
-            "recommended: fixed OPERA 0.6/0.4 (no --vmin/--vmin-sim). "
-            "tc+sim: same OR rule with --vmin/--vmin-sim. "
-            "recommendedDensity: keep if good in >= --vmin of dates (needs OPERA density)"
+            "{recommended,tc,similarity,tc+sim,recommendedDensity,psDensity} (default: recommended).\n"
+            "recommended: fixed OPERA 0.6/0.4 (no --vmin/--vmin-sim).\n"
+            "tc+sim: same OR rule with --vmin/--vmin-sim.\n"
+            "recommendedDensity: keep if recommended_mask is 1 on >= --vmin of dates.\n"
+            "psDensity: keep if a persistent scatterer on more than --vmin of dates\n"
+            "(OPERA persistent_scatterer_mask). Default --vmin 0 = PS on at least one date;\n"
+            "--vmin 0.5 = PS on more than half of the dates"
         ),
     )
     parser.add_argument(
         "--vmin",
         type=float,
         default=None,
-        help="Cutoff for -m (defaults: tc+sim/tc 0.6, similarity 0.4, recommendedDensity 0.9; not for recommended)",
+        help=(
+            "Cutoff for -m (not used with -m recommended).\n"
+            "Defaults: tc+sim/tc 0.6, similarity 0.4, recommendedDensity 0.9, psDensity 0.\n"
+            "For -m psDensity this is the fraction of dates the pixel must be a persistent scatterer:\n"
+            "0 keeps pixels that were PS at least once; 0.5 keeps pixels that were PS on more than half of the dates"
+        ),
     )
     parser.add_argument(
         "--vmin-sim",
@@ -159,6 +172,8 @@ def resolve_mask_thresholds(source: str, vmin: float | None, vmin_sim: float | N
         return cutoff, cutoff
     if source == "recommendedDensity":
         return (RECOMMENDED_DENSITY_VMIN if vmin is None else vmin), vmin_sim
+    if source == "psDensity":
+        return (PS_DENSITY_VMIN if vmin is None else vmin), vmin_sim
     raise ValueError(f"unknown mask source: {source}")
 
 
@@ -179,6 +194,8 @@ def mask_filename_suffix(source: str, vmin: float, vmin_sim: float | None) -> st
         return f"sim{_pct3(vmin)}"
     if source == "recommendedDensity":
         return f"dens{_pct3(vmin)}"
+    if source == "psDensity":
+        return f"ps{_pct3(vmin)}"
     raise ValueError(f"unknown mask source: {source}")
 
 
@@ -697,6 +714,7 @@ def load_quality_layers(
         "watermask": watermask,
         "conncomp": conncomp,
         "recommended_density": None,
+        "persistent_scatterer_density": None,
         "shadow": shadow,
         "height": height,
         "incidence": incidence,
@@ -770,6 +788,16 @@ def build_mask(
             )
         dens = np.asarray(dens)
         mask &= np.isfinite(dens) & (dens >= vmin)
+    elif source == "psDensity":
+        dens = quality.get("persistent_scatterer_density")
+        if dens is None or np.asarray(dens).shape != shape:
+            raise ValueError(
+                "-m psDensity requires quality/persistentScattererDensity "
+                "(OPERA DISP persistent_scatterer_mask; not available for sweets/dolphin). "
+                "Re-run dolphin2hdfeos5.py on the *-stack.nc to add that layer"
+            )
+        dens = np.asarray(dens)
+        mask &= np.isfinite(dens) & (dens > vmin)
     else:
         raise ValueError(f"unknown mask source: {source}")
     return mask
@@ -937,6 +965,7 @@ def create_hdfeos_output(
     conncomp: np.ndarray = None,
     phase_similarity: np.ndarray = None,
     recommended_density: np.ndarray = None,
+    persistent_scatterer_density: np.ndarray = None,
     metadata: dict = None,
 ):
     """Write a MintPy-style HDF-EOS5 file from Dolphin/OPERA arrays."""
@@ -1015,6 +1044,8 @@ def create_hdfeos_output(
         hdfeos_dict[f"{HE5_QUALITY}/phaseSimilarity"] = np.asarray(phase_similarity).astype("float32")
     if recommended_density is not None:
         hdfeos_dict[f"{HE5_QUALITY}/recommendedDensity"] = np.asarray(recommended_density).astype("float32")
+    if persistent_scatterer_density is not None:
+        hdfeos_dict[f"{HE5_QUALITY}/persistentScattererDensity"] = np.asarray(persistent_scatterer_density).astype("float32")
 
     if "vert" in output_path:
         metadata["displacementType"] = "VERTICAL"
@@ -1234,6 +1265,19 @@ def _opera_geometry_from_dir(geom_dir: Path | None, shape: tuple[int, int]):
     return height, incidence, azimuth, shadow
 
 
+def _persistent_scatterer_density(ps_mask: np.ndarray) -> np.ndarray:
+    """2D fraction of dates a pixel is PS (1). 255/other is nodata and is left out of the mean."""
+    ps = np.asarray(ps_mask)
+    is_ps = ps == 1
+    is_valid = (ps == 0) | (ps == 1)
+    n_valid = np.sum(is_valid, axis=0)
+    n_ps = np.sum(is_ps, axis=0)
+    dens = np.full(ps.shape[1:], np.nan, dtype=np.float32)
+    ok = n_valid > 0
+    dens[ok] = (n_ps[ok] / n_valid[ok]).astype(np.float32)
+    return dens
+
+
 def load_opera_stack(
     stack_nc: Path,
     run_dir: Path | None = None,
@@ -1264,6 +1308,9 @@ def load_opera_stack(
         watermask = np.asarray(f["water_mask"][:], dtype=np.float32) if "water_mask" in f else None
         rec = np.asarray(f["recommended_mask"][:], dtype=np.float32)
         recommended_density = np.mean(np.isfinite(rec) & (rec > 0.5), axis=0).astype(np.float32)
+        persistent_scatterer_density = None
+        if "persistent_scatterer_mask" in f:
+            persistent_scatterer_density = _persistent_scatterer_density(f["persistent_scatterer_mask"][:])
         conncomp = None
         if "connected_component_labels" in f:
             cc = np.asarray(f["connected_component_labels"][:], dtype=np.float32)
@@ -1298,6 +1345,7 @@ def load_opera_stack(
         "watermask": watermask,
         "conncomp": conncomp,
         "recommended_density": recommended_density,
+        "persistent_scatterer_density": persistent_scatterer_density,
         "shadow": shadow,
         "height": height,
         "incidence": incidence,
@@ -1320,6 +1368,7 @@ def quality_from_he5(he5_path: Path) -> tuple[np.ndarray, np.ndarray, dict]:
             "watermask": _he5_get(f, f"{HE5_QUALITY}/waterMask"),
             "conncomp": _he5_get(f, f"{HE5_QUALITY}/conncomp"),
             "recommended_density": _he5_get(f, f"{HE5_QUALITY}/recommendedDensity"),
+            "persistent_scatterer_density": _he5_get(f, f"{HE5_QUALITY}/persistentScattererDensity"),
             "avg_spatial_coherence": _he5_get(f, f"{HE5_QUALITY}/avgSpatialCoherence"),
         }
     return stack, shape, quality

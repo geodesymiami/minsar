@@ -210,6 +210,8 @@ def run_opera(inps, vmin, vmin_sim, suffix: str) -> Path:
         print(f"Watermask:          (none)")
     if quality.get("recommended_density") is not None:
         print(f"Rec dens:   from recommended_mask (for -m recommendedDensity)")
+    if quality.get("persistent_scatterer_density") is not None:
+        print(f"PS dens:    from persistent_scatterer_mask (for -m psDensity)")
     mask = build_mask(shape, stack, quality, source=inps.mask_source, vmin=vmin, vmin_sim=vmin_sim)
     print(f"Mask:       -m {inps.mask_source} --vmin {vmin}" + (f" --vmin-sim {vmin_sim}" if vmin_sim is not None else ""))
 
@@ -268,6 +270,7 @@ def _write_he5(inps, out_dir, stack, date_list, grid, quality, mask, latitude, l
         conncomp=same_shape(quality.get("conncomp"), shape),
         phase_similarity=same_shape(quality.get("phase_similarity"), shape),
         recommended_density=same_shape(quality.get("recommended_density"), shape),
+        persistent_scatterer_density=same_shape(quality.get("persistent_scatterer_density"), shape),
         bperp=bperp,
         metadata=metadata,
     )

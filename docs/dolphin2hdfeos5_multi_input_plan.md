@@ -1,6 +1,6 @@
 # Plan: HE5 masking (dolphin + OPERA DISP)
 
-Goal: write MintPy-style `.he5` from sweets/dolphin GeoTIFFs or OPERA `*-stack.nc`, with shared masking for `dolphin2hdfeos5.py` and `remask_hdfeos5.py`. Default mask matches OPERA DISP-S1 `recommended_mask` (TC 0.6 / similarity 0.4). `-m recommendedDensity` is OPERA only.
+Goal: write MintPy-style `.he5` from sweets/dolphin GeoTIFFs or OPERA `*-stack.nc`, with shared masking for `dolphin2hdfeos5.py` and `remask_hdfeos5.py`. Default mask matches OPERA DISP-S1 `recommended_mask` (TC 0.6 / similarity 0.4). `-m recommendedDensity` and `-m psDensity` are OPERA only.
 
 Do **not** invent a Dolphin per-date recommended stack for sweets in this work. MintPy notebook HDF5s are optional; prefer `*-stack.nc`.
 
@@ -39,7 +39,7 @@ dolphin2hdfeos5.py dolphin -m tc+sim --vmin 0.7 --vmin-sim 0.5
 
 | Flag | Meaning |
 |---|---|
-| `-m` / `--mask-source MASK` | `{recommended,tc,similarity,tc+sim,recommendedDensity}` |
+| `-m` / `--mask-source MASK` | `{recommended,tc,similarity,tc+sim,recommendedDensity,psDensity}` |
 | `--vmin` | TC / density cutoff (not allowed with `recommended`) |
 | `--vmin-sim` | similarity cutoff for `tc+sim` only |
 
@@ -50,8 +50,9 @@ dolphin2hdfeos5.py dolphin -m tc+sim --vmin 0.7 --vmin-sim 0.5
 | `tc` | `tc > vmin` | 0.6 | yes | yes |
 | `similarity` | `sim > cutoff` | 0.4 | yes | yes |
 | `recommendedDensity` | `quality/recommendedDensity >= vmin` | 0.9 | error | yes |
+| `psDensity` | PS on more than `--vmin` of dates (`0` = at least once; `0.5` = more than half) | 0 | error | yes |
 
-`recommendedDensity` needs OPERA `quality/recommendedDensity` (from `*-stack.nc`). Sweets has no per-date recommended stack, so it errors. `--vmin 0.95` keeps pixels good in ≥95% of dates.
+`recommendedDensity` needs OPERA `quality/recommendedDensity` (from `*-stack.nc`). `psDensity` needs `quality/persistentScattererDensity` (from `persistent_scatterer_mask`). Sweets has neither per-date stack, so both error. `--vmin 0.95` on density keeps pixels good in ≥95% of dates. Default `-m psDensity` (`--vmin 0`) keeps pixels that were PS on at least one date. `--vmin 0.5` keeps pixels that were PS on more than half of the dates.
 
 Filename mask suffixes (same for converter and remask): none for `-m recommended`; otherwise always encode cutoffs (`_tc060`, `_sim040`, `_tc070_sim050`, `_dens090`, …). `remask_hdfeos5.py` refuses to overwrite the input when the resolved output path is identical.
 
@@ -59,7 +60,7 @@ Filename mask suffixes (same for converter and remask): none for `-m recommended
 
 ## HE5 quality / geometry layers
 
-Always when present: `quality/mask`, `quality/temporalCoherence`, `quality/phaseSimilarity`, `quality/waterMask`, `quality/conncomp`, `geometry/shadowMask`. OPERA also: `quality/recommendedDensity`.
+Always when present: `quality/mask`, `quality/temporalCoherence`, `quality/phaseSimilarity`, `quality/waterMask`, `quality/conncomp`, `geometry/shadowMask`. OPERA also: `quality/recommendedDensity`, `quality/persistentScattererDensity`.
 
 ---
 
@@ -75,6 +76,8 @@ dolphin2hdfeos5.py dolphin -m similarity --vmin 0.5
 dolphin2hdfeos5.py dolphin -m tc+sim --vmin 0.7 --vmin-sim 0.5
 dolphin2hdfeos5.py dolphin -m recommendedDensity
 dolphin2hdfeos5.py dolphin -m recommendedDensity --vmin 0.95
+dolphin2hdfeos5.py stack.nc --method-string operaDisp -m psDensity
+dolphin2hdfeos5.py stack.nc --method-string operaDisp -m psDensity --vmin 0.5
 ```
 
 `remask_hdfeos5.py --help`:
@@ -85,6 +88,8 @@ remask_hdfeos5.py S1_….he5 -m similarity --vmin 0.5
 remask_hdfeos5.py S1_….he5 -m tc+sim --vmin 0.7 --vmin-sim 0.5
 remask_hdfeos5.py S1_….he5 -m recommendedDensity
 remask_hdfeos5.py S1_….he5 -m recommendedDensity --vmin 0.95
+remask_hdfeos5.py S1_….he5 -m psDensity
+remask_hdfeos5.py S1_….he5 -m psDensity --vmin 0.5
 remask_hdfeos5.py S1_…_tc070_sim050.he5 -m recommended
 ```
 OPERA run dirs still work as input (e.g. `nb_runs/FA_opera-disp_HawaiiPuna`); not listed in `--help`.
