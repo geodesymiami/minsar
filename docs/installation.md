@@ -1,6 +1,6 @@
 # Installation guide
 
-* Set `$MINSAR_HOME` in your [.bashrc](https://github.com/geodesymiami/minsar/blob/main/docs/bashrc_contents.md). You also need a [.bash_profile](./bash_profile.md) to ensure your .bashrc is read.
+* Set `$MINSAR_HOME` in your [.bashrc](./bashrc_contents.md). You also need a [.bash_profile](./bash_profile.md) to ensure your .bashrc is read.
 
 * Create an ~/accounts directory with your data download credentials (for contents see [here](./accounts_info.md)). If you have access to the RSMAES accounts repo, clone it into your $HOME directory
 
@@ -17,7 +17,7 @@ git clone git@github.com:geodesymiami/accounts.git ~/accounts ;
 ```
 cd $WORK2/code
 ```
-* Clone the repo, goto the minsar dirrectory and run the install scripts (including miniforge3 python). Work as user circleci. It will install into a `minsar` environment.  On stampede3 work on the development queue (`idevdev`):
+* Clone the repo, goto the minsar dirrectory and run the install scripts (including miniforge3 python). Work as user circleci. It will install into a `minsar` environment.  On stampede3 work on the development queue (`idevdev`) as the head nodes do not allow expensive installs:
 ```
 git clone git@github.com:geodesymiami/minsar.git ;
 cd minsar
@@ -37,6 +37,9 @@ set -eo pipefail
 ./setup/install_spatz.bash
 ```
 To recreate the conda env, re-run `./setup/install_minsar_env.bash` (it removes `tools/miniforge3/envs/minsar` first). On Mac, as some packages are not available from conda-forge (isce2, pymaxflow) a `minsar_env_MacOS.yml` is created and used.
+
+### Troubleshooting
+If you get errors try this [script](./install_minsar.bash) which is more verbose
 
 ---
 ### Test your installation
