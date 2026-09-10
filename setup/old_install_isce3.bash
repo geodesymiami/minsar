@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# UNUSED. Live install is docs/installation.md (setup/install_sweets_env.bash, not this file).
 set -eo pipefail
 
 clone_repo() {
@@ -292,4 +293,4 @@ fi
 
 echo "sweets installation DONE"
 
-echo "Running of install_isce3.bash DONE"
+echo "Running of old_install_isce3.bash DONE"

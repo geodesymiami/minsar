@@ -36,6 +36,14 @@ pip install -e tools/MiaplPy
 pip install -e tools/sardem
 pip install -e tools/sarvey[dev] --no-deps
 
+# create_isce3_runfiles (login node) needs opera_utils. --no-deps: do not pull a second GDAL.
+if [[ ! -d tools/opera-utils ]]; then
+    git clone --branch develop-scott --single-branch https://github.com/scottstanie/opera-utils.git tools/opera-utils
+    git -C tools/opera-utils fetch --tags --quiet 2>/dev/null || true
+fi
+SETUPTOOLS_SCM_PRETEND_VERSION=0.25.8 pip install tools/opera-utils --no-deps --force-reinstall
+python -c "import opera_utils; print('Verified opera_utils in minsar env')"
+
 rm -rf tools/miniforge3/pkgs
 
 echo "Running of install_minsar_env.bash DONE"

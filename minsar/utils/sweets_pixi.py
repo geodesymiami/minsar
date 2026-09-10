@@ -66,7 +66,7 @@ def sweets_env_python() -> Path:
             return candidate
     raise FileNotFoundError(
         f"SWEETS pixi python not found under {bin_dir}; "
-        "re-run setup/install_isce3.bash or setup/install_sweets_env.bash"
+        "re-run setup/install_sweets_env.bash"
     )
 
 
@@ -120,7 +120,7 @@ def invoke_via_sweets_pixi(
     if os.environ.get(_SWEETS_PIXI_NEST):
         raise ModuleNotFoundError(
             "No module named 'opera_utils' inside sweets pixi; "
-            "re-run setup/install_isce3.bash so tools/opera-utils is installed"
+            "re-run setup/install_sweets_env.bash so tools/opera-utils is installed"
         )
     if script_relpath is not None:
         code = (
