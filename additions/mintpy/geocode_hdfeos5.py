@@ -250,15 +250,25 @@ def main(inps):
                 ('temporalCoherence', 'HDFEOS/GRIDS/timeseries/quality/temporalCoherence'),
                 ('avgSpatialCoherence', 'HDFEOS/GRIDS/timeseries/quality/avgSpatialCoherence'),
                 ('mask', 'HDFEOS/GRIDS/timeseries/quality/mask'),
+                ('demError', 'HDFEOS/GRIDS/timeseries/quality/demError'),
             ]:
                 try:
                     data, _ = readfile.read(he5_file, datasetName=path)
                     geo_data = _geocode_2d(data, ds_name, he5_basename, out_basename)
                     ds = _create_hdf5_dataset(g_qual, ds_name, geo_data)
                     ds.attrs['Title'] = ds_name
-                    ds.attrs['MissingValue'] = FLOAT_ZERO if 'Coherence' in ds_name else BOOL_ZERO
-                    ds.attrs['_FillValue'] = FLOAT_ZERO if 'Coherence' in ds_name else BOOL_ZERO
-                    ds.attrs['Units'] = '1'
+                    if ds_name == 'demError':
+                        ds.attrs['MissingValue'] = FLOAT_ZERO
+                        ds.attrs['_FillValue'] = FLOAT_ZERO
+                        ds.attrs['Units'] = 'meters'
+                    elif 'Coherence' in ds_name:
+                        ds.attrs['MissingValue'] = FLOAT_ZERO
+                        ds.attrs['_FillValue'] = FLOAT_ZERO
+                        ds.attrs['Units'] = '1'
+                    else:
+                        ds.attrs['MissingValue'] = BOOL_ZERO
+                        ds.attrs['_FillValue'] = BOOL_ZERO
+                        ds.attrs['Units'] = '1'
                 except Exception as e:
                     print(f"Warning: skipping {ds_name}: {e}", file=sys.stderr)
 

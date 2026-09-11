@@ -558,15 +558,23 @@ def write_hdf5_file(metadata, out_file, ts_file, tcoh_file, scoh_file, mask_file
         ## Q4 - demError
         if dem_err_file:
             dsName = 'demError'
-            # read
-            data = readfile.read(dem_err_file, datasetName='dem')[0]
-            # write
-            dset = create_hdf5_dataset(group, dsName, data)
-            # attributes
-            dset.attrs['Title'] = dsName
-            dset.attrs['MissingValue'] = BOOL_ZERO
-            dset.attrs['_FillValue'] = BOOL_ZERO
-            dset.attrs['Units'] = '1'
+            ds_list = readfile.get_dataset_list(dem_err_file)
+            if 'dem' in ds_list:
+                ds_in = 'dem'
+            elif 'demErr' in ds_list:
+                ds_in = 'demErr'
+            else:
+                ds_in = ds_list[0]
+            data = readfile.read(dem_err_file, datasetName=ds_in)[0]
+            ref_shape = (int(metadata['LENGTH']), int(metadata['WIDTH']))
+            if data.shape != ref_shape:
+                print(f'WARNING: demError shape {data.shape} != {ref_shape}; skip demError')
+            else:
+                dset = create_hdf5_dataset(group, dsName, data)
+                dset.attrs['Title'] = dsName
+                dset.attrs['MissingValue'] = FLOAT_ZERO
+                dset.attrs['_FillValue'] = FLOAT_ZERO
+                dset.attrs['Units'] = 'meters'
 
         ##### Group - Write Geometry
         # Required: height, incidenceAngle
