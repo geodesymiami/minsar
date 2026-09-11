@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Miami MIA — Dolphin product masks</title>
+  <style>
+    :root {
+      --img-w: 400px;
+      --text: #1a1a1a;
+      --muted: #555;
+      --code-bg: #f3f3f3;
+      --rule: #ddd;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      color: var(--text);
+      max-width: 920px;
+      margin: 2rem auto;
+      padding: 0 1.25rem 3rem;
+      line-height: 1.45;
+    }
+    h1 { font-size: 1.45rem; font-weight: 650; margin: 0 0 0.35rem; }
+    .lede { color: var(--muted); margin: 0 0 1.75rem; }
+    .row {
+      display: grid;
+      grid-template-columns: var(--img-w) 1fr;
+      gap: 1.25rem 1.75rem;
+      align-items: center;
+      padding: 1.1rem 0;
+      border-top: 1px solid var(--rule);
+    }
+    .row img {
+      width: var(--img-w);
+      height: auto;
+      display: block;
+      border: 1px solid #ccc;
+    }
+    .row > a.thumb { display: block; }
+    code, .opts {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.92rem;
+    }
+    .opts {
+      background: var(--code-bg);
+      padding: 0.55rem 0.7rem;
+      border-radius: 4px;
+      display: inline-block;
+      white-space: pre-wrap;
+    }
+    .maps { font-size: 0.92rem; margin: 0.45rem 0 0; }
+    .maps a { color: #0b57d0; }
+    .note { color: var(--muted); font-size: 0.92rem; margin: 0.45rem 0 0; }
+    @media (max-width: 720px) {
+      .row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Miami MIA — Dolphin product masks</h1>
+  <p class="lede">CSLC + <code>--dolphin-mode opera</code>. Click an image for the full-size PNG.</p>
+
+  <div class="row">
+    <a class="thumb" href="images/Miami_MIA_masking/01_recommended.png"><img src="images/Miami_MIA_masking/01_recommended.png" alt="recommended"></a>
+    <div>
+      <p class="opts">-m recommended</p>
+      <p class="note">Default (no remask). Keep if TC ≥ 0.6 or similarity ≥ 0.4.</p>
+      <p class="maps"><a href="http://149.165.153.50/start/25.7907/-80.2872/13.2378?startDataset=S1_asc_048_operaDisp_20160927_20260619_N2578W08031_N2581W08031_N2581W08026_N2578W08026&amp;flyToDatasetCenter=false&amp;colorscale=velocity&amp;pixelSize=3.3&amp;background=satellite&amp;minScale=-0.2&amp;maxScale=0.2">InsarMaps</a></p>
+    </div>
+  </div>
+
+  <div class="row">
+    <a class="thumb" href="images/Miami_MIA_masking/02_tc070.png"><img src="images/Miami_MIA_masking/02_tc070.png" alt="tc 0.7"></a>
+    <div>
+      <p class="opts">-m tc --vmin 0.7</p>
+      <p class="maps"><a href="https://insarmaps.miami.edu/start/25.7907/-80.2872/13.2378?startDataset=S1_asc_048_operaDisp_20160927_20260619_N2578W08031_N2581W08031_N2581W08026_N2578W08026_tc070&amp;flyToDatasetCenter=false&amp;colorscale=velocity&amp;pixelSize=3.3&amp;background=satellite&amp;minScale=-0.2&amp;maxScale=0.2">InsarMaps</a></p>
+    </div>
+  </div>
+
+  <div class="row">
+    <a class="thumb" href="images/Miami_MIA_masking/03_tc080.png"><img src="images/Miami_MIA_masking/03_tc080.png" alt="tc 0.8"></a>
+    <div>
+      <p class="opts">-m tc --vmin 0.8</p>
+      <p class="maps"><a href="http://149.165.153.50/start/25.7961/-80.2854/14.1?flyToDatasetCenter=false&amp;startDataset=S1_asc_048_operaDisp_20160927_20260619_N2578W08031_N2581W08031_N2581W08026_N2578W08026_tc080">InsarMaps</a></p>
+    </div>
+  </div>
+
+  <div class="row">
+    <a class="thumb" href="images/Miami_MIA_masking/04_tc070_sim050.png"><img src="images/Miami_MIA_masking/04_tc070_sim050.png" alt="tc+sim"></a>
+    <div>
+      <p class="opts">-m tc+sim --vmin 0.7 --vmin-sim 0.5</p>
+      <p class="maps"><a href="http://149.165.153.50/start/25.7907/-80.2872/13.2378?startDataset=S1_asc_048_operaDisp_20160927_20260619_N2578W08031_N2581W08031_N2581W08026_N2578W08026_tc070sim050&amp;flyToDatasetCenter=false&amp;colorscale=velocity&amp;pixelSize=3.3&amp;background=satellite&amp;minScale=-0.2&amp;maxScale=0.2">InsarMaps</a></p>
+    </div>
+  </div>
+
+  <div class="row">
+    <a class="thumb" href="images/Miami_MIA_masking/05_sim050.png"><img src="images/Miami_MIA_masking/05_sim050.png" alt="similarity"></a>
+    <div>
+      <p class="opts">-m similarity --vmin 0.5</p>
+      <p class="maps"><a href="http://149.165.153.50/start/25.7961/-80.2854/14.1?flyToDatasetCenter=false&amp;startDataset=S1_asc_048_operaDisp_20160927_20260619_N2578W08031_N2581W08031_N2581W08026_N2578W08026_sim050">InsarMaps</a></p>
+    </div>
+  </div>
+
+  <div class="row">
+    <a class="thumb" href="images/Miami_MIA_masking/06_dens090.png"><img src="images/Miami_MIA_masking/06_dens090.png" alt="recommendedDensity"></a>
+    <div>
+      <p class="opts">-m recommendedDensity --vmin 0.9</p>
+      <p class="maps"><a href="http://149.165.153.50/start/25.7961/-80.2854/14.1?flyToDatasetCenter=false&amp;startDataset=S1_asc_048_operaDisp_20160927_20260619_N2578W08031_N2581W08031_N2581W08026_N2578W08026_dens090">InsarMaps</a></p>
+    </div>
+  </div>
+
+  <div class="row">
+    <a class="thumb" href="images/Miami_MIA_masking/07_tc090.png"><img src="images/Miami_MIA_masking/07_tc090.png" alt="tc 0.9"></a>
+    <div>
+      <p class="opts">-m tc --vmin 0.9</p>
+      <p class="note">Very strong.</p>
+      <p class="maps"><a href="http://149.165.153.50/start/25.7907/-80.2872/13.2378?startDataset=S1_asc_048_operaDisp_20160927_20260619_N2578W08031_N2581W08031_N2581W08026_N2578W08026_tc090&amp;flyToDatasetCenter=false&amp;colorscale=velocity&amp;pixelSize=3.3&amp;background=satellite&amp;minScale=-0.2&amp;maxScale=0.2">InsarMaps</a></p>
+    </div>
+  </div>
+
+  <div class="row">
+    <a class="thumb" href="images/Miami_MIA_masking/08_tc095.png"><img src="images/Miami_MIA_masking/08_tc095.png" alt="tc 0.95"></a>
+    <div>
+      <p class="opts">-m tc --vmin 0.95</p>
+      <p class="note">Very, very strong.</p>
+      <p class="maps"><a href="http://149.165.153.50/start/25.7961/-80.2854/14.1?flyToDatasetCenter=false&amp;startDataset=S1_asc_048_operaDisp_20160927_20260619_N2578W08031_N2581W08031_N2581W08026_N2578W08026_tc095">InsarMaps</a></p>
+    </div>
+  </div>
+
+  <div class="row">
+    <a class="thumb" href="images/Miami_MIA_masking/09_ps000.png"><img src="images/Miami_MIA_masking/09_ps000.png" alt="psDensity"></a>
+    <div>
+      <p class="opts">-m psDensity</p>
+      <p class="note">Keep pixels classified as a persistent scatterer on at least one date (--vmin default 0).</p>
+      <p class="maps"><a href="http://149.165.153.50/start/25.7961/-80.2854/14.1?flyToDatasetCenter=false&amp;startDataset=S1_asc_048_operaDisp_20160927_20260619_N2578W08031_N2581W08031_N2581W08026_N2578W08026_ps000">InsarMaps</a></p>
+    </div>
+  </div>
+
+  <div class="row">
+    <a class="thumb" href="images/Miami_MIA_masking/10_ps050.png"><img src="images/Miami_MIA_masking/10_ps050.png" alt="psDensity 0.5"></a>
+    <div>
+      <p class="opts">-m psDensity --vmin 0.5</p>
+      <p class="note">Keep pixels classified as a persistent scatterer on more than half of the dates.</p>
+      <p class="maps"><a href="http://149.165.153.50/start/25.7961/-80.2854/14.1?flyToDatasetCenter=false&amp;startDataset=S1_asc_048_operaDisp_20160927_20260619_N2578W08031_N2581W08031_N2581W08026_N2578W08026_ps050">InsarMaps</a></p>
+    </div>
+  </div>
+
+  <div class="row">
+    <a class="thumb" href="images/Miami_MIA_masking/11_temporalCoherence.png"><img src="images/Miami_MIA_masking/11_temporalCoherence.png" alt="temporalCoherence"></a>
+    <div>
+      <p class="opts">view.py … temporalCoherence</p>
+      <p class="note">Quality layer (not a remask).</p>
+    </div>
+  </div>
+
+  <div class="row">
+    <a class="thumb" href="images/Miami_MIA_masking/12_phaseSimilarity.png"><img src="images/Miami_MIA_masking/12_phaseSimilarity.png" alt="phaseSimilarity"></a>
+    <div>
+      <p class="opts">view.py … phaseSimilarity</p>
+      <p class="note">Quality layer (not a remask).</p>
+    </div>
+  </div>
+
+  <div class="row">
+    <a class="thumb" href="images/Miami_MIA_masking/13_recommendedDensity.png"><img src="images/Miami_MIA_masking/13_recommendedDensity.png" alt="recommendedDensity"></a>
+    <div>
+      <p class="opts">view.py … recommendedDensity</p>
+      <p class="note">Quality layer (not a remask).</p>
+    </div>
+  </div>
+</body>
+</html>
