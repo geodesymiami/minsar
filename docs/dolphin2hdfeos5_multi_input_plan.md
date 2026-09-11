@@ -54,7 +54,7 @@ dolphin2hdfeos5.py dolphin -m tc+sim --vmin 0.7 --vmin-sim 0.5
 
 `recommendedDensity` needs OPERA `quality/recommendedDensity` (from `*-stack.nc`). `psDensity` needs `quality/persistentScattererDensity` (from `persistent_scatterer_mask`). Sweets has neither per-date stack, so both error. `--vmin 0.95` on density keeps pixels good in ≥95% of dates. Default `-m psDensity` (`--vmin 0`) keeps pixels that were PS on at least one date. `--vmin 0.5` keeps pixels that were PS on more than half of the dates.
 
-Filename mask suffixes (same for converter and remask): none for `-m recommended`; otherwise always encode cutoffs (`_tc060`, `_sim040`, `_tc070_sim050`, `_dens090`, …). `remask_hdfeos5.py` refuses to overwrite the input when the resolved output path is identical.
+Filename mask suffixes (same for converter and remask): none for `-m recommended`; otherwise one extra `_`-separated token encoding cutoffs (`_tc060`, `_sim040`, `_tc070sim050`, `_dens090`, …). `remask_hdfeos5.py` refuses to overwrite the input when the resolved output path is identical.
 
 ---
 
@@ -90,7 +90,7 @@ remask_hdfeos5.py S1_….he5 -m recommendedDensity
 remask_hdfeos5.py S1_….he5 -m recommendedDensity --vmin 0.95
 remask_hdfeos5.py S1_….he5 -m psDensity
 remask_hdfeos5.py S1_….he5 -m psDensity --vmin 0.5
-remask_hdfeos5.py S1_…_tc070_sim050.he5 -m recommended
+remask_hdfeos5.py S1_…_tc070sim050.he5 -m recommended
 ```
 OPERA run dirs still work as input (e.g. `nb_runs/FA_opera-disp_HawaiiPuna`); not listed in `--help`.
 

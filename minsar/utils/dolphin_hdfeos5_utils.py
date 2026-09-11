@@ -85,10 +85,11 @@ REMASK_HDFEOS5_EXAMPLES = """Examples:
   remask_hdfeos5.py S1_….he5 -m recommendedDensity --vmin 0.95
   remask_hdfeos5.py S1_….he5 -m psDensity
   remask_hdfeos5.py S1_….he5 -m psDensity --vmin 0.5
-  remask_hdfeos5.py S1_…_tc070_sim050.he5 -m recommended
+  remask_hdfeos5.py S1_…_tc070sim050.he5 -m recommended
 """
+# One underscore-separated token after the MintPy stem (also strip older tcNNN_simNNN).
 MASK_SUFFIX_RE = re.compile(
-    r"_(?:tc\d{3}_sim\d{3}|tc\d{3}|sim\d{3}|dens\d{3}|ps\d{3}|rec\d{3}(?:_\d{3})?|coh\d{3}(?:_sim\d{3})?)$"
+    r"_(?:tc\d{3}_sim\d{3}|tc\d{3}sim\d{3}|tc\d{3}|sim\d{3}|dens\d{3}|ps\d{3}|rec\d{3}(?:_\d{3})?|coh\d{3}(?:_sim\d{3})?)$"
 )
 HE5_QUALITY = "HDFEOS/GRIDS/timeseries/quality"
 HE5_OBS = "HDFEOS/GRIDS/timeseries/observation"
@@ -187,7 +188,7 @@ def mask_filename_suffix(source: str, vmin: float, vmin_sim: float | None) -> st
         return None
     if source == "tc+sim":
         sim = RECOMMENDED_VMIN_SIM if vmin_sim is None else vmin_sim
-        return f"tc{_pct3(vmin)}_sim{_pct3(sim)}"
+        return f"tc{_pct3(vmin)}sim{_pct3(sim)}"
     if source == "tc":
         return f"tc{_pct3(vmin)}"
     if source == "similarity":
