@@ -19,6 +19,7 @@ Run an ISCE3 SAFE/CSLC/DISP workflow. Use --start --end --dostep for processing 
 single-run steps: [download, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps]
 opera steps: [download, disp_s1_process, reformat_disp, dolphin_2_hdfeos5, ingest_insarmaps]
 Additional step for data-type safe: create_cslc. For disp-s1: reformat_disp
+After a successful run, uploads the .he5 with upload_data_products.py (project dir for opera/disp-s1; dolphin/timeseries for single-run).
 Supports dolphin config from config.yaml or OPERA_DISP-S1.nc (uses metadata/dolphin_workflow_config).
 Additional --section.option flags go to dolphin config.
 
@@ -199,6 +200,58 @@ write_log_line() {
         seen+=("$real")
         echo "$line" >> "${real}/log"
     done
+}
+
+isce3_he5_search_dir() {
+    local mode dir
+    mode="${dolphin_mode:-single-run}"
+    if [[ "$mode" == "opera" ]] || compgen -G "$work_dir/$ISCE3_RUN_DIR_NAME/run_*_download_disp*" >/dev/null; then
+        printf '%s\n' "."
+        return 0
+    fi
+    dir="$(sed -n 's/^dolphin_dir=//p' "$work_dir/.isce3_run_slice" 2>/dev/null | head -1)"
+    dir="${dir:-dolphin}"
+    printf '%s\n' "${dir}/timeseries"
+}
+
+find_isce3_he5_files() {
+    local search_dir abs_dir file rel
+    local -a matches=()
+    local old_nullglob
+    search_dir="$(isce3_he5_search_dir)"
+    if [[ "$search_dir" == "." ]]; then
+        abs_dir="$work_dir"
+    else
+        abs_dir="$work_dir/$search_dir"
+    fi
+    [[ -d "$abs_dir" ]] || return 1
+    old_nullglob="$(shopt -p nullglob)"
+    shopt -s nullglob
+    matches=("$abs_dir"/S1*.he5)
+    if [[ ${#matches[@]} -eq 0 ]]; then
+        matches=("$abs_dir"/*.he5)
+    fi
+    eval "$old_nullglob"
+    [[ ${#matches[@]} -gt 0 ]] || return 1
+    for file in "${matches[@]}"; do
+        rel="${file#"$work_dir"/}"
+        printf '%s\n' "$rel"
+    done
+}
+
+upload_isce3_he5() {
+    local -a he5_files=()
+    local line
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && he5_files+=("$line")
+    done < <(find_isce3_he5_files || true)
+    if [[ ${#he5_files[@]} -eq 0 ]]; then
+        echo "No .he5 product found; skip upload_data_products.py"
+        return 0
+    fi
+    echo "Running: upload_data_products.py ${he5_files[*]}"
+    write_log_line "$(date +"%Y%m%d:%H-%M") * upload_data_products.py ${he5_files[*]}" "$invoke_dir" "$work_dir"
+    upload_data_products.py "${he5_files[@]}"
 }
 
 [[ -f "$GENERATOR" ]] || die "create_isce3_runfiles.py not found: $GENERATOR"
@@ -437,4 +490,5 @@ fi
 
 echo "Running: run_isce3_workflow.bash ${ISCE3_RUN_DIR_NAME} ${run_args[*]}"
 write_log_line "$(date +"%Y%m%d:%H-%M") * run_isce3_workflow.bash ${ISCE3_RUN_DIR_NAME} ${run_args[*]}" "$invoke_dir" "$work_dir"
-exec "$RUNNER" "$ISCE3_RUN_DIR_NAME" "${run_args[@]}"
+"$RUNNER" "$ISCE3_RUN_DIR_NAME" "${run_args[@]}"
+upload_isce3_he5

@@ -55,7 +55,7 @@ mintpy.networkInversion.minTempCoh   = 0.55     # auto for 0.5
 miaplpy.timeseries.minTempCoh        = 0.55     # auto for 0.5
 minsar.product.suffix                = auto  #[auto / no / coherenceThreshold / TAG] auto for no extra suffix
 ######################################################
-minsar.mintpyDir.addition            = date  #[name / date / lalo / auto] auto for mintpy (mintpy_$name_startDate_endDate)
+minsar.mintpyDir.addition            = auto  #[name / date / lalo / auto] auto for mintpy (mintpy_$name_startDate_endDate)
 minsar.insarmaps_flag                = True
 minsar.upload_flag                   = True
 minsar.insarmaps_dataset             = DS

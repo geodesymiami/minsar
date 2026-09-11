@@ -24,25 +24,23 @@ sys.path.insert(0, os.getenv('SSARAHOME'))
 import password_config as password
 
 ##############################################################################
-EXAMPLE = """For slcStack.h5 use:
-     upload_data_products.py miaplpy/inputs
-
-Examples:
+EXAMPLE = """Examples:
     upload_data_products.py mintpy
     upload_data_products.py miaplpy
     upload_data_products.py miaplpy/network_single_reference
     upload_data_products.py miaplpy/inputs
+    upload_data_products.py S1_desc_115_20160803_20260612.he5
 """
 
 DESCRIPTION = (
-    "Uploads mintpy and miaplpy data products to jetstream server"
+    "Uploads mintpy/miaplpy directories or files to jetstream"
 )
 
 def create_parser():
     parser = argparse.ArgumentParser(description=DESCRIPTION, epilog=EXAMPLE,
                  formatter_class=argparse.RawTextHelpFormatter)
 
-    parser.add_argument('data_dirs', nargs='+', metavar="DIRECTORY", help='upload specific mintpy/miaplpy directory')
+    parser.add_argument('data_dirs', nargs='+', metavar="PATH", help='mintpy/miaplpy directory or file to upload')
     parser.add_argument('--geo', dest='geo_flag', action='store_true', default=False, help='uploads geo  directory')
     parser.add_argument('--all', dest='all_flag', action='store_true', default=False, help='uploads full directory')
     parser.add_argument('--pic', dest='piconly_flag', action='store_true', default=False, help='uploads only pic directory')
