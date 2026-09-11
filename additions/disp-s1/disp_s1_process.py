@@ -9,6 +9,9 @@ MinSAR patch (``additions/disp-s1/disp_s1_process.py``):
   convention so ``opera-utils disp-s1-reformat`` can ingest them.
 - Completed ministacks are skipped on re-run; incomplete batch work dirs are
   removed before retry; duplicate compressed SLCs in ``comp_slcs/`` are deduped.
+- Worker parallelism uses ``SLURM_CPUS_ON_NODE`` / ``SLURM_NTASKS`` (else
+  ``os.cpu_count()``) with the same n_parallel_bursts / threads_per_worker
+  split as MinSAR ``dolphin_worker_counts`` (not a fixed 8 threads / 1 burst).
 
 Given a directory of CSLC/GSLC bursts, this runs the full local pipeline for an
 arbitrary site/track/frame:
@@ -293,6 +296,25 @@ def _restore_amp_state(work_base: Path) -> tuple[list[Path], list[Path]]:
     return amp_disp, amp_mean
 
 
+def _node_cpu_count() -> int:
+    """CPUs available to this process (SLURM allocation, else host count)."""
+    for key in ("SLURM_CPUS_ON_NODE", "SLURM_NTASKS", "SLURM_CPUS_PER_TASK"):
+        raw = os.environ.get(key, "").strip()
+        if raw.isdigit() and int(raw) > 0:
+            return int(raw)
+    return max(1, int(os.cpu_count() or 1))
+
+
+def _worker_counts(cpus: int, n_bursts: int) -> tuple[int, int, int]:
+    """Return (n_parallel_bursts, threads_per_worker, n_parallel_jobs)."""
+    cpus = max(1, int(cpus))
+    n_bursts = max(1, int(n_bursts))
+    n_parallel = max(1, min(n_bursts, cpus // 4))
+    threads = max(1, cpus // n_parallel)
+    n_unwrap = max(1, cpus // 4)
+    return n_parallel, threads, n_unwrap
+
+
 def make_cfg(
     cslc_files: list[Path],
     work_dir: Path,
@@ -311,6 +333,13 @@ def make_cfg(
     """Build a `DisplacementWorkflow` config for one ministack batch."""
     hwy, hwx = half_window if half_window is not None else DEFAULT_HALF_WINDOW_YX
     sy, sx = strides if strides is not None else DEFAULT_STRIDES_YX
+    n_bursts = max(1, len(group_by_burst(cslc_files + comp_slc_files)))
+    cpus = _node_cpu_count()
+    n_parallel, threads, n_unwrap = _worker_counts(cpus, n_bursts)
+    print(
+        f"  workers: n_parallel_bursts={n_parallel} threads_per_worker={threads} "
+        f"n_parallel_jobs={n_unwrap} (cpus={cpus}, bursts={n_bursts})"
+    )
     return DisplacementWorkflow(
         cslc_file_list=comp_slc_files + cslc_files,
         input_options=InputOptions(subdataset=OPERA_DATASET_NAME),
@@ -341,6 +370,7 @@ def make_cfg(
         unwrap_options=UnwrapOptions(
             run_unwrap=True,
             run_interpolation=True,
+            n_parallel_jobs=n_unwrap,
             preprocess_options=PreprocessOptions(
                 alpha=0.5,
                 max_radius=150,
@@ -356,8 +386,8 @@ def make_cfg(
         ),
         worker_settings={
             "gpu_enabled": gpu,
-            "threads_per_worker": 8,
-            "n_parallel_bursts": 1,
+            "threads_per_worker": threads,
+            "n_parallel_bursts": n_parallel,
         },
     )
 
