@@ -967,6 +967,7 @@ def create_hdfeos_output(
     phase_similarity: np.ndarray = None,
     recommended_density: np.ndarray = None,
     persistent_scatterer_density: np.ndarray = None,
+    dem_err: np.ndarray = None,
     metadata: dict = None,
 ):
     """Write a MintPy-style HDF-EOS5 file from Dolphin/OPERA arrays."""
@@ -1047,6 +1048,8 @@ def create_hdfeos_output(
         hdfeos_dict[f"{HE5_QUALITY}/recommendedDensity"] = np.asarray(recommended_density).astype("float32")
     if persistent_scatterer_density is not None:
         hdfeos_dict[f"{HE5_QUALITY}/persistentScattererDensity"] = np.asarray(persistent_scatterer_density).astype("float32")
+    if dem_err is not None:
+        hdfeos_dict[f"{HE5_QUALITY}/demError"] = np.asarray(dem_err).astype("float32")
 
     if "vert" in output_path:
         metadata["displacementType"] = "VERTICAL"
