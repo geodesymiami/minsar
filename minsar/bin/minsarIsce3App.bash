@@ -38,7 +38,7 @@ options:
   --stride Y X          output strides (Default: 3 6)
   --half-window-preset {standard,dry,wet,arctic}
                         phase-linking half-window: standard 6x12, dry 5x11, wet 9x18, arctic 9x19 (Default: standard)
-  --dolphin-mode MODE   {single-run,opera} (one Dolphin stack or local DISP-S1) (Default: single-run)
+  --dolphin-mode MODE   {single-run,opera} (one Dolphin stack or local DISP-S1; not for disp-s1) (Default: single-run)
   --reference-method METHOD
                         disp-s1-reformat reference: NONE, POINT, MEDIAN, BORDER, HIGH_COHERENCE (Default: HIGH_COHERENCE)
   --backend BACKEND     auto, local, or slurm (Default: auto)

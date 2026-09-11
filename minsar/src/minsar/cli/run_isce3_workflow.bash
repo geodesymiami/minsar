@@ -45,6 +45,7 @@ STEP may be a step number, step name, run-file basename, or a coarse alias:
   download, download_create_cslc, dolphin, hdfeos5, ingest.
 
 SAFE steps:    download_safe, create_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps
+SAFE steps (opera): download_safe, create_cslc, disp_s1_process, reformat_disp, dolphin_2_hdfeos5, ingest_insarmaps
 CSLC steps (single-run): download_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps
 CSLC steps (opera):    download_cslc, disp_s1_process, reformat_disp, dolphin_2_hdfeos5, ingest_insarmaps
 SAFE/CSLC monolithic: dolphin instead of dolphin_wrapped/unwrap/timeseries (create_isce3_runfiles.py --no-dolphin-split)

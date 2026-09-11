@@ -18,8 +18,8 @@ _UNNUMBERED_JOB_STEMS = {
     "run_disp_s1_process": "disp_s1_process",
     "run_reformat_disp": "reformat_disp",
 }
-# CSLC opera / DISP stack HE5+ingest live in the project root (not dolphin/timeseries/).
-_CSLC_OPERA_DISP_PATTERN_STEPS = ("dolphin_2_hdfeos5", "ingest_insarmaps")
+# SAFE/CSLC opera / DISP stack HE5+ingest live in the project root (not dolphin/timeseries/).
+_OPERA_DISP_PATTERN_STEPS = ("dolphin_2_hdfeos5", "ingest_insarmaps")
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -131,14 +131,14 @@ def _effective_rules(
     workflows: dict[str, object],
     dolphin_mode: str,
 ) -> dict[str, list[str]]:
-    """Use DISP project-root HE5/ingest patterns for CSLC opera stack steps."""
-    if workflow != "cslc" or dolphin_mode != "opera":
+    """Use DISP project-root HE5/ingest patterns for SAFE/CSLC opera stack steps."""
+    if workflow not in {"cslc", "safe"} or dolphin_mode != "opera":
         return rules
     disp_rules = workflows.get("disp")
     if not isinstance(disp_rules, dict):
         return rules
     out = dict(rules)
-    for step in _CSLC_OPERA_DISP_PATTERN_STEPS:
+    for step in _OPERA_DISP_PATTERN_STEPS:
         patterns = disp_rules.get(step)
         if isinstance(patterns, list) and step in out:
             out[step] = list(patterns)

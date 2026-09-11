@@ -31,7 +31,7 @@ NO_PRESET_NAMING_HELP = (
 )
 
 OPERA_DISP_METHOD_STRING = "operaDisp"
-# HE5 label for --data-type cslc --dolphin-mode opera (local DISP-S1 produce).
+# HE5 label for --data-type {safe,cslc} --dolphin-mode opera (local DISP-S1 produce).
 MODE_OPERA_DISP_METHOD_STRING = "modeOperaDisp"
 
 METHOD_STRING_HELP = (

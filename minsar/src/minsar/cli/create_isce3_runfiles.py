@@ -201,7 +201,7 @@ def _aoi_name_with_data_type(name: str, workflow: str, dolphin_mode: str = DEFAU
     token = _DATA_TYPE_NAME_TOKEN.get(workflow, "")
     out = f"{stripped}{token}" if token else stripped
     mode = canonical_dolphin_mode(dolphin_mode)
-    if mode == "opera" and workflow == "cslc":
+    if mode == "opera" and workflow in {"cslc", "safe"}:
         out = f"{out}Opera"
     return out
 
@@ -1060,7 +1060,8 @@ def create_parser() -> argparse.ArgumentParser:
         description=(
             "Create run files and SLURM job files for SAFE, CSLC, or DISP-S1 processing. "
             "Default data type: safe. "
-            "AOI NAME HawaiiPuna becomes HawaiiPunaSAFESenD87, HawaiiPunaCSLCSenD87, HawaiiPunaCSLCOperaSenD87, or HawaiiPunaDISPS1SenD87 "
+            "AOI NAME HawaiiPuna becomes HawaiiPunaSAFESenD87, HawaiiPunaSAFEOperaSenD87, HawaiiPunaCSLCSenD87, "
+            "HawaiiPunaCSLCOperaSenD87, or HawaiiPunaDISPS1SenD87 "
             "from --data-type, --dolphin-mode, and --flight-dir (platform + pass + relative orbit). "
             "Workflow: --data-type {safe,cslc,disp-s1,disp-NI} or --safe / --cslc / --disp-S1. "
             "--phase download writes sweets_config.yaml and download jobs; "
@@ -1154,7 +1155,7 @@ def create_parser() -> argparse.ArgumentParser:
         type=_normalize_dolphin_mode,
         default=DEFAULT_DOLPHIN_MODE,
         metavar="MODE",
-        help="CSLC path: single-run (one Dolphin stack) or opera (local DISP-S1 produce); default: single-run",
+        help="SAFE/CSLC: single-run (one Dolphin stack) or opera (local DISP-S1 produce); not for disp-s1; default: single-run",
     )
     parser.add_argument(
         "--sleep",
@@ -1472,7 +1473,27 @@ def _build_stage_specs(
     dolphin_mode: str = DEFAULT_DOLPHIN_MODE,
 ) -> list[tuple[str, str, str]]:
     dolphin_specs = [(name, title, "") for name, title in _dolphin_stage_specs(split_dolphin)]
+    opera_science = [
+        (
+            "disp_s1_process",
+            "Produce OPERA DISP-S1 NetCDF products locally (sequential ministacks)",
+            "",
+        ),
+        (
+            "reformat_disp",
+            "Reformat locally produced DISP-S1 products into a stack",
+            "",
+        ),
+        ("dolphin_2_hdfeos5", "Convert DISP-S1 stack to HDF-EOS5", ""),
+        ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", ""),
+    ]
     if workflow == "safe":
+        if dolphin_mode == "opera":
+            return [
+                ("download_safe", "Download and verify SAFE data, then prepare COMPASS runconfigs", ""),
+                ("create_cslc", "Create CSLCs and static layers with COMPASS", ""),
+                *opera_science,
+            ]
         return [
             ("download_safe", "Download and verify SAFE data, then prepare COMPASS runconfigs", ""),
             ("create_cslc", "Create CSLCs and static layers with COMPASS", ""),
@@ -1484,18 +1505,7 @@ def _build_stage_specs(
         if dolphin_mode == "opera":
             return [
                 ("download_cslc", "Download and verify OPERA CSLCs, then prepare geometry", ""),
-                (
-                    "disp_s1_process",
-                    "Produce OPERA DISP-S1 NetCDF products locally (sequential ministacks)",
-                    "",
-                ),
-                (
-                    "reformat_disp",
-                    "Reformat locally produced DISP-S1 products into a stack",
-                    "",
-                ),
-                ("dolphin_2_hdfeos5", "Convert DISP-S1 stack to HDF-EOS5", ""),
-                ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", ""),
+                *opera_science,
             ]
         return [
             ("download_cslc", "Download and verify OPERA CSLCs, then prepare geometry", ""),
@@ -1739,7 +1749,7 @@ def _print_plan(
     end = str(context.get("end_date") or "").strip()
     if start or end:
         _out(f"Dates: {start or '?'} – {end or '?'}")
-    if dolphin_mode and workflow == "cslc":
+    if dolphin_mode and workflow in {"cslc", "safe"}:
         _out(f"Dolphin mode: {dolphin_mode}")
     if dolphin_dir and workflow in {"cslc", "safe"}:
         _out(f"Dolphin dir: {dolphin_dir}")
@@ -1913,23 +1923,43 @@ def _sweets_stage_bodies(
     hdfeos5 = _hdfeos5_command(preset, preset_naming, dolphin_dir=dolphin_dir)
     ingest = f"ingest_insarmaps.bash {dolphin_dir}/timeseries"
     geom = _geometry_stitch_command(strides, cfg)
-    if workflow == "cslc" and dolphin_mode == "opera":
+    if dolphin_mode == "opera" and workflow in {"cslc", "safe"}:
+        if workflow == "safe":
+            cslc_dir = "gslcs"
+            gslc_glob = "t*.h5"
+            download_body = download.rstrip("\n") + f"\nprepare_compass_runconfigs.py --config {cfg}\n"
+            download_key = "download_safe"
+        else:
+            cslc_dir = "data"
+            gslc_glob = "OPERA_L2_CSLC-S1_*.h5"
+            download_body = download.rstrip("\n") + f"\n{geom}\n"
+            download_key = "download_cslc"
         disp_s1_process = _disp_s1_process_command(
             context,
             ministack_size=ministack_size,
             half_window=half_window,
             strides=strides,
+            cslc_dir=cslc_dir,
+            gslc_glob=gslc_glob,
         )
         reformat_disp = _reformat_disp_command(context, reference_method=reference_method) + "\n"
         if phase == "download":
-            return {"download_cslc": download.rstrip("\n") + f"\n{geom}\n"}
-        return {
-            "download_cslc": download.rstrip("\n") + f"\n{geom}\n",
+            if workflow == "safe":
+                return {
+                    download_key: download_body,
+                    "create_cslc": "",
+                }
+            return {download_key: download_body}
+        bodies = {
+            download_key: download_body,
             "disp_s1_process": disp_s1_process,
             "reformat_disp": reformat_disp,
             "dolphin_2_hdfeos5": _opera_hdfeos5_command(context),
             "ingest_insarmaps": _opera_ingest_command(),
         }
+        if workflow == "safe":
+            bodies["create_cslc"] = ""
+        return bodies
     disp_s1_process = ""
     reformat_disp = ""
     merge_algo_cmd = None
@@ -2137,6 +2167,7 @@ def _disp_s1_process_command(
     work_subdir: str = DISP_S1_PRODUCE_DIR,
     half_window: tuple[int, int] | None = None,
     strides: tuple[int, int] | None = None,
+    gslc_glob: str = "OPERA_L2_CSLC-S1_*.h5",
 ) -> str:
     """Shell command for tools/disp-s1/scripts/disp_s1_process.py (process stage only)."""
     frame_id = _resolve_disp_s1_frame_id(context)
@@ -2147,7 +2178,7 @@ def _disp_s1_process_command(
         f" --work-dir {work_subdir}"
         f" --frame-id {frame_id}"
         f' --extent "{extent}"'
-        f" --gslc-glob 'OPERA_L2_CSLC-S1_*.h5'"
+        f" --gslc-glob '{gslc_glob}'"
         f" --ministack-size {ms}"
         f" --buffer 500"
         f" --stages process"
@@ -2497,8 +2528,8 @@ def main(iargs: list[str] | None = None) -> int:
             raise ValueError("--sleep must be a non-negative integer")
         invocation_dir = Path.cwd().resolve()
         workflow = _workflow_name(args)
-        if args.dolphin_mode == "opera" and workflow != "cslc":
-            raise ValueError("--dolphin-mode opera requires --data-type cslc")
+        if args.dolphin_mode == "opera" and workflow == "disp":
+            raise ValueError("--dolphin-mode opera cannot be used with --data-type disp-s1")
         if args.dolphin_mode == "opera" and args.no_dolphin_split:
             raise ValueError("--no-dolphin-split does not apply to --dolphin-mode opera")
         split_dolphin = _use_dolphin_split(workflow, args.no_dolphin_split)
@@ -2540,7 +2571,7 @@ def main(iargs: list[str] | None = None) -> int:
         if workflow == "disp":
             if args.dolphin_dir:
                 raise ValueError("--dolphin-dir does not apply to DISP-S1")
-        elif workflow == "cslc" and args.dolphin_mode == "opera":
+        elif workflow in {"cslc", "safe"} and args.dolphin_mode == "opera":
             dolphin_dir = args.dolphin_dir or DISP_S1_PRODUCE_DIR
             yaml_name = config_yaml_name(dolphin_dir) if args.dolphin_dir else "dolphin_config.yaml"
             if args.phase == "dolphin" and not has_cslc_or_gslc(work_dir, workflow):
@@ -2600,7 +2631,7 @@ def main(iargs: list[str] | None = None) -> int:
         if workflow in {"safe", "cslc"} and args.phase in {"download", "all"}:
             _write_sweets_config(workflow, context, work_dir)
         if workflow in {"safe", "cslc"} and args.phase != "download":
-            if not (workflow == "cslc" and args.dolphin_mode == "opera"):
+            if not (workflow in {"cslc", "safe"} and args.dolphin_mode == "opera"):
                 stage_dolphin_inputs(
                     work_dir,
                     src_dir=args.from_dolphin_dir,

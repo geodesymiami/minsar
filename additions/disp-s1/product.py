@@ -4,6 +4,8 @@ MinSAR patch (``additions/disp-s1/product.py``):
 
 - HDF5 chunk sizes are capped to each array's shape so small AOIs (e.g. 253×317
   at ~30 m posting) do not fail with fixed 256×256 chunks.
+- COMPASS/SAFE GSLC filenames with a single date (no processing datetime) are
+  accepted when filling CEOS identification fields (fallback to acquisition date).
 """
 
 from __future__ import annotations
@@ -807,10 +809,14 @@ def _create_identification_group(
         input_dts = sorted(
             [get_dates(f)[0] for f in pge_runconfig.input_file_group.cslc_file_list]
         )
+        # OPERA CSLC names have acquisition + processing dates; COMPASS SAFE GSLCs
+        # often have only the acquisition date — fall back to that for CEOS fields.
         processing_dts = sorted(
-            get_dates(f)[1]
+            (dates[1] if len(dates) > 1 else dates[0])
             for f in pge_runconfig.input_file_group.cslc_file_list
             if "compressed" not in str(f).lower()
+            for dates in [get_dates(f)]
+            if dates
         )
         parsed_files = [
             parse_filename(f)
