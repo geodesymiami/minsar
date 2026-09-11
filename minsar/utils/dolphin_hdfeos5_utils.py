@@ -1,6 +1,6 @@
-"""Library helpers for Dolphin/sweets GeoTIFF stacks → MintPy HDF-EOS5.
+"""Library helpers for Dolphin/sweets GeoTIFF stacks ↔ MintPy HDF-EOS5.
 
-Used by ``dolphin2hdfeos5.py``. Independent of
+Used by ``dolphin2hdfeos5.py`` and ``hdfeos52dolphin.py``. Independent of
 ``minsar.src.minsar.cli.create_dolphin_files``.
 """
 
@@ -23,7 +23,7 @@ from rasterio.transform import xy as rasterio_xy
 from mintpy.utils import writefile
 from pyproj import CRS
 
-from minsar.src.minsar.helper_functions import utm_to_lonlat
+from minsar.src.minsar.helper_functions import convert_to_utm, get_utm_crs_from_bbox, utm_to_lonlat
 
 DATASET_NAME_RE = re.compile(
     r"(?P<project>.+?)(?P<sat>Sen|S1|TSX|ALOS2|CSK|RS2|ENV)(?P<pass>[AD])(?P<orbit>\d+)$",
@@ -87,6 +87,11 @@ REMASK_HDFEOS5_EXAMPLES = """Examples:
   remask_hdfeos5.py S1_….he5 -m psDensity --vmin 0.5
   remask_hdfeos5.py S1_…_tc070sim050.he5 -m recommended
 """
+HDFEOS52DOLPHIN_EXAMPLES = """Examples:
+  hdfeos52dolphin.py S1_asc_048_operaDisp_20160927_20260619_N2578W08031_N2581W08031_N2581W08026_N2578W08026.he5
+  hdfeos52dolphin.py S1_asc_048_operaDisp_20160927_20260619_N2578W08031_N2581W08031_N2581W08026_N2578W08026.he5 -o out-stack.nc
+  bowser --stack S1_asc_048_operaDisp_20160927_20260619_N2578W08031_N2581W08031_N2581W08026_N2578W08026-stack.nc
+"""
 # One underscore-separated token after the MintPy stem (also strip older tcNNN_simNNN).
 MASK_SUFFIX_RE = re.compile(
     r"_(?:tc\d{3}_sim\d{3}|tc\d{3}sim\d{3}|tc\d{3}|sim\d{3}|dens\d{3}|ps\d{3}|rec\d{3}(?:_\d{3})?|coh\d{3}(?:_sim\d{3})?)$"
@@ -94,6 +99,14 @@ MASK_SUFFIX_RE = re.compile(
 HE5_QUALITY = "HDFEOS/GRIDS/timeseries/quality"
 HE5_OBS = "HDFEOS/GRIDS/timeseries/observation"
 HE5_GEOM = "HDFEOS/GRIDS/timeseries/geometry"
+HE5_DEMERR_PATHS = (
+    f"{HE5_QUALITY}/demErr",
+    f"{HE5_QUALITY}/demError",
+    f"{HE5_GEOM}/demErr",
+    f"{HE5_GEOM}/demError",
+)
+STACK_TIME_UNITS = "seconds since 2010-01-01"
+STACK_TIME_EPOCH = datetime(2010, 1, 1)
 
 
 def normalize_dolphin_preset(value: str) -> str:
@@ -1049,7 +1062,7 @@ def create_hdfeos_output(
     if persistent_scatterer_density is not None:
         hdfeos_dict[f"{HE5_QUALITY}/persistentScattererDensity"] = np.asarray(persistent_scatterer_density).astype("float32")
     if dem_err is not None:
-        hdfeos_dict[f"{HE5_QUALITY}/demError"] = np.asarray(dem_err).astype("float32")
+        hdfeos_dict[f"{HE5_QUALITY}/demErr"] = np.asarray(dem_err).astype("float32")
 
     if "vert" in output_path:
         metadata["displacementType"] = "VERTICAL"
@@ -1325,6 +1338,14 @@ def load_opera_stack(
             if "perpendicular_baseline" in f
             else np.zeros(disp.shape[0], dtype=np.float32)
         )
+        dem_err = None
+        for key in ("demErr", "dem_error", "demError"):
+            if key not in f:
+                continue
+            dem_err = np.asarray(f[key][:], dtype=np.float32)
+            if dem_err.ndim == 3:
+                dem_err = np.nanmean(dem_err, axis=0).astype(np.float32)
+            break
 
     # Fallback MintPy density file
     mintpy_dens = run_dir / "mintpy" / "recommended_mask_90thresh.h5"
@@ -1354,6 +1375,7 @@ def load_opera_stack(
         "height": height,
         "incidence": incidence,
         "azimuth": azimuth,
+        "dem_err": dem_err,
         "geometry_dir": geom_dir,
         "files": {"stack_nc": stack_nc},
     }
@@ -1374,6 +1396,8 @@ def quality_from_he5(he5_path: Path) -> tuple[np.ndarray, np.ndarray, dict]:
             "recommended_density": _he5_get(f, f"{HE5_QUALITY}/recommendedDensity"),
             "persistent_scatterer_density": _he5_get(f, f"{HE5_QUALITY}/persistentScattererDensity"),
             "avg_spatial_coherence": _he5_get(f, f"{HE5_QUALITY}/avgSpatialCoherence"),
+            "mask": _he5_get(f, f"{HE5_QUALITY}/mask"),
+            "dem_err": _he5_get_first(f, HE5_DEMERR_PATHS),
         }
     return stack, shape, quality
 
@@ -1382,6 +1406,344 @@ def _he5_get(h5f, path: str):
     if path not in h5f:
         return None
     return np.asarray(h5f[path][:])
+
+
+def _he5_get_first(h5f, paths):
+    """Return the first existing HE5 dataset among ``paths``, or None."""
+    for path in paths:
+        data = _he5_get(h5f, path)
+        if data is not None:
+            return data
+    return None
+
+
+def _decode_he5_dates(raw) -> list[str]:
+    """Decode observation/date values to YYYYMMDD strings."""
+    out = []
+    for value in np.asarray(raw):
+        if isinstance(value, (bytes, np.bytes_)):
+            text = value.decode("utf-8").strip()
+        else:
+            text = str(value).strip()
+        if len(text) >= 8 and text[:8].isdigit():
+            out.append(text[:8])
+        else:
+            raise ValueError(f"Unrecognized HE5 date value: {value!r}")
+    return out
+
+
+def _yyyymmdd_to_cf_seconds(dates: list[str]) -> np.ndarray:
+    """Convert YYYYMMDD strings to CF seconds since 2010-01-01."""
+    seconds = []
+    for ymd in dates:
+        dt = datetime.strptime(ymd, "%Y%m%d")
+        seconds.append((dt - STACK_TIME_EPOCH).total_seconds())
+    return np.asarray(seconds, dtype=np.float64)
+
+
+def _has_finite(arr) -> bool:
+    if arr is None:
+        return False
+    data = np.asarray(arr)
+    if data.size == 0:
+        return False
+    if np.issubdtype(data.dtype, np.floating):
+        return bool(np.any(np.isfinite(data)))
+    return True
+
+
+def _as_time_cube(arr: np.ndarray, n_time: int) -> np.ndarray:
+    """Return a (n_time, y, x) cube, broadcasting a 2D layer if needed."""
+    data = np.asarray(arr)
+    if data.ndim == 3:
+        if data.shape[0] != n_time:
+            raise ValueError(f"cube time length {data.shape[0]} != {n_time}")
+        return data
+    if data.ndim != 2:
+        raise ValueError(f"expected 2D or 3D array, got shape {data.shape}")
+    return np.repeat(data[np.newaxis, ...], n_time, axis=0)
+
+
+def _reduce_dem_err(arr: np.ndarray) -> np.ndarray:
+    """DEM error is a 2D map; average a 3D cube if that is what HE5 stored."""
+    data = np.asarray(arr, dtype=np.float32)
+    if data.ndim == 3:
+        return np.nanmean(data, axis=0).astype(np.float32)
+    return data
+
+
+def projected_xy_from_latlon(latitude: np.ndarray, longitude: np.ndarray):
+    """Regular UTM x/y (pixel centers), CRS, and GDAL affine from HE5 lat/lon."""
+    lat = np.asarray(latitude, dtype=np.float64)
+    lon = np.asarray(longitude, dtype=np.float64)
+    length, width = lat.shape
+    xs, ys = convert_to_utm(lon, lat)
+    xs = np.asarray(xs, dtype=np.float64).reshape(length, width)
+    ys = np.asarray(ys, dtype=np.float64).reshape(length, width)
+    dx = float(np.median(np.diff(xs[0]))) if width > 1 else 30.0
+    dy = float(np.median(np.diff(ys[:, 0]))) if length > 1 else -30.0
+    if abs(dx) >= 0.5:
+        dx = float(np.round(dx))
+    if abs(dy) >= 0.5:
+        dy = float(np.round(dy))
+    x0 = float(np.round(np.median(xs[:, 0])))
+    y0 = float(np.round(np.median(ys[0, :])))
+    x = x0 + np.arange(width, dtype=np.float64) * dx
+    y = y0 + np.arange(length, dtype=np.float64) * dy
+    crs = get_utm_crs_from_bbox(float(np.nanmean(lon)), float(np.nanmean(lat)))
+    transform = Affine.translation(x0 - dx / 2.0, y0 - dy / 2.0) * Affine.scale(dx, dy)
+    return x, y, crs, transform
+
+
+def stack_nc_output_path(he5_path: Path, outfile: str | None = None) -> Path:
+    """Default ``<he5-stem>-stack.nc`` next to the HE5, or ``outfile``."""
+    he5_path = Path(he5_path)
+    if outfile:
+        out_path = Path(outfile).expanduser().resolve()
+        if out_path.suffix.lower() != ".nc":
+            out_path = out_path.with_suffix(".nc")
+        return out_path
+    return he5_path.with_name(f"{he5_path.stem}-stack.nc")
+
+
+def load_he5_stack(he5_path: Path) -> dict:
+    """Load displacement, dates, lat/lon, and quality/geometry from an HE5."""
+    he5_path = Path(he5_path).expanduser().resolve()
+    if not he5_path.is_file():
+        raise FileNotFoundError(f"HE5 not found: {he5_path}")
+    with h5py.File(he5_path, "r") as f:
+        if f"{HE5_OBS}/displacement" not in f:
+            raise ValueError(f"No {HE5_OBS}/displacement in {he5_path}")
+        if f"{HE5_GEOM}/latitude" not in f or f"{HE5_GEOM}/longitude" not in f:
+            raise ValueError(f"No geometry latitude/longitude in {he5_path}")
+        displacement = np.asarray(f[f"{HE5_OBS}/displacement"][:], dtype=np.float32)
+        date_list = _decode_he5_dates(f[f"{HE5_OBS}/date"][:])
+        bperp = (
+            np.asarray(f[f"{HE5_OBS}/bperp"][:], dtype=np.float32)
+            if f"{HE5_OBS}/bperp" in f
+            else np.zeros(displacement.shape[0], dtype=np.float32)
+        )
+        latitude = np.asarray(f[f"{HE5_GEOM}/latitude"][:], dtype=np.float64)
+        longitude = np.asarray(f[f"{HE5_GEOM}/longitude"][:], dtype=np.float64)
+        dem_err = _he5_get_first(f, HE5_DEMERR_PATHS)
+        layers = {
+            "temporal_coherence": _he5_get(f, f"{HE5_QUALITY}/temporalCoherence"),
+            "phase_similarity": _he5_get(f, f"{HE5_QUALITY}/phaseSimilarity"),
+            "watermask": _he5_get(f, f"{HE5_QUALITY}/waterMask"),
+            "conncomp": _he5_get(f, f"{HE5_QUALITY}/conncomp"),
+            "recommended_density": _he5_get(f, f"{HE5_QUALITY}/recommendedDensity"),
+            "persistent_scatterer_density": _he5_get(f, f"{HE5_QUALITY}/persistentScattererDensity"),
+            "avg_spatial_coherence": _he5_get(f, f"{HE5_QUALITY}/avgSpatialCoherence"),
+            "mask": _he5_get(f, f"{HE5_QUALITY}/mask"),
+            "dem_err": None if dem_err is None else _reduce_dem_err(dem_err),
+            "height": _he5_get(f, f"{HE5_GEOM}/height"),
+            "incidence": _he5_get(f, f"{HE5_GEOM}/incidenceAngle"),
+            "azimuth": _he5_get(f, f"{HE5_GEOM}/azimuthAngle"),
+            "shadow": _he5_get(f, f"{HE5_GEOM}/shadowMask"),
+        }
+    return {
+        "displacement": displacement,
+        "date_list": date_list,
+        "bperp": bperp,
+        "latitude": latitude,
+        "longitude": longitude,
+        "layers": layers,
+    }
+
+
+def _spatial_ref_attrs(crs: CRS, transform: Affine) -> dict:
+    """CF grid_mapping attributes plus GDAL GeoTransform."""
+    attrs = dict(crs.to_cf())
+    attrs["crs_wkt"] = crs.to_wkt()
+    gt = transform.to_gdal()
+    attrs["GeoTransform"] = " ".join(str(float(v)) for v in gt)
+    attrs["long_name"] = "Dummy variable with geo-referencing metadata in attributes"
+    attrs["units"] = "unitless"
+    return attrs
+
+
+def _stack_encoding(ds) -> dict:
+    """zlib encoding for 2D/3D variables, chunks capped to shape."""
+    encoding = {}
+    for name, da in ds.data_vars.items():
+        if da.ndim < 2:
+            continue
+        chunks = (4, 256, 256) if da.ndim == 3 else (256, 256)
+        capped = tuple(min(c, s) for c, s in zip(chunks, da.shape))
+        encoding[name] = {"zlib": True, "complevel": 6, "chunksizes": capped}
+    return encoding
+
+
+def write_opera_stack_nc(he5_path: Path, out_path: Path) -> Path:
+    """Write an opera-utils-style *-stack.nc from an HDF-EOS5 file."""
+    import xarray as xr
+
+    he5_path = Path(he5_path).expanduser().resolve()
+    out_path = Path(out_path).expanduser().resolve()
+    loaded = load_he5_stack(he5_path)
+    disp = loaded["displacement"]
+    n_time, length, width = disp.shape
+    x, y, crs, transform = projected_xy_from_latlon(loaded["latitude"], loaded["longitude"])
+    time_sec = _yyyymmdd_to_cf_seconds(loaded["date_list"])
+    layers = loaded["layers"]
+    bperp = np.asarray(loaded["bperp"], dtype=np.float32)
+    if bperp.shape[0] != n_time:
+        raise ValueError(f"bperp length {bperp.shape[0]} != {n_time} dates")
+
+    time_attrs = {
+        "standard_name": "time",
+        "long_name": "Time corresponding to beginning of secondary acquisition",
+        "units": STACK_TIME_UNITS,
+        "calendar": "standard",
+    }
+    ref_time_attrs = {
+        "standard_name": "time",
+        "long_name": "Time corresponding to beginning of reference acquisition",
+        "units": STACK_TIME_UNITS,
+        "calendar": "standard",
+    }
+    grid_attrs = {"grid_mapping": "spatial_ref"}
+    coords = {
+        "time": ("time", time_sec, time_attrs),
+        "y": ("y", y, {"standard_name": "projection_y_coordinate", "long_name": "y coordinate of projection", "units": "m"}),
+        "x": ("x", x, {"standard_name": "projection_x_coordinate", "long_name": "x coordinate of projection", "units": "m"}),
+    }
+    data_vars = {
+        "spatial_ref": (
+            ("time",),
+            np.zeros(n_time, dtype=np.int64),
+            _spatial_ref_attrs(crs, transform),
+        ),
+        "reference_time": (
+            ("time",),
+            np.full(n_time, time_sec[0], dtype=np.float64),
+            ref_time_attrs,
+        ),
+        "perpendicular_baseline": (
+            ("time",),
+            bperp,
+            {
+                "units": "meters",
+                "long_name": "Perpendicular Baseline",
+                "grid_mapping": "spatial_ref",
+                "description": "Perpendicular baseline between reference and secondary acquisitions.",
+            },
+        ),
+        "displacement": (
+            ("time", "y", "x"),
+            disp.astype(np.float32),
+            {
+                **grid_attrs,
+                "units": "meters",
+                "long_name": "Line-of-sight displacement",
+                "description": (
+                    "Displacement along the radar Line-of-Sight (LOS) direction. "
+                    "Positive values indicate apparent motion towards the platform."
+                ),
+                "coordinates": "spatial_ref",
+            },
+        ),
+    }
+
+    watermask = layers.get("watermask")
+    if watermask is not None:
+        data_vars["water_mask"] = (
+            ("y", "x"),
+            np.asarray(watermask, dtype=np.float32),
+            {
+                **grid_attrs,
+                "units": "unitless",
+                "long_name": "Water Mask",
+                "description": "Binary mask created to ignore water during processing.",
+            },
+        )
+
+    temp_coh = layers.get("temporal_coherence")
+    if _has_finite(temp_coh):
+        tc = np.asarray(temp_coh, dtype=np.float32)
+        if tc.ndim == 3:
+            avg_tc = np.nanmean(tc, axis=0).astype(np.float32)
+            tc_cube = tc
+        else:
+            avg_tc = tc
+            tc_cube = _as_time_cube(tc, n_time)
+        data_vars["average_temporal_coherence"] = (
+            ("y", "x"),
+            avg_tc,
+            {**grid_attrs, "units": "unitless", "long_name": "Temporal Coherence", "description": "Temporal coherence of phase inversion"},
+        )
+        data_vars["temporal_coherence"] = (("time", "y", "x"), tc_cube.astype(np.float32), dict(grid_attrs))
+
+    phase_sim = layers.get("phase_similarity")
+    if _has_finite(phase_sim):
+        sim_cube = _as_time_cube(np.asarray(phase_sim, dtype=np.float32), n_time)
+        data_vars["phase_similarity"] = (("time", "y", "x"), sim_cube.astype(np.float32), dict(grid_attrs))
+
+    rec_mask = layers.get("mask")
+    if rec_mask is not None:
+        mask_u8 = np.asarray(rec_mask).astype(np.uint8)
+        data_vars["recommended_mask"] = (("time", "y", "x"), _as_time_cube(mask_u8, n_time), dict(grid_attrs))
+
+    rec_dens = layers.get("recommended_density")
+    if _has_finite(rec_dens):
+        data_vars["recommended_density"] = (
+            ("y", "x"),
+            np.asarray(rec_dens, dtype=np.float32),
+            {**grid_attrs, "units": "unitless", "long_name": "Recommended mask density"},
+        )
+
+    ps_dens = layers.get("persistent_scatterer_density")
+    if _has_finite(ps_dens):
+        ps = np.asarray(ps_dens, dtype=np.float32)
+        data_vars["persistent_scatterer_density"] = (
+            ("y", "x"),
+            ps,
+            {**grid_attrs, "units": "unitless", "long_name": "Persistent scatterer density"},
+        )
+        ps_mask = np.where(np.isfinite(ps) & (ps > 0), 1, 0).astype(np.uint8)
+        data_vars["persistent_scatterer_mask"] = (("time", "y", "x"), _as_time_cube(ps_mask, n_time), dict(grid_attrs))
+
+    conncomp = layers.get("conncomp")
+    if conncomp is not None:
+        cc = np.asarray(conncomp)
+        cc_u16 = np.where(np.isfinite(cc), cc, 0).astype(np.uint16)
+        data_vars["connected_component_labels"] = (("time", "y", "x"), _as_time_cube(cc_u16, n_time), dict(grid_attrs))
+
+    dem_err = layers.get("dem_err")
+    if _has_finite(dem_err):
+        data_vars["demErr"] = (
+            ("y", "x"),
+            np.asarray(dem_err, dtype=np.float32),
+            {**grid_attrs, "units": "meters", "long_name": "DEM error"},
+        )
+
+    extra_2d = (
+        ("height", layers.get("height"), "meters", "Height"),
+        ("incidence_angle", layers.get("incidence"), "degrees", "Incidence angle"),
+        ("azimuth_angle", layers.get("azimuth"), "degrees", "Azimuth angle"),
+        ("avg_spatial_coherence", layers.get("avg_spatial_coherence"), "unitless", "Average spatial coherence"),
+    )
+    for name, arr, units, long_name in extra_2d:
+        if _has_finite(arr):
+            data_vars[name] = (("y", "x"), np.asarray(arr, dtype=np.float32), {**grid_attrs, "units": units, "long_name": long_name})
+
+    shadow = layers.get("shadow")
+    if shadow is not None and np.any(np.asarray(shadow) != 0):
+        data_vars["shadow_mask"] = (("y", "x"), np.asarray(shadow).astype(np.uint8), dict(grid_attrs))
+
+    ds = xr.Dataset(data_vars=data_vars, coords=coords)
+    ds.attrs = {
+        "Conventions": "CF-1.8",
+        "title": "DISP stack from HDF-EOS5",
+        "history": f"converted from {he5_path.name} by hdfeos52dolphin.py",
+        "source": str(he5_path),
+    }
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    ds.to_netcdf(out_path, engine="netcdf4", encoding=_stack_encoding(ds), mode="w")
+    print(f"\n stack NetCDF created: {out_path}")
+    print(f"  dates:  {n_time}  grid: {length}x{width}  CRS: {crs.to_epsg() or crs.to_string()}")
+    print(f"  layers: {', '.join(name for name in ds.data_vars if name != 'spatial_ref')}")
+    return out_path
 
 
 def remask_he5_file(
