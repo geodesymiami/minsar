@@ -271,6 +271,7 @@ def _write_he5(inps, out_dir, stack, date_list, grid, quality, mask, latitude, l
         phase_similarity=same_shape(quality.get("phase_similarity"), shape),
         recommended_density=same_shape(quality.get("recommended_density"), shape),
         persistent_scatterer_density=same_shape(quality.get("persistent_scatterer_density"), shape),
+        dem_err=same_shape(quality.get("dem_err"), shape),
         bperp=bperp,
         metadata=metadata,
     )
