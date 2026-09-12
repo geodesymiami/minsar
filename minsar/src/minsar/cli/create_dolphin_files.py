@@ -392,8 +392,8 @@ def collect_data(timeseries_path):
 
             temp_coh = np.mean(temp_coh, axis=0)
 
-
-    metadata=dict(crs=crs.to_string(),transform=transform, bbox=bbox, LENGTH=shape[0], WIDTH=shape[1])
+    crs = crs.to_string() if crs else "EPSG:4326"
+    metadata=dict(crs=crs, transform=transform, bbox=bbox, LENGTH=shape[0], WIDTH=shape[1])
 
     deformation_data.append({'reference': reference, 'secondary': reference, 'data': np.zeros(shape)})
     deformation_data = sorted(deformation_data, key=lambda x: x['secondary'])
@@ -465,7 +465,11 @@ def plot_to_test(deformation_data, temp_coh):
 
 def main():
     # TODO for debug ########################################################################################################
+<<<<<<< Updated upstream
     os.chdir('/scratch/09580/gdisilvestro/qChilesSenA120') #REMOVE!!!
+=======
+    # os.chdir('/scratch/09580/gdisilvestro/PopocatepetlSenD143') #REMOVE!!!
+>>>>>>> Stashed changes
     #########################################################################################################################
 
     if glob.glob(str(Path.cwd() / 'OPERA*.h5')):
@@ -629,6 +633,7 @@ def main():
     metadata['reference_datetime'] = deformation_data[0]['reference']
     metadata['secondary_datetime'] = deformation_data[-1]['secondary']
     metadata['data_footprint'] = metadata['scene_footprint'] = wkt
+    metadata['flight_direction'] = metadata['ORBIT_DIRECTION']
     ref_row, ref_col = int(metadata['REF_Y']), int(metadata['REF_X'])
     populate_insarmaps_metadata(metadata, date_list, latitude, longitude, ref_row, ref_col)
     metadata = prune_metadata_for_hdfeos(metadata)
