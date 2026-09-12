@@ -1402,6 +1402,25 @@ def quality_from_he5(he5_path: Path) -> tuple[np.ndarray, np.ndarray, dict]:
     return stack, shape, quality
 
 
+def _he5_attr_str(attrs, key: str, default: str = "") -> str:
+    val = attrs.get(key, default)
+    if val is None:
+        return default
+    if isinstance(val, (bytes, np.bytes_)):
+        return val.decode("utf-8").strip()
+    return str(val).strip()
+
+
+def _he5_attr_float(attrs, key: str):
+    text = _he5_attr_str(attrs, key)
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
 def _he5_get(h5f, path: str):
     if path not in h5f:
         return None
@@ -1472,22 +1491,85 @@ def _reduce_dem_err(arr: np.ndarray) -> np.ndarray:
     return data
 
 
+def _complete_he5_latlon(latitude: np.ndarray, longitude: np.ndarray, attrs) -> tuple[np.ndarray, np.ndarray]:
+    """Fill NaN lat/lon from MintPy X_FIRST/Y_FIRST (UL corner, degree grid)."""
+    lat = np.asarray(latitude, dtype=np.float64)
+    lon = np.asarray(longitude, dtype=np.float64)
+    if lat.ndim == 1 and lon.ndim == 1:
+        lon, lat = np.meshgrid(lon, lat)
+    if lat.ndim != 2 or lon.ndim != 2:
+        raise ValueError(f"latitude/longitude must be 2D, got {lat.shape} and {lon.shape}")
+    if np.isfinite(lat).all() and np.isfinite(lon).all():
+        return lat, lon
+    x_first = _he5_attr_float(attrs, "X_FIRST")
+    y_first = _he5_attr_float(attrs, "Y_FIRST")
+    x_step = _he5_attr_float(attrs, "X_STEP")
+    y_step = _he5_attr_float(attrs, "Y_STEP")
+    x_unit = _he5_attr_str(attrs, "X_UNIT", "degrees").lower()
+    if None in (x_first, y_first, x_step, y_step) or x_step == 0 or y_step == 0:
+        return lat, lon
+    if "deg" not in x_unit:
+        return lat, lon
+    length, width = lat.shape
+    lon_1d = x_first + (np.arange(width, dtype=np.float64) + 0.5) * x_step
+    lat_1d = y_first + (np.arange(length, dtype=np.float64) + 0.5) * y_step
+    lon_grid, lat_grid = np.meshgrid(lon_1d, lat_1d)
+    return lat_grid, lon_grid
+
+
+def _projected_axis_step(coords: np.ndarray, axis: int, fallback: float) -> float:
+    """Median finite pixel spacing along rows (axis=0) or columns (axis=1)."""
+    if coords.shape[axis] <= 1:
+        return fallback
+    delta = np.diff(coords, axis=axis)
+    finite = delta[np.isfinite(delta)]
+    if finite.size == 0:
+        return np.nan
+    nonzero = finite[np.abs(finite) > 1e-3]
+    if nonzero.size == 0:
+        return np.nan
+    return float(np.median(nonzero))
+
+
+def _projected_origin(xs: np.ndarray, ys: np.ndarray, dx: float, dy: float):
+    """UTM of pixel (0, 0) from the first finite column/row, else any valid pixel."""
+    valid = np.isfinite(xs) & np.isfinite(ys)
+    if not np.any(valid):
+        return np.nan, np.nan
+    col0 = xs[:, 0]
+    row0 = ys[0, :]
+    if np.isfinite(col0).any():
+        x0 = float(np.nanmedian(col0))
+    else:
+        i, j = np.argwhere(valid)[0]
+        x0 = float(xs[i, j] - j * dx)
+    if np.isfinite(row0).any():
+        y0 = float(np.nanmedian(row0))
+    else:
+        i, j = np.argwhere(valid)[0]
+        y0 = float(ys[i, j] - i * dy)
+    return x0, y0
+
+
 def projected_xy_from_latlon(latitude: np.ndarray, longitude: np.ndarray):
     """Regular UTM x/y (pixel centers), CRS, and GDAL affine from HE5 lat/lon."""
     lat = np.asarray(latitude, dtype=np.float64)
     lon = np.asarray(longitude, dtype=np.float64)
+    if lat.ndim == 1 and lon.ndim == 1:
+        lon, lat = np.meshgrid(lon, lat)
     length, width = lat.shape
     xs, ys = convert_to_utm(lon, lat)
     xs = np.asarray(xs, dtype=np.float64).reshape(length, width)
     ys = np.asarray(ys, dtype=np.float64).reshape(length, width)
-    dx = float(np.median(np.diff(xs[0]))) if width > 1 else 30.0
-    dy = float(np.median(np.diff(ys[:, 0]))) if length > 1 else -30.0
+    dx = _projected_axis_step(xs, axis=1, fallback=30.0)
+    dy = _projected_axis_step(ys, axis=0, fallback=-30.0)
+    x0, y0 = _projected_origin(xs, ys, dx, dy)
     if abs(dx) >= 0.5:
         dx = float(np.round(dx))
     if abs(dy) >= 0.5:
         dy = float(np.round(dy))
-    x0 = float(np.round(np.median(xs[:, 0])))
-    y0 = float(np.round(np.median(ys[0, :])))
+    x0 = float(np.round(x0)) if np.isfinite(x0) else x0
+    y0 = float(np.round(y0)) if np.isfinite(y0) else y0
     x = x0 + np.arange(width, dtype=np.float64) * dx
     y = y0 + np.arange(length, dtype=np.float64) * dy
     crs = get_utm_crs_from_bbox(float(np.nanmean(lon)), float(np.nanmean(lat)))
@@ -1525,6 +1607,7 @@ def load_he5_stack(he5_path: Path) -> dict:
         )
         latitude = np.asarray(f[f"{HE5_GEOM}/latitude"][:], dtype=np.float64)
         longitude = np.asarray(f[f"{HE5_GEOM}/longitude"][:], dtype=np.float64)
+        latitude, longitude = _complete_he5_latlon(latitude, longitude, dict(f.attrs))
         dem_err = _he5_get_first(f, HE5_DEMERR_PATHS)
         layers = {
             "temporal_coherence": _he5_get(f, f"{HE5_QUALITY}/temporalCoherence"),
@@ -1584,6 +1667,11 @@ def write_opera_stack_nc(he5_path: Path, out_path: Path) -> Path:
     disp = loaded["displacement"]
     n_time, length, width = disp.shape
     x, y, crs, transform = projected_xy_from_latlon(loaded["latitude"], loaded["longitude"])
+    if not (np.isfinite(x).all() and np.isfinite(y).all()):
+        raise ValueError(
+            f"Could not build UTM x/y from HE5 geometry in {he5_path.name} "
+            "(latitude/longitude are NaN and X_FIRST/Y_FIRST are missing or invalid)"
+        )
     time_sec = _yyyymmdd_to_cf_seconds(loaded["date_list"])
     layers = loaded["layers"]
     bperp = np.asarray(loaded["bperp"], dtype=np.float32)
@@ -1739,7 +1827,14 @@ def write_opera_stack_nc(he5_path: Path, out_path: Path) -> Path:
         "source": str(he5_path),
     }
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    ds.to_netcdf(out_path, engine="netcdf4", encoding=_stack_encoding(ds), mode="w")
+    tmp_path = out_path.with_name(f".{out_path.name}.tmp")
+    try:
+        ds.to_netcdf(tmp_path, engine="netcdf4", encoding=_stack_encoding(ds), mode="w")
+        tmp_path.replace(out_path)
+    except Exception:
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise
     print(f"\n stack NetCDF created: {out_path}")
     print(f"  dates:  {n_time}  grid: {length}x{width}  CRS: {crs.to_epsg() or crs.to_string()}")
     print(f"  layers: {', '.join(name for name in ds.data_vars if name != 'spatial_ref')}")
