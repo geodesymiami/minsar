@@ -244,9 +244,18 @@ if n == 0:
     text2, n = re.subn(r'^(h5py = .*)$', rf'\1\n{hdf5_line}', text, count=1, flags=re.M)
 if n != 1:
     raise SystemExit("Error: could not pin hdf5 >=1.14,<2 in sweets pyproject.toml")
+text = text2
+
+# asf_search 9.x reports a valid Earthdata password as incorrect. Upstream sweets
+# leaves asf_search = "*", and a fresh pixi.lock can still install 9.0.9.
+asf_line = 'asf_search = ">=13.1.0,<14"'
+text2, n = re.subn(r'^asf_search = .*$', asf_line, text, count=1, flags=re.M)
+if n != 1:
+    raise SystemExit("Error: could not pin asf_search >=13.1.0,<14 in sweets pyproject.toml")
 path.write_text(text2)
 print(f"Restricted sweets pixi platforms to ${host_pixi_platform} for this install")
 print(f"Pinned sweets pixi {hdf5_line} (minsar dolphin2hdfeos5 compatibility)")
+print(f"Pinned sweets pixi {asf_line} (Earthdata login cookie)")
 PY
 
 # Prefer local disk for rattler/pixi cache when HOME cache is on Lustre/NFS.
@@ -269,7 +278,6 @@ export PIXI_NO_PROGRESS=true
 # Fallback when path clones still lack reachable tags for setuptools_scm.
 export SETUPTOOLS_SCM_PRETEND_VERSION_FOR_OPERA_UTILS="${SETUPTOOLS_SCM_PRETEND_VERSION_FOR_OPERA_UTILS:-0.25.8}"
 pixi install --no-progress --concurrent-solves "${PIXI_CONCURRENT_SOLVES:-1}" --concurrent-downloads "${PIXI_CONCURRENT_DOWNLOADS:-4}"
-pixi upgrade asf_search || true
 
 sweets_python=".pixi/envs/default/bin/python"
 [[ -x "$sweets_python" ]] || {
@@ -283,6 +291,41 @@ if [[ -d ../dolphin ]]; then
 fi
 if [[ -d ../opera-utils ]]; then
     SETUPTOOLS_SCM_PRETEND_VERSION=0.25.8 "$sweets_python" -m pip install ../opera-utils --no-deps --force-reinstall
+fi
+# asf_search 9.x treats a successful Earthdata login as a bad password (missing asf-urs cookie).
+# pixi install can leave that old package in an existing .pixi env even when the lock wants 13.1.0.
+verify_asf_search() {
+    "$sweets_python" - <<'PY'
+import asf_search
+
+def ver(text):
+    nums = []
+    for part in text.split("."):
+        digits = ""
+        for ch in part:
+            if not ch.isdigit():
+                break
+            digits += ch
+        if not digits:
+            break
+        nums.append(int(digits))
+        if len(nums) == 3:
+            break
+    return tuple(nums)
+
+need = (13, 1, 0)
+got = ver(asf_search.__version__)
+if got < need:
+    raise SystemExit(
+        f"asf_search {asf_search.__version__} is too old; need >=13.1.0"
+    )
+print(f"Verified asf_search {asf_search.__version__}")
+PY
+}
+if ! verify_asf_search; then
+    echo "Upgrading asf_search (9.x reports a valid Earthdata password as incorrect)" >&2
+    pixi upgrade asf_search
+    verify_asf_search
 fi
 "$sweets_python" -c "import opera_utils, shapely; print('Verified opera_utils + shapely in sweets env')"
 "$sweets_python" -c "import h5py; v=h5py.version.hdf5_version; assert v.startswith('1.'), f'expected HDF5 1.x, got {v}'; print(f'Verified sweets HDF5 {v} (h5py {h5py.__version__})')"

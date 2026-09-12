@@ -1,0 +1,8 @@
+# One command per line. Blank lines and lines starting with # are ignored.
+# Add a case by appending a command. Env vars such as $SAMPLESDIR are expanded at run time.
+# Run with: docs/run_case.bash
+
+rm $SCRATCHDIR/unittestHawaiiPunaCSLCSenD87; minsarIsce3App.bash 19.45:19.51,-154.915:-154.835 unittestHawaiiPuna --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20220331
+rm $SCRATCHDIR/unittestHawaiiPunaCSLCOperaSenD87; minsarIsce3App.bash 19.45:19.51,-154.915:-154.835 unittestHawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --start-date 20220101 --end-date 20220331
+
+minsarApp.bash $SAMPLESDIR/unittestGalapagosSenD128.template
