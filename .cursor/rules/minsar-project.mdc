@@ -29,19 +29,11 @@ When the user asks to create or place a file in **`scripts`** or **`utils`** (wi
 
 If the user wants a plan-first loop, they will switch to Plan mode.
 
-### 2. Tests — do not create test scripts
+### 2. Tests — do not create tests
 
-**Do not create test scripts** for new utils/scripts (no `tests/test_<name>.bash`, no `minsar/*/tests/test_<name>.py`, no `tests/test_<name>.py`).
+**Do not create or extend tests** unless the user explicitly asks. See `.cursor/rules/no-create-tests.mdc`.
 
-Add or extend tests only when:
-- The user **explicitly asks** for them, or
-- You are changing core workflow/orchestration (e.g. `run_workflow`, `minsarApp`, job submission) where regressions are costly
-
-For admin/utils CLIs, prefer a quick manual smoke (`--help`, `--dry-run`) unless asked to add tests.
-
-If you *are* changing existing tested behavior and unit tests already exist for that code path:
-- Prefer updating those tests when needed
-- Focus on substantive cases (edge cases, error paths), not trivial coverage
+Prefer a quick manual smoke (`--help`, `--dry-run`) unless asked to add tests.
 
 ### 3. Implement Feature
 

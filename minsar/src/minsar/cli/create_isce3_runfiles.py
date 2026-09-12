@@ -40,6 +40,7 @@ from minsar.utils.dolphin_presets import (
     normalize_dolphin_preset,
     resolve_half_window_strides,
 )
+from minsar.utils import isce3_steps
 from minsar.utils.isce3_dolphin_experiment import (
     DEFAULT_DOLPHIN_DIR,
     DEFAULT_DOLPHIN_MODE,
@@ -49,6 +50,7 @@ from minsar.utils.isce3_dolphin_experiment import (
     has_cslc_or_gslc,
     parse_passthrough_pairs,
     passthrough_cli_flags,
+    read_run_slice_sidecar,
     resolve_dolphin_dir,
     stage_dolphin_inputs,
     write_dolphin_dir_sidecar,
@@ -74,7 +76,7 @@ DOWNLOAD_STAGE_NAMES = {
     "cslc": ("download_cslc",),
     "disp": ("download_disp", "reformat_disp"),
 }
-PHASE_CHOICES = ("download", "dolphin", "all")
+PHASE_CHOICES = ("download", "dolphin", "post", "all")
 PIXI_STAGES = frozenset({
     "download_disp",
     "reformat_disp",
@@ -114,9 +116,11 @@ ARGV_FIX_KW = {
         "--platform",
         "--flight-dir",
         "--start-date",
-        "--start",
         "--end-date",
+        "--start",
         "--end",
+        "--stop",
+        "--dostep",
         "--track",
         "--relativeOrbit",
         "--frame-id",
@@ -248,25 +252,162 @@ def _aoi_project_name(
 
 
 def _normalize_phase(value: str) -> str:
-    """Normalize --phase to download, dolphin, or all."""
+    """Normalize --phase to download, dolphin, post, or all."""
     token = value.strip().lower().replace("-", "_")
     if token in {"download_create_cslc", "download"}:
         return "download"
+    if token in {"hdfeos5", "ingest", "ingest_insarmaps", "dolphin_2_hdfeos5"}:
+        return "post"
     if token in PHASE_CHOICES:
         return token
     raise argparse.ArgumentTypeError(
-        f"invalid --phase {value!r}; use download, dolphin, or all"
+        f"invalid --phase {value!r}; use download, dolphin, post, or all"
     )
 
 
-def _stage_in_phase(name: str, workflow: str, phase: str) -> bool:
-    """True when this stage is written for --phase download|dolphin|all."""
-    if phase == "all":
-        return True
-    download_names = DOWNLOAD_STAGE_NAMES.get(workflow, ())
-    if phase == "download":
-        return name in download_names
-    return name not in download_names
+def _post_stage_names(workflow: str, dolphin_mode: str = DEFAULT_DOLPHIN_MODE) -> tuple[str, ...]:
+    """Stages that do not need on-disk CSLCs/GSLCs to regenerate run files."""
+    return isce3_steps._post_stage_names(workflow, dolphin_mode)
+
+
+def _stage_selected(
+    name: str,
+    selected: frozenset[str],
+) -> bool:
+    """True when this stage is in the requested generation range."""
+    return name in selected
+
+
+def _resolve_selected_stages(
+    args: argparse.Namespace,
+    workflow: str,
+    split_dolphin: bool,
+) -> frozenset[str]:
+    """Resolve --dostep / --start / --end, or legacy --phase, to stage names."""
+    dostep = isce3_steps.normalize_step(args.dostep) if getattr(args, "dostep", None) else None
+    step_start = isce3_steps.normalize_step(args.step_start) if getattr(args, "step_start", None) else None
+    step_end = isce3_steps.normalize_step(args.step_end) if getattr(args, "step_end", None) else None
+    if dostep and (step_start or step_end):
+        raise ValueError("--dostep cannot be combined with --start or --end")
+    return isce3_steps.selected_stage_names(
+        workflow,
+        args.dolphin_mode,
+        split_dolphin=split_dolphin,
+        dostep=dostep or None,
+        start=step_start or None,
+        end=step_end or None,
+        phase=getattr(args, "phase", None),
+    )
+
+
+def infer_dataset_from_name(name: str) -> tuple[str | None, str | None]:
+    """Return (workflow, dolphin_mode) encoded in a project or template stem.
+
+    ``unittestHawaiiPunaCSLCOperaSenD87`` is cslc + opera. ``HawaiiPunaDISPSenD87``
+    and ``HawaiiPunaDISPS1SenD87`` are disp-s1. Missing tokens return None.
+    """
+    stem = Path(str(name).strip()).name
+    if stem.lower().endswith(".template"):
+        stem = stem[: -len(".template")]
+    stem = _strip_orbit_label_suffix(stem)
+    mode: str | None = None
+    mode_match = _LEGACY_DOLPHIN_MODE_SUFFIX_RE.search(stem)
+    if mode_match:
+        mode = "opera" if mode_match.group(1).lower() == "opera" else "single-run"
+        stem = stem[: mode_match.start()]
+    type_match = _DATA_TYPE_NAME_SUFFIX_RE.search(stem)
+    if not type_match:
+        return None, None
+    token = type_match.group(1).upper()
+    workflow = {"SAFE": "safe", "CSLC": "cslc", "DISPS1": "disp", "DISP": "disp"}[token]
+    if workflow == "disp":
+        return "disp", None
+    return workflow, mode
+
+
+def infer_dataset(
+    project: str,
+    work_dir: Path | None = None,
+) -> tuple[str | None, str | None]:
+    """Infer workflow and dolphin-mode from the project name, then sidecars/run files."""
+    workflow, mode = infer_dataset_from_name(project)
+    root = Path(work_dir) if work_dir is not None else None
+    if root is None or not root.is_dir():
+        return workflow, mode
+    if mode is None and workflow != "disp":
+        sidecar_mode = read_run_slice_sidecar(root).get("dolphin_mode")
+        if sidecar_mode in {"opera", "single-run"}:
+            mode = sidecar_mode
+    run_dir = root / RUN_FILES_DIRNAME
+    if workflow is None and run_dir.is_dir():
+        if (run_dir / "run_01_download_cslc").is_file() or any(run_dir.glob("run_*_download_cslc")):
+            workflow = "cslc"
+        elif (run_dir / "run_01_download_safe").is_file() or any(run_dir.glob("run_*_download_safe")):
+            workflow = "safe"
+        elif (run_dir / "run_01_download_disp").is_file() or any(run_dir.glob("run_*_download_disp")):
+            workflow = "disp"
+    if workflow in {"cslc", "safe"} and mode is None and run_dir.is_dir():
+        if any(run_dir.glob("run_*_disp_s1_process")):
+            mode = "opera"
+    if workflow == "disp":
+        mode = None
+    return workflow, mode
+
+
+def _apply_dataset_inference(
+    args: argparse.Namespace,
+    workflow: str,
+    argv: list[str],
+    project: str,
+    work_dir: Path,
+) -> str:
+    """Fill missing --data-type / --dolphin-mode from the project name or existing run."""
+    explicit_type = bool(args.data_type or args.safe or args.cslc or args.disp)
+    explicit_mode = any(
+        token == "--dolphin-mode" or token.startswith("--dolphin-mode=") for token in argv
+    )
+    inferred_type, inferred_mode = infer_dataset(project, work_dir)
+    public = "disp-s1" if workflow == "disp" else workflow
+    inferred_public = "disp-s1" if inferred_type == "disp" else inferred_type
+    if explicit_type and inferred_type and inferred_type != workflow:
+        print(
+            f"Warning: project name {project} looks like data-type {inferred_public}, using {public}",
+            file=sys.stderr,
+        )
+    notes: list[str] = []
+    if not explicit_type and inferred_type and inferred_type != workflow:
+        workflow = inferred_type
+        notes.append(f"--data-type {'disp-s1' if inferred_type == 'disp' else inferred_type}")
+    if (
+        not explicit_mode
+        and inferred_mode
+        and workflow in {"cslc", "safe"}
+        and inferred_mode != args.dolphin_mode
+    ):
+        args.dolphin_mode = inferred_mode
+        notes.append(f"--dolphin-mode {inferred_mode}")
+    if notes:
+        print(f"Inferred {' '.join(notes)} from {project}")
+    if args.dolphin_mode == "opera" and workflow == "disp":
+        raise ValueError("--dolphin-mode opera cannot be used with --data-type disp-s1")
+    if args.dolphin_mode == "opera" and args.no_dolphin_split:
+        raise ValueError("--no-dolphin-split does not apply to --dolphin-mode opera")
+    return workflow
+
+
+def _missing_slc_message(workflow: str) -> str:
+    """Error when --phase dolphin cannot write Dolphin YAML from on-disk SLCs."""
+    if workflow == "safe":
+        where = "gslcs/**/t*.h5"
+    elif workflow == "cslc":
+        where = "data/*CSLC*.h5"
+    else:
+        where = "SLC inputs"
+    return (
+        f"CSLCs/GSLCs not found ({where}); run `--start download` first. "
+        "Dolphin science steps write YAML from those files and are not used for "
+        "dolphin_2_hdfeos5 or ingest_insarmaps"
+    )
 
 
 def _isce3_run_dir(work_dir: Path) -> Path:
@@ -1064,8 +1205,9 @@ def create_parser() -> argparse.ArgumentParser:
             "HawaiiPunaCSLCOperaSenD87, or HawaiiPunaDISPS1SenD87 "
             "from --data-type, --dolphin-mode, and --flight-dir (platform + pass + relative orbit). "
             "Workflow: --data-type {safe,cslc,disp-s1,disp-NI} or --safe / --cslc / --disp-S1. "
-            "--phase download writes sweets_config.yaml and download jobs; "
-            "--phase dolphin writes DIR YAML when CSLCs/GSLCs exist. "
+            "Use --start, --end, or --dostep for workflow steps (same names as minsarIsce3App). "
+            "Dates use --start-date and --end-date only. Legacy --phase download|dolphin|post|all still works. "
+            "Dolphin science steps need CSLCs/GSLCs; he5/ingest steps do not. "
             "Leftover --section.option flags go to dolphin config. Use --dolphin-dir, not --work-directory."
         ),
         epilog=epilog,
@@ -1098,8 +1240,8 @@ def create_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--platform", default="S1", help="platform: S1 or NISAR/NI")
     parser.add_argument("--flight-dir", choices=("asc", "desc"), help="flight direction for AOI input")
-    parser.add_argument("--start-date", "--start", dest="start_date", help="first date YYYYMMDD (default: ssaraopt.startDate from template)")
-    parser.add_argument("--end-date", "--end", dest="end_date", help="last date YYYYMMDD (default: ssaraopt.endDate from template)")
+    parser.add_argument("--start-date", dest="start_date", help="first date YYYYMMDD (default: ssaraopt.startDate from template)")
+    parser.add_argument("--end-date", dest="end_date", help="last date YYYYMMDD (default: ssaraopt.endDate from template)")
     parser.add_argument("--track", "--relativeOrbit", type=int, dest="track", help="relative orbit (overrides template ssaraopt.relativeOrbit)")
     parser.add_argument("--frame-id", type=int, help="OPERA DISP-S1 frame ID (required for --disp-S1 / --data-type disp-s1)")
     parser.add_argument(
@@ -1171,11 +1313,30 @@ def create_parser() -> argparse.ArgumentParser:
         help="estimate n_bursts when data/ is empty: sar_coverage (get_sar_coverage.py) or opera-utils (track from CLI or template)",
     )
     parser.add_argument(
+        "--start",
+        dest="step_start",
+        metavar="STEP",
+        help="first workflow step whose run files to write",
+    )
+    parser.add_argument(
+        "--end",
+        "--stop",
+        dest="step_end",
+        metavar="STEP",
+        help="last workflow step whose run files to write, inclusive",
+    )
+    parser.add_argument(
+        "--dostep",
+        dest="dostep",
+        metavar="STEP",
+        help="write run files for one workflow step only",
+    )
+    parser.add_argument(
         "--phase",
         type=_normalize_phase,
         default="all",
         metavar="NAME",
-        help="download (includes create_cslc for SAFE), dolphin, or all (default: all). Alias: download_create_cslc",
+        help="legacy bucket: download, dolphin, post, or all; prefer --start/--end/--dostep",
     )
     parser.add_argument(
         "--dolphin-dir",
@@ -1560,15 +1721,15 @@ def _create_files(
 ) -> list[Stage]:
     run_dir = _isce3_run_dir(work_dir)
     run_dir.mkdir(parents=True, exist_ok=True)
-    phase = getattr(args, "phase", "all") or "all"
+    split_dolphin = _use_dolphin_split(workflow, args.no_dolphin_split)
+    selected = _resolve_selected_stages(args, workflow, split_dolphin)
     dolphin_mode = getattr(args, "dolphin_mode", DEFAULT_DOLPHIN_MODE)
     all_specs = _build_stage_specs(
         workflow,
         context,
-        split_dolphin=_use_dolphin_split(workflow, args.no_dolphin_split),
+        split_dolphin=split_dolphin,
         dolphin_mode=dolphin_mode,
     )
-    split_dolphin = _use_dolphin_split(workflow, args.no_dolphin_split)
     dolphin_profile_name = "dolphin_wrapped" if split_dolphin else "dolphin"
     dolphin_profile = _profile_for(dolphin_profile_name, profiles)
     dolphin_queue = args.queue if dolphin_profile.queue_class == "short" else args.long_queue
@@ -1576,7 +1737,7 @@ def _create_files(
     if dolphin_mode == "opera":
         science_stage_names = set(OPERA_DOLPHIN_STAGES)
     need_dolphin_cpus = any(
-        _stage_in_phase(name, workflow, phase) and name in science_stage_names
+        _stage_selected(name, selected) and name in science_stage_names
         for name, _, _ in all_specs
     )
     dolphin_cpus = 1
@@ -1597,7 +1758,7 @@ def _create_files(
             preset=args.preset,
             preset_naming=args.preset_naming,
             burst_count_method=args.burst_count_method,
-            phase=phase,
+            selected_stages=selected,
             dolphin_dir=dolphin_dir,
             yaml_name=yaml_name,
             extra_flags=extra_flags,
@@ -1617,17 +1778,21 @@ def _create_files(
         missing = [
             name
             for name, _, _ in all_specs
-            if _stage_in_phase(name, workflow, phase) and name not in bodies
+            if _stage_selected(name, selected) and name not in bodies
         ]
         if missing:
             raise RuntimeError(f"{workflow} stage commands missing: {', '.join(missing)}")
         specs = [
             (name, title, bodies[name])
             for name, title, _ in all_specs
-            if _stage_in_phase(name, workflow, phase)
+            if _stage_selected(name, selected)
         ]
     else:
-        specs = [(name, title, command) for name, title, command in all_specs if _stage_in_phase(name, workflow, phase)]
+        specs = [
+            (name, title, command)
+            for name, title, command in all_specs
+            if _stage_selected(name, selected)
+        ]
     phase_names = {name for name, _, _ in specs}
     expected_names = set()
     deferred_stage_names = set()
@@ -1656,14 +1821,11 @@ def _create_files(
             path = run_dir / f"{basename}{suffix}"
             if path.exists() and path.name not in expected_names:
                 candidates.append(path)
-    if phase == "all":
+    if len(selected) == len(all_specs):
         stale_files = sorted(candidates)
     else:
-        stale_names = set(phase_names)
-        if phase == "dolphin":
-            stale_names.update({"dolphin", *DOLPHIN_SPLIT_STAGES, *OPERA_DOLPHIN_STAGES})
         stale_files = sorted(
-            path for path in candidates if _run_file_stage_name(path) in stale_names
+            path for path in candidates if _run_file_stage_name(path) in phase_names
         )
     for path in stale_files:
         path.unlink()
@@ -1744,6 +1906,8 @@ def _print_plan(
         sys.stdout.write(msg + "\n")
         sys.stdout.flush()
 
+    data_type_label = {"safe": "safe", "cslc": "cslc", "disp": "disp-s1"}.get(workflow, workflow)
+    _out(f"Data type: {data_type_label}")
     _out(f"Project: {context['project']}")
     start = str(context.get("start_date") or "").strip()
     end = str(context.get("end_date") or "").strip()
@@ -1903,7 +2067,7 @@ def _sweets_stage_bodies(
     preset: str = DEFAULT_PRESET,
     preset_naming: bool = True,
     burst_count_method: str = "sar_coverage",
-    phase: str = "all",
+    selected_stages: frozenset[str] | None = None,
     dolphin_dir: str = DEFAULT_DOLPHIN_DIR,
     yaml_name: str = "dolphin_config.yaml",
     extra_flags: str = "",
@@ -1916,6 +2080,9 @@ def _sweets_stage_bodies(
     reference_method: str = DEFAULT_REFERENCE_METHOD,
 ) -> dict[str, str]:
     """Resolve concrete SAFE or CSLC run-file bodies at generate time."""
+    selected = selected_stages or frozenset(
+        isce3_steps.workflow_stage_names(workflow, dolphin_mode, split_dolphin=split_dolphin)
+    )
     config_line = _sweets_config_line(workflow, context)
     kind = "safe" if workflow == "safe" else "cslc"
     cfg = SWEETS_CONFIG
@@ -1923,6 +2090,19 @@ def _sweets_stage_bodies(
     hdfeos5 = _hdfeos5_command(preset, preset_naming, dolphin_dir=dolphin_dir)
     ingest = f"ingest_insarmaps.bash {dolphin_dir}/timeseries"
     geom = _geometry_stitch_command(strides, cfg)
+    if isce3_steps.post_only_selection(selected, workflow, dolphin_mode):
+        if dolphin_mode == "opera" and workflow in {"cslc", "safe"}:
+            bodies = {
+                "reformat_disp": _reformat_disp_command(context, reference_method=reference_method) + "\n",
+                "dolphin_2_hdfeos5": _opera_hdfeos5_command(context),
+                "ingest_insarmaps": _opera_ingest_command(),
+            }
+        else:
+            bodies = {
+                "dolphin_2_hdfeos5": hdfeos5,
+                "ingest_insarmaps": ingest,
+            }
+        return {name: body for name, body in bodies.items() if name in selected}
     if dolphin_mode == "opera" and workflow in {"cslc", "safe"}:
         if workflow == "safe":
             cslc_dir = "gslcs"
@@ -1943,13 +2123,15 @@ def _sweets_stage_bodies(
             gslc_glob=gslc_glob,
         )
         reformat_disp = _reformat_disp_command(context, reference_method=reference_method) + "\n"
-        if phase == "download":
+        if isce3_steps.download_only_selection(selected, workflow):
             if workflow == "safe":
-                return {
+                bodies = {
                     download_key: download_body,
                     "create_cslc": "",
                 }
-            return {download_key: download_body}
+            else:
+                bodies = {download_key: download_body}
+            return {name: body for name, body in bodies.items() if name in selected}
         bodies = {
             download_key: download_body,
             "disp_s1_process": disp_s1_process,
@@ -1974,13 +2156,15 @@ def _sweets_stage_bodies(
             strides,
             ministack_size=ministack_size,
         )
-    if phase == "download":
+    if isce3_steps.download_only_selection(selected, workflow):
         if workflow == "safe":
-            return {
+            bodies = {
                 "download_safe": download.rstrip("\n") + f"\nprepare_compass_runconfigs.py --config {cfg}\n",
                 "create_cslc": "",
             }
-        return {"download_cslc": download.rstrip("\n") + f"\n{geom}\n"}
+        else:
+            bodies = {"download_cslc": download.rstrip("\n") + f"\n{geom}\n"}
+        return {name: body for name, body in bodies.items() if name in selected}
     n_bursts = _resolve_n_bursts_for_dolphin(
         work_dir, context, burst_count_method=burst_count_method
     )
@@ -2489,6 +2673,8 @@ def main(iargs: list[str] | None = None) -> int:
         if any(token == "--copy-dolphin-inputs" or token.startswith("--copy-dolphin-inputs=") for token in (*argv, *extras)):
             raise ValueError("removed --copy-dolphin-inputs; inputs are always symlinked")
         _normalize_dolphin_config_positionals(args)
+        if args.dostep and (args.step_start or args.step_end):
+            raise ValueError("--dostep cannot be combined with --start or --end")
         half_window_cli = None
         if args.half_window is not None:
             half_window_cli = _parse_yx_pair(args.half_window, "--half-window")
@@ -2564,20 +2750,34 @@ def main(iargs: list[str] | None = None) -> int:
             sys.stderr.flush()
         scratch_dir = Path(os.environ["SCRATCHDIR"]).expanduser().resolve()
         work_dir = scratch_dir / str(context["project"])
+        workflow = _apply_dataset_inference(
+            args, workflow, argv, str(context["project"]), work_dir
+        )
+        split_dolphin = _use_dolphin_split(workflow, args.no_dolphin_split)
+        selected = _resolve_selected_stages(args, workflow, split_dolphin)
         layer = "wrapped"
         dolphin_dir = DEFAULT_DOLPHIN_DIR
         yaml_name = "dolphin_config.yaml"
         embed_config = True
+        if (
+            isce3_steps.post_only_selection(selected, workflow, args.dolphin_mode)
+            and not args.dolphin_dir
+            and workflow in {"cslc", "safe"}
+            and args.dolphin_mode != "opera"
+        ):
+            sidecar_dir = read_run_slice_sidecar(work_dir).get("dolphin_dir")
+            if sidecar_dir:
+                args.dolphin_dir = sidecar_dir
         if workflow == "disp":
             if args.dolphin_dir:
                 raise ValueError("--dolphin-dir does not apply to DISP-S1")
         elif workflow in {"cslc", "safe"} and args.dolphin_mode == "opera":
             dolphin_dir = args.dolphin_dir or DISP_S1_PRODUCE_DIR
             yaml_name = config_yaml_name(dolphin_dir) if args.dolphin_dir else "dolphin_config.yaml"
-            if args.phase == "dolphin" and not has_cslc_or_gslc(work_dir, workflow):
-                raise ValueError("CSLCs/GSLCs not found; run `--start download` first")
+            if isce3_steps.needs_slc(selected) and not has_cslc_or_gslc(work_dir, workflow):
+                raise ValueError(_missing_slc_message(workflow))
             data_ready = has_cslc_or_gslc(work_dir, workflow)
-            embed_config = not (args.phase in {"dolphin", "all"} and data_ready)
+            embed_config = not (isce3_steps.needs_slc(selected) and data_ready)
         else:
             extra_pairs: list[tuple[str, str | None]] = []
             if args.preset and args.preset != DEFAULT_PRESET:
@@ -2590,10 +2790,10 @@ def main(iargs: list[str] | None = None) -> int:
                 extra_pairs=extra_pairs,
             )
             yaml_name = config_yaml_name(dolphin_dir)
-            if args.phase == "dolphin" and not has_cslc_or_gslc(work_dir, workflow):
-                raise ValueError("CSLCs/GSLCs not found; run `--start download` first")
+            if isce3_steps.needs_slc(selected) and not has_cslc_or_gslc(work_dir, workflow):
+                raise ValueError(_missing_slc_message(workflow))
             data_ready = has_cslc_or_gslc(work_dir, workflow)
-            embed_config = not (args.phase in {"dolphin", "all"} and data_ready)
+            embed_config = not (isce3_steps.needs_slc(selected) and data_ready)
         _print_plan(
             workflow,
             platform,
@@ -2628,10 +2828,13 @@ def main(iargs: list[str] | None = None) -> int:
             if template_dest.resolve() != template_src.resolve():
                 template_dest.write_text(template_src.read_text())
         os.chdir(work_dir)
-        if workflow in {"safe", "cslc"} and args.phase in {"download", "all"}:
+        if isce3_steps.needs_sweets_config(selected, workflow):
             _write_sweets_config(workflow, context, work_dir)
-        if workflow in {"safe", "cslc"} and args.phase != "download":
-            if not (workflow in {"cslc", "safe"} and args.dolphin_mode == "opera"):
+        if workflow in {"safe", "cslc"} and not isce3_steps.download_only_selection(selected, workflow):
+            if (
+                isce3_steps.generation_needs_dolphin_science(selected)
+                and not (workflow in {"cslc", "safe"} and args.dolphin_mode == "opera")
+            ):
                 stage_dolphin_inputs(
                     work_dir,
                     src_dir=args.from_dolphin_dir,

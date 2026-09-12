@@ -18,9 +18,8 @@ description: >-
 
 ## Do not create test scripts
 
-- **Do not** create `tests/test_<script>.bash`, `tests/test_<script>.py`, or `minsar/*/tests/test_<script>.py` for new utility scripts.
-- Only add tests when the user **explicitly asks**, or when changing core workflow/job orchestration where regressions are costly (`run_workflow`, `minsarApp`, submit/sbatch paths, etc.).
-- Prefer manual smoke checks (`--help`, a quick dry-run) over new test files for one-off admin/utils tools (e.g. `clean_dir.bash`, `generate_sweets_config.py`, `dolphin2hdfeos5.py`).
+- **Do not** create or extend tests (`test_*.bash`, `test_*.py`, or new cases in existing files) unless the user explicitly asks. See `.cursor/rules/no-create-tests.mdc`.
+- Prefer manual smoke checks (`--help`, a quick dry-run) over new test files.
 
 ## Do not always modify `architecture_docs/`
 

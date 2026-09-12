@@ -43,6 +43,7 @@ options:
 
 STEP may be a step number, step name, run-file basename, or a coarse alias:
   download, download_create_cslc, dolphin, hdfeos5, ingest.
+  download ends at create_cslc (SAFE), download_cslc (CSLC), or reformat_disp (DISP-S1 only).
 
 SAFE steps:    download_safe, create_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps
 SAFE steps (opera): download_safe, create_cslc, disp_s1_process, reformat_disp, dolphin_2_hdfeos5, ingest_insarmaps
@@ -323,7 +324,12 @@ expand_step_alias() {
     case "$value" in
         download|download_create_cslc)
             if [[ "$which" == "end" ]]; then
-                first_existing_stage create_cslc reformat_disp download_safe download_cslc download_disp || echo "$value"
+                # reformat_disp ends download only for DISP-S1. Opera reformat is a later science step.
+                if stage_exists download_disp; then
+                    first_existing_stage reformat_disp download_disp || echo "$value"
+                else
+                    first_existing_stage create_cslc download_safe download_cslc || echo "$value"
+                fi
             else
                 first_existing_stage download_safe download_cslc download_disp || echo "$value"
             fi
@@ -335,7 +341,7 @@ expand_step_alias() {
                 first_existing_stage dolphin_wrapped disp_s1_process dolphin || echo "$value"
             fi
             ;;
-        hdfeos5)
+        hdfeos5|dolphin2hdfeos5)
             echo "dolphin_2_hdfeos5"
             ;;
         ingest)
@@ -488,23 +494,34 @@ print_job_stderr_tail() {
     fi
 }
 
+file_mtime_epoch() {
+    local path="$1"
+    if stat -c %Y "$path" >/dev/null 2>&1; then
+        stat -c %Y "$path"
+    else
+        stat -f %m "$path"
+    fi
+}
+
 print_ingest_insarmaps_url_if_applicable() {
     local job_file="$1"
     local step_start_epoch="$2"
-    local log_file="${work_dir}/insarmaps.log"
-    local job_basename log_mtime url
+    local job_basename log_file log_mtime url
 
     job_basename=$(basename "$job_file" .job)
     [[ "$job_basename" == *ingest_insarmaps* ]] || return 0
     [[ -n "$step_start_epoch" ]] || return 0
-    [[ -f "$log_file" ]] || return 0
+    log_file="$(minsar_insarmaps_log_path "$work_dir" "$work_dir" 2>/dev/null || true)"
+    [[ -n "$log_file" && -f "$log_file" ]] || return 0
 
-    log_mtime=$(stat -c %Y "$log_file" 2>/dev/null || echo 0)
+    log_mtime="$(file_mtime_epoch "$log_file" 2>/dev/null || echo 0)"
     [[ "$log_mtime" -gt "$step_start_epoch" ]] || return 0
 
-    url=$(tail -1 "$log_file")
+    url=$(tail -n 1 "$log_file")
     [[ "$url" == http://* || "$url" == https://* ]] || return 0
+    echo "insarmaps.log:"
     echo "$url"
+    echo
 }
 
 run_job_validation() {

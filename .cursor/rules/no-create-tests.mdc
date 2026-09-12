@@ -1,0 +1,14 @@
+---
+description: Do not create tests unless the user explicitly asks
+alwaysApply: true
+---
+
+# Do not create tests
+
+Do **not** create or extend tests unless the user explicitly asks for tests in this request.
+
+- No new `test_*.py`, `test_*.bash`, `tests/`, or other test files
+- No new test cases, fixtures, or harnesses in existing test files
+- Do not register new suites in `run_all_tests.bash` or `run_bash_tests.bash`
+
+A smoke check in the shell (`--help`, `--dry-run`) is fine. Running an existing suite is fine when it already covers the change. Do not add tests to make that suite cover the change.

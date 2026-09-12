@@ -78,6 +78,11 @@ def create_html_if_needed(dir):
         inps = Inps(dir)
         create_html(inps)
 
+def _is_insarmaps_log(path):
+    """True for an insarmaps.log sidecar, not a product directory."""
+    return os.path.basename(str(path).rstrip("/")) == "insarmaps.log"
+
+
 def add_log_remote_hdfeos5(scp_list, work_dir):
     # add uploaded he5 files to remote log file
 
@@ -294,6 +299,9 @@ def main(iargs=None):
     remote_urls = []
     for data_dir in inps.data_dirs:
         data_dir = data_dir.rstrip('/')
+
+        if _is_insarmaps_log(data_dir):
+            continue
 
         # Check if this directory has a pic subdirectory
         pic_dir = data_dir + '/pic'

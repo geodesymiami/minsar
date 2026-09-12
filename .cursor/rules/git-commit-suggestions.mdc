@@ -1,44 +1,22 @@
 ---
-description: After substantive repo edits, commit with the suggested message unless the user says not to
+description: After each code change, commit with a short commit message
 alwaysApply: true
 ---
 
-# Git commits after modifications
+# Commit after each code change
 
-After **substantive** code or config changes, **run the commit** using the suggested message in the same turn — do not leave changes uncommitted unless the user says **not to commit** (or only asked a question / read-only work).
+After each code change, **commit it** with a short commit message. Do not leave the change uncommitted unless the user says not to commit, or the turn was question-only / read-only.
 
-## When to commit
+## Commit
 
-- New or changed `minsar/` scripts, utils, CLI, job defaults, workflow entry points
-- Multi-file features, workflow fixes, reverts the user requested
-- `.cursor/rules/` or other repo config the user asked to change
+- One short message (about one line). Match recent `git log` tone. Say why, not a file list.
+- Run the commit in the same turn. Do not only suggest the command.
+- `git add` explicit paths. Do not `git add -A` unless every change belongs in that commit.
+- Pass the message with a HEREDOC. Do not skip hooks. Do not push unless asked.
+- Follow the user git safety rules (no config changes, no force-push, no amend unless those rules allow it).
 
-## When to skip
+## Skip
 
-- Questions only, log inspection, or read-only review
-- User explicitly says not to commit (e.g. "don't commit", "no commit")
-- No file changes to commit
-
-## Workflow
-
-1. End the task summary with **files modified** (see `minsar-project.mdc`).
-2. Draft **one commit message** (1–2 sentences, focus on why; match repo tone).
-3. **Run the commit** (do not only suggest commands):
-   - `git status` and `git diff` to confirm what will be committed
-   - `git add` with explicit paths (not `git add -A` unless all changes belong in one commit)
-   - `git commit` via HEREDOC (see user git safety rules)
-   - `git status` after commit to verify success
-4. Do **not** push unless the user asks.
-
-## Example
-
-```bash
-git add minsar/src/minsar/cli/create_isce3_runfiles.py minsar/src/minsar/cli/run_isce3_workflow.bash
-git commit -m "$(cat <<'EOF'
-Fix ISCE3 timeout rerun to use job_defaults_isce3.cfg for dolphin_wrapped.
-
-EOF
-)"
-```
-
-If the user wants commands to copy elsewhere, still show them in chat — but **also execute** the commit locally by default.
+- Questions, log inspection, or read-only review
+- User says not to commit
+- Nothing to commit
