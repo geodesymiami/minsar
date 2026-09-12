@@ -21,7 +21,7 @@ cd $WORK2/code
 ```
 git clone git@github.com:geodesymiami/minsar.git ;
 cd minsar
-env -i HOME=$HOME PATH=/usr/bin:/bin:/sbin SHELL=/bin/bash SCRATCH=$SCRATCH USER=circleci bash --noprofile --norc
+env -i HOME=$HOME PATH=/usr/bin:/bin:/sbin SHELL=/bin/bash SCRATCH=$SCRATCH WORK2=$WORK2 USER=circleci bash --noprofile --norc
 set -eo pipefail
 ./setup/install_python.bash
 ./setup/install_tools.bash

@@ -1,6 +1,6 @@
 git clone git@github.com:geodesymiami/minsar.git
 cd minsar || exit 1
-env -i HOME="$HOME" PATH="$HOME/.pixi/bin:/opt/homebrew/bin:/usr/bin:/bin:/sbin" SHELL=/bin/bash SCRATCH="$SCRATCH" USER=circleci bash --noprofile --norc <<'EOF'
+env -i HOME="$HOME" PATH="$HOME/.pixi/bin:/opt/homebrew/bin:/usr/bin:/bin:/sbin" SHELL=/bin/bash SCRATCH="$SCRATCH" WORK2="$WORK2" USER=circleci bash --noprofile --norc <<'EOF'
 
 set -Eeuo pipefail
 CURRENT_STEP="(before first step)"
