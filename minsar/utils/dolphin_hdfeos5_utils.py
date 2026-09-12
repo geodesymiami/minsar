@@ -1,6 +1,6 @@
 """Library helpers for Dolphin/sweets GeoTIFF stacks ↔ MintPy HDF-EOS5.
 
-Used by ``dolphin2hdfeos5.py`` and ``hdfeos52dolphin.py``. Independent of
+Used by ``dolphin2hdfeos5.py`` (forward and ``--reverse``). Independent of
 ``minsar.src.minsar.cli.create_dolphin_files``.
 """
 
@@ -76,6 +76,8 @@ DOLPHIN2HDFEOS5_EXAMPLES = """Examples:
   dolphin2hdfeos5.py dolphin -m recommendedDensity --vmin 0.95
   dolphin2hdfeos5.py stack.nc --method-string operaDisp -m psDensity
   dolphin2hdfeos5.py stack.nc --method-string operaDisp -m psDensity --vmin 0.5
+  dolphin2hdfeos5.py --reverse S1_file.he5
+  dolphin2hdfeos5.py --reverse S1_file.he5 -o out-stack.nc
 """
 REMASK_HDFEOS5_EXAMPLES = """Examples:
   remask_hdfeos5.py S1_….he5 -m tc --vmin 0.7
@@ -86,11 +88,6 @@ REMASK_HDFEOS5_EXAMPLES = """Examples:
   remask_hdfeos5.py S1_….he5 -m psDensity
   remask_hdfeos5.py S1_….he5 -m psDensity --vmin 0.5
   remask_hdfeos5.py S1_…_tc070sim050.he5 -m recommended
-"""
-HDFEOS52DOLPHIN_EXAMPLES = """Examples:
-  hdfeos52dolphin.py S1_asc_048_operaDisp_20160927_20260619_N2578W08031_N2581W08031_N2581W08026_N2578W08026.he5
-  hdfeos52dolphin.py S1_asc_048_operaDisp_20160927_20260619_N2578W08031_N2581W08031_N2581W08026_N2578W08026.he5 -o out-stack.nc
-  bowser --stack S1_asc_048_operaDisp_20160927_20260619_N2578W08031_N2581W08031_N2581W08026_N2578W08026-stack.nc
 """
 # One underscore-separated token after the MintPy stem (also strip older tcNNN_simNNN).
 MASK_SUFFIX_RE = re.compile(
@@ -1823,7 +1820,7 @@ def write_opera_stack_nc(he5_path: Path, out_path: Path) -> Path:
     ds.attrs = {
         "Conventions": "CF-1.8",
         "title": "DISP stack from HDF-EOS5",
-        "history": f"converted from {he5_path.name} by hdfeos52dolphin.py",
+        "history": f"converted from {he5_path.name} by dolphin2hdfeos5.py --reverse",
         "source": str(he5_path),
     }
     out_path.parent.mkdir(parents=True, exist_ok=True)

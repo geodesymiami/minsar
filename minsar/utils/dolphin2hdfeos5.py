@@ -4,6 +4,8 @@
 Writes the same HDFEOS tree as MintPy/MiaplPy ``save_hdfeos5.py`` so
 ``view.py`` and ``ingest_insarmaps.bash`` work. Default mask matches OPERA
 DISP-S1 recommended_mask (TC 0.6 / similarity 0.4).
+
+``--reverse`` converts an HDF-EOS5 file back to an opera-utils ``*-stack.nc``.
 """
 
 from __future__ import annotations
@@ -37,6 +39,8 @@ try:
         resolve_required_files,
         resolve_run_paths,
         same_shape,
+        stack_nc_output_path,
+        write_opera_stack_nc,
     )
 except ImportError:
     from dolphin_presets import METHOD_STRING_HELP, OPERA_DISP_METHOD_STRING, normalize_method_string
@@ -60,11 +64,13 @@ except ImportError:
         resolve_required_files,
         resolve_run_paths,
         same_shape,
+        stack_nc_output_path,
+        write_opera_stack_nc,
     )
 
 DESCRIPTION = (
     "Convert Dolphin GeoTIFF or OPERA DISP *-stack.nc into HDF-EOS5 "
-    "(default -m recommended)"
+    "(default -m recommended). --reverse writes *-stack.nc from a .he5"
 )
 
 
@@ -76,14 +82,19 @@ def create_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "input_path",
-        help="dolphin dir, OPERA run dir, or *-stack.nc",
+        help="dolphin dir, OPERA run dir, *-stack.nc, or .he5 with --reverse",
+    )
+    parser.add_argument(
+        "--reverse",
+        action="store_true",
+        help="Convert .he5 to opera-utils *-stack.nc (mask options are ignored)",
     )
     parser.add_argument(
         "-o",
         "--output",
         dest="outfile",
         default=None,
-        help="Output .he5 path (default: dolphin/timeseries/ for GeoTIFF; project dir for *-stack.nc)",
+        help="Output .he5, or *-stack.nc with --reverse (default: next to the input)",
     )
     parser.add_argument(
         "--no-update",
@@ -279,7 +290,22 @@ def _write_he5(inps, out_dir, stack, date_list, grid, quality, mask, latitude, l
     return out_path
 
 
+def run_reverse(inps) -> Path:
+    """Write an opera-utils *-stack.nc from an HDF-EOS5 file."""
+    in_path = Path(inps.input_path).expanduser().resolve()
+    if in_path.suffix.lower() != ".he5":
+        raise ValueError(f"--reverse expects a .he5 file, got: {in_path}")
+    if not in_path.is_file():
+        raise FileNotFoundError(f"HE5 not found: {in_path}")
+    out_path = stack_nc_output_path(in_path, inps.outfile)
+    print(f"Input:  {in_path}")
+    print(f"Output: {out_path}")
+    return write_opera_stack_nc(in_path, out_path)
+
+
 def run(inps) -> Path:
+    if inps.reverse:
+        return run_reverse(inps)
     vmin, vmin_sim = resolve_mask_thresholds(inps.mask_source, inps.vmin, inps.vmin_sim)
     suffix = mask_filename_suffix(inps.mask_source, vmin, vmin_sim)
     kind = detect_input_kind(Path(inps.input_path))
