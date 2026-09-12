@@ -3,16 +3,20 @@ cd minsar || exit 1
 env -i HOME="$HOME" PATH="$HOME/.pixi/bin:/opt/homebrew/bin:/usr/bin:/bin:/sbin" SHELL=/bin/bash SCRATCH="$SCRATCH" USER=circleci bash --noprofile --norc <<'EOF'
 
 set -Eeuo pipefail
-trap 'echo
+CURRENT_STEP="(before first step)"
+# Capture $? first: later echo in the trap would reset it to 0.
+# This here-doc runs as bash stdin, so BASH_SOURCE/LINENO are "main"/run_step — print the step name instead.
+trap 'status=$?
+      echo
       echo "============================================================"
-      echo "ERROR"
-      echo "Script : ${BASH_SOURCE[0]}"
-      echo "Line   : ${LINENO}"
-      echo "Command: ${BASH_COMMAND}"
-      echo "Status : $?"
+      echo "ERROR: installation failed"
+      echo "Failed step: ${CURRENT_STEP}"
+      echo "Command    : ${BASH_COMMAND}"
+      echo "Status     : ${status}"
       echo "============================================================"
       ' ERR
 run_step () {
+    CURRENT_STEP="$1"
     echo "============================================================"
     echo "RUNNING: $1"
     echo "============================================================"

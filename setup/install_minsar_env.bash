@@ -17,6 +17,9 @@ rm -rf "$ENV_PREFIX"
 if [[ "$(uname)" == "Linux" ]]; then
     if [[ -f conda-lock.yml ]]; then
         echo "Lock file conda-lock.yml found. Using it for installation"
+                        # 8/26: create updated lockfile using:   (the location of conda-lock is unclear. I saw it in both minsar env and base env)
+                        # mamba install -c conda-forge conda-lock
+                        # tools/miniforge3/envs/minsar/cbin/conda-lock -f minsar_env.yml --lockfile conda-lock.yml --platform linux-64 --no-mamba
         tools/miniforge3/bin/mamba create --prefix "$ENV_PREFIX" --file conda-lock.yml --yes
     else
         tools/miniforge3/bin/mamba --verbose env create -f minsar_env.yml --yes
@@ -42,6 +45,8 @@ if [[ ! -d tools/opera-utils ]]; then
     git -C tools/opera-utils fetch --tags --quiet 2>/dev/null || true
 fi
 SETUPTOOLS_SCM_PRETEND_VERSION=0.25.8 pip install tools/opera-utils --no-deps --force-reinstall
+# opera-utils imports these at package load (_remote / datasets); they are not in conda-lock.yml.
+pip install s3fs pooch
 python -c "import opera_utils; print('Verified opera_utils in minsar env')"
 
 rm -rf tools/miniforge3/pkgs
