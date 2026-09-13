@@ -50,6 +50,10 @@ wget http://149.165.154.65/data/circleci/ci_small_unittestGalapagosSenDT128.tar
 tar xvf ci_small_unittestGalapagosSenDT128.tar
 minsarApp.bash $SAMPLESDIR/circleci/ci_unittestGalapagosSenDT128.template --start dem
 ```
+If you have the test data:
+```
+minsarApp.bash $SAMPLESDIR/unittestGalapagosSenD128.template --start dem
+```
 2. ISCE3
 See these [examples](test_commands.txt). 
 
