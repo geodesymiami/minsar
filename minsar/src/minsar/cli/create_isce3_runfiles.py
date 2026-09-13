@@ -25,9 +25,12 @@ from minsar.utils.dolphin_config_import import (
     write_stripped_algo_yaml,
 )
 from minsar.utils.dolphin_presets import (
+    DEFAULT_DOLPHIN_CONFIG,
     DEFAULT_HALF_WINDOW,
     DEFAULT_PRESET,
     DEFAULT_STRIDES,
+    DOLPHIN_CONFIG_CHOICES,
+    DOLPHIN_CONFIG_HELP,
     DOLPHIN_PRESET_CHOICES,
     DOLPHIN_PRESET_HELP,
     NO_PRESET_NAMING_HELP,
@@ -37,8 +40,10 @@ from minsar.utils.dolphin_presets import (
     dolphin_method_string,
     dolphin_window_cli_flags,
     dolphin_worker_cli_flags,
+    normalize_dolphin_config,
     normalize_dolphin_preset,
     resolve_half_window_strides,
+    single_run_science_passthrough,
 )
 from minsar.utils import isce3_steps
 from minsar.utils.isce3_dolphin_experiment import (
@@ -154,6 +159,10 @@ ARGV_FIX_KW = {
         "--no-preset-naming",
     ),
 }
+
+
+def _dolphin_config_in_argv(argv: list[str]) -> bool:
+    return any(token == "--dolphin-config" or token.startswith("--dolphin-config=") for token in argv)
 
 
 def _normalize_dolphin_mode(value: str) -> str:
@@ -1313,6 +1322,14 @@ def create_parser() -> argparse.ArgumentParser:
         help="SAFE/CSLC: single-run (one Dolphin stack) or opera (local DISP-S1 produce); not for disp-s1; default: single-run",
     )
     parser.add_argument(
+        "--dolphin-config",
+        type=normalize_dolphin_config,
+        default=DEFAULT_DOLPHIN_CONFIG,
+        metavar="PRESET",
+        choices=DOLPHIN_CONFIG_CHOICES,
+        help=f"{DOLPHIN_CONFIG_HELP} (Default: {DEFAULT_DOLPHIN_CONFIG}; single-run only)",
+    )
+    parser.add_argument(
         "--sleep",
         type=int,
         metavar="SECS",
@@ -1935,6 +1952,7 @@ def _print_plan(
     strides: tuple[int, int] | None = None,
     reference_method: str | None = None,
     unwrap_method: str | None = None,
+    dolphin_config: str | None = None,
 ) -> None:
     """Print resolved project summary as soon as names are known.
 
@@ -1963,6 +1981,8 @@ def _print_plan(
         _out(f"Half-window: {half_window[0]} {half_window[1]}")
     if workflow in {"cslc", "safe"} and strides is not None:
         _out(f"Stride: {strides[0]} {strides[1]}")
+    if dolphin_config and workflow in {"cslc", "safe"} and dolphin_mode == "single-run":
+        _out(f"Dolphin config preset: {dolphin_config}")
     if workflow == "disp" or (workflow in {"cslc", "safe"} and preset is not None):
         if workflow == "disp":
             _out(f"HE5 name: {OPERA_DISP_METHOD_STRING}")
@@ -2752,6 +2772,14 @@ def main(iargs: list[str] | None = None) -> int:
             passthrough = ["--unwrap-options.unwrap-method", args.unwrap_method, *passthrough]
         if getattr(args, "ministack_size", None):
             passthrough = ["--phase-linking.ministack-size", str(args.ministack_size), *passthrough]
+        workflow = _workflow_name(args)
+        if _dolphin_config_in_argv(argv):
+            if args.dolphin_mode == "opera":
+                raise ValueError("--dolphin-config applies only to --dolphin-mode single-run")
+            if workflow == "disp":
+                raise ValueError("--dolphin-config applies only to SAFE/CSLC single-run Dolphin")
+        if workflow in {"safe", "cslc"} and args.dolphin_mode != "opera":
+            passthrough = single_run_science_passthrough(args.dolphin_config, passthrough)
         extra_flags = passthrough_cli_flags(passthrough)
         if not args.queue:
             raise ValueError("No queue: set QUEUENAME or pass --queue")
@@ -2859,6 +2887,7 @@ def main(iargs: list[str] | None = None) -> int:
             strides=args.strides_yx,
             reference_method=args.reference_method,
             unwrap_method=getattr(args, "unwrap_method", None),
+            dolphin_config=args.dolphin_config if args.dolphin_mode != "opera" else None,
         )
         if args.dry_run:
             return 0

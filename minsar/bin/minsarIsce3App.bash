@@ -45,6 +45,8 @@ options:
   --half-window-preset {standard,dry,wet,arctic}
                         phase-linking half-window: standard 6x12, dry 5x11, wet 9x18, arctic 9x19 (Default: standard)
   --dolphin-mode MODE   {single-run,opera} (one Dolphin stack or local DISP-S1; not for disp-s1) (Default: single-run)
+  --dolphin-config PRESET
+                        single-run science preset: disp-s1, disp-s1-process, pydantic (Default: disp-s1)
   --reference-method METHOD
                         disp-s1-reformat reference: NONE, POINT, MEDIAN, BORDER, HIGH_COHERENCE (Default: HIGH_COHERENCE)
   --backend BACKEND     auto, local, or slurm (Default: auto)
@@ -76,7 +78,7 @@ die() {
 
 is_consume_one() {
     case "$1" in
-        --data-type|--platform|--flight-dir|--start-date|--end-date|--track|--relativeOrbit|--frame-id|--queue|--long-queue|--config|--half-window-preset|--burst-count-method|--dolphin-dir|--from-dolphin-dir|--unwrap-method|--ministack-size|--dolphin-mode|--reference-method|--backend)
+        --data-type|--platform|--flight-dir|--start-date|--end-date|--track|--relativeOrbit|--frame-id|--queue|--long-queue|--config|--half-window-preset|--burst-count-method|--dolphin-dir|--from-dolphin-dir|--unwrap-method|--ministack-size|--dolphin-mode|--dolphin-config|--reference-method|--backend)
             return 0
             ;;
     esac

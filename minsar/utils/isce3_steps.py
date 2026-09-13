@@ -322,6 +322,7 @@ _DOLPHIN_SCIENCE_ARGV = frozenset({
     "--ministack-size",
     "--dolphin-dir",
     "--from-dolphin-dir",
+    "--dolphin-config",
     "--no-dolphin-split",
 })
 
@@ -353,6 +354,7 @@ def _argv_consumed(token: str) -> int:
         "--ministack-size",
         "--half-window-preset",
         "--reference-method",
+        "--dolphin-config",
     }:
         return 2
     if token.startswith("--") and "." in token:

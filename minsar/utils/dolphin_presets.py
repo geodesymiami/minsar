@@ -11,6 +11,44 @@ DEFAULT_HALF_WINDOW: tuple[int, int] = (6, 12)
 DEFAULT_STRIDES: tuple[int, int] = (3, 6)
 DEFAULT_PRESET = "standard"
 
+# Single-run science presets (--dolphin-config). pydantic: no extra flags (Dolphin CLI defaults).
+DEFAULT_DOLPHIN_CONFIG = "disp-s1"
+DOLPHIN_CONFIG_CHOICES = ("disp-s1", "disp-s1-process", "pydantic")
+DOLPHIN_CONFIG_HELP = (
+    "single-run science preset: disp-s1 (OPERA L3 production), "
+    "disp-s1-process (local opera make_cfg), pydantic (Dolphin package defaults)"
+)
+
+# Dominant OPERA ASF L3 production epoch (dolphin_workflow_config).
+DISP_S1_SCIENCE = {
+    "amp_dispersion_threshold": 0.2,
+    "interpolation_cor_threshold": 0.3,
+    "interpolation_similarity_threshold": 0.25,
+    "max_radius": 71,
+}
+
+# additions/disp-s1/disp_s1_process.make_cfg local opera produce.
+DISP_S1_PROCESS_SCIENCE = {
+    "amp_dispersion_threshold": 0.25,
+    "interpolation_cor_threshold": 0.001,
+    "interpolation_similarity_threshold": 0.4,
+    "max_radius": 150,
+}
+
+# Dolphin PsOptions / PreprocessOptions defaults (disp-s1-env; no flags passed for pydantic).
+PYDANTIC_SCIENCE = {
+    "amp_dispersion_threshold": 0.25,
+    "interpolation_cor_threshold": 0.25,
+    "interpolation_similarity_threshold": 0.3,
+    "max_radius": 51,
+}
+
+DOLPHIN_CONFIG_SCIENCE: dict[str, dict[str, float | int]] = {
+    "disp-s1": DISP_S1_SCIENCE,
+    "disp-s1-process": DISP_S1_PROCESS_SCIENCE,
+    "pydantic": PYDANTIC_SCIENCE,
+}
+
 # Named phase-linking half-windows (Y, X). Stride is --stride (default 3 6).
 DOLPHIN_PRESETS: dict[str, tuple[int, int]] = {
     "standard": DEFAULT_HALF_WINDOW,
@@ -39,6 +77,54 @@ METHOD_STRING_HELP = (
     "HE5 post_processing_method label (e.g. dolphin, dolphinDry, operaDisp, dolphinModeOpera); "
     "used in .he5 filename and metadata (default: dolphin, operaDisp, or dolphinModeOpera by input kind)"
 )
+
+
+def normalize_dolphin_config(value: str) -> str:
+    token = str(value).strip().lower().replace("_", "-")
+    if token not in DOLPHIN_CONFIG_CHOICES:
+        raise ValueError(
+            f"invalid --dolphin-config {value!r}; use {', '.join(DOLPHIN_CONFIG_CHOICES)}"
+        )
+    return token
+
+
+def dolphin_config_passthrough_tokens(preset: str) -> list[str]:
+    """Return dolphin config CLI tokens for a single-run science preset (empty for pydantic)."""
+    key = normalize_dolphin_config(preset)
+    if key == "pydantic":
+        return []
+    values = DOLPHIN_CONFIG_SCIENCE[key]
+    return [
+        "--ps-options.amp-dispersion-threshold",
+        str(values["amp_dispersion_threshold"]),
+        "--unwrap-options.preprocess-options.interpolation-cor-threshold",
+        str(values["interpolation_cor_threshold"]),
+        "--unwrap-options.preprocess-options.interpolation-similarity-threshold",
+        str(values["interpolation_similarity_threshold"]),
+        "--unwrap-options.preprocess-options.max-radius",
+        str(values["max_radius"]),
+    ]
+
+
+def single_run_science_passthrough(
+    preset: str,
+    user_tokens: list[str] | None = None,
+) -> list[str]:
+    """Preset science flags for single-run; explicit user --section.option flags override."""
+    from minsar.utils.isce3_dolphin_experiment import parse_passthrough_pairs
+
+    defaults = dolphin_config_passthrough_tokens(preset)
+    merged: dict[str, str | None] = dict(parse_passthrough_pairs(defaults))
+    for key, val in parse_passthrough_pairs(user_tokens or []):
+        merged[key] = val
+    out: list[str] = []
+    for key, val in merged.items():
+        flag = f"--{key}"
+        if val is None:
+            out.append(flag)
+        else:
+            out.extend([flag, val])
+    return out
 
 
 def normalize_dolphin_preset(value: str) -> str:
