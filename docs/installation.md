@@ -39,7 +39,12 @@ set -eo pipefail
 To recreate the conda env, re-run `./setup/install_minsar_env.bash` (it removes `tools/miniforge3/envs/minsar` first). On Mac, as some packages are not available from conda-forge (isce2, pymaxflow) a `minsar_env_MacOS.yml` is created and used.
 
 ### Troubleshooting
-If you get errors try this [script](./install_minsar.bash) which is more verbose
+If you get errors try installation using the full install script which is more verbose:
+```
+git clone git@github.com:geodesymiami/minsar.git ;
+cd minsar
+./setup/install_all.bash
+```
 
 ---
 ### Test your installation
