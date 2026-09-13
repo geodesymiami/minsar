@@ -27,16 +27,17 @@ DOLPHIN_PRESET_HELP = (
 )
 
 NO_PRESET_NAMING_HELP = (
-    "Use method-string dolphin (not dolphinAuto/dolphinStandard) in HE5 filename; preset naming is on by default"
+    "Use method-string dolphin for every half-window preset "
+    "(default: dolphin for standard; dolphinDry/dolphinWet/dolphinArctic when preset naming is on)"
 )
 
 OPERA_DISP_METHOD_STRING = "operaDisp"
 # HE5 label for --data-type {safe,cslc} --dolphin-mode opera (local DISP-S1 produce).
-MODE_OPERA_DISP_METHOD_STRING = "modeOperaDisp"
+MODE_OPERA_DISP_METHOD_STRING = "dolphinModeOpera"
 
 METHOD_STRING_HELP = (
-    "HE5 post_processing_method label (e.g. dolphinAuto, dolphinStandard, operaDisp, modeOperaDisp); "
-    "used in .he5 filename and metadata (default: dolphin, operaDisp, or modeOperaDisp by input kind)"
+    "HE5 post_processing_method label (e.g. dolphin, dolphinDry, operaDisp, dolphinModeOpera); "
+    "used in .he5 filename and metadata (default: dolphin, operaDisp, or dolphinModeOpera by input kind)"
 )
 
 
@@ -52,17 +53,19 @@ def normalize_dolphin_preset(value: str) -> str:
 
 
 def dolphin_method_string(preset: str) -> str:
-    """HE5 post_processing_method label for a dolphin CSLC preset (e.g. dolphinStandard)."""
+    """HE5 post_processing_method label for a dolphin CSLC preset (standard is dolphin)."""
     key = normalize_dolphin_preset(preset)
+    if key == DEFAULT_PRESET:
+        return "dolphin"
     return "dolphin" + key.capitalize()
 
 
 def normalize_method_string(value: str) -> str:
-    """Validate HE5 method label (alphanumeric, e.g. dolphinStandard)."""
+    """Validate HE5 method label (alphanumeric, e.g. dolphin or dolphinModeOpera)."""
     token = str(value).strip()
     if not token or not re.fullmatch(r"[A-Za-z0-9]+", token):
         raise ValueError(
-            f"invalid method-string {value!r}; use alphanumeric labels like dolphin, dolphinAuto, dolphinStandard"
+            f"invalid method-string {value!r}; use alphanumeric labels like dolphin, dolphinDry, dolphinModeOpera"
         )
     return token
 
