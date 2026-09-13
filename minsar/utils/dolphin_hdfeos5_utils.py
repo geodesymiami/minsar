@@ -752,19 +752,28 @@ def build_mask(
     vmin=0.6,
     vmin_sim=0.4,
 ) -> np.ndarray:
-    """Build quality/mask from base layers (water, finite) plus -m rule."""
+    """Build quality/mask from base layers (water, finite, all-zero) plus -m rule."""
     mask = np.ones(shape, dtype=bool)
     watermask = quality.get("watermask")
     if watermask is not None and np.asarray(watermask).shape == shape:
         mask &= np.asarray(watermask) != 0
 
     if stack is not None:
-        if stack.ndim == 3:
+        arr = np.asarray(stack)
+        if arr.ndim == 3:
             # All dates must be finite for InsarMaps ingest (hdfeos5_2json_mbtiles
             # skips NaN only on the first date; NaN in later dates breaks JSON).
-            mask &= np.all(np.isfinite(stack), axis=0)
+            mask &= np.all(np.isfinite(arr), axis=0)
+            # Dolphin unwrap nodata is 0.0, not NaN. Exact zeros on every date are
+            # not a real time series (the reference epoch is 0 for all pixels, but
+            # other dates are not). OPERA writes those as NaN in the product.
+            zero_all = np.all(arr == 0, axis=0)
+            n_zero = int(np.count_nonzero(zero_all))
+            if n_zero:
+                print(f"All-zero:   drop {n_zero} pixels with displacement 0 on every date")
+            mask &= ~zero_all
         else:
-            mask &= np.isfinite(stack[0])
+            mask &= np.isfinite(arr[0])
 
     if source in ("recommended", "tc+sim"):
         tc = quality.get("temporal_coherence")

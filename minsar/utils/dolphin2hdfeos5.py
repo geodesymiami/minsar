@@ -3,7 +3,8 @@
 
 Writes the same HDFEOS tree as MintPy/MiaplPy ``save_hdfeos5.py`` so
 ``view.py`` and ``ingest_insarmaps.bash`` work. Default mask matches OPERA
-DISP-S1 recommended_mask (TC 0.6 / similarity 0.4).
+DISP-S1 recommended_mask (TC 0.6 / similarity 0.4) and drops pixels that are
+0.0 on every date (Dolphin unwrap nodata).
 
 ``--reverse`` converts an HDF-EOS5 file back to an opera-utils ``*-stack.nc``.
 """
