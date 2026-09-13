@@ -270,7 +270,7 @@ def resolve_dolphin_dir(
     work_dir: Path,
     extra_pairs: list[tuple[str, str | None]] | None = None,
 ) -> tuple[str, list[tuple[str, str | None]], str]:
-    """Return (dir, science pairs, layer). explicit_dir wins over auto-name."""
+    """Return (dir, science pairs, layer). Only --dolphin-dir overrides the work directory."""
     pairs = list(extra_pairs or [])
     pairs.extend(parse_passthrough_pairs(passthrough))
     source = str(from_dir or DEFAULT_FROM_DIR).strip().strip("/") or DEFAULT_FROM_DIR
@@ -279,10 +279,7 @@ def resolve_dolphin_dir(
     layer = earliest_layer(diffs) if diffs else "wrapped"
     if explicit_dir:
         return str(explicit_dir).strip().strip("/"), diffs, layer
-    if not diffs:
-        return source, diffs, layer
-    auto = auto_dolphin_dir(diffs)
-    return auto or DEFAULT_DOLPHIN_DIR, diffs, layer
+    return source, diffs, layer
 
 
 def stage_dolphin_inputs(

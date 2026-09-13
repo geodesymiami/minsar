@@ -38,7 +38,7 @@ options:
   --start-date DATE     first date YYYYMMDD
   --end-date DATE       last date YYYYMMDD
   --flight-dir DIR      asc or desc
-  --dolphin-dir DIR     work directory (Default: dolphin, or auto-name from diffs)
+  --dolphin-dir DIR     work directory (Default: dolphin)
   --unwrap-method NAME  shortcut for --unwrap-options.unwrap-method (Default: snaphu)
   --half-window Y X     phase-linking half-window or from --half-window-preset (Default: 6 12)
   --stride Y X          output strides (Default: 3 6)
@@ -439,6 +439,41 @@ project_from_generator_log() {
     printf '%s\n' "$rest"
 }
 
+refresh_work_dir() {
+    work_dir="${SCRATCHDIR}/${project}"
+}
+
+predict_project_name() {
+    local predicted="" base_name match matches=()
+    if [[ -f "${positionals[0]}" ]]; then
+        predicted="$(basename "${positionals[0]}" .template)"
+    elif [[ ${#positionals[@]} -ge 2 ]] && ! is_dolphin_config_positional "${positionals[1]}"; then
+        predicted="$(PYTHONPATH="$MINSAR_HOME" python3 "$GENERATOR" --print-project "${positionals[@]}" "${gen_args[@]}" 2>/dev/null || true)"
+        predicted="${predicted//$'\n'/}"
+        predicted="${predicted#"${predicted%%[![:space:]]*}"}"
+        predicted="${predicted%"${predicted##*[![:space:]]}"}"
+        if [[ -z "$predicted" ]]; then
+            base_name="${positionals[1]}"
+            while IFS= read -r match; do
+                [[ -n "$match" ]] && matches+=("$match")
+            done < <(compgen -G "${SCRATCHDIR}/${base_name}"* || true)
+            if [[ ${#matches[@]} -eq 1 ]]; then
+                predicted="$(basename "${matches[0]}")"
+            fi
+        fi
+    fi
+    if [[ -n "$predicted" ]]; then
+        project="$predicted"
+        refresh_work_dir
+    fi
+}
+
+enter_work_dir() {
+    refresh_work_dir
+    mkdir -p "$work_dir"
+    cd "$work_dir"
+}
+
 log_app_command() {
     local echo_stdout=true
     if [[ "${1:-}" == "--file-only" ]]; then
@@ -684,8 +719,8 @@ else
     project="${positionals[1]}"
 fi
 [[ -n "${SCRATCHDIR:-}" ]] || die "SCRATCHDIR is not set; source setup/environment.bash"
-work_dir="${SCRATCHDIR}/${project}"
-log_app_command "$invoke_dir"
+refresh_work_dir
+predict_project_name
 resolve_dataset
 require_known_step "$app_dostep" "--dostep"
 require_known_step "$app_start" "--start"
@@ -702,6 +737,13 @@ if [[ "$app_start" == "dolphin_wrapped" && "$explicit_dolphin_dir" != true && "$
     filter_gen_args_for_steps
 fi
 
+enter_work_dir
+if [[ "$(pwd -P)" != "$invoke_dir" ]]; then
+    log_app_command "$invoke_dir" "$work_dir"
+else
+    log_app_command "$work_dir"
+fi
+
 if [[ -n "$sleep_time" && "$dry_run" != true ]]; then
     echo "sleeping $sleep_time secs before starting ..."
     sleep "$sleep_time"
@@ -714,9 +756,8 @@ PYTHONUNBUFFERED=1 "$GENERATOR" "${positionals[@]}" "${gen_args[@]}" "${gen_step
 if resolved="$(project_from_generator_log "$gen_out")"; then
     project="$resolved"
 fi
-work_dir="${SCRATCHDIR}/${project}"
-mkdir -p "$work_dir"
-if [[ "$(cd "$work_dir" && pwd -P)" != "$invoke_dir" ]]; then
+if [[ "$work_dir" != "${SCRATCHDIR}/${project}" ]]; then
+    enter_work_dir
     log_app_command --file-only "$work_dir"
 fi
 if [[ "$dry_run" == true ]]; then
@@ -729,7 +770,7 @@ if [[ "$no_run" == true ]]; then
     exit 0
 fi
 
-cd "$work_dir"
+enter_work_dir
 
 run_args=()
 [[ -n "$backend" ]] && run_args+=(--backend "$backend")

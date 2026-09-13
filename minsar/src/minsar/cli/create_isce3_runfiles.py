@@ -1355,7 +1355,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--dolphin-dir",
         default=None,
         metavar="DIR",
-        help="Dolphin work directory name (default: dolphin, or auto-name from science-option diffs)",
+        help="Dolphin work directory name (default: dolphin)",
     )
     parser.add_argument(
         "--from-dolphin-dir",
@@ -1373,6 +1373,7 @@ def create_parser() -> argparse.ArgumentParser:
         help="opera-utils disp-s1-reformat reference: NONE, POINT, MEDIAN, BORDER, HIGH_COHERENCE (default: HIGH_COHERENCE)",
     )
     parser.add_argument("--run", action="store_true", help="after creating files, run run_isce3_workflow.bash run_files_isce3 --start 1 --end N")
+    parser.add_argument("--print-project", action="store_true", help=argparse.SUPPRESS)
     return parser
 
 
@@ -1395,6 +1396,26 @@ def _workflow_name(args: argparse.Namespace) -> str:
     if name == "disp-ni":
         raise ValueError("disp-NI is accepted but processing is not implemented")
     return name
+
+
+def _resolve_project_name(args: argparse.Namespace) -> str:
+    """Return the SCRATCHDIR project stem for template or AOI input."""
+    input_path = Path(args.input).expanduser()
+    if input_path.is_file():
+        return input_path.stem.replace(".template", "")
+    if not args.name:
+        raise ValueError("AOI input requires a project NAME")
+    if not args.flight_dir:
+        raise ValueError("AOI input requires --flight-dir asc or desc")
+    workflow = _workflow_name(args)
+    return _aoi_project_name(
+        args.name,
+        workflow,
+        args.input,
+        args.flight_dir,
+        args.track,
+        dolphin_mode=args.dolphin_mode,
+    )
 
 
 def _run_isce3_workflow(work_dir: Path, end_step: int) -> int:
@@ -2687,6 +2708,11 @@ def main(iargs: list[str] | None = None) -> int:
     argv = fix_argv_for_negative_bbox_sn_we(argv, **ARGV_FIX_KW, multiple_initial_positionals=True)
     args, extras = create_parser().parse_known_args(argv)
     try:
+        if args.print_project:
+            _normalize_dolphin_config_positionals(args)
+            parse_passthrough_pairs(extras)
+            print(_resolve_project_name(args))
+            return 0
         if any(token == "--preset" or token.startswith("--preset=") for token in (*argv, *extras)):
             raise ValueError("use --half-window-preset, not --preset")
         if any(token == "--window-preset" or token.startswith("--window-preset=") for token in (*argv, *extras)):

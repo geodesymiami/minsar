@@ -20,6 +20,8 @@ _UNNUMBERED_JOB_STEMS = {
 }
 # SAFE/CSLC opera / DISP stack HE5+ingest live in the project root (not dolphin/timeseries/).
 _OPERA_DISP_PATTERN_STEPS = ("dolphin_2_hdfeos5", "ingest_insarmaps")
+# Matches create_isce3_runfiles.RUN_ONLY_STAGES: no output patterns to check.
+_NON_VALIDATED_STEPS = frozenset({"upload"})
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -89,11 +91,23 @@ def _discover_steps(work_dir: Path) -> list[dict[str, object]]:
     return steps
 
 
+def _validated_step_names(steps: list[dict[str, object]], workflows: dict[str, object]) -> set[str]:
+    """Step names that participate in workflow inference (exclude run-only stages like upload)."""
+    all_rules: set[str] = set()
+    for rules in workflows.values():
+        if isinstance(rules, dict):
+            all_rules.update(rules)
+    discovered = {str(step["name"]) for step in steps}
+    return (discovered - _NON_VALIDATED_STEPS) & all_rules
+
+
 def _workflow_rules(config: dict[str, object], steps: list[dict[str, object]], data_type: str | None) -> tuple[str, dict[str, list[str]]]:
     workflows = config.get("workflows")
     if not isinstance(workflows, dict):
         raise ValueError("validation defaults are missing workflows")
-    step_names = {str(step["name"]) for step in steps}
+    step_names = _validated_step_names(steps, workflows)
+    if not step_names:
+        raise ValueError("no validated steps found in generated job files")
     if data_type:
         candidates = [data_type]
     else:
@@ -198,10 +212,14 @@ def main(iargs: list[str] | None = None) -> int:
         for step in steps:
             if not _selected(step, step_filters):
                 continue
+            if str(step["name"]) not in rules:
+                continue
             results.append(_validate_step(step, rules, work_dir, dolphin_dir=dolphin_dir))
 
         if step_filters and not results:
-            raise ValueError("none of the requested steps exist")
+            selected = [step for step in steps if _selected(step, step_filters)]
+            if not selected or any(str(step["name"]) in rules for step in selected):
+                raise ValueError("none of the requested steps exist")
         report = {
             "data_type": workflow,
             "dolphin_mode": dolphin_mode,
