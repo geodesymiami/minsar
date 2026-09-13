@@ -2,7 +2,7 @@
 
 `minsarIsce3App.bash` is the user command for ISCE3 SAFE, CSLC, and DISP-S1 processing. It always identifies the dataset the same way as `create_isce3_runfiles.py`: a MinSAR template, or AOI plus project name (and `--flight-dir` when the first argument is an AOI). Science flags alone are invalid.
 
-Work directory is `$SCRATCHDIR/<project>` from that template stem or AOI name. AOI `HawaiiPuna` becomes `HawaiiPunaSenD87`, `HawaiiPunaCSLCSenD87`, `HawaiiPunaCSLCOperaSenD87` (`--dolphin-mode opera`), or `HawaiiPunaDISPSenD87` from `--data-type` / `--dolphin-mode` and `--flight-dir`. The app writes ISCE3 run/job files under `run_files_isce3/`, then runs `run_isce3_workflow.bash run_files_isce3` from the project directory. `upload` is a separate last step (`.he5` and `insarmaps.log`). A full run includes it. `--dostep` stops at that step and does not upload. `--dostep upload` uploads existing products and prints the last new `insarmaps.log` line.
+Work directory is `$SCRATCHDIR/<project>` from that template stem or AOI name. AOI `HawaiiPuna` becomes `HawaiiPunaSenD87`, `HawaiiPunaCSLCSenD87`, `HawaiiPunaCSLCOperaSenD87` (`--dolphin-mode opera`), or `HawaiiPunaDISPSenD87` from `--data-type` / `--dolphin-mode` and `--flight-dir`. The app writes ISCE3 run/job files under `run_files_isce3/`, then runs `run_isce3_workflow.bash run_files_isce3` from the project directory. `upload` is the last step (run file only, no SLURM job; `.he5` and `insarmaps.log`). A full run ends at `upload`. `--dostep` stops at that step; use `--dostep upload` or `--end upload` to upload existing products.
 
 Optional alias: `run_isce3.bash` → `minsarIsce3App.bash`.
 
@@ -30,12 +30,12 @@ create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --s
 
 | App command | Generator step args | Run files written | Then `run_isce3_workflow.bash run_files_isce3` |
 |---|---|---|---|
-| template only (no `--start` / `--dostep`) | (none; all stages) | all | `--start download --end ingest_insarmaps`, then `upload` |
-| `--start download` | `--start download --end download` | download only | `--start download --end download`. No upload. |
-| `--start dolphin_wrapped` | `--start dolphin_wrapped` | from that step through `ingest_insarmaps` | same range, then `upload` |
+| template only (no `--start` / `--dostep`) | `--start download --end upload` | all, starting at download (SLCs not required yet) | `--start download --end upload` |
+| `--start download` | `--start download --end upload` | from download through upload | same range |
+| `--start dolphin_wrapped` | `--start dolphin_wrapped --end upload` | from that step through `upload` | same range |
 | `--dostep disp_s1_process` | `--dostep disp_s1_process` | that step only | that step only |
-| `--dostep dolphin_2_hdfeos5` / `dolphin2hdfeos5` | `--dostep dolphin_2_hdfeos5` | `dolphin_2_hdfeos5` only | that step only. No upload. |
-| `--dostep upload` | skipped | — | `upload_data_products.py` only |
+| `--dostep dolphin_2_hdfeos5` / `dolphin2hdfeos5` | `--dostep dolphin_2_hdfeos5` | `dolphin_2_hdfeos5` only | that step only |
+| `--dostep upload` | `--dostep upload` | `run_NN_upload` only | that run file (no `.job`) |
 
 The app passes the same workflow step flags to `create_isce3_runfiles.py` (`--start`, `--end`, `--dostep`) that it uses for `run_isce3_workflow.bash`. Dates use `--start-date` / `--end-date` only. The generator writes run files only for the requested steps. Inferred `--data-type` / `--dolphin-mode` are not forwarded unless you set them explicitly; the generator infers them from the project name.
 
@@ -115,4 +115,4 @@ Interpolation is unwrap preprocess, not a timeseries mask.
 - `hdfeos5` — `dolphin_2_hdfeos5`
 - `ingest` — `ingest_insarmaps`
 - `dolphin2hdfeos5` — `dolphin_2_hdfeos5`
-- `upload` — app step only (not a `run_files_isce3` job). `--dostep` does not include it unless the step is `upload` or `--end upload`
+- `upload` — last step; run file only (no SLURM job). Default `--end` when `--start` is set without `--end` is always `upload`. Use `--end download` (alias) for download-only

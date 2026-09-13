@@ -5,7 +5,7 @@ alwaysApply: true
 
 # Commit after each code change
 
-After each code change, **commit it** with a short commit message. Do not leave the change uncommitted unless the user says not to commit, or the turn was question-only / read-only.
+After each code change, **commit it** in the same turn. Do not wait for the user to ask. Do not leave work uncommitted unless the user says not to commit, or the turn was question-only / read-only.
 
 ## Commit
 
@@ -13,7 +13,7 @@ After each code change, **commit it** with a short commit message. Do not leave 
 - Run the commit in the same turn. Do not only suggest the command.
 - `git add` explicit paths. Do not `git add -A` unless every change belongs in that commit.
 - Pass the message with a HEREDOC. Do not skip hooks. Do not push unless asked.
-- Follow the user git safety rules (no config changes, no force-push, no amend unless those rules allow it).
+- Never update git config. No force-push. No amend unless the user asked, HEAD is yours and unpushed, and a hook auto-modified files.
 
 ## Skip
 

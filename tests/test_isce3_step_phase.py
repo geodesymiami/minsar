@@ -70,7 +70,7 @@ class TestStageSelection(unittest.TestCase):
         )
         self.assertEqual(
             selected,
-            frozenset({"dolphin_2_hdfeos5", "ingest_insarmaps"}),
+            frozenset({"dolphin_2_hdfeos5", "ingest_insarmaps", "upload"}),
         )
 
     def test_download_keeps_disp_reformat_and_not_opera_reformat(self) -> None:

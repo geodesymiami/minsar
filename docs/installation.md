@@ -43,17 +43,12 @@ If you get errors try this [script](./install_minsar.bash) which is more verbose
 
 ---
 ### Test your installation
-1. ISCE2
 ```
 cd $SCRATCHDIR
 wget http://149.165.154.65/data/circleci/ci_small_unittestGalapagosSenDT128.tar
 tar xvf ci_small_unittestGalapagosSenDT128.tar
 minsarApp.bash $SAMPLESDIR/circleci/ci_unittestGalapagosSenDT128.template --start dem
 ```
-
-2. ISCE3
-See these [examples](docs/test_commands.txt). 
-
 ### How not to loose your working installation
 You can't be sure the new installation works until you have tested it. It is recommended to keep a copy of the working installation, for example, instead of removing `minsar`  do `mv minsar good_minsar`. I have  old versions in `code_old`, `code_veryold` directories  which  can be used in the case of unexpected problems.
 

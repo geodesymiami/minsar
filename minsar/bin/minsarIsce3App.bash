@@ -6,9 +6,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
 export MINSAR_HOME="${MINSAR_HOME:-$(cd "${SCRIPT_DIR}/../.." && pwd)}"
+MINSAR_UTILS="${MINSAR_HOME}/minsar/lib/utils.sh"
 GENERATOR="${MINSAR_HOME}/minsar/src/minsar/cli/create_isce3_runfiles.py"
 RUNNER="${MINSAR_HOME}/minsar/src/minsar/cli/run_isce3_workflow.bash"
 ISCE3_RUN_DIR_NAME="run_files_isce3"
+[[ -f "$MINSAR_UTILS" ]] && source "$MINSAR_UTILS"
 
 print_help() {
     cat <<EOF
@@ -21,8 +23,8 @@ opera steps: [download, disp_s1_process, reformat_disp, dolphin_2_hdfeos5, inges
 Additional step for data-type safe: create_cslc. For disp-s1: reformat_disp
 Template or project names that contain SAFE, CSLC, or DISPS1/DISP (and Opera) set --data-type and --dolphin-mode when those flags are omitted.
 Aliases: download, dolphin, hdfeos5, ingest, dolphin2hdfeos5. Hyphens and run_NN_ prefixes are accepted (dolphin-2-hdfeos5, run_04_dolphin_2_hdfeos5).
-upload is its own step (he5 and insarmaps.log). A full run includes it. --dostep stops at that step and does not upload.
---dostep upload uploads existing products and prints the last new insarmaps.log line, same as minsarApp.bash.
+upload is the last workflow step (run file only, no SLURM job). A full run ends at upload.
+--dostep stops at that step; use --dostep upload or --end upload to upload existing products.
 Supports dolphin config from config.yaml or OPERA_DISP-S1.nc (uses metadata/dolphin_workflow_config).
 Additional --section.option flags go to dolphin config.
 
@@ -94,15 +96,6 @@ is_consume_two() {
 is_flag() {
     case "$1" in
         --safe|--cslc|--disp-S1|--dry-run|--no-dolphin-split|--preset-naming|--no-preset-naming)
-            return 0
-            ;;
-    esac
-    return 1
-}
-
-is_download_range_start() {
-    case "$1" in
-        download|download_safe|download_cslc|download_disp|create_cslc|download_create_cslc)
             return 0
             ;;
     esac
@@ -261,65 +254,136 @@ require_known_step() {
     fi
 }
 
-run_includes_upload() {
-    if [[ -n "$app_dostep" ]]; then
-        [[ "$app_dostep" == "upload" ]]
-        return
-    fi
-    if [[ -z "$app_start" && -z "$app_end" ]]; then
-        return 0
-    fi
-    if [[ -n "$app_end" ]]; then
-        [[ "$app_end" == "upload" ]]
-        return
-    fi
-    if is_download_range_start "$app_start"; then
-        return 1
-    fi
-    return 0
-}
+resolve_app_end() {
+    PYTHONPATH="$MINSAR_HOME" python3 - "$final_data_type" "${final_dolphin_mode:-single-run}" "$app_start" <<'PY'
+import sys
+from minsar.utils.isce3_steps import default_end_step, _workflow_key
 
-run_is_upload_only() {
-    if [[ "$app_dostep" == "upload" ]]; then
-        return 0
-    fi
-    if [[ -z "$app_dostep" && "$app_start" == "upload" && ( -z "$app_end" || "$app_end" == "upload" ) ]]; then
-        return 0
-    fi
-    return 1
-}
-
-finish_upload_if_requested() {
-    run_includes_upload || return 0
-    upload_isce3_he5
-    local -a product_files=()
-    local line log_file=""
-    while IFS= read -r line; do
-        [[ -n "$line" ]] && product_files+=("$line")
-    done < <(find_isce3_he5_files || true)
-    if [[ ${#product_files[@]} -gt 0 ]]; then
-        log_file="$(find_isce3_insarmaps_log "${product_files[@]}" || true)"
-    else
-        log_file="$(find_isce3_insarmaps_log || true)"
-    fi
-    print_new_insarmaps_log_line "$log_file"
+workflow = _workflow_key(sys.argv[1])
+dolphin_mode = sys.argv[2] or "single-run"
+start = sys.argv[3] or None
+print(default_end_step(workflow, dolphin_mode, start=start or None))
+PY
 }
 
 build_gen_step_args() {
     gen_step_args=()
-    if run_is_upload_only; then
-        return 0
-    fi
     if [[ -n "$app_dostep" ]]; then
         gen_step_args+=(--dostep "$app_dostep")
     elif [[ -n "$app_start" || -n "$app_end" ]]; then
         [[ -n "$app_start" ]] && gen_step_args+=(--start "$app_start")
-        if [[ -n "$app_end" && "$app_end" != "upload" ]]; then
+        if [[ -n "$app_end" ]]; then
             gen_step_args+=(--end "$app_end")
-        elif [[ -n "$app_start" ]] && is_download_range_start "$app_start"; then
-            gen_step_args+=(--end download)
+        elif [[ -n "$app_start" ]]; then
+            gen_step_args+=(--end "$(resolve_app_end)")
+        fi
+    else
+        gen_step_args+=(--start download --end upload)
+    fi
+}
+
+build_run_step_args() {
+    run_step_args=()
+    if [[ -n "$app_dostep" ]]; then
+        run_step_args+=(--dostep "$app_dostep")
+    elif [[ -n "$app_start" ]]; then
+        run_step_args+=(--start "$app_start")
+        if [[ -n "$app_end" ]]; then
+            run_step_args+=(--end "$app_end")
+        else
+            run_step_args+=(--end "$(resolve_app_end)")
+        fi
+    else
+        run_step_args+=(--start download --end upload)
+    fi
+}
+
+run_includes_ingest_insarmaps() {
+    local effective_start="" effective_end="" line
+    if [[ -n "$app_dostep" ]]; then
+        line="$(PYTHONPATH="$MINSAR_HOME" python3 - "$final_data_type" "${final_dolphin_mode:-single-run}" "$app_dostep" <<'PY'
+import sys
+from minsar.utils.isce3_steps import selected_stage_names, _workflow_key
+
+workflow = _workflow_key(sys.argv[1])
+dolphin_mode = sys.argv[2] or "single-run"
+dostep = sys.argv[3]
+stages = selected_stage_names(workflow, dolphin_mode, dostep=dostep)
+print("yes" if "ingest_insarmaps" in stages else "no")
+PY
+)"
+        [[ "$line" == yes ]]
+        return
+    fi
+    if [[ -n "$app_start" ]]; then
+        effective_start="$app_start"
+        effective_end="${app_end:-$(resolve_app_end)}"
+    else
+        effective_start="download"
+        effective_end="upload"
+    fi
+    line="$(PYTHONPATH="$MINSAR_HOME" python3 - "$final_data_type" "${final_dolphin_mode:-single-run}" "$effective_start" "$effective_end" <<'PY'
+import sys
+from minsar.utils.isce3_steps import selected_stage_names, _workflow_key
+
+workflow = _workflow_key(sys.argv[1])
+dolphin_mode = sys.argv[2] or "single-run"
+start, end = sys.argv[3], sys.argv[4]
+stages = selected_stage_names(workflow, dolphin_mode, start=start, end=end)
+print("yes" if "ingest_insarmaps" in stages else "no")
+PY
+)"
+    [[ "$line" == yes ]]
+}
+
+find_isce3_insarmaps_log() {
+    local search_dir="." dir mode candidate log_file
+    if log_file="$(minsar_insarmaps_log_path "$work_dir" "$work_dir" 2>/dev/null || true)"; then
+        [[ -n "$log_file" && -f "$log_file" ]] && printf '%s\n' "$log_file" && return 0
+    fi
+    if [[ -f "$work_dir/.isce3_run_slice" ]]; then
+        mode="$(sed -n 's/^dolphin_mode=//p' "$work_dir/.isce3_run_slice" | head -1)"
+        mode="${mode:-single-run}"
+        if [[ "$mode" != "opera" ]] && ! compgen -G "$work_dir/$ISCE3_RUN_DIR_NAME/run_*_download_disp*" >/dev/null; then
+            dir="$(sed -n 's/^dolphin_dir=//p' "$work_dir/.isce3_run_slice" | head -1)"
+            dir="${dir:-dolphin}"
+            search_dir="${dir}/timeseries"
         fi
     fi
+    for candidate in \
+        "$work_dir/$search_dir/insarmaps.log" \
+        "$work_dir/$search_dir/pic/insarmaps.log" \
+        "$work_dir/insarmaps.log" \
+        "$work_dir/pic/insarmaps.log"; do
+        if [[ -f "$candidate" ]]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+file_mtime_epoch() {
+    local path="$1"
+    if stat -c %Y "$path" >/dev/null 2>&1; then
+        stat -c %Y "$path"
+    else
+        stat -f %m "$path"
+    fi
+}
+
+print_insarmaps_log_summary_if_ingested() {
+    local log_file line mtime
+    run_includes_ingest_insarmaps || return 0
+    log_file="$(find_isce3_insarmaps_log || true)"
+    [[ -n "$log_file" && -f "$log_file" ]] || return 0
+    mtime="$(file_mtime_epoch "$log_file" 2>/dev/null || echo 0)"
+    [[ "$mtime" -gt "${MINSAR_RUN_START_EPOCH:-0}" ]] || return 0
+    line="$(tail -n 1 "$log_file")"
+    [[ "$line" == http://* || "$line" == https://* ]] || return 0
+    echo "insarmaps.log:"
+    echo "$line"
+    echo
 }
 
 filter_gen_args_for_steps() {
@@ -445,140 +509,6 @@ write_log_line() {
         seen+=("$real")
         echo "$line" >> "${real}/log"
     done
-}
-
-isce3_he5_search_dir() {
-    local mode dir
-    mode="${dolphin_mode:-single-run}"
-    if [[ "$mode" == "opera" ]] || compgen -G "$work_dir/$ISCE3_RUN_DIR_NAME/run_*_download_disp*" >/dev/null; then
-        printf '%s\n' "."
-        return 0
-    fi
-    dir="$(sed -n 's/^dolphin_dir=//p' "$work_dir/.isce3_run_slice" 2>/dev/null | head -1)"
-    dir="${dir:-dolphin}"
-    printf '%s\n' "${dir}/timeseries"
-}
-
-find_isce3_he5_files() {
-    local search_dir abs_dir file rel
-    local -a matches=()
-    local old_nullglob
-    search_dir="$(isce3_he5_search_dir)"
-    if [[ "$search_dir" == "." ]]; then
-        abs_dir="$work_dir"
-    else
-        abs_dir="$work_dir/$search_dir"
-    fi
-    [[ -d "$abs_dir" ]] || return 1
-    old_nullglob="$(shopt -p nullglob)"
-    shopt -s nullglob
-    matches=("$abs_dir"/S1*.he5)
-    if [[ ${#matches[@]} -eq 0 ]]; then
-        matches=("$abs_dir"/*.he5)
-    fi
-    eval "$old_nullglob"
-    [[ ${#matches[@]} -gt 0 ]] || return 1
-    for file in "${matches[@]}"; do
-        rel="${file#"$work_dir"/}"
-        printf '%s\n' "$rel"
-    done
-}
-
-file_mtime_epoch() {
-    local path="$1"
-    if stat -c %Y "$path" >/dev/null 2>&1; then
-        stat -c %Y "$path"
-    else
-        stat -f %m "$path"
-    fi
-}
-
-find_isce3_insarmaps_log() {
-    local he5 dir candidate
-    for he5 in "$@"; do
-        dir="$(dirname "$he5")"
-        for candidate in "$dir/insarmaps.log" "$dir/pic/insarmaps.log"; do
-            if [[ -f "$candidate" ]]; then
-                printf '%s\n' "$candidate"
-                return 0
-            fi
-        done
-    done
-    if [[ -f insarmaps.log ]]; then
-        printf '%s\n' insarmaps.log
-        return 0
-    fi
-    if [[ -f pic/insarmaps.log ]]; then
-        printf '%s\n' pic/insarmaps.log
-        return 0
-    fi
-    return 1
-}
-
-print_new_insarmaps_log_line() {
-    local log_file="$1"
-    local since="${2:-${MINSAR_RUN_START_EPOCH:-}}"
-    local mtime line
-    [[ -n "$log_file" && -f "$log_file" ]] || return 0
-    if [[ -n "$since" ]]; then
-        mtime="$(file_mtime_epoch "$log_file" 2>/dev/null || echo 0)"
-        [[ "$mtime" -gt "$since" ]] || return 0
-    fi
-    line="$(tail -n 1 "$log_file")"
-    [[ -n "${line//[[:space:]]/}" ]] || return 0
-    echo "insarmaps.log:"
-    echo "$line"
-    echo
-}
-
-upload_isce3_he5() {
-    local -a he5_files=() upload_args=()
-    local line log_file
-    while IFS= read -r line; do
-        [[ -n "$line" ]] && he5_files+=("$line")
-    done < <(find_isce3_he5_files || true)
-    if [[ ${#he5_files[@]} -eq 0 ]]; then
-        echo "No .he5 product found; skip upload_data_products.py"
-        return 0
-    fi
-    upload_args=("${he5_files[@]}")
-    log_file="$(find_isce3_insarmaps_log "${he5_files[@]}" || true)"
-    if [[ -n "$log_file" && -f "$log_file" ]]; then
-        local he5 he5_dir dest
-        for he5 in "${he5_files[@]}"; do
-            he5_dir="$(dirname "$he5")"
-            dest="$he5_dir/insarmaps.log"
-            if [[ ! -f "$dest" ]]; then
-                cp -p "$log_file" "$dest"
-            fi
-            if [[ -f "$dest" ]]; then
-                upload_args+=("$dest")
-            fi
-        done
-        upload_args+=("$log_file")
-    fi
-    # Same log path can be added once per he5 and again from the project root.
-    if [[ ${#upload_args[@]} -gt 1 ]]; then
-        local -a unique_args=()
-        local seen_arg="" arg already
-        for arg in "${upload_args[@]}"; do
-            already=false
-            if [[ ${#unique_args[@]} -gt 0 ]]; then
-                for seen_arg in "${unique_args[@]}"; do
-                    if [[ "$seen_arg" == "$arg" ]]; then
-                        already=true
-                        break
-                    fi
-                done
-            fi
-            [[ "$already" == true ]] && continue
-            unique_args+=("$arg")
-        done
-        upload_args=("${unique_args[@]}")
-    fi
-    echo "Running: upload_data_products.py ${upload_args[*]}"
-    write_log_line "$(date +"%Y%m%d:%H-%M") * upload_data_products.py ${upload_args[*]}" "$invoke_dir" "$work_dir"
-    upload_data_products.py "${upload_args[@]}"
 }
 
 [[ -f "$GENERATOR" ]] || die "create_isce3_runfiles.py not found: $GENERATOR"
@@ -777,31 +707,21 @@ if [[ -n "$sleep_time" && "$dry_run" != true ]]; then
     sleep "$sleep_time"
 fi
 
-if run_is_upload_only; then
-    echo "Skipping create_isce3_runfiles.py (upload only)"
-    [[ -d "$work_dir" ]] || die "project not found: $work_dir (run processing before --dostep upload)"
-else
-    echo "Running: create_isce3_runfiles.py ${positionals[*]} ${gen_args[*]} ${gen_step_args[*]}"
-    gen_out="$(mktemp)"
-    trap 'rm -f "$gen_out"' EXIT
-    PYTHONUNBUFFERED=1 "$GENERATOR" "${positionals[@]}" "${gen_args[@]}" "${gen_step_args[@]}" 2>&1 | tee "$gen_out"
-    if resolved="$(project_from_generator_log "$gen_out")"; then
-        project="$resolved"
-    fi
-    work_dir="${SCRATCHDIR}/${project}"
-    mkdir -p "$work_dir"
+echo "Running: create_isce3_runfiles.py ${positionals[*]} ${gen_args[*]} ${gen_step_args[*]}"
+gen_out="$(mktemp)"
+trap 'rm -f "$gen_out"' EXIT
+PYTHONUNBUFFERED=1 "$GENERATOR" "${positionals[@]}" "${gen_args[@]}" "${gen_step_args[@]}" 2>&1 | tee "$gen_out"
+if resolved="$(project_from_generator_log "$gen_out")"; then
+    project="$resolved"
 fi
+work_dir="${SCRATCHDIR}/${project}"
+mkdir -p "$work_dir"
 if [[ "$(cd "$work_dir" && pwd -P)" != "$invoke_dir" ]]; then
     log_app_command --file-only "$work_dir"
 fi
 if [[ "$dry_run" == true ]]; then
-    if run_is_upload_only; then
-        echo "Skipping run_isce3_workflow.bash (upload only)"
-    elif run_includes_upload; then
-        echo "Workflow run will be followed by upload"
-    else
-        echo "Workflow run stops before upload"
-    fi
+    build_run_step_args
+    echo "Would run: run_isce3_workflow.bash ${ISCE3_RUN_DIR_NAME} ${run_step_args[*]}"
     exit 0
 fi
 if [[ "$no_run" == true ]]; then
@@ -811,36 +731,13 @@ fi
 
 cd "$work_dir"
 
-dolphin_mode="single-run"
-if [[ -f "$work_dir/.isce3_run_slice" ]]; then
-    dolphin_mode="$(sed -n 's/^dolphin_mode=//p' "$work_dir/.isce3_run_slice" | head -1)"
-fi
-dolphin_mode="${dolphin_mode:-single-run}"
-
 run_args=()
 [[ -n "$backend" ]] && run_args+=(--backend "$backend")
 [[ -n "$max_parallel" ]] && run_args+=(--max-parallel "$max_parallel")
-
-if run_is_upload_only; then
-    echo "Skipping run_isce3_workflow.bash (upload only)"
-else
-    [[ -d "$work_dir/$ISCE3_RUN_DIR_NAME" ]] || die "$ISCE3_RUN_DIR_NAME not found under $work_dir"
-    if [[ -n "$app_dostep" ]]; then
-        run_args+=(--dostep "$app_dostep")
-    elif [[ -n "$app_start" ]]; then
-        run_args+=(--start "$app_start")
-        if [[ -n "$app_end" && "$app_end" != "upload" ]]; then
-            run_args+=(--end "$app_end")
-        elif is_download_range_start "$app_start"; then
-            run_args+=(--end download)
-        else
-            run_args+=(--end ingest_insarmaps)
-        fi
-    else
-        run_args+=(--start download --end ingest_insarmaps)
-    fi
-    echo "Running: run_isce3_workflow.bash ${ISCE3_RUN_DIR_NAME} ${run_args[*]}"
-    write_log_line "$(date +"%Y%m%d:%H-%M") * run_isce3_workflow.bash ${ISCE3_RUN_DIR_NAME} ${run_args[*]}" "$invoke_dir" "$work_dir"
-    "$RUNNER" "$ISCE3_RUN_DIR_NAME" "${run_args[@]}"
-fi
-finish_upload_if_requested
+[[ -d "$work_dir/$ISCE3_RUN_DIR_NAME" ]] || die "$ISCE3_RUN_DIR_NAME not found under $work_dir"
+build_run_step_args
+run_args+=("${run_step_args[@]}")
+echo "Running: run_isce3_workflow.bash ${ISCE3_RUN_DIR_NAME} ${run_args[*]}"
+write_log_line "$(date +"%Y%m%d:%H-%M") * run_isce3_workflow.bash ${ISCE3_RUN_DIR_NAME} ${run_args[*]}" "$invoke_dir" "$work_dir"
+"$RUNNER" "$ISCE3_RUN_DIR_NAME" "${run_args[@]}"
+print_insarmaps_log_summary_if_ingested

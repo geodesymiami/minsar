@@ -64,6 +64,7 @@ def workflow_stage_names(
                 "reformat_disp",
                 "dolphin_2_hdfeos5",
                 "ingest_insarmaps",
+                "upload",
             )
         dolphin = (
             ("dolphin_wrapped", "dolphin_unwrap", "dolphin_timeseries")
@@ -76,6 +77,7 @@ def workflow_stage_names(
             *dolphin,
             "dolphin_2_hdfeos5",
             "ingest_insarmaps",
+            "upload",
         )
     if workflow == "cslc":
         if mode == "opera":
@@ -85,6 +87,7 @@ def workflow_stage_names(
                 "reformat_disp",
                 "dolphin_2_hdfeos5",
                 "ingest_insarmaps",
+                "upload",
             )
         dolphin = (
             ("dolphin_wrapped", "dolphin_unwrap", "dolphin_timeseries")
@@ -96,12 +99,14 @@ def workflow_stage_names(
             *dolphin,
             "dolphin_2_hdfeos5",
             "ingest_insarmaps",
+            "upload",
         )
     return (
         "download_disp",
         "reformat_disp",
         "dolphin_2_hdfeos5",
         "ingest_insarmaps",
+        "upload",
     )
 
 
@@ -153,7 +158,20 @@ def expand_step_alias(step: str, which: str, available: tuple[str, ...]) -> str:
             if hit:
                 return hit
         return value
+    if value == "upload":
+        return "upload"
     return value
+
+
+def default_end_step(
+    workflow: str,
+    dolphin_mode: str = "single-run",
+    *,
+    split_dolphin: bool = True,
+    start: str | None = None,
+) -> str:
+    """Default inclusive end when --start is set without --end."""
+    return "upload"
 
 
 def _resolve_index(step: str, available: tuple[str, ...]) -> int:
@@ -248,6 +266,20 @@ def _post_stage_names(workflow: str, dolphin_mode: str) -> tuple[str, ...]:
 def needs_slc(stages: Iterable[str]) -> bool:
     """True when generation touches Dolphin YAML from on-disk SLCs/GSLCs."""
     return bool(frozenset(stages) & DOLPHIN_SCIENCE_STAGES)
+
+
+def includes_download(stages: Iterable[str], workflow: str) -> bool:
+    """True when the range includes a download-family stage that produces those SLCs."""
+    return bool(frozenset(stages) & _download_stages(workflow))
+
+
+def requires_on_disk_slc(stages: Iterable[str], workflow: str) -> bool:
+    """Require existing SLCs only when dolphin science is requested without download.
+
+    A full run (no --start) and --start download produce SLCs before dolphin runs,
+    so missing files are not an error at generation time.
+    """
+    return needs_slc(stages) and not includes_download(stages, workflow)
 
 
 def needs_sweets_config(stages: Iterable[str], workflow: str) -> bool:

@@ -347,6 +347,9 @@ expand_step_alias() {
         ingest)
             echo "ingest_insarmaps"
             ;;
+        upload)
+            echo "upload"
+            ;;
         *)
             echo "$value"
             ;;
@@ -537,14 +540,27 @@ run_job_validation() {
     print_ingest_insarmaps_url_if_applicable "$job_file" "$step_start_epoch"
 }
 
+run_runfile_only_stage() {
+    local index="$1"
+    local run_file="${stage_patterns[$index]}"
+    [[ -f "$run_file" ]] || die "run file not found: $run_file"
+    cd "$work_dir" || die "cannot cd to $work_dir"
+    print_step_banner "Running:    $(basename "$run_file")"
+    if [[ "$dry_run" != "true" ]]; then
+        run_isce3_runfile "$run_file" || die "step failed: ${stage_names[$index]}"
+    fi
+}
+
 run_local_stage() {
     local index="$1"
     local step_start_epoch="${2:-}"
     local job_file
     local run_file
+    local job_count=0
 
     cd "$work_dir" || die "cannot cd to $work_dir"
     while IFS= read -r job_file; do
+        job_count=$((job_count + 1))
         run_file="${job_file%.job}"
         [[ -f "$run_file" ]] || die "run file not found: $run_file"
         print_step_banner "Running:    $(basename "$run_file")"
@@ -556,6 +572,10 @@ run_local_stage() {
             fi
         fi
     done < <(jobs_for_step "$index")
+    if [[ "$job_count" -eq 0 ]]; then
+        run_runfile_only_stage "$index"
+        return 0
+    fi
 
     while IFS= read -r job_file; do
         run_job_validation "$job_file" "$step_start_epoch"
@@ -758,6 +778,10 @@ for ((index = start_index; index <= end_index; index++)); do
             files+=("$job_file")
         done < <(list_jobs_for_pattern "${stage_patterns[$index]}")
         if [[ "${#files[@]}" -eq 0 ]]; then
+            if [[ -f "${stage_patterns[$index]}" ]]; then
+                run_runfile_only_stage "$index"
+                continue
+            fi
             [[ "$dry_run" == "true" ]] || die "no job files for step ${stage_names[$index]}"
             echo "no job files for step ${stage_names[$index]} (dry-run)"
             continue

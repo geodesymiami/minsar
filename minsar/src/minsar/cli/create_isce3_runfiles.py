@@ -71,6 +71,7 @@ DATA_TYPE_ALIASES = {
 RUN_FILES_DIRNAME = "run_files_isce3"
 CREATE_CSLC_QUEUE_META = ".isce3_create_cslc_queue"
 DEFERRED_TASK_LIST_STAGES = frozenset({"create_cslc"})
+RUN_ONLY_STAGES = frozenset({"upload"})
 DOWNLOAD_STAGE_NAMES = {
     "safe": ("download_safe", "create_cslc"),
     "cslc": ("download_cslc",),
@@ -883,6 +884,18 @@ def _opera_ingest_command() -> str:
     return "ingest_insarmaps.bash ."
 
 
+def _upload_command(
+    workflow: str,
+    dolphin_mode: str = DEFAULT_DOLPHIN_MODE,
+    dolphin_dir: str = DEFAULT_DOLPHIN_DIR,
+) -> str:
+    """Run-file body: upload .he5 and insarmaps.log via upload_data_products.py."""
+    if workflow == "disp" or dolphin_mode == "opera":
+        return "upload_data_products.py ./*.he5 insarmaps.log"
+    timeseries = f"{dolphin_dir}/timeseries"
+    return f"upload_data_products.py {timeseries}/S1*.he5 {timeseries}/insarmaps.log insarmaps.log"
+
+
 def _cslc_slc_files_arg(context: dict[str, object]) -> str:
     """Per-burst OPERA CSLC globs for bursts intersecting the AOI."""
     from minsar.utils.generate_sweets_config import burst_id_jpl_to_cslc_glob, burst_ids_covering_aoi
@@ -1647,6 +1660,7 @@ def _build_stage_specs(
         ),
         ("dolphin_2_hdfeos5", "Convert DISP-S1 stack to HDF-EOS5", ""),
         ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", ""),
+        ("upload", "Upload HDF-EOS5 and insarmaps.log", ""),
     ]
     if workflow == "safe":
         if dolphin_mode == "opera":
@@ -1661,6 +1675,7 @@ def _build_stage_specs(
             *dolphin_specs,
             ("dolphin_2_hdfeos5", "Convert dolphin timeseries to HDF-EOS5", ""),
             ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", ""),
+            ("upload", "Upload HDF-EOS5 and insarmaps.log", ""),
         ]
     if workflow == "cslc":
         if dolphin_mode == "opera":
@@ -1673,6 +1688,7 @@ def _build_stage_specs(
             *dolphin_specs,
             ("dolphin_2_hdfeos5", "Convert dolphin timeseries to HDF-EOS5", ""),
             ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", ""),
+            ("upload", "Upload HDF-EOS5 and insarmaps.log", ""),
         ]
     template = str(context["template"])
     generate = "" if template else "true"
@@ -1681,6 +1697,7 @@ def _build_stage_specs(
         ("reformat_disp", "Reformat DISP-S1 products into a stack", generate),
         ("dolphin_2_hdfeos5", "Convert stack to HDF-EOS5", generate),
         ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", generate),
+        ("upload", "Upload HDF-EOS5 and insarmaps.log", generate),
     ]
 
 
@@ -1775,6 +1792,8 @@ def _create_files(
     else:
         bodies = None
     if bodies is not None:
+        bodies = dict(bodies)
+        bodies["upload"] = _upload_command(workflow, dolphin_mode, dolphin_dir)
         missing = [
             name
             for name, _, _ in all_specs
@@ -1801,7 +1820,7 @@ def _create_files(
         number = number_by_name[name]
         run_name = _run_basename_for_stage(name, number)
         expected_names.add(run_name)
-        if name in DEFERRED_TASK_LIST_STAGES:
+        if name in DEFERRED_TASK_LIST_STAGES or name in RUN_ONLY_STAGES:
             deferred_stage_names.add(name)
         else:
             expected_names.add(f"{run_name}.job")
@@ -1831,6 +1850,8 @@ def _create_files(
         path.unlink()
     stages: list[Stage] = []
     for name, title, command in specs:
+        if name == "upload":
+            command = _upload_command(workflow, dolphin_mode, dolphin_dir)
         number = number_by_name[name]
         profile = _profile_for(name, profiles)
         run_name = _run_basename_for_stage(name, number)
@@ -1867,7 +1888,7 @@ def _create_files(
         )
         if name in DEFERRED_TASK_LIST_STAGES:
             (run_dir / CREATE_CSLC_QUEUE_META).write_text(stage.queue + "\n")
-        else:
+        elif name not in RUN_ONLY_STAGES:
             Isce3JobAdapter(
                 work_dir, run_dir, stage.queue, profile, sleep_secs=args.sleep
             ).render(stage, run_file, job_file, workflow)
@@ -2774,7 +2795,7 @@ def main(iargs: list[str] | None = None) -> int:
         elif workflow in {"cslc", "safe"} and args.dolphin_mode == "opera":
             dolphin_dir = args.dolphin_dir or DISP_S1_PRODUCE_DIR
             yaml_name = config_yaml_name(dolphin_dir) if args.dolphin_dir else "dolphin_config.yaml"
-            if isce3_steps.needs_slc(selected) and not has_cslc_or_gslc(work_dir, workflow):
+            if isce3_steps.requires_on_disk_slc(selected, workflow) and not has_cslc_or_gslc(work_dir, workflow):
                 raise ValueError(_missing_slc_message(workflow))
             data_ready = has_cslc_or_gslc(work_dir, workflow)
             embed_config = not (isce3_steps.needs_slc(selected) and data_ready)
@@ -2790,7 +2811,7 @@ def main(iargs: list[str] | None = None) -> int:
                 extra_pairs=extra_pairs,
             )
             yaml_name = config_yaml_name(dolphin_dir)
-            if isce3_steps.needs_slc(selected) and not has_cslc_or_gslc(work_dir, workflow):
+            if isce3_steps.requires_on_disk_slc(selected, workflow) and not has_cslc_or_gslc(work_dir, workflow):
                 raise ValueError(_missing_slc_message(workflow))
             data_ready = has_cslc_or_gslc(work_dir, workflow)
             embed_config = not (isce3_steps.needs_slc(selected) and data_ready)
