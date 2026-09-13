@@ -4,5 +4,3 @@ rm -rf $SCRATCHDIR/unittestHawaiiPunaDISPSenD87; minsarIsce3App.bash 19.45:19.51
 rm -rf $SCRATCHDIR/unittestHawaiiPunaCSLCSenD87; minsarIsce3App.bash 19.45:19.51,-154.915:-154.835 unittestHawaiiPuna --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20220215
 rm -rf $SCRATCHDIR/unittestHawaiiPunaSAFESenD87; minsarIsce3App.bash 19.45:19.51,-154.915:-154.835 unittestHawaiiPuna --flight-dir desc --data-type safe --start-date 20220101 --end-date 20220215
 rm -rf $SCRATCHDIR/unittestHawaiiPunaCSLCOperaSenD87; minsarIsce3App.bash 19.45:19.51,-154.915:-154.835 unittestHawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --start-date 20220101 --end-date 20220630
-
-minsarApp.bash $SAMPLESDIR/unittestGalapagosSenD128.template
