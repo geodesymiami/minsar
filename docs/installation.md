@@ -28,7 +28,7 @@ set -eo pipefail
 ./setup/install_minsar_env.bash
 ./setup/install_additions.bash
 ./setup/install_sweets_env.bash
-./setup/install_disp-s1_env.bash             (# optional, required for dolphin mode)
+./setup/install_disp-s1_env.bash             # (optional, required for dolphin mode)
 ./setup/install_credential_files.bash
 ./setup/setup_orbit_dirs.bash
 
