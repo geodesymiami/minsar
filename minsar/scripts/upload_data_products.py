@@ -94,19 +94,72 @@ def _is_dolphin_dir(path):
     return base == "dolphin" or base.startswith("dolphin_")
 
 
-def _copy_minsar_log_to_pic(pic_dir, work_dir):
-    """Copy project minsar_log (last minsarIsce3App command) into pic/ for Jetstream."""
+def _ensure_minsar_log(work_dir):
+    """Ensure project minsar_log exists (last minsarIsce3App command line)."""
     src = os.path.join(work_dir, "minsar_log")
-    if not os.path.isfile(src):
-        log_path = os.path.join(work_dir, "log")
-        if os.path.isfile(log_path):
-            with open(log_path, encoding="utf-8", errors="replace") as fh:
-                matches = [ln for ln in fh if "minsarIsce3App" in ln]
-            if matches:
-                with open(src, "w", encoding="utf-8") as fh:
-                    fh.write(matches[-1].rstrip("\n") + "\n")
     if os.path.isfile(src):
+        return src
+    log_path = os.path.join(work_dir, "log")
+    if os.path.isfile(log_path):
+        with open(log_path, encoding="utf-8", errors="replace") as fh:
+            matches = [ln for ln in fh if "minsarIsce3App" in ln]
+        if matches:
+            with open(src, "w", encoding="utf-8") as fh:
+                fh.write(matches[-1].rstrip("\n") + "\n")
+    return src if os.path.isfile(src) else None
+
+
+def _copy_minsar_log_to_pic(pic_dir, work_dir):
+    """Copy project minsar_log into pic/ for Jetstream gallery."""
+    src = _ensure_minsar_log(work_dir)
+    if src:
         shutil.copy2(src, os.path.join(pic_dir, "minsar_log"))
+
+
+def _ensure_insarmaps_log(work_dir):
+    """Ensure insarmaps.log exists at project root (copy from pic/ or timeseries/ if needed)."""
+    root_log = os.path.join(work_dir, "insarmaps.log")
+    if os.path.isfile(root_log):
+        return root_log
+    for rel in (
+        "pic/insarmaps.log",
+        "dolphin/pic/insarmaps.log",
+        "dolphin/timeseries/insarmaps.log",
+    ):
+        candidate = os.path.join(work_dir, rel)
+        if os.path.isfile(candidate):
+            shutil.copy2(candidate, root_log)
+            return root_log
+    return None
+
+
+def _is_isce3_upload(inps):
+    """True for ISCE3 dolphin/he5/pic uploads (not mintpy/miaplpy)."""
+    if inps.mintpy_flag or inps.miaplpy_flag:
+        return False
+    for data_dir in inps.data_dirs:
+        data_dir = str(data_dir).rstrip("/")
+        if _is_insarmaps_log(data_dir):
+            return True
+        if _is_dolphin_dir(data_dir) or _is_pic_dir(data_dir):
+            return True
+        if data_dir.endswith(".he5") or glob.has_magic(data_dir):
+            return True
+        if os.path.basename(data_dir) == "pic" and os.path.isdir(data_dir):
+            return True
+    return False
+
+
+def _append_isce3_project_logs(scp_list, work_dir):
+    """Add project-root log sidecars for rsync to Jetstream project dir."""
+    _ensure_minsar_log(work_dir)
+    _ensure_insarmaps_log(work_dir)
+    for log_name in ("upload.log", "insarmaps.log", "minsar_log"):
+        path = os.path.join(work_dir, log_name)
+        if os.path.isfile(path):
+            pattern = f"/{log_name}"
+            if pattern not in scp_list:
+                scp_list.append(pattern)
 
 
 def _pic_dir_for_upload(data_dir):
@@ -379,6 +432,9 @@ def main(iargs=None):
                 f.write(remote_url + "\n")
 
             remote_urls.append(remote_url)
+
+    if _is_isce3_upload(inps):
+        _append_isce3_project_logs(scp_list, inps.work_dir)
 
     # If miaplpy/inputs is uploaded and contains slcStack.h5, add missing ORBIT_DIRECTION / relative_orbit
     add_missing_attributes_for_upload(inps.work_dir, inps.data_dirs)
