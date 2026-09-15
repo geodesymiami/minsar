@@ -13,7 +13,7 @@ Options:
   -h, --help    Show this help
 
 If the file is omitted, uses the single *stack.nc in the current directory.
-A .he5 argument is converted with dolphin2hdfeos5.py --reverse, then bowser uses the *-stack.nc.
+A .he5 argument is converted with dolphin2he5.py --reverse, then bowser uses the *-stack.nc.
 
 Examples:
   $SCRIPT_NAME
@@ -76,7 +76,7 @@ fi
 stack_abs="$(cd "$(dirname "$stack_file")" && pwd)/$(basename "$stack_file")"
 ext="$(printf '%s' "${stack_abs##*.}" | tr '[:upper:]' '[:lower:]')"
 if [[ "$ext" == "he5" ]]; then
-    converter="${MINSAR_HOME}/minsar/utils/dolphin2hdfeos5.py"
+    converter="${MINSAR_HOME}/minsar/utils/dolphin2he5.py"
     if [[ ! -x "$converter" ]]; then
         echo "Error: $converter not found or not executable" >&2
         exit 1

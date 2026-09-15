@@ -19,7 +19,7 @@ _UNNUMBERED_JOB_STEMS = {
     "run_reformat_disp": "reformat_disp",
 }
 # SAFE/CSLC opera / DISP stack HE5+ingest live in the project root (not dolphin/timeseries/).
-_OPERA_DISP_PATTERN_STEPS = ("dolphin_2_hdfeos5", "ingest_insarmaps")
+_OPERA_DISP_PATTERN_STEPS = ("dolphin_2_he5", "ingest_insarmaps")
 # Matches create_isce3_runfiles.RUN_ONLY_STAGES: no output patterns to check.
 _NON_VALIDATED_STEPS = frozenset({"upload"})
 

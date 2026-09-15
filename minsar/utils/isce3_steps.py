@@ -21,14 +21,17 @@ DOWNLOAD_STAGES = frozenset({
 })
 
 POST_PRODUCT_STAGES = frozenset({
-    "dolphin_2_hdfeos5",
+    "dolphin_2_he5",
     "ingest_insarmaps",
 })
 
 STEP_ALIASES = {
     "download_create_cslc": "download",
-    "hdfeos5": "dolphin_2_hdfeos5",
-    "dolphin2hdfeos5": "dolphin_2_hdfeos5",
+    "he5": "dolphin_2_he5",
+    "hdfeos5": "dolphin_2_he5",
+    "dolphin2he5": "dolphin_2_he5",
+    "dolphin2hdfeos5": "dolphin_2_he5",
+    "dolphin_2_hdfeos5": "dolphin_2_he5",
     "ingest": "ingest_insarmaps",
 }
 
@@ -62,7 +65,7 @@ def workflow_stage_names(
                 "create_cslc",
                 "disp_s1_process",
                 "reformat_disp",
-                "dolphin_2_hdfeos5",
+                "dolphin_2_he5",
                 "ingest_insarmaps",
                 "upload",
             )
@@ -75,7 +78,7 @@ def workflow_stage_names(
             "download_safe",
             "create_cslc",
             *dolphin,
-            "dolphin_2_hdfeos5",
+            "dolphin_2_he5",
             "ingest_insarmaps",
             "upload",
         )
@@ -85,7 +88,7 @@ def workflow_stage_names(
                 "download_cslc",
                 "disp_s1_process",
                 "reformat_disp",
-                "dolphin_2_hdfeos5",
+                "dolphin_2_he5",
                 "ingest_insarmaps",
                 "upload",
             )
@@ -97,14 +100,14 @@ def workflow_stage_names(
         return (
             "download_cslc",
             *dolphin,
-            "dolphin_2_hdfeos5",
+            "dolphin_2_he5",
             "ingest_insarmaps",
             "upload",
         )
     return (
         "download_disp",
         "reformat_disp",
-        "dolphin_2_hdfeos5",
+        "dolphin_2_he5",
         "ingest_insarmaps",
         "upload",
     )
@@ -259,8 +262,8 @@ def _download_stages(workflow: str) -> frozenset[str]:
 def _post_stage_names(workflow: str, dolphin_mode: str) -> tuple[str, ...]:
     mode = (dolphin_mode or "single-run").strip().lower().replace("_", "-")
     if workflow in {"cslc", "safe"} and mode == "opera":
-        return ("reformat_disp", "dolphin_2_hdfeos5", "ingest_insarmaps")
-    return ("dolphin_2_hdfeos5", "ingest_insarmaps")
+        return ("reformat_disp", "dolphin_2_he5", "ingest_insarmaps")
+    return ("dolphin_2_he5", "ingest_insarmaps")
 
 
 def needs_slc(stages: Iterable[str]) -> bool:

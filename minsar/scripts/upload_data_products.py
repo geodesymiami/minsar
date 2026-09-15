@@ -120,7 +120,7 @@ def _pic_dir_for_upload(data_dir):
     return None
 
 
-def add_log_remote_hdfeos5(scp_list, work_dir):
+def add_log_remote_he5(scp_list, work_dir):
     # add uploaded he5 files to remote log file
 
     REMOTEHOST_DATA = os.getenv('REMOTEHOST_DATA')
@@ -459,7 +459,7 @@ def main(iargs=None):
             raise Exception('ERROR adjusting permissions in upload_data_products.py')
 
 ##########################################
-    add_log_remote_hdfeos5(scp_list, inps.work_dir)
+    add_log_remote_he5(scp_list, inps.work_dir)
 ##########################################
     if not inps.quiet_summary:
         print('\nData at:')

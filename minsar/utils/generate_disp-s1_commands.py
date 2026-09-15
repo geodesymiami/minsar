@@ -4,7 +4,7 @@
 Reads AOI, dates, and track from a MinSAR template. Resolves the DISP-S1 frame
 ID from opera-utils (orbit pass + track, largest AOI overlap) unless --frame-id
 is given. Optional --start-date / --end-date override ssaraopt dates (same
-formats as create_template.py). The bash file also runs dolphin2hdfeos5.py.
+formats as create_template.py). The bash file also runs dolphin2he5.py.
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ DISP_INSTALL_HINT = (
 
 DESCRIPTION = (
     "Create download_disp-s1.bash with opera-utils DISP-S1 download, rebase, "
-    "and dolphin2hdfeos5.py from a template."
+    "and dolphin2he5.py from a template."
 )
 
 EXAMPLE = """Examples:
@@ -306,7 +306,7 @@ def format_disp_stage_commands(
             f"{check}\n"
         ),
         "reformat_disp": reformat,
-        "dolphin_2_hdfeos5": f"dolphin2hdfeos5.py {stack_name} --method-string {OPERA_DISP_METHOD_STRING} --watermask {stack_name}",
+        "dolphin_2_he5": f"dolphin2he5.py {stack_name} --method-string {OPERA_DISP_METHOD_STRING} --watermask {stack_name}",
         "ingest_insarmaps": "ingest_insarmaps.bash .",
     }
 
@@ -337,7 +337,7 @@ def format_disp_s1_bash(
     return (
         stages["download_disp"].rstrip("\n") + "\n\n"
         + stages["reformat_disp"] + "\n"
-        + stages["dolphin_2_hdfeos5"] + "\n"
+        + stages["dolphin_2_he5"] + "\n"
         + stages["ingest_insarmaps"] + "\n"
     )
 

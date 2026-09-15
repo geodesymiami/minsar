@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Rebuild quality/mask in an HDF-EOS5 file from embedded quality layers.
 
-Same -m / --vmin / --vmin-sim as dolphin2hdfeos5.py. Also drops pixels that are
+Same -m / --vmin / --vmin-sim as dolphin2he5.py. Also drops pixels that are
 0.0 on every date. Writes a new .he5 with a mask suffix (does not modify the
 input in place). NaN-fills displacement outside mask.
 """
@@ -13,8 +13,8 @@ import sys
 from pathlib import Path
 
 try:
-    from minsar.utils.dolphin_hdfeos5_utils import (
-        REMASK_HDFEOS5_EXAMPLES,
+    from minsar.utils.dolphin_he5_utils import (
+        REMASK_HE5_EXAMPLES,
         add_mask_arguments,
         apply_mask_suffix,
         mask_filename_suffix,
@@ -22,8 +22,8 @@ try:
         resolve_mask_thresholds,
     )
 except ImportError:
-    from dolphin_hdfeos5_utils import (
-        REMASK_HDFEOS5_EXAMPLES,
+    from dolphin_he5_utils import (
+        REMASK_HE5_EXAMPLES,
         add_mask_arguments,
         apply_mask_suffix,
         mask_filename_suffix,
@@ -38,7 +38,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=DESCRIPTION,
         formatter_class=argparse.RawTextHelpFormatter,
-        epilog=REMASK_HDFEOS5_EXAMPLES,
+        epilog=REMASK_HE5_EXAMPLES,
     )
     parser.add_argument("he5_file", help="Input .he5 path")
     parser.add_argument(

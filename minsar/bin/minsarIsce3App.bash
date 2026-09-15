@@ -18,11 +18,11 @@ usage: ${SCRIPT_NAME} TEMPLATE [OPTIONS]
        ${SCRIPT_NAME} AOI NAME --flight-dir {asc,desc} [OPTIONS]
 
 Run an ISCE3 SAFE/CSLC/DISP workflow. Use --start --end --dostep for processing steps.
-single-run steps: [download, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps, upload]
-opera steps: [download, disp_s1_process, reformat_disp, dolphin_2_hdfeos5, ingest_insarmaps, upload]
+single-run steps: [download, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_he5, ingest_insarmaps, upload]
+opera steps: [download, disp_s1_process, reformat_disp, dolphin_2_he5, ingest_insarmaps, upload]
 Additional step for data-type safe: create_cslc. For disp-s1: reformat_disp
 Template or project names that contain SAFE, CSLC, or DISPS1/DISP (and Opera) set --data-type and --dolphin-mode when those flags are omitted.
-Aliases: download, dolphin, hdfeos5, ingest, dolphin2hdfeos5. Hyphens and run_NN_ prefixes are accepted (dolphin-2-hdfeos5, run_04_dolphin_2_hdfeos5).
+Aliases: download, dolphin, he5, ingest, dolphin2he5. Hyphens and run_NN_ prefixes are accepted (dolphin-2-he5, run_04_dolphin_2_he5).
 upload is the last workflow step (run file only, no SLURM job). A full run ends at upload.
 --dostep stops at that step; use --dostep upload or --end upload to upload existing products.
 Additional --section.option flags go to dolphin config.
@@ -110,7 +110,7 @@ normalize_step() {
     fi
     step="${step//-/_}"
     case "$step" in
-        dolphin2hdfeos5) step="dolphin_2_hdfeos5" ;;
+        he5|hdfeos5|dolphin2he5|dolphin2hdfeos5|dolphin_2_hdfeos5) step="dolphin_2_he5" ;;
     esac
     printf '%s\n' "$step"
 }
@@ -223,20 +223,20 @@ steps_for_dataset() {
     local mode="${final_dolphin_mode:-single-run}"
     case "$final_data_type" in
         disp-s1)
-            printf '%s\n' "download download_disp reformat_disp dolphin_2_hdfeos5 ingest_insarmaps upload hdfeos5 ingest"
+            printf '%s\n' "download download_disp reformat_disp dolphin_2_he5 ingest_insarmaps upload he5 ingest"
             ;;
         cslc)
             if [[ "$mode" == "opera" ]]; then
-                printf '%s\n' "download download_cslc disp_s1_process reformat_disp dolphin_2_hdfeos5 ingest_insarmaps upload dolphin hdfeos5 ingest"
+                printf '%s\n' "download download_cslc disp_s1_process reformat_disp dolphin_2_he5 ingest_insarmaps upload dolphin he5 ingest"
             else
-                printf '%s\n' "download download_cslc dolphin dolphin_wrapped dolphin_unwrap dolphin_timeseries dolphin_2_hdfeos5 ingest_insarmaps upload hdfeos5 ingest"
+                printf '%s\n' "download download_cslc dolphin dolphin_wrapped dolphin_unwrap dolphin_timeseries dolphin_2_he5 ingest_insarmaps upload he5 ingest"
             fi
             ;;
         *)
             if [[ "$mode" == "opera" ]]; then
-                printf '%s\n' "download download_create_cslc download_safe create_cslc disp_s1_process reformat_disp dolphin_2_hdfeos5 ingest_insarmaps upload dolphin hdfeos5 ingest"
+                printf '%s\n' "download download_create_cslc download_safe create_cslc disp_s1_process reformat_disp dolphin_2_he5 ingest_insarmaps upload dolphin he5 ingest"
             else
-                printf '%s\n' "download download_create_cslc download_safe create_cslc dolphin dolphin_wrapped dolphin_unwrap dolphin_timeseries dolphin_2_hdfeos5 ingest_insarmaps upload hdfeos5 ingest"
+                printf '%s\n' "download download_create_cslc download_safe create_cslc dolphin dolphin_wrapped dolphin_unwrap dolphin_timeseries dolphin_2_he5 ingest_insarmaps upload he5 ingest"
             fi
             ;;
     esac

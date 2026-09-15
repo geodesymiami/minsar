@@ -261,7 +261,7 @@ def _normalize_phase(value: str) -> str:
     token = value.strip().lower().replace("-", "_")
     if token in {"download_create_cslc", "download"}:
         return "download"
-    if token in {"hdfeos5", "ingest", "ingest_insarmaps", "dolphin_2_hdfeos5"}:
+    if token in {"he5", "hdfeos5", "ingest", "ingest_insarmaps", "dolphin_2_he5"}:
         return "post"
     if token in PHASE_CHOICES:
         return token
@@ -411,7 +411,7 @@ def _missing_slc_message(workflow: str) -> str:
     return (
         f"CSLCs/GSLCs not found ({where}); run `--start download` first. "
         "Dolphin science steps write YAML from those files and are not used for "
-        "dolphin_2_hdfeos5 or ingest_insarmaps"
+        "dolphin_2_he5 or ingest_insarmaps"
     )
 
 
@@ -822,46 +822,46 @@ def _geometry_stitch_command(
     return f"stitch_sweets_geometry.py --config {config_name} --sy {sy} --sx {sx} --overwrite"
 
 
-def _hdfeos5_method_string(preset: str, preset_naming: bool = True) -> str:
-    """HE5 post_processing_method label for dolphin2hdfeos5."""
+def _he5_method_string(preset: str, preset_naming: bool = True) -> str:
+    """HE5 post_processing_method label for dolphin2he5."""
     if not preset_naming:
         return "dolphin"
     return dolphin_method_string(preset)
 
 
-def _hdfeos5_command(preset: str, preset_naming: bool = True, dolphin_dir: str = DEFAULT_DOLPHIN_DIR) -> str:
-    """dolphin2hdfeos5 run-file line with explicit HE5 method label."""
-    method = _hdfeos5_method_string(preset, preset_naming)
+def _he5_command(preset: str, preset_naming: bool = True, dolphin_dir: str = DEFAULT_DOLPHIN_DIR) -> str:
+    """dolphin2he5 run-file line with explicit HE5 method label."""
+    method = _he5_method_string(preset, preset_naming)
     watermask = f"{dolphin_dir}/unwrapped/warped_watermask.tif"
-    return f"dolphin2hdfeos5.py {dolphin_dir} --method-string {method} --watermask {watermask}"
+    return f"dolphin2he5.py {dolphin_dir} --method-string {method} --watermask {watermask}"
 
 
-def _hdfeos5_plot_commands(dolphin_dir: str = DEFAULT_DOLPHIN_DIR) -> list[str]:
-    """Plot HE5 summary PNGs and build pic/index.html after dolphin_2_hdfeos5."""
+def _he5_plot_commands(dolphin_dir: str = DEFAULT_DOLPHIN_DIR) -> list[str]:
+    """Plot HE5 summary PNGs and build pic/index.html after dolphin_2_he5."""
     he5 = f"{dolphin_dir}/timeseries/S1*.he5"
     return [
-        f"plot_hdfeos5_pngs.py {he5} -t *.template",
+        f"plot_he5_pngs.py {he5} -t *.template",
         f"create_html.py {dolphin_dir}/pic",
     ]
 
 
-def _opera_hdfeos5_plot_commands() -> list[str]:
+def _opera_he5_plot_commands() -> list[str]:
     return [
-        "plot_hdfeos5_pngs.py ./*.he5 -t *.template",
+        "plot_he5_pngs.py ./*.he5 -t *.template",
         "create_html.py pic",
     ]
 
 
-def _hdfeos5_run_body(hdfeos5_cmd: str, plot_commands: list[str]) -> str:
-    return hdfeos5_cmd + "\n" + "\n".join(plot_commands)
+def _he5_run_body(he5_cmd: str, plot_commands: list[str]) -> str:
+    return he5_cmd + "\n" + "\n".join(plot_commands)
 
 
-def _opera_hdfeos5_command(context: dict[str, object]) -> str:
-    """dolphin2hdfeos5 from a locally produced DISP-S1 stack NetCDF."""
+def _opera_he5_command(context: dict[str, object]) -> str:
+    """dolphin2he5 from a locally produced DISP-S1 stack NetCDF."""
     project = str(context["project"])
     stack = f"{project}-stack.nc"
     return (
-        f"dolphin2hdfeos5.py {stack} --method-string {MODE_OPERA_DISP_METHOD_STRING} "
+        f"dolphin2he5.py {stack} --method-string {MODE_OPERA_DISP_METHOD_STRING} "
         f"--watermask {stack}"
     )
 
@@ -1664,7 +1664,7 @@ def _build_stage_specs(
             "Reformat locally produced DISP-S1 products into a stack",
             "",
         ),
-        ("dolphin_2_hdfeos5", "Convert DISP-S1 stack to HDF-EOS5", ""),
+        ("dolphin_2_he5", "Convert DISP-S1 stack to HDF-EOS5", ""),
         ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", ""),
         ("upload", "Upload HDF-EOS5 and insarmaps.log", ""),
     ]
@@ -1679,7 +1679,7 @@ def _build_stage_specs(
             ("download_safe", "Download and verify SAFE data, then prepare COMPASS runconfigs", ""),
             ("create_cslc", "Create CSLCs and static layers with COMPASS", ""),
             *dolphin_specs,
-            ("dolphin_2_hdfeos5", "Convert dolphin timeseries to HDF-EOS5", ""),
+            ("dolphin_2_he5", "Convert dolphin timeseries to HDF-EOS5", ""),
             ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", ""),
             ("upload", "Upload HDF-EOS5 and insarmaps.log", ""),
         ]
@@ -1692,7 +1692,7 @@ def _build_stage_specs(
         return [
             ("download_cslc", "Download and verify OPERA CSLCs, then prepare geometry", ""),
             *dolphin_specs,
-            ("dolphin_2_hdfeos5", "Convert dolphin timeseries to HDF-EOS5", ""),
+            ("dolphin_2_he5", "Convert dolphin timeseries to HDF-EOS5", ""),
             ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", ""),
             ("upload", "Upload HDF-EOS5 and insarmaps.log", ""),
         ]
@@ -1701,7 +1701,7 @@ def _build_stage_specs(
     return [
         ("download_disp", "Download and verify OPERA DISP-S1 products", generate),
         ("reformat_disp", "Reformat DISP-S1 products into a stack", generate),
-        ("dolphin_2_hdfeos5", "Convert stack to HDF-EOS5", generate),
+        ("dolphin_2_he5", "Convert stack to HDF-EOS5", generate),
         ("ingest_insarmaps", "Ingest HDF-EOS5 product into InsarMaps", generate),
         ("upload", "Upload HDF-EOS5 and insarmaps.log", generate),
     ]
@@ -1956,7 +1956,7 @@ def _print_plan(
         elif dolphin_mode == "opera":
             _out(f"HE5 name: {MODE_OPERA_DISP_METHOD_STRING}")
         elif preset_naming:
-            _out(f"HE5 name: {_hdfeos5_method_string(preset)}")
+            _out(f"HE5 name: {_he5_method_string(preset)}")
         else:
             _out("HE5 name: dolphin (--no-preset-naming)")
     if reference_method and (workflow == "disp" or dolphin_mode == "opera"):
@@ -2113,9 +2113,9 @@ def _sweets_stage_bodies(
     kind = "safe" if workflow == "safe" else "cslc"
     cfg = SWEETS_CONFIG
     download = _sweets_download_script(kind)
-    hdfeos5 = _hdfeos5_run_body(
-        _hdfeos5_command(preset, preset_naming, dolphin_dir=dolphin_dir),
-        _hdfeos5_plot_commands(dolphin_dir),
+    he5 = _he5_run_body(
+        _he5_command(preset, preset_naming, dolphin_dir=dolphin_dir),
+        _he5_plot_commands(dolphin_dir),
     )
     ingest = f"ingest_insarmaps.bash {dolphin_dir}/timeseries"
     geom = _geometry_stitch_command(strides, cfg)
@@ -2123,14 +2123,14 @@ def _sweets_stage_bodies(
         if dolphin_mode == "opera" and workflow in {"cslc", "safe"}:
             bodies = {
                 "reformat_disp": _reformat_disp_command(context, reference_method=reference_method) + "\n",
-                "dolphin_2_hdfeos5": _hdfeos5_run_body(
-                    _opera_hdfeos5_command(context), _opera_hdfeos5_plot_commands()
+                "dolphin_2_he5": _he5_run_body(
+                    _opera_he5_command(context), _opera_he5_plot_commands()
                 ),
                 "ingest_insarmaps": _opera_ingest_command(),
             }
         else:
             bodies = {
-                "dolphin_2_hdfeos5": hdfeos5,
+                "dolphin_2_he5": he5,
                 "ingest_insarmaps": ingest,
             }
         return {name: body for name, body in bodies.items() if name in selected}
@@ -2167,8 +2167,8 @@ def _sweets_stage_bodies(
             download_key: download_body,
             "disp_s1_process": disp_s1_process,
             "reformat_disp": reformat_disp,
-            "dolphin_2_hdfeos5": _hdfeos5_run_body(
-                _opera_hdfeos5_command(context), _opera_hdfeos5_plot_commands()
+            "dolphin_2_he5": _he5_run_body(
+                _opera_he5_command(context), _opera_he5_plot_commands()
             ),
             "ingest_insarmaps": _opera_ingest_command(),
         }
@@ -2214,7 +2214,7 @@ def _sweets_stage_bodies(
         bodies: dict[str, str] = {
             "download_safe": download.rstrip("\n") + f"\nprepare_compass_runconfigs.py --config {cfg}\n",
             "create_cslc": "",
-            "dolphin_2_hdfeos5": hdfeos5,
+            "dolphin_2_he5": he5,
             "ingest_insarmaps": ingest,
         }
         if split_dolphin:
@@ -2276,7 +2276,7 @@ def _sweets_stage_bodies(
             + "\n",
             "dolphin_unwrap": unwrap_cmds,
             "dolphin_timeseries": ts_cmds,
-            "dolphin_2_hdfeos5": hdfeos5,
+            "dolphin_2_he5": he5,
             "ingest_insarmaps": ingest,
         }
     return {
@@ -2293,7 +2293,7 @@ def _sweets_stage_bodies(
             yaml_name=yaml_name,
             embed_config=embed_config,
         ),
-        "dolphin_2_hdfeos5": hdfeos5,
+        "dolphin_2_he5": he5,
         "ingest_insarmaps": ingest,
     }
 
@@ -2624,11 +2624,13 @@ def _execute_stage(
             )
         subprocess.run(["bash", str(stage_files[-1])], cwd=work_dir, check=True)
         return 0
-    if action in ("dolphin-2-hdfeos5", "dolphin_2_hdfeos5"):
-        stage_files = sorted(run_dir.glob("run_*_dolphin_2_hdfeos5"))
+    if action in ("dolphin-2-he5", "dolphin_2_he5", "dolphin-2-hdfeos5", "dolphin_2_hdfeos5"):
+        stage_files = sorted(run_dir.glob("run_*_dolphin_2_he5"))
+        if not stage_files:
+            stage_files = sorted(run_dir.glob("run_*_dolphin_2_hdfeos5"))
         if not stage_files:
             raise RuntimeError(
-                f"dolphin_2_hdfeos5 run file not found under {RUN_FILES_DIRNAME}/; "
+                f"dolphin_2_he5 run file not found under {RUN_FILES_DIRNAME}/; "
                 "run create_isce3_runfiles.py first"
             )
         subprocess.run(["bash", str(stage_files[-1])], cwd=work_dir, check=True)

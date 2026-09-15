@@ -42,15 +42,15 @@ options:
   --dry-run             print commands without executing or submitting
 
 STEP may be a step number, step name, run-file basename, or a coarse alias:
-  download, download_create_cslc, dolphin, hdfeos5, ingest.
+  download, download_create_cslc, dolphin, he5, ingest.
   download ends at create_cslc (SAFE), download_cslc (CSLC), or reformat_disp (DISP-S1 only).
 
-SAFE steps:    download_safe, create_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps
-SAFE steps (opera): download_safe, create_cslc, disp_s1_process, reformat_disp, dolphin_2_hdfeos5, ingest_insarmaps
-CSLC steps (single-run): download_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_hdfeos5, ingest_insarmaps
-CSLC steps (opera):    download_cslc, disp_s1_process, reformat_disp, dolphin_2_hdfeos5, ingest_insarmaps
+SAFE steps:    download_safe, create_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_he5, ingest_insarmaps
+SAFE steps (opera): download_safe, create_cslc, disp_s1_process, reformat_disp, dolphin_2_he5, ingest_insarmaps
+CSLC steps (single-run): download_cslc, dolphin_wrapped, dolphin_unwrap, dolphin_timeseries, dolphin_2_he5, ingest_insarmaps
+CSLC steps (opera):    download_cslc, disp_s1_process, reformat_disp, dolphin_2_he5, ingest_insarmaps
 SAFE/CSLC monolithic: dolphin instead of dolphin_wrapped/unwrap/timeseries (create_isce3_runfiles.py --no-dolphin-split)
-DISP-S1 steps: download_disp, reformat_disp, dolphin_2_hdfeos5, ingest_insarmaps
+DISP-S1 steps: download_disp, reformat_disp, dolphin_2_he5, ingest_insarmaps
 Legacy sidecar run files (run_disp_s1_process, run_reformat_disp) remain supported for older projects.
 
 Examples:
@@ -341,8 +341,8 @@ expand_step_alias() {
                 first_existing_stage dolphin_wrapped disp_s1_process dolphin || echo "$value"
             fi
             ;;
-        hdfeos5|dolphin2hdfeos5)
-            echo "dolphin_2_hdfeos5"
+        he5|hdfeos5|dolphin2he5|dolphin2hdfeos5)
+            echo "dolphin_2_he5"
             ;;
         ingest)
             echo "ingest_insarmaps"

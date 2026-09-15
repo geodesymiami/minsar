@@ -12,9 +12,9 @@ Three different masks can exist for the same stack. Tools do **not** all use the
 |---|---|---|
 | MintPy display mask (radar) | `mintpy/maskTempCoh.h5` | `generate_mask.py` from `temporalCoherence.h5` using `mintpy.networkInversion.minTempCoh` |
 | MintPy display mask (geo) | `mintpy/geo/geo_maskTempCoh.h5` | `geocode.py` of `maskTempCoh.h5` |
-| HE5 product mask | `HDFEOS/GRIDS/timeseries/quality/mask` inside `S1_*.he5` | `save_hdfeos5.py` (copy of `maskTempCoh` / `geo_maskTempCoh`) or `dolphin2hdfeos5.py` (`-m recommended` by default) |
+| HE5 product mask | `HDFEOS/GRIDS/timeseries/quality/mask` inside `S1_*.he5` | `save_hdfeos5.py` (copy of `maskTempCoh` / `geo_maskTempCoh`) or `dolphin2he5.py` (`-m recommended` by default) |
 
-MintPy **does not** NaN-fill `observation/displacement` from that mask. ISCE3 `dolphin2hdfeos5.py` matches that: it writes the **source displacement cube** and a separate `quality/mask`. InsarMaps ingest and `view.py` (when plotting displacement) apply `quality/mask` at read time.
+MintPy **does not** NaN-fill `observation/displacement` from that mask. ISCE3 `dolphin2he5.py` matches that: it writes the **source displacement cube** and a separate `quality/mask`. InsarMaps ingest and `view.py` (when plotting displacement) apply `quality/mask` at read time.
 
 ### 0 vs NaN (not a reliability flag)
 
@@ -25,11 +25,11 @@ Whether a sample is stored as **0** or **NaN** is a sentinel convention, not a r
 | **NaN** | Almost always “no sample.” Mask it. |
 | **0** | Ambiguous. Can be the **reference date** (valid pixels are 0), real ~0 m motion, Dolphin **GDAL nodata = 0**, or a MintPy pixel that was never inverted. |
 
-Dolphin unwrap/timeseries GeoTIFFs mark invalid with **nodata 0**, while valid land on the reference date is **also 0**. `dolphin2hdfeos5.py` does **not** treat `value == 0` as invalid (`np.isfinite(0)` is true). It uses water, NaNs already in the cube, and the TC/similarity (or density) rule.
+Dolphin unwrap/timeseries GeoTIFFs mark invalid with **nodata 0**, while valid land on the reference date is **also 0**. `dolphin2he5.py` does **not** treat `value == 0` as invalid (`np.isfinite(0)` is true). It uses water, NaNs already in the cube, and the TC/similarity (or density) rule.
 
 MintPy `timeseries.h5` often keeps 0 in unused pixels; display/export uses **`maskTempCoh.h5`**. `tsview.py` dropping all-zero stacks is a heuristic, not “0 m means bad.”
 
-After HE5 write, invalid-for-publish is **`quality/mask == False`**. Displacement may still hold a number (or a source NaN) there so `remask_hdfeos5.py` can change the mask without reconverting.
+After HE5 write, invalid-for-publish is **`quality/mask == False`**. Displacement may still hold a number (or a source NaN) there so `remask_he5.py` can change the mask without reconverting.
 
 ### InsarMaps ingest (`hdfeos5_2json_mbtiles.py`)
 
@@ -45,7 +45,7 @@ write all dates for that pixel into JSON
 
 `should_mask = True` is hardcoded. Lat/lon come from `geometry/latitude` and `geometry/longitude` (radar or geo). If `X_STEP` / `Y_FIRST` are missing, tippecanoe runs in “high res” mode; a regular geo grid uses those attributes.
 
-Pixel inclusion is **first date not NaN** after masking. A later-date NaN still gets written into JSON and can break ingest. That is why `dolphin2hdfeos5.py` also drops pixels that are non-finite on **any** date.
+Pixel inclusion is **first date not NaN** after masking. A later-date NaN still gets written into JSON and can break ingest. That is why `dolphin2he5.py` also drops pixels that are non-finite on **any** date.
 
 Changing ingest is still reasonable (skip a pixel if **any** date is NaN; optional `--no-mask`), but you do **not** need that change for “apply `quality/mask`.” The HE5 displacement cube plus `quality/mask` already gives the same InsarMaps points, as long as surviving pixels are finite on every date.
 
@@ -99,10 +99,10 @@ tsview.py S1_….he5
 
 | | Radar HE5 | Geo HE5 |
 |---|---|---|
-| Typical source | MintPy / MiaplPy `save_hdfeos5.py` + `geometryRadar.h5` | MintPy `geo_*` + `geometryGeo.h5`, `geocode_hdfeos5.py` (`geo_` prefix), or ISCE3 `dolphin2hdfeos5.py` |
+| Typical source | MintPy / MiaplPy `save_hdfeos5.py` + `geometryRadar.h5` | MintPy `geo_*` + `geometryGeo.h5`, `geocode_hdfeos5.py` (`geo_` prefix), or ISCE3 `dolphin2he5.py` |
 | `Y_FIRST` / `X_STEP` | usually absent | present |
 | `quality/mask` | copy of `maskTempCoh.h5` | copy of `geo_maskTempCoh.h5`, or ISCE3 `-m` rule |
-| Displacement NaN-filled from mask | no (MintPy) | no (MintPy and ISCE3 `dolphin2hdfeos5`) |
+| Displacement NaN-filled from mask | no (MintPy) | no (MintPy and ISCE3 `dolphin2he5`) |
 | Ingest | same: `quality/mask` + 2D lat/lon | same |
 | `view.py` auto mask | HE5 `quality/mask` if plotting displacement | same |
 | Sibling `maskTempCoh` | must match radar size | must match geo size (`geo_maskTempCoh.h5`) |
@@ -111,11 +111,11 @@ ISCE3 OPERA/Dolphin products are already geographic. There is no separate radar 
 
 MiaplPy export (`save_miaplpy_hdfeos5.bash`) writes **radar** HE5s: PS uses `../maskPS.h5`, DS uses `maskTempCoh.h5`, filtered DS uses `maskTempCoh_lowpass_gaussian.h5` at `--mask-thresh` (template `mintpy.networkInversion.minTempCoh`).
 
-## ISCE3 product mask (`dolphin2hdfeos5` / `remask_hdfeos5`)
+## ISCE3 product mask (`dolphin2he5` / `remask_he5`)
 
 OPERA DISP-S1 skips Dolphin processing masks. The published mask is built at HE5 time.
 
-Default `-m recommended`: keep unless **both** temporal coherence and phase similarity are below cutoffs (TC 0.6 **or** similarity 0.4), plus water ≠ 0 and finite displacement on all dates. That rule is stored in `quality/mask` only; **displacement is not NaN-filled** so `remask_hdfeos5.py` can tighten or loosen the mask from the same file.
+Default `-m recommended`: keep unless **both** temporal coherence and phase similarity are below cutoffs (TC 0.6 **or** similarity 0.4), plus water ≠ 0 and finite displacement on all dates. That rule is stored in `quality/mask` only; **displacement is not NaN-filled** so `remask_he5.py` can tighten or loosen the mask from the same file.
 
 ### Example: Miami OPERA DISP (`qMiamiMiaDISPSenA48`)
 
@@ -124,32 +124,32 @@ minsarIsce3App.bash 25.783:25.809,-80.308:-80.263 qMiamiMia --data-type disp-s1 
 ```
 
 ```bash
-dolphin2hdfeos5.py qMiamiMiaDISPSenA48-stack.nc --method-string operaDisp --watermask qMiamiMiaDISPSenA48-stack.nc
+dolphin2he5.py qMiamiMiaDISPSenA48-stack.nc --method-string operaDisp --watermask qMiamiMiaDISPSenA48-stack.nc
 ```
 
 No `-m` flag means `-m recommended`. Template `mintpy.networkInversion.minTempCoh` is unused on this path.
 
-Stronger mask without re-download (`remask_hdfeos5.py` writes a new file):
+Stronger mask without re-download (`remask_he5.py` writes a new file):
 
 ```bash
 cd $SCRATCHDIR/qMiamiMiaDISPSenA48
-remask_hdfeos5.py timeseries/S1_asc_048_operaDisp_20160927_20210104_N2578W08031_N2581W08031_N2581W08026_N2578W08026.he5 -m tc+sim --vmin 0.7 --vmin-sim 0.5
+remask_he5.py timeseries/S1_asc_048_operaDisp_20160927_20210104_N2578W08031_N2581W08031_N2581W08026_N2578W08026.he5 -m tc+sim --vmin 0.7 --vmin-sim 0.5
 ingest_insarmaps.bash timeseries/S1_asc_048_operaDisp_20160927_20210104_N2578W08031_N2581W08031_N2581W08026_N2578W08026_tc070sim050.he5
 ```
 
 ```bash
-remask_hdfeos5.py timeseries/S1_….he5 -m tc --vmin 0.7
-remask_hdfeos5.py timeseries/S1_….he5 -m recommendedDensity --vmin 0.9
-remask_hdfeos5.py timeseries/S1_….he5 -m recommendedDensity --vmin 0.95
-remask_hdfeos5.py timeseries/S1_….he5 -m psDensity
-remask_hdfeos5.py timeseries/S1_….he5 -m psDensity --vmin 0.5
+remask_he5.py timeseries/S1_….he5 -m tc --vmin 0.7
+remask_he5.py timeseries/S1_….he5 -m recommendedDensity --vmin 0.9
+remask_he5.py timeseries/S1_….he5 -m recommendedDensity --vmin 0.95
+remask_he5.py timeseries/S1_….he5 -m psDensity
+remask_he5.py timeseries/S1_….he5 -m psDensity --vmin 0.5
 ```
 
 `-m recommended` is an **OR** rule. `-m tc` at the same 0.6 is already stronger. `recommendedDensity` (OPERA only) keeps pixels good in ≥ `--vmin` of dates (default 0.9). `psDensity` (OPERA only) keeps pixels classified as persistent scatterers on **more than `--vmin` of dates**: default `0` = PS at least once; `--vmin 0.5` = PS on more than half of the dates.
 
 ### Product-mask CLI (`-m`)
 
-Shared by `dolphin2hdfeos5.py` and `remask_hdfeos5.py`. Every mode also requires water ≠ 0 (when present) and finite displacement on all dates.
+Shared by `dolphin2he5.py` and `remask_he5.py`. Every mode also requires water ≠ 0 (when present) and finite displacement on all dates.
 
 | `-m` | Keep pixel if | Defaults | Sweets / Dolphin | OPERA DISP |
 |---|---|---|---|---|
@@ -161,14 +161,14 @@ Shared by `dolphin2hdfeos5.py` and `remask_hdfeos5.py`. Every mode also requires
 | `psDensity` | PS on more than `--vmin` of dates (`0` = at least once; `0.5` = more than half) | 0 | error | yes |
 
 ```bash
-dolphin2hdfeos5.py dolphin
-dolphin2hdfeos5.py stack.nc --method-string operaDisp --watermask stack.nc -m tc --vmin 0.7
-remask_hdfeos5.py S1_….he5 -m tc --vmin 0.7
-remask_hdfeos5.py S1_….he5 -m tc+sim --vmin 0.7 --vmin-sim 0.5
-remask_hdfeos5.py S1_….he5 -m recommendedDensity --vmin 0.95
-remask_hdfeos5.py S1_….he5 -m psDensity
-remask_hdfeos5.py S1_….he5 -m psDensity --vmin 0.5
-remask_hdfeos5.py S1_…_tc070sim050.he5 -m recommended
+dolphin2he5.py dolphin
+dolphin2he5.py stack.nc --method-string operaDisp --watermask stack.nc -m tc --vmin 0.7
+remask_he5.py S1_….he5 -m tc --vmin 0.7
+remask_he5.py S1_….he5 -m tc+sim --vmin 0.7 --vmin-sim 0.5
+remask_he5.py S1_….he5 -m recommendedDensity --vmin 0.95
+remask_he5.py S1_….he5 -m psDensity
+remask_he5.py S1_….he5 -m psDensity --vmin 0.5
+remask_he5.py S1_…_tc070sim050.he5 -m recommended
 ```
 
 ```bash
@@ -192,7 +192,7 @@ info.py timeseries/S1_….he5
 | `observation/displacement` | Source cube (Dolphin/OPERA values, including pixels outside `quality/mask`) |
 | `geometry/shadowMask` | stored, not in `-m` rules |
 
-`remask_hdfeos5.py` rewrites **`quality/mask` only**. Ingest / `view.py` displacement still apply the new mask. **Older HE5s** that were NaN-filled at write time cannot be loosened; reconvert with current `dolphin2hdfeos5.py` (or keep `*-stack.nc`). Water stays out of `quality/mask` even when the cube has a number there.
+`remask_he5.py` rewrites **`quality/mask` only**. Ingest / `view.py` displacement still apply the new mask. **Older HE5s** that were NaN-filled at write time cannot be loosened; reconvert with current `dolphin2he5.py` (or keep `*-stack.nc`). Water stays out of `quality/mask` even when the cube has a number there.
 
 Dolphin ministack TC/similarity vary by batch; the HE5 stores the **averaged** 2-D layers, not per-ministack masks.
 
@@ -212,16 +212,16 @@ These change the inversion. They do not apply to `--data-type disp-s1`. See [REA
 HE5 conversion still uses `-m recommended` unless you change that run file.
 
 ```bash
-dolphin2hdfeos5.py dolphin --method-string dolphinStandard --watermask dolphin/unwrapped/warped_watermask.tif -m tc --vmin 0.7
+dolphin2he5.py dolphin --method-string dolphinStandard --watermask dolphin/unwrapped/warped_watermask.tif -m tc --vmin 0.7
 ```
 
 ## Code
 
 | Piece | Path |
 |---|---|
-| Convert | `minsar/utils/dolphin2hdfeos5.py` |
-| Remask | `minsar/utils/remask_hdfeos5.py` |
-| Shared rules | `minsar/utils/dolphin_hdfeos5_utils.py` |
+| Convert | `minsar/utils/dolphin2he5.py` |
+| Remask | `minsar/utils/remask_he5.py` |
+| Shared rules | `minsar/utils/dolphin_he5_utils.py` |
 | Ingest mask | `tools/insarmaps_scripts/hdfeos5_2json_mbtiles.py` (`mask_matrix`) |
 | Viewer auto mask | `tools/MintPy/src/mintpy/utils/plot.py` (`read_mask`) |
 | MintPy HE5 mask copy | `save_hdfeos5.py` `-m maskTempCoh.h5` / `geo_maskTempCoh.h5` |

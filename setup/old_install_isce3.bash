@@ -238,7 +238,7 @@ if n != 1:
 text = text2
 
 # Keep sweets HDF5 on 1.14.x so *-stack.nc VDS is readable by minsar conda
-# dolphin2hdfeos5 (HDF5 1.14.6). Unpinned solves now pull HDF5 2.x (VDS heap v1).
+# dolphin2he5 (HDF5 1.14.6). Unpinned solves now pull HDF5 2.x (VDS heap v1).
 hdf5_line = 'hdf5 = ">=1.14,<2"'
 text2, n = re.subn(r'^hdf5 = .*$', hdf5_line, text, count=1, flags=re.M)
 if n == 0:
@@ -247,7 +247,7 @@ if n != 1:
     raise SystemExit("Error: could not pin hdf5 >=1.14,<2 in sweets pyproject.toml")
 path.write_text(text2)
 print(f"Restricted sweets pixi platforms to ${host_pixi_platform} for this install")
-print(f"Pinned sweets pixi {hdf5_line} (minsar dolphin2hdfeos5 compatibility)")
+print(f"Pinned sweets pixi {hdf5_line} (minsar dolphin2he5 compatibility)")
 PY
 
 # Prefer local disk for rattler/pixi cache when HOME cache is on Lustre/NFS.

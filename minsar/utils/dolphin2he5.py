@@ -20,8 +20,8 @@ import numpy as np
 
 try:
     from minsar.utils.dolphin_presets import METHOD_STRING_HELP, OPERA_DISP_METHOD_STRING, normalize_method_string
-    from minsar.utils.dolphin_hdfeos5_utils import (
-        DOLPHIN2HDFEOS5_EXAMPLES,
+    from minsar.utils.dolphin_he5_utils import (
+        DOLPHIN2HE5_EXAMPLES,
         add_mask_arguments,
         apply_mask_suffix,
         build_mask,
@@ -45,8 +45,8 @@ try:
     )
 except ImportError:
     from dolphin_presets import METHOD_STRING_HELP, OPERA_DISP_METHOD_STRING, normalize_method_string
-    from dolphin_hdfeos5_utils import (
-        DOLPHIN2HDFEOS5_EXAMPLES,
+    from dolphin_he5_utils import (
+        DOLPHIN2HE5_EXAMPLES,
         add_mask_arguments,
         apply_mask_suffix,
         build_mask,
@@ -79,7 +79,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=DESCRIPTION,
         formatter_class=argparse.RawTextHelpFormatter,
-        epilog=DOLPHIN2HDFEOS5_EXAMPLES,
+        epilog=DOLPHIN2HE5_EXAMPLES,
     )
     parser.add_argument(
         "input_path",

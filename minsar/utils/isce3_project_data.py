@@ -13,7 +13,7 @@ _PROJECT_ROOT_LINKS = (
     "sweets_config.yaml",
 )
 
-# Static Dolphin layers for hdfeos5 (do not link the full dolphin/ work tree).
+# Static Dolphin layers for he5 (do not link the full dolphin/ work tree).
 _DOLPHIN_SUBDIR_LINKS = ("geometry",)
 
 

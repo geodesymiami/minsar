@@ -34,16 +34,16 @@ create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --s
 | `--start download` | `--start download --end upload` | from download through upload | same range |
 | `--start dolphin_wrapped` | `--start dolphin_wrapped --end upload` | from that step through `upload` | same range |
 | `--dostep disp_s1_process` | `--dostep disp_s1_process` | that step only | that step only |
-| `--dostep dolphin_2_hdfeos5` / `dolphin2hdfeos5` | `--dostep dolphin_2_hdfeos5` | `dolphin_2_hdfeos5` only | that step only |
+| `--dostep dolphin_2_he5` / `dolphin2he5` | `--dostep dolphin_2_he5` | `dolphin_2_he5` only | that step only |
 | `--dostep upload` | `--dostep upload` | `run_NN_upload` only | that run file (no `.job`) |
 
 The app passes the same workflow step flags to `create_isce3_runfiles.py` (`--start`, `--end`, `--dostep`) that it uses for `run_isce3_workflow.bash`. Dates use `--start-date` / `--end-date` only. The generator writes run files only for the requested steps. Inferred `--data-type` / `--dolphin-mode` are not forwarded unless you set them explicitly; the generator infers them from the project name.
 
-Dolphin science steps (`dolphin_wrapped`, `disp_s1_process`, …) write `{DIR}_config.yaml` from on-disk CSLCs/GSLCs and fail with “run `--start download` first” when those files are missing. `dolphin_2_hdfeos5` and `ingest_insarmaps` do not need CSLCs. Dolphin science flags (`--half-window`, `--unwrap-options.*`, …) are omitted when the requested range does not include dolphin science steps.
+Dolphin science steps (`dolphin_wrapped`, `disp_s1_process`, …) write `{DIR}_config.yaml` from on-disk CSLCs/GSLCs and fail with “run `--start download` first” when those files are missing. `dolphin_2_he5` and `ingest_insarmaps` do not need CSLCs. Dolphin science flags (`--half-window`, `--unwrap-options.*`, …) are omitted when the requested range does not include dolphin science steps.
 
 Legacy `create_isce3_runfiles.py --phase download|dolphin|post|all` still works for direct generator calls. Do not pass `--phase` to the app.
 
-A template or project name that contains `SAFE`, `CSLC`, `DISPS1`/`DISP`, and `Opera` sets `--data-type` and `--dolphin-mode` when those flags are omitted. `$TE/unittestHawaiiPunaCSLCOperaSenD87.template --dostep dolphin_2_hdfeos5` is CSLC opera, not the SAFE default.
+A template or project name that contains `SAFE`, `CSLC`, `DISPS1`/`DISP`, and `Opera` sets `--data-type` and `--dolphin-mode` when those flags are omitted. `$TE/unittestHawaiiPunaCSLCOperaSenD87.template --dostep dolphin_2_he5` is CSLC opera, not the SAFE default.
 
 DISP: `--phase download` is download plus reformat; `--phase post` is he5 plus ingest; `--dolphin-dir` does not apply. `--start reformat_disp` still runs through ingest.
 
@@ -112,7 +112,7 @@ Interpolation is unwrap preprocess, not a timeseries mask.
 
 - `download` / `download_create_cslc` — through `create_cslc` (SAFE), `download_cslc` (CSLC), or `reformat_disp` (DISP-S1 only; opera `reformat_disp` is not part of download)
 - `dolphin` — `dolphin_wrapped` through `dolphin_timeseries` (or monolithic `dolphin`)
-- `hdfeos5` — `dolphin_2_hdfeos5`
+- `he5` — `dolphin_2_he5`
 - `ingest` — `ingest_insarmaps`
-- `dolphin2hdfeos5` — `dolphin_2_hdfeos5`
+- `dolphin2he5` — `dolphin_2_he5`
 - `upload` — last step; run file only (no SLURM job). Default `--end` when `--start` is set without `--end` is always `upload`. Use `--end download` (alias) for download-only

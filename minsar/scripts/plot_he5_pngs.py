@@ -21,10 +21,10 @@ DESCRIPTION = (
 )
 
 EXAMPLES = """Examples:
-plot_hdfeos5_pngs.py dolphin/timeseries/S1*.he5 -t MyProject.template
-plot_hdfeos5_pngs.py S1_desc_087_modeOperaDisp_20220114_20220619.he5 --memory 0.2 --dpi 150
-plot_hdfeos5_pngs.py dolphin/timeseries/S1*.he5 --displacements --nrows 2 --ncols 5
-plot_hdfeos5_pngs.py ./*.he5 --outdir pic --dry-run
+plot_he5_pngs.py dolphin/timeseries/S1*.he5 -t MyProject.template
+plot_he5_pngs.py S1_desc_087_modeOperaDisp_20220114_20220619.he5 --memory 0.2 --dpi 150
+plot_he5_pngs.py dolphin/timeseries/S1*.he5 --displacements --nrows 2 --ncols 5
+plot_he5_pngs.py ./*.he5 --outdir pic --dry-run
 """
 
 HE5_ROOT = "HDFEOS/GRIDS/timeseries"
@@ -358,7 +358,7 @@ def _copy_insarmaps_log(he5_path: Path, pic_dir: Path) -> None:
             return
 
 
-def plot_hdfeos5_pngs(
+def plot_he5_pngs(
     he5_path: Path,
     pic_dir: Path,
     *,
@@ -455,7 +455,7 @@ def main(argv: list[str] | None = None) -> int:
     cwd = os.getcwd()
     os.chdir(he5_path.parent)
     try:
-        rc = plot_hdfeos5_pngs(
+        rc = plot_he5_pngs(
             he5_path,
             pic_dir,
             template_file=template_file,

@@ -46,31 +46,31 @@ class TestStageSelection(unittest.TestCase):
     def test_post_does_not_include_dolphin_science(self) -> None:
         self.assertEqual(
             isce3_steps._post_stage_names("cslc", "opera"),
-            ("reformat_disp", "dolphin_2_hdfeos5", "ingest_insarmaps"),
+            ("reformat_disp", "dolphin_2_he5", "ingest_insarmaps"),
         )
         post = isce3_steps.selected_stage_names("cslc", "opera", phase="post")
         self.assertNotIn("disp_s1_process", post)
-        self.assertIn("dolphin_2_hdfeos5", post)
+        self.assertIn("dolphin_2_he5", post)
         self.assertNotIn("dolphin_wrapped", post)
         self.assertIn("ingest_insarmaps", isce3_steps.selected_stage_names("safe", "single-run", phase="post"))
 
-    def test_dostep_hdfeos5_is_single_stage(self) -> None:
+    def test_dostep_he5_is_single_stage(self) -> None:
         selected = isce3_steps.selected_stage_names(
             "cslc",
             "opera",
-            dostep="dolphin2hdfeos5",
+            dostep="dolphin2he5",
         )
-        self.assertEqual(selected, frozenset({"dolphin_2_hdfeos5"}))
+        self.assertEqual(selected, frozenset({"dolphin_2_he5"}))
 
-    def test_start_hdfeos5_through_end(self) -> None:
+    def test_start_he5_through_end(self) -> None:
         selected = isce3_steps.selected_stage_names(
             "cslc",
             "opera",
-            start="dolphin_2_hdfeos5",
+            start="dolphin_2_he5",
         )
         self.assertEqual(
             selected,
-            frozenset({"dolphin_2_hdfeos5", "ingest_insarmaps", "upload"}),
+            frozenset({"dolphin_2_he5", "ingest_insarmaps", "upload"}),
         )
 
     def test_download_keeps_disp_reformat_and_not_opera_reformat(self) -> None:
@@ -83,7 +83,7 @@ class TestStageSelection(unittest.TestCase):
     def test_dolphin_phase_still_includes_later_products(self) -> None:
         dolphin = isce3_steps.selected_stage_names("cslc", "single-run", phase="dolphin")
         self.assertIn("dolphin_wrapped", dolphin)
-        self.assertIn("dolphin_2_hdfeos5", dolphin)
+        self.assertIn("dolphin_2_he5", dolphin)
         self.assertNotIn("download_cslc", dolphin)
 
 

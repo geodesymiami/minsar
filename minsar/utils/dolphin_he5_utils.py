@@ -1,6 +1,6 @@
 """Library helpers for Dolphin/sweets GeoTIFF stacks ↔ MintPy HDF-EOS5.
 
-Used by ``dolphin2hdfeos5.py`` (forward and ``--reverse``). Independent of
+Used by ``dolphin2he5.py`` (forward and ``--reverse``). Independent of
 ``minsar.src.minsar.cli.create_dolphin_files``.
 """
 
@@ -63,31 +63,31 @@ from minsar.utils.dolphin_presets import (
     dolphin_method_string,
     normalize_dolphin_preset as normalize_dolphin_preset_name,
 )
-DOLPHIN2HDFEOS5_EXAMPLES = """Examples:
-  dolphin2hdfeos5.py dolphin
-  dolphin2hdfeos5.py dolphin --watermask dolphin/unwrapped/warped_watermask.tif
-  dolphin2hdfeos5.py dolphin -m recommended
-  dolphin2hdfeos5.py dolphin --method-string dolphin
-  dolphin2hdfeos5.py stack.nc --method-string operaDisp --watermask stack.nc
-  dolphin2hdfeos5.py dolphin -m tc --vmin 0.7
-  dolphin2hdfeos5.py dolphin -m similarity --vmin 0.5
-  dolphin2hdfeos5.py dolphin -m tc+sim --vmin 0.7 --vmin-sim 0.5
-  dolphin2hdfeos5.py dolphin -m recommendedDensity
-  dolphin2hdfeos5.py dolphin -m recommendedDensity --vmin 0.95
-  dolphin2hdfeos5.py stack.nc --method-string operaDisp -m psDensity
-  dolphin2hdfeos5.py stack.nc --method-string operaDisp -m psDensity --vmin 0.5
-  dolphin2hdfeos5.py --reverse S1_file.he5
-  dolphin2hdfeos5.py --reverse S1_file.he5 -o out-stack.nc
+DOLPHIN2HE5_EXAMPLES = """Examples:
+  dolphin2he5.py dolphin
+  dolphin2he5.py dolphin --watermask dolphin/unwrapped/warped_watermask.tif
+  dolphin2he5.py dolphin -m recommended
+  dolphin2he5.py dolphin --method-string dolphin
+  dolphin2he5.py stack.nc --method-string operaDisp --watermask stack.nc
+  dolphin2he5.py dolphin -m tc --vmin 0.7
+  dolphin2he5.py dolphin -m similarity --vmin 0.5
+  dolphin2he5.py dolphin -m tc+sim --vmin 0.7 --vmin-sim 0.5
+  dolphin2he5.py dolphin -m recommendedDensity
+  dolphin2he5.py dolphin -m recommendedDensity --vmin 0.95
+  dolphin2he5.py stack.nc --method-string operaDisp -m psDensity
+  dolphin2he5.py stack.nc --method-string operaDisp -m psDensity --vmin 0.5
+  dolphin2he5.py --reverse S1_file.he5
+  dolphin2he5.py --reverse S1_file.he5 -o out-stack.nc
 """
-REMASK_HDFEOS5_EXAMPLES = """Examples:
-  remask_hdfeos5.py S1_….he5 -m tc --vmin 0.7
-  remask_hdfeos5.py S1_….he5 -m similarity --vmin 0.5
-  remask_hdfeos5.py S1_….he5 -m tc+sim --vmin 0.7 --vmin-sim 0.5
-  remask_hdfeos5.py S1_….he5 -m recommendedDensity
-  remask_hdfeos5.py S1_….he5 -m recommendedDensity --vmin 0.95
-  remask_hdfeos5.py S1_….he5 -m psDensity
-  remask_hdfeos5.py S1_….he5 -m psDensity --vmin 0.5
-  remask_hdfeos5.py S1_…_tc070sim050.he5 -m recommended
+REMASK_HE5_EXAMPLES = """Examples:
+  remask_he5.py S1_….he5 -m tc --vmin 0.7
+  remask_he5.py S1_….he5 -m similarity --vmin 0.5
+  remask_he5.py S1_….he5 -m tc+sim --vmin 0.7 --vmin-sim 0.5
+  remask_he5.py S1_….he5 -m recommendedDensity
+  remask_he5.py S1_….he5 -m recommendedDensity --vmin 0.95
+  remask_he5.py S1_….he5 -m psDensity
+  remask_he5.py S1_….he5 -m psDensity --vmin 0.5
+  remask_he5.py S1_…_tc070sim050.he5 -m recommended
 """
 # One underscore-separated token after the MintPy stem (also strip older tcNNN_simNNN).
 MASK_SUFFIX_RE = re.compile(
@@ -419,7 +419,7 @@ def resolve_run_paths(input_path: Path) -> tuple[Path, Path, Path]:
     if (path / "timeseries").is_dir():
         return path, path, path / "timeseries"
     raise FileNotFoundError(
-        f"No timeseries/ directory in {path} (pass the dolphin dir, e.g. dolphin2hdfeos5.py dolphin)"
+        f"No timeseries/ directory in {path} (pass the dolphin dir, e.g. dolphin2he5.py dolphin)"
     )
 
 
@@ -814,7 +814,7 @@ def build_mask(
             raise ValueError(
                 "-m psDensity requires quality/persistentScattererDensity "
                 "(OPERA DISP persistent_scatterer_mask; not available for sweets/dolphin). "
-                "Re-run dolphin2hdfeos5.py on the *-stack.nc to add that layer"
+                "Re-run dolphin2he5.py on the *-stack.nc to add that layer"
             )
         dens = np.asarray(dens)
         mask &= np.isfinite(dens) & (dens > vmin)
@@ -1829,7 +1829,7 @@ def write_opera_stack_nc(he5_path: Path, out_path: Path) -> Path:
     ds.attrs = {
         "Conventions": "CF-1.8",
         "title": "DISP stack from HDF-EOS5",
-        "history": f"converted from {he5_path.name} by dolphin2hdfeos5.py --reverse",
+        "history": f"converted from {he5_path.name} by dolphin2he5.py --reverse",
         "source": str(he5_path),
     }
     out_path.parent.mkdir(parents=True, exist_ok=True)
