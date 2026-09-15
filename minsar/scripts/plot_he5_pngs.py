@@ -167,6 +167,15 @@ def _out_png(name: str) -> list[str]:
     return ["-o", name]
 
 
+def _fig_title_opts(title: str) -> list[str]:
+    """Pass an explicit title so MintPy skips auto_figure_title.
+
+    auto_figure_title treats any path containing ``timeseries`` (e.g. dolphin/timeseries/)
+    as a MintPy timeseries.h5 name and then IndexErrors on HE5 basenames like S1_desc_*.he5.
+    """
+    return ["--title", title]
+
+
 def _layout_opts(nrows: int | None, ncols: int | None) -> list[str]:
     opts: list[str] = []
     if nrows is not None:
@@ -188,7 +197,12 @@ def _build_quality_jobs(
         if not he5_has_dataset(he5_path, "quality", dset):
             continue
         out_name = f"{dset}.png"
-        jobs.append((common + [he5_str, dset] + extra + _out_png(out_name), out_name))
+        jobs.append(
+            (
+                common + [he5_str, dset] + extra + _fig_title_opts(dset) + _out_png(out_name),
+                out_name,
+            )
+        )
     return jobs
 
 
@@ -208,7 +222,7 @@ def _build_geometry_job(
         ncols_default = min(3, len(dsets))
         nrows_default = (len(dsets) + ncols_default - 1) // ncols_default
         iargs.extend(["--nrows", str(nrows_default), "--ncols", str(ncols_default)])
-    iargs.extend(_out_png("geometryRadar.png"))
+    iargs.extend(_fig_title_opts("geometryRadar") + _out_png("geometryRadar.png"))
     return iargs, "geometryRadar.png"
 
 
@@ -225,6 +239,7 @@ def _build_displacement_job(
         _view_common(dpi, max_plot_memory)
         + [str(he5_path), "displacement", "--noaxis", "-u", "cm", "--wrap", "--wrap-range", "-5", "5"]
         + _layout_opts(nrows, ncols)
+        + _fig_title_opts("displacement")
         + _out_png("displacement.png")
     )
 
@@ -397,7 +412,12 @@ def plot_he5_pngs(
 
     vel_h5 = _run_timeseries2velocity(he5_path, work_dir, dry_run)
     if vel_h5 is not None:
-        vel_job = _view_common(dpi, max_plot_memory) + [str(vel_h5), "velocity"] + _out_png("velocity.png")
+        vel_job = (
+            _view_common(dpi, max_plot_memory)
+            + [str(vel_h5), "velocity"]
+            + _fig_title_opts("velocity")
+            + _out_png("velocity.png")
+        )
         print("view.py", " ".join(vel_job))
         if not dry_run:
             import mintpy.cli.view
