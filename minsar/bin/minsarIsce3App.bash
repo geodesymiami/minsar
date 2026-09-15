@@ -45,7 +45,7 @@ options:
                         phase-linking half-window: standard 6x12, dry 5x11, wet 9x18, arctic 9x19 (Default: standard)
   --dolphin-mode MODE   {single-run,opera} (one Dolphin stack or local DISP-S1; not for disp-s1) (Default: single-run)
   --dolphin-config PRESET
-                        single-run science preset: disp-s1, disp-s1-process, pydantic (Default: disp-s1)
+                        single-run science preset: disp-s1, disp-s1-downloaded, disp-s1-process, pydantic (Default: disp-s1)
   --link-project-dir DIR  testing: symlink data/, geometry/, watermask.tif, dolphin/geometry/ from an existing project (e.g. ../PopoCSLCSenD143)
   --reference-method METHOD
                         disp-s1-reformat reference: NONE, POINT, MEDIAN, BORDER, HIGH_COHERENCE (Default: HIGH_COHERENCE)
@@ -138,8 +138,12 @@ infer_dataset_from_name() {
         name="${name:0:${#name}-8}"
         lower="${name,,}"
     fi
-    # Config token sits after CSLC/SAFE (DispS1Process, Pydantic); strip before data-type.
-    if [[ "$name" == *DispS1Process ]]; then
+    # Config token sits after CSLC/SAFE (DispS1Downloaded, DispS1Process, Pydantic); strip before data-type.
+    if [[ "$name" == *DispS1Downloaded ]]; then
+        inferred_dolphin_config="disp-s1-downloaded"
+        name="${name:0:${#name}-16}"
+        lower="${name,,}"
+    elif [[ "$name" == *DispS1Process ]]; then
         inferred_dolphin_config="disp-s1-process"
         name="${name:0:${#name}-14}"
         lower="${name,,}"

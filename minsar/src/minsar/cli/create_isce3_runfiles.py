@@ -238,8 +238,9 @@ _DATA_TYPE_NAME_TOKEN = {"safe": "SAFE", "cslc": "CSLC", "disp": "DISPS1"}
 _DATA_TYPE_NAME_SUFFIX_RE = re.compile(r"(DISPS1|CSLC|SAFE|DISP)$")
 _LEGACY_DOLPHIN_MODE_SUFFIX_RE = re.compile(r"(Opera|Standard)$", re.IGNORECASE)
 # Same tokens as DOLPHIN_CONFIG_METHOD_TOKENS (non-default --dolphin-config).
-_DOLPHIN_CONFIG_NAME_SUFFIX_RE = re.compile(r"(DispS1Process|Pydantic)$")
+_DOLPHIN_CONFIG_NAME_SUFFIX_RE = re.compile(r"(DispS1Downloaded|DispS1Process|Pydantic)$")
 _DOLPHIN_CONFIG_FROM_NAME = {
+    "DispS1Downloaded": "disp-s1-downloaded",
     "DispS1Process": "disp-s1-process",
     "Pydantic": "pydantic",
 }
@@ -255,7 +256,7 @@ def _strip_orbit_label_suffix(name: str) -> str:
 
 
 def _strip_dolphin_config_name_suffix(name: str) -> tuple[str, str | None]:
-    """Strip DispS1Process/Pydantic from a stem; return (stem, dolphin_config or None)."""
+    """Strip DispS1Downloaded/DispS1Process/Pydantic from a stem; return (stem, dolphin_config or None)."""
     match = _DOLPHIN_CONFIG_NAME_SUFFIX_RE.search(str(name).strip())
     if not match:
         return str(name).strip(), None
@@ -385,8 +386,9 @@ def _resolve_selected_stages(
 def infer_dataset_from_name(name: str) -> tuple[str | None, str | None, str | None]:
     """Return (workflow, dolphin_mode, dolphin_config) encoded in a project or template stem.
 
-    ``unittestHawaiiPunaCSLCOperaSenD87`` is cslc + opera. ``HawaiiPunaCSLCDispS1ProcessSenD87``
-    is cslc + disp-s1-process. ``HawaiiPunaDISPS1SenD87`` is disp-s1. Missing tokens return None.
+    ``unittestHawaiiPunaCSLCOperaSenD87`` is cslc + opera. ``HawaiiPunaCSLCDispS1DownloadedSenD87``
+    is cslc + disp-s1-downloaded. ``HawaiiPunaCSLCDispS1ProcessSenD87`` is cslc + disp-s1-process.
+    ``HawaiiPunaDISPS1SenD87`` is disp-s1. Missing tokens return None.
     """
     stem = Path(str(name).strip()).name
     if stem.lower().endswith(".template"):

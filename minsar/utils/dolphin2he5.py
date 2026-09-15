@@ -144,19 +144,43 @@ def _print_dolphin_files(files: dict):
         print("Reference point:    (none; using fallback pixel)")
 
 
-def _pick_ref(shape, mask, quality, ts_dir=None):
+def _pick_ref(shape, mask, quality, ts_dir=None, stack=None):
+    """Pick REF_Y/REF_X: prefer reference_point.txt when it is finite and in mask."""
+
+    def _best_from_mask() -> tuple[int, int]:
+        temp_coh = quality.get("temporal_coherence")
+        if temp_coh is not None:
+            valid = np.where(mask & np.isfinite(temp_coh), temp_coh, -np.inf)
+            if np.isfinite(valid).any() and np.nanmax(valid) > -np.inf:
+                return np.unravel_index(int(np.argmax(valid)), shape)
+        ys, xs = np.where(mask)
+        if len(ys):
+            return int(ys[len(ys) // 2]), int(xs[len(xs) // 2])
+        return shape[0] // 2, shape[1] // 2
+
+    def _is_ok(row: int, col: int) -> bool:
+        if not (0 <= row < shape[0] and 0 <= col < shape[1]):
+            return False
+        if mask is not None and not bool(mask[row, col]):
+            return False
+        if stack is not None:
+            pix = np.asarray(stack[:, row, col])
+            if not np.isfinite(pix).all() or np.all(pix == 0):
+                return False
+        return True
+
     if ts_dir is not None:
         ref = read_reference_point(ts_dir, shape)
         if ref is not None:
-            print(f"Reference point from reference_point.txt: row={ref[0]} col={ref[1]}")
-            return ref
-    temp_coh = quality.get("temporal_coherence")
-    if temp_coh is not None:
-        valid = np.where(mask & np.isfinite(temp_coh), temp_coh, -np.inf)
-        ref_y, ref_x = np.unravel_index(int(np.argmax(valid)), shape)
-    else:
-        ref_y, ref_x = shape[0] // 2, shape[1] // 2
-    print(f"No reference_point.txt; using REF_Y={ref_y} REF_X={ref_x}")
+            if _is_ok(*ref):
+                print(f"Reference point from reference_point.txt: row={ref[0]} col={ref[1]}")
+                return ref
+            print(
+                f"Warning: reference_point.txt ({ref[0]},{ref[1]}) is masked or non-finite; "
+                "picking a valid pixel from the mask"
+            )
+    ref_y, ref_x = _best_from_mask()
+    print(f"Using REF_Y={ref_y} REF_X={ref_x}")
     return ref_y, ref_x
 
 
@@ -180,7 +204,7 @@ def run_dolphin(inps, vmin, vmin_sim, suffix: str) -> Path:
     print(f"Mask:       -m {inps.mask_source} --vmin {vmin}" + (f" --vmin-sim {vmin_sim}" if vmin_sim is not None else ""))
 
     latitude, longitude = latlon_grids(grid)
-    ref_y, ref_x = _pick_ref(shape, mask, quality, ts_dir=ts_dir)
+    ref_y, ref_x = _pick_ref(shape, mask, quality, ts_dir=ts_dir, stack=stack)
     method_name = inps.method_string or "dolphin"
     print(f"HE5 name:   {method_name}")
     metadata = build_metadata(
@@ -228,7 +252,7 @@ def run_opera(inps, vmin, vmin_sim, suffix: str) -> Path:
     print(f"Mask:       -m {inps.mask_source} --vmin {vmin}" + (f" --vmin-sim {vmin_sim}" if vmin_sim is not None else ""))
 
     latitude, longitude = latlon_grids(grid)
-    ref_y, ref_x = _pick_ref(shape, mask, quality)
+    ref_y, ref_x = _pick_ref(shape, mask, quality, stack=stack)
     method_name = inps.method_string or OPERA_DISP_METHOD_STRING
     print(f"HE5 name:   {method_name}")
     metadata = build_metadata(

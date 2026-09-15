@@ -251,7 +251,13 @@ def _run_timeseries2velocity(he5_path: Path, work_dir: Path, dry_run: bool) -> P
     if dry_run:
         return vel_path
     import mintpy.cli.timeseries2velocity
-    mintpy.cli.timeseries2velocity.main(iargs)
+    try:
+        mintpy.cli.timeseries2velocity.main(iargs)
+    except ValueError as exc:
+        # MintPy forces REF_Y/REF_X into the invert mask; a NaN/Inf ref (or other
+        # non-finite samples) makes linalg.lstsq raise here.
+        print(f"Warning: timeseries2velocity failed ({exc}); skipping velocity plot")
+        return None
     return vel_path if vel_path.is_file() else None
 
 

@@ -13,18 +13,34 @@ DEFAULT_PRESET = "standard"
 
 # Single-run science presets (--dolphin-config). pydantic: no extra flags (Dolphin CLI defaults).
 DEFAULT_DOLPHIN_CONFIG = "disp-s1"
-DOLPHIN_CONFIG_CHOICES = ("disp-s1", "disp-s1-process", "pydantic")
+DOLPHIN_CONFIG_CHOICES = ("disp-s1", "disp-s1-downloaded", "disp-s1-process", "pydantic")
 DOLPHIN_CONFIG_HELP = (
-    "single-run science preset: disp-s1 (OPERA L3 production), "
+    "single-run science preset: disp-s1 (legacy unwrap knobs), "
+    "disp-s1-downloaded (OPERA L3 science; ministack 100, interp-sim 0.4; "
+    "always_first for continuous run), "
     "disp-s1-process (local opera make_cfg), pydantic (Dolphin package defaults)"
 )
 
-# Dominant OPERA ASF L3 production epoch (dolphin_workflow_config).
+# Legacy single-run unwrap/PS knobs (does not set ministack / compressed-SLC plan).
 DISP_S1_SCIENCE = {
     "amp_dispersion_threshold": 0.2,
     "interpolation_cor_threshold": 0.3,
     "interpolation_similarity_threshold": 0.25,
     "max_radius": 71,
+}
+
+# OPERA L3 downloaded product algorithm_parameters (frame F38247 / dolphin 0.37.0 epoch).
+# OPERA YAML uses last_per_ministack per historical batch (one ministack per product).
+# Continuous single-run dolphin run needs always_first when ministack_size < n_slcs.
+DISP_S1_DOWNLOADED_SCIENCE = {
+    "amp_dispersion_threshold": 0.2,
+    "interpolation_cor_threshold": 0.3,
+    "interpolation_similarity_threshold": 0.4,
+    "max_radius": 71,
+    "ministack_size": 100,
+    "max_num_compressed": 100,
+    "compressed_slc_plan": "ALWAYS_FIRST",
+    "output_reference_idx": 0,
 }
 
 # additions/disp-s1/disp_s1_process.make_cfg local opera produce.
@@ -43,8 +59,9 @@ PYDANTIC_SCIENCE = {
     "max_radius": 51,
 }
 
-DOLPHIN_CONFIG_SCIENCE: dict[str, dict[str, float | int]] = {
+DOLPHIN_CONFIG_SCIENCE: dict[str, dict[str, float | int | str]] = {
     "disp-s1": DISP_S1_SCIENCE,
+    "disp-s1-downloaded": DISP_S1_DOWNLOADED_SCIENCE,
     "disp-s1-process": DISP_S1_PROCESS_SCIENCE,
     "pydantic": PYDANTIC_SCIENCE,
 }
@@ -66,7 +83,8 @@ DOLPHIN_PRESET_HELP = (
 
 NO_PRESET_NAMING_HELP = (
     "Omit half-window from HE5 method-string "
-    "(default: dolphin / dolphinDispS1Process / …; with naming on, append Dry/Wet/Arctic)"
+    "(default: dolphin / dolphinDispS1Downloaded / dolphinDispS1Process / …; "
+    "with naming on, append Dry/Wet/Arctic)"
 )
 
 # HE5 label for downloaded --data-type disp-s1 (project token DISPS1).
@@ -77,14 +95,15 @@ MODE_OPERA_DISP_METHOD_STRING = "dolphinModeOpera"
 # Shared camelCase tokens for --dolphin-config (project name + HE5). Empty = default disp-s1.
 DOLPHIN_CONFIG_METHOD_TOKENS: dict[str, str] = {
     "disp-s1": "",
+    "disp-s1-downloaded": "DispS1Downloaded",
     "disp-s1-process": "DispS1Process",
     "pydantic": "Pydantic",
 }
 
 METHOD_STRING_HELP = (
-    "HE5 post_processing_method label (e.g. dolphin, dolphinDispS1Process, dolphinDry, "
-    "dispS1, dolphinModeOpera); used in .he5 filename and metadata "
-    "(default: dolphin, dispS1, or dolphinModeOpera by input kind)"
+    "HE5 post_processing_method label (e.g. dolphin, dolphinDispS1Downloaded, "
+    "dolphinDispS1Process, dolphinDry, dispS1, dolphinModeOpera); used in .he5 filename "
+    "and metadata (default: dolphin, dispS1, or dolphinModeOpera by input kind)"
 )
 
 
@@ -103,7 +122,7 @@ def dolphin_config_passthrough_tokens(preset: str) -> list[str]:
     if key == "pydantic":
         return []
     values = DOLPHIN_CONFIG_SCIENCE[key]
-    return [
+    tokens = [
         "--ps-options.amp-dispersion-threshold",
         str(values["amp_dispersion_threshold"]),
         "--unwrap-options.preprocess-options.interpolation-cor-threshold",
@@ -113,6 +132,17 @@ def dolphin_config_passthrough_tokens(preset: str) -> list[str]:
         "--unwrap-options.preprocess-options.max-radius",
         str(values["max_radius"]),
     ]
+    if "ministack_size" in values:
+        tokens.extend(["--phase-linking.ministack-size", str(values["ministack_size"])])
+    if "max_num_compressed" in values:
+        tokens.extend(["--phase-linking.max-num-compressed", str(values["max_num_compressed"])])
+    if "compressed_slc_plan" in values:
+        # dolphin config CLI expects enum names (LAST_PER_MINISTACK), not YAML snake_case.
+        plan = str(values["compressed_slc_plan"]).upper()
+        tokens.extend(["--phase-linking.compressed-slc-plan", plan])
+    if "output_reference_idx" in values:
+        tokens.extend(["--phase-linking.output-reference-idx", str(values["output_reference_idx"])])
+    return tokens
 
 
 def single_run_science_passthrough(
@@ -162,8 +192,8 @@ def dolphin_method_string(
     """HE5 post_processing_method for single-run Dolphin.
 
     Combines --dolphin-config and --half-window-preset: disp-s1 + standard → dolphin;
-    disp-s1-process → dolphinDispS1Process; wet → …Wet. preset_naming=False skips the
-    half-window token only.
+    disp-s1-downloaded → dolphinDispS1Downloaded; disp-s1-process → dolphinDispS1Process;
+    wet → …Wet. preset_naming=False skips the half-window token only.
     """
     config_token = dolphin_config_name_token(dolphin_config)
     window_key = normalize_dolphin_preset(preset) if preset_naming else DEFAULT_PRESET
