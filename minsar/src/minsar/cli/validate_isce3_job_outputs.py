@@ -105,7 +105,7 @@ def _infer_data_type_from_project(work_dir: Path) -> str | None:
     """Resolve safe/cslc/disp from the project directory name."""
     from minsar.src.minsar.cli.create_isce3_runfiles import infer_dataset_from_name
 
-    workflow, _mode = infer_dataset_from_name(work_dir.name)
+    workflow, _mode, _cfg = infer_dataset_from_name(work_dir.name)
     return workflow
 
 

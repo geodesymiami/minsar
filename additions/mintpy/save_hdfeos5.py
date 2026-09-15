@@ -337,8 +337,8 @@ _HE5_METHOD_LOWERCASE = frozenset({"mintpy", "miaplpy", "sarvey"})
 def he5_method_filename_token(value) -> str:
     """Filename token from post_processing_method.
 
-    Keep camelCase labels (dolphinAuto, operaDisp). Hyphenated labels become
-    camelCase (opera-disp -> operaDisp). Historic MintPy/MiaplPy/sarvey stay lowercase.
+    Keep camelCase labels (dolphinAuto, dispS1). Hyphenated labels become
+    camelCase (disp-s1 -> dispS1). Historic MintPy/MiaplPy/sarvey stay lowercase.
     """
     token = str(value).strip() if value is not None else ""
     if not token:

@@ -124,7 +124,7 @@ minsarIsce3App.bash 25.783:25.809,-80.308:-80.263 qMiamiMia --data-type disp-s1 
 ```
 
 ```bash
-dolphin2he5.py qMiamiMiaDISPSenA48-stack.nc --method-string operaDisp --watermask qMiamiMiaDISPSenA48-stack.nc
+dolphin2he5.py qMiamiMiaDISPSenA48-stack.nc --method-string dispS1 --watermask qMiamiMiaDISPSenA48-stack.nc
 ```
 
 No `-m` flag means `-m recommended`. Template `mintpy.networkInversion.minTempCoh` is unused on this path.
@@ -162,7 +162,7 @@ Shared by `dolphin2he5.py` and `remask_he5.py`. Every mode also requires water �
 
 ```bash
 dolphin2he5.py dolphin
-dolphin2he5.py stack.nc --method-string operaDisp --watermask stack.nc -m tc --vmin 0.7
+dolphin2he5.py stack.nc --method-string dispS1 --watermask stack.nc -m tc --vmin 0.7
 remask_he5.py S1_….he5 -m tc --vmin 0.7
 remask_he5.py S1_….he5 -m tc+sim --vmin 0.7 --vmin-sim 0.5
 remask_he5.py S1_….he5 -m recommendedDensity --vmin 0.95

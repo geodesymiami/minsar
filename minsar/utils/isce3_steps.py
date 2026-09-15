@@ -325,7 +325,6 @@ _DOLPHIN_SCIENCE_ARGV = frozenset({
     "--ministack-size",
     "--dolphin-dir",
     "--from-dolphin-dir",
-    "--dolphin-config",
     "--no-dolphin-split",
 })
 

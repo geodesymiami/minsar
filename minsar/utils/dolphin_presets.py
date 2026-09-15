@@ -65,17 +65,26 @@ DOLPHIN_PRESET_HELP = (
 )
 
 NO_PRESET_NAMING_HELP = (
-    "Use method-string dolphin for every half-window preset "
-    "(default: dolphin for standard; dolphinDry/dolphinWet/dolphinArctic when preset naming is on)"
+    "Omit half-window from HE5 method-string "
+    "(default: dolphin / dolphinDispS1Process / …; with naming on, append Dry/Wet/Arctic)"
 )
 
-OPERA_DISP_METHOD_STRING = "operaDisp"
+# HE5 label for downloaded --data-type disp-s1 (project token DISPS1).
+OPERA_DISP_METHOD_STRING = "dispS1"
 # HE5 label for --data-type {safe,cslc} --dolphin-mode opera (local DISP-S1 produce).
 MODE_OPERA_DISP_METHOD_STRING = "dolphinModeOpera"
 
+# Shared camelCase tokens for --dolphin-config (project name + HE5). Empty = default disp-s1.
+DOLPHIN_CONFIG_METHOD_TOKENS: dict[str, str] = {
+    "disp-s1": "",
+    "disp-s1-process": "DispS1Process",
+    "pydantic": "Pydantic",
+}
+
 METHOD_STRING_HELP = (
-    "HE5 post_processing_method label (e.g. dolphin, dolphinDry, operaDisp, dolphinModeOpera); "
-    "used in .he5 filename and metadata (default: dolphin, operaDisp, or dolphinModeOpera by input kind)"
+    "HE5 post_processing_method label (e.g. dolphin, dolphinDispS1Process, dolphinDry, "
+    "dispS1, dolphinModeOpera); used in .he5 filename and metadata "
+    "(default: dolphin, dispS1, or dolphinModeOpera by input kind)"
 )
 
 
@@ -138,12 +147,28 @@ def normalize_dolphin_preset(value: str) -> str:
     return token
 
 
-def dolphin_method_string(preset: str) -> str:
-    """HE5 post_processing_method label for a dolphin CSLC preset (standard is dolphin)."""
-    key = normalize_dolphin_preset(preset)
-    if key == DEFAULT_PRESET:
-        return "dolphin"
-    return "dolphin" + key.capitalize()
+def dolphin_config_name_token(dolphin_config: str | None = None) -> str:
+    """Project-name / HE5 middle token for --dolphin-config (empty for default disp-s1)."""
+    key = normalize_dolphin_config(dolphin_config or DEFAULT_DOLPHIN_CONFIG)
+    return DOLPHIN_CONFIG_METHOD_TOKENS[key]
+
+
+def dolphin_method_string(
+    preset: str,
+    dolphin_config: str | None = None,
+    *,
+    preset_naming: bool = True,
+) -> str:
+    """HE5 post_processing_method for single-run Dolphin.
+
+    Combines --dolphin-config and --half-window-preset: disp-s1 + standard → dolphin;
+    disp-s1-process → dolphinDispS1Process; wet → …Wet. preset_naming=False skips the
+    half-window token only.
+    """
+    config_token = dolphin_config_name_token(dolphin_config)
+    window_key = normalize_dolphin_preset(preset) if preset_naming else DEFAULT_PRESET
+    window_token = "" if window_key == DEFAULT_PRESET else window_key.capitalize()
+    return "dolphin" + config_token + window_token
 
 
 def normalize_method_string(value: str) -> str:

@@ -269,18 +269,25 @@ for run_file in "${all_run_files[@]}"; do
     number_token="${BASH_REMATCH[1]}"
     name="${BASH_REMATCH[2]}"
     number="$((10#$number_token))"
-    already=false
-    for existing in "${stage_numbers[@]}"; do
-        if [[ "$existing" == "$number" ]]; then
-            already=true
+    # Prefer run_*_dolphin_2_he5 over legacy run_*_dolphin_2_hdfeos5 (same NN).
+    display_name="$name"
+    [[ "$name" == "dolphin_2_hdfeos5" ]] && display_name="dolphin_2_he5"
+    already_index=""
+    for index in "${!stage_numbers[@]}"; do
+        if [[ "${stage_numbers[$index]}" == "$number" ]]; then
+            already_index="$index"
             break
         fi
     done
-    if [[ "$already" != "true" ]]; then
-        stage_numbers+=("$number")
-        stage_names+=("$name")
-        stage_patterns+=("$run_dir/run_${number_token}_${name}")
+    if [[ -n "$already_index" ]]; then
+        if [[ "$name" == "dolphin_2_he5" && "${stage_names[$already_index]}" == "dolphin_2_he5" ]]; then
+            stage_patterns[$already_index]="$run_dir/run_${number_token}_dolphin_2_he5"
+        fi
+        continue
     fi
+    stage_numbers+=("$number")
+    stage_names+=("$display_name")
+    stage_patterns+=("$run_dir/run_${number_token}_${name}")
 done
 
 # Sidecar steps outside the numbered run_NN_* sequence (e.g. disp_s1_process, reformat_disp).
@@ -341,7 +348,7 @@ expand_step_alias() {
                 first_existing_stage dolphin_wrapped disp_s1_process dolphin || echo "$value"
             fi
             ;;
-        he5|hdfeos5|dolphin2he5|dolphin2hdfeos5)
+        he5|hdfeos5|dolphin2he5|dolphin2hdfeos5|dolphin_2_hdfeos5)
             echo "dolphin_2_he5"
             ;;
         ingest)

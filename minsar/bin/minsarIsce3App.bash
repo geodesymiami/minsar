@@ -123,6 +123,7 @@ infer_dataset_from_name() {
     lower="${name,,}"
     inferred_data_type=""
     inferred_dolphin_mode=""
+    inferred_dolphin_config=""
     if [[ "$lower" =~ ^(.+)(sen|s1|tsx|alos2|csk|rs2|env|nisar)[ad][0-9]+$ ]]; then
         prefix_len="${#BASH_REMATCH[1]}"
         name="${name:0:prefix_len}"
@@ -137,9 +138,20 @@ infer_dataset_from_name() {
         name="${name:0:${#name}-8}"
         lower="${name,,}"
     fi
+    # Config token sits after CSLC/SAFE (DispS1Process, Pydantic); strip before data-type.
+    if [[ "$name" == *DispS1Process ]]; then
+        inferred_dolphin_config="disp-s1-process"
+        name="${name:0:${#name}-14}"
+        lower="${name,,}"
+    elif [[ "$name" == *Pydantic ]]; then
+        inferred_dolphin_config="pydantic"
+        name="${name:0:${#name}-8}"
+        lower="${name,,}"
+    fi
     if [[ "$lower" == *disps1 ]]; then
         inferred_data_type="disp-s1"
         inferred_dolphin_mode=""
+        inferred_dolphin_config=""
     elif [[ "$lower" == *cslc ]]; then
         inferred_data_type="cslc"
     elif [[ "$lower" == *safe ]]; then
@@ -147,6 +159,7 @@ infer_dataset_from_name() {
     elif [[ "$lower" == *disp ]]; then
         inferred_data_type="disp-s1"
         inferred_dolphin_mode=""
+        inferred_dolphin_config=""
     else
         inferred_data_type=""
         inferred_dolphin_mode=""

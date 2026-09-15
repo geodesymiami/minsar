@@ -68,14 +68,14 @@ DOLPHIN2HE5_EXAMPLES = """Examples:
   dolphin2he5.py dolphin --watermask dolphin/unwrapped/warped_watermask.tif
   dolphin2he5.py dolphin -m recommended
   dolphin2he5.py dolphin --method-string dolphin
-  dolphin2he5.py stack.nc --method-string operaDisp --watermask stack.nc
+  dolphin2he5.py stack.nc --method-string dispS1 --watermask stack.nc
   dolphin2he5.py dolphin -m tc --vmin 0.7
   dolphin2he5.py dolphin -m similarity --vmin 0.5
   dolphin2he5.py dolphin -m tc+sim --vmin 0.7 --vmin-sim 0.5
   dolphin2he5.py dolphin -m recommendedDensity
   dolphin2he5.py dolphin -m recommendedDensity --vmin 0.95
-  dolphin2he5.py stack.nc --method-string operaDisp -m psDensity
-  dolphin2he5.py stack.nc --method-string operaDisp -m psDensity --vmin 0.5
+  dolphin2he5.py stack.nc --method-string dispS1 -m psDensity
+  dolphin2he5.py stack.nc --method-string dispS1 -m psDensity --vmin 0.5
   dolphin2he5.py --reverse S1_file.he5
   dolphin2he5.py --reverse S1_file.he5 -o out-stack.nc
 """
@@ -111,11 +111,13 @@ def normalize_dolphin_preset(value: str) -> str:
     return normalize_dolphin_preset_name(value)
 
 
-def dolphin_he5_method_name(preset: str, preset_naming: bool = True) -> str:
-    """HE5 post_processing_method from CSLC --half-window-preset (--preset-naming on create_isce3_runfiles)."""
-    if not preset_naming:
-        return "dolphin"
-    return dolphin_method_string(preset)
+def dolphin_he5_method_name(
+    preset: str,
+    preset_naming: bool = True,
+    dolphin_config: str | None = None,
+) -> str:
+    """HE5 post_processing_method from --dolphin-config and --half-window-preset."""
+    return dolphin_method_string(preset, dolphin_config, preset_naming=preset_naming)
 
 
 def add_mask_arguments(parser: argparse.ArgumentParser) -> None:

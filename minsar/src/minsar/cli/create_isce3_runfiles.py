@@ -33,6 +33,7 @@ from minsar.utils.dolphin_presets import (
     OPERA_DISP_METHOD_STRING,
     count_opera_cslc_bursts,
     dolphin_method_string,
+    dolphin_config_name_token,
     dolphin_window_cli_flags,
     dolphin_worker_cli_flags,
     normalize_dolphin_config,
@@ -136,6 +137,7 @@ ARGV_FIX_KW = {
         "--unwrap-method",
         "--ministack-size",
         "--dolphin-mode",
+        "--dolphin-config",
         "--reference-method",
     ),
     "consume_two": (
@@ -157,6 +159,54 @@ ARGV_FIX_KW = {
 
 def _dolphin_config_in_argv(argv: list[str]) -> bool:
     return any(token == "--dolphin-config" or token.startswith("--dolphin-config=") for token in argv)
+
+
+def _half_window_preset_in_argv(argv: list[str]) -> bool:
+    return any(
+        token == "--half-window-preset" or token.startswith("--half-window-preset=")
+        for token in argv
+    )
+
+
+def _preset_naming_in_argv(argv: list[str]) -> bool:
+    return any(token in {"--preset-naming", "--no-preset-naming"} for token in argv)
+
+
+def _resolve_he5_naming(
+    work_dir: Path,
+    args: argparse.Namespace,
+    argv: list[str],
+) -> tuple[str, str, bool]:
+    """Return (dolphin_config, half_window_preset, preset_naming) for HE5 tags / sidecar.
+
+    Explicit CLI wins; otherwise ``.isce3_run_slice``; otherwise argparse defaults.
+    """
+    sidecar = read_run_slice_sidecar(work_dir)
+    if _dolphin_config_in_argv(argv):
+        dolphin_config = normalize_dolphin_config(args.dolphin_config_preset)
+    elif sidecar.get("dolphin_config"):
+        dolphin_config = normalize_dolphin_config(sidecar["dolphin_config"])
+    else:
+        dolphin_config = normalize_dolphin_config(args.dolphin_config_preset)
+
+    if _half_window_preset_in_argv(argv):
+        half_window_preset = normalize_dolphin_preset(args.preset)
+    elif sidecar.get("half_window_preset"):
+        try:
+            half_window_preset = normalize_dolphin_preset(sidecar["half_window_preset"])
+        except ValueError:
+            half_window_preset = normalize_dolphin_preset(args.preset)
+    else:
+        half_window_preset = normalize_dolphin_preset(args.preset)
+
+    if _preset_naming_in_argv(argv):
+        preset_naming = bool(args.preset_naming)
+    elif sidecar.get("preset_naming") in {"true", "false"}:
+        preset_naming = sidecar["preset_naming"] == "true"
+    else:
+        preset_naming = bool(args.preset_naming)
+
+    return dolphin_config, half_window_preset, preset_naming
 
 
 def _normalize_dolphin_mode(value: str) -> str:
@@ -187,6 +237,12 @@ _DATA_TYPE_NAME_TOKEN = {"safe": "SAFE", "cslc": "CSLC", "disp": "DISPS1"}
 # Uppercase only: PopoTestDisps1 is a basename, not a DISPS1 data-type suffix.
 _DATA_TYPE_NAME_SUFFIX_RE = re.compile(r"(DISPS1|CSLC|SAFE|DISP)$")
 _LEGACY_DOLPHIN_MODE_SUFFIX_RE = re.compile(r"(Opera|Standard)$", re.IGNORECASE)
+# Same tokens as DOLPHIN_CONFIG_METHOD_TOKENS (non-default --dolphin-config).
+_DOLPHIN_CONFIG_NAME_SUFFIX_RE = re.compile(r"(DispS1Process|Pydantic)$")
+_DOLPHIN_CONFIG_FROM_NAME = {
+    "DispS1Process": "disp-s1-process",
+    "Pydantic": "pydantic",
+}
 _ORBIT_LABEL_SUFFIX_RE = re.compile(
     r"(?P<sat>Sen|S1|TSX|ALOS2|CSK|RS2|ENV|Nisar|Alos2)(?P<pass>[AD])(?P<orbit>\d+)$",
     re.IGNORECASE,
@@ -198,10 +254,24 @@ def _strip_orbit_label_suffix(name: str) -> str:
     return _ORBIT_LABEL_SUFFIX_RE.sub("", str(name).strip())
 
 
-def _aoi_name_with_data_type(name: str, workflow: str, dolphin_mode: str = DEFAULT_DOLPHIN_MODE) -> str:
-    """Append SAFE/CSLC/DISPS1 and Opera (non-default) to an AOI basename; orbit label is added later."""
+def _strip_dolphin_config_name_suffix(name: str) -> tuple[str, str | None]:
+    """Strip DispS1Process/Pydantic from a stem; return (stem, dolphin_config or None)."""
+    match = _DOLPHIN_CONFIG_NAME_SUFFIX_RE.search(str(name).strip())
+    if not match:
+        return str(name).strip(), None
+    return name[: match.start()], _DOLPHIN_CONFIG_FROM_NAME[match.group(1)]
+
+
+def _aoi_name_with_data_type(
+    name: str,
+    workflow: str,
+    dolphin_mode: str = DEFAULT_DOLPHIN_MODE,
+    dolphin_config: str | None = None,
+) -> str:
+    """Append SAFE/CSLC/DISPS1, optional config token, and Opera to an AOI basename."""
     base = _LEGACY_DOLPHIN_MODE_SUFFIX_RE.sub("", str(name).strip())
     base = _strip_orbit_label_suffix(base)
+    base, _ = _strip_dolphin_config_name_suffix(base)
     if not base:
         base = str(name).strip()
     stripped = _DATA_TYPE_NAME_SUFFIX_RE.sub("", base)
@@ -210,6 +280,10 @@ def _aoi_name_with_data_type(name: str, workflow: str, dolphin_mode: str = DEFAU
     token = _DATA_TYPE_NAME_TOKEN.get(workflow, "")
     out = f"{stripped}{token}" if token else stripped
     mode = canonical_dolphin_mode(dolphin_mode)
+    if mode == "single-run" and workflow in {"cslc", "safe"}:
+        cfg_token = dolphin_config_name_token(dolphin_config)
+        if cfg_token:
+            out = f"{out}{cfg_token}"
     if mode == "opera" and workflow in {"cslc", "safe"}:
         out = f"{out}Opera"
     return out
@@ -248,9 +322,12 @@ def _aoi_project_name(
     flight_dir: str,
     track: int | None = None,
     dolphin_mode: str = DEFAULT_DOLPHIN_MODE,
+    dolphin_config: str | None = None,
 ) -> str:
-    """Full AOI project name: HawaiiPunaSAFESenD87, HawaiiPunaCSLCSenD87, HawaiiPunaDISPS1SenD87."""
-    base = _aoi_name_with_data_type(name, workflow, dolphin_mode=dolphin_mode)
+    """Full AOI project name: HawaiiPunaCSLCSenD87, HawaiiPunaCSLCDispS1ProcessSenD87, …"""
+    base = _aoi_name_with_data_type(
+        name, workflow, dolphin_mode=dolphin_mode, dolphin_config=dolphin_config
+    )
     if _ORBIT_LABEL_SUFFIX_RE.search(base):
         return base
     return f"{base}{_resolve_aoi_orbit_label(aoi, flight_dir, track)}"
@@ -305,11 +382,11 @@ def _resolve_selected_stages(
     )
 
 
-def infer_dataset_from_name(name: str) -> tuple[str | None, str | None]:
-    """Return (workflow, dolphin_mode) encoded in a project or template stem.
+def infer_dataset_from_name(name: str) -> tuple[str | None, str | None, str | None]:
+    """Return (workflow, dolphin_mode, dolphin_config) encoded in a project or template stem.
 
-    ``unittestHawaiiPunaCSLCOperaSenD87`` is cslc + opera. ``HawaiiPunaDISPSenD87``
-    and ``HawaiiPunaDISPS1SenD87`` are disp-s1. Missing tokens return None.
+    ``unittestHawaiiPunaCSLCOperaSenD87`` is cslc + opera. ``HawaiiPunaCSLCDispS1ProcessSenD87``
+    is cslc + disp-s1-process. ``HawaiiPunaDISPS1SenD87`` is disp-s1. Missing tokens return None.
     """
     stem = Path(str(name).strip()).name
     if stem.lower().endswith(".template"):
@@ -320,29 +397,38 @@ def infer_dataset_from_name(name: str) -> tuple[str | None, str | None]:
     if mode_match:
         mode = "opera" if mode_match.group(1).lower() == "opera" else "single-run"
         stem = stem[: mode_match.start()]
+    stem, dolphin_config = _strip_dolphin_config_name_suffix(stem)
     type_match = _DATA_TYPE_NAME_SUFFIX_RE.search(stem)
     if not type_match:
-        return None, None
+        return None, None, None
     token = type_match.group(1).upper()
     workflow = {"SAFE": "safe", "CSLC": "cslc", "DISPS1": "disp", "DISP": "disp"}[token]
     if workflow == "disp":
-        return "disp", None
-    return workflow, mode
+        return "disp", None, None
+    return workflow, mode, dolphin_config
 
 
 def infer_dataset(
     project: str,
     work_dir: Path | None = None,
-) -> tuple[str | None, str | None]:
-    """Infer workflow and dolphin-mode from the project name, then sidecars/run files."""
-    workflow, mode = infer_dataset_from_name(project)
+) -> tuple[str | None, str | None, str | None]:
+    """Infer workflow, dolphin-mode, and dolphin-config from the project name, then sidecars."""
+    workflow, mode, dolphin_config = infer_dataset_from_name(project)
     root = Path(work_dir) if work_dir is not None else None
     if root is None or not root.is_dir():
-        return workflow, mode
+        return workflow, mode, dolphin_config
+    sidecar = read_run_slice_sidecar(root)
     if mode is None and workflow != "disp":
-        sidecar_mode = read_run_slice_sidecar(root).get("dolphin_mode")
+        sidecar_mode = sidecar.get("dolphin_mode")
         if sidecar_mode in {"opera", "single-run"}:
             mode = sidecar_mode
+    if dolphin_config is None and workflow in {"cslc", "safe"}:
+        sc_cfg = sidecar.get("dolphin_config")
+        if sc_cfg:
+            try:
+                dolphin_config = normalize_dolphin_config(sc_cfg)
+            except ValueError:
+                pass
     run_dir = root / RUN_FILES_DIRNAME
     if workflow is None and run_dir.is_dir():
         if (run_dir / "run_01_download_cslc").is_file() or any(run_dir.glob("run_*_download_cslc")):
@@ -356,7 +442,8 @@ def infer_dataset(
             mode = "opera"
     if workflow == "disp":
         mode = None
-    return workflow, mode
+        dolphin_config = None
+    return workflow, mode, dolphin_config
 
 
 def _apply_dataset_inference(
@@ -366,12 +453,13 @@ def _apply_dataset_inference(
     project: str,
     work_dir: Path,
 ) -> str:
-    """Fill missing --data-type / --dolphin-mode from the project name or existing run."""
+    """Fill missing --data-type / --dolphin-mode / --dolphin-config from the project name."""
     explicit_type = bool(args.data_type or args.safe or args.cslc or args.disp)
     explicit_mode = any(
         token == "--dolphin-mode" or token.startswith("--dolphin-mode=") for token in argv
     )
-    inferred_type, inferred_mode = infer_dataset(project, work_dir)
+    explicit_config = _dolphin_config_in_argv(argv)
+    inferred_type, inferred_mode, inferred_config = infer_dataset(project, work_dir)
     public = "disp-s1" if workflow == "disp" else workflow
     inferred_public = "disp-s1" if inferred_type == "disp" else inferred_type
     if explicit_type and inferred_type and inferred_type != workflow:
@@ -391,6 +479,15 @@ def _apply_dataset_inference(
     ):
         args.dolphin_mode = inferred_mode
         notes.append(f"--dolphin-mode {inferred_mode}")
+    if (
+        not explicit_config
+        and inferred_config
+        and workflow in {"cslc", "safe"}
+        and args.dolphin_mode == "single-run"
+        and inferred_config != args.dolphin_config_preset
+    ):
+        args.dolphin_config_preset = inferred_config
+        notes.append(f"--dolphin-config {inferred_config}")
     if notes:
         print(f"Inferred {' '.join(notes)} from {project}")
     if args.dolphin_mode == "opera" and workflow == "disp":
@@ -436,7 +533,9 @@ def _run_file_stage_name(path: Path) -> str | None:
         return None
     rest = match.group(1)
     if re.fullmatch(r".+_\d+$", rest):
-        return re.sub(r"_\d+$", "", rest)
+        rest = re.sub(r"_\d+$", "", rest)
+    if rest == "dolphin_2_hdfeos5":
+        return "dolphin_2_he5"
     return rest
 
 
@@ -822,16 +921,23 @@ def _geometry_stitch_command(
     return f"stitch_sweets_geometry.py --config {config_name} --sy {sy} --sx {sx} --overwrite"
 
 
-def _he5_method_string(preset: str, preset_naming: bool = True) -> str:
+def _he5_method_string(
+    preset: str,
+    preset_naming: bool = True,
+    dolphin_config: str = DEFAULT_DOLPHIN_CONFIG,
+) -> str:
     """HE5 post_processing_method label for dolphin2he5."""
-    if not preset_naming:
-        return "dolphin"
-    return dolphin_method_string(preset)
+    return dolphin_method_string(preset, dolphin_config, preset_naming=preset_naming)
 
 
-def _he5_command(preset: str, preset_naming: bool = True, dolphin_dir: str = DEFAULT_DOLPHIN_DIR) -> str:
+def _he5_command(
+    preset: str,
+    preset_naming: bool = True,
+    dolphin_dir: str = DEFAULT_DOLPHIN_DIR,
+    dolphin_config: str = DEFAULT_DOLPHIN_CONFIG,
+) -> str:
     """dolphin2he5 run-file line with explicit HE5 method label."""
-    method = _he5_method_string(preset, preset_naming)
+    method = _he5_method_string(preset, preset_naming, dolphin_config=dolphin_config)
     watermask = f"{dolphin_dir}/unwrapped/warped_watermask.tif"
     return f"dolphin2he5.py {dolphin_dir} --method-string {method} --watermask {watermask}"
 
@@ -1400,6 +1506,7 @@ def _resolve_project_name(args: argparse.Namespace) -> str:
         args.flight_dir,
         args.track,
         dolphin_mode=args.dolphin_mode,
+        dolphin_config=getattr(args, "dolphin_config_preset", DEFAULT_DOLPHIN_CONFIG),
     )
 
 
@@ -1793,6 +1900,7 @@ def _create_files(
             ),
             dolphin_mode=dolphin_mode,
             reference_method=args.reference_method,
+            dolphin_config=getattr(args, "dolphin_config_preset", DEFAULT_DOLPHIN_CONFIG),
         )
     else:
         bodies = None
@@ -1955,10 +2063,14 @@ def _print_plan(
             _out(f"HE5 name: {OPERA_DISP_METHOD_STRING}")
         elif dolphin_mode == "opera":
             _out(f"HE5 name: {MODE_OPERA_DISP_METHOD_STRING}")
-        elif preset_naming:
-            _out(f"HE5 name: {_he5_method_string(preset)}")
         else:
-            _out("HE5 name: dolphin (--no-preset-naming)")
+            method = _he5_method_string(
+                preset,
+                preset_naming,
+                dolphin_config=dolphin_config or DEFAULT_DOLPHIN_CONFIG,
+            )
+            note = " (--no-preset-naming)" if not preset_naming else ""
+            _out(f"HE5 name: {method}{note}")
     if reference_method and (workflow == "disp" or dolphin_mode == "opera"):
         _out(f"Reference method: {reference_method}")
 
@@ -2104,6 +2216,7 @@ def _sweets_stage_bodies(
     ministack_size: int | None = None,
     dolphin_mode: str = DEFAULT_DOLPHIN_MODE,
     reference_method: str = DEFAULT_REFERENCE_METHOD,
+    dolphin_config: str = DEFAULT_DOLPHIN_CONFIG,
 ) -> dict[str, str]:
     """Resolve concrete SAFE or CSLC run-file bodies at generate time."""
     selected = selected_stages or frozenset(
@@ -2114,7 +2227,12 @@ def _sweets_stage_bodies(
     cfg = SWEETS_CONFIG
     download = _sweets_download_script(kind)
     he5 = _he5_run_body(
-        _he5_command(preset, preset_naming, dolphin_dir=dolphin_dir),
+        _he5_command(
+            preset,
+            preset_naming,
+            dolphin_dir=dolphin_dir,
+            dolphin_config=dolphin_config,
+        ),
         _he5_plot_commands(dolphin_dir),
     )
     ingest = f"ingest_insarmaps.bash {dolphin_dir}/timeseries"
@@ -2743,11 +2861,15 @@ def main(iargs: list[str] | None = None) -> int:
                     args.flight_dir,
                     args.track,
                     dolphin_mode=args.dolphin_mode,
+                    dolphin_config=args.dolphin_config_preset,
                 )
             else:
-                # create_template appends SenA/D##; keep data-type (+ Opera) token here.
+                # create_template appends SenA/D##; keep data-type / config / Opera tokens here.
                 args.name = _aoi_name_with_data_type(
-                    args.name, workflow, dolphin_mode=args.dolphin_mode
+                    args.name,
+                    workflow,
+                    dolphin_mode=args.dolphin_mode,
+                    dolphin_config=args.dolphin_config_preset,
                 )
         if input_is_template:
             context = _template_context(input_path.resolve(), args)
@@ -2769,6 +2891,16 @@ def main(iargs: list[str] | None = None) -> int:
                 print(f"Linked: {dest} -> {dest.resolve()}")
         split_dolphin = _use_dolphin_split(workflow, args.no_dolphin_split)
         selected = _resolve_selected_stages(args, workflow, split_dolphin)
+        he5_config, he5_preset, he5_preset_naming = _resolve_he5_naming(work_dir, args, argv)
+        args.dolphin_config_preset = he5_config
+        args.preset = he5_preset
+        args.preset_naming = he5_preset_naming
+        if not _half_window_preset_in_argv(argv) and half_window_cli is None:
+            args.half_window_yx, args.strides_yx = resolve_half_window_strides(
+                he5_preset,
+                half_window=half_window_cli,
+                strides=strides_cli,
+            )
         layer = "wrapped"
         dolphin_dir = DEFAULT_DOLPHIN_DIR
         yaml_name = "dolphin_config.yaml"
@@ -2865,6 +2997,15 @@ def main(iargs: list[str] | None = None) -> int:
                 yaml_name=yaml_name,
                 dolphin_mode=args.dolphin_mode,
                 data_type=workflow,
+                dolphin_config=(
+                    args.dolphin_config_preset if args.dolphin_mode == "single-run" else None
+                ),
+                half_window_preset=(
+                    args.preset if args.dolphin_mode == "single-run" else None
+                ),
+                preset_naming=(
+                    args.preset_naming if args.dolphin_mode == "single-run" else None
+                ),
             )
         stages = _create_files(
             args,

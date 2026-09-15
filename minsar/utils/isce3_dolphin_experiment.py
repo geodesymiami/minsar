@@ -79,9 +79,17 @@ def write_run_slice_sidecar(
     yaml_name: str,
     dolphin_mode: str = DEFAULT_DOLPHIN_MODE,
     data_type: str | None = None,
+    dolphin_config: str | None = None,
+    half_window_preset: str | None = None,
+    preset_naming: bool | None = None,
 ) -> None:
-    """Record resolved DIR/layer so minsarIsce3App.bash can choose workflow --start."""
+    """Record resolved DIR/layer so minsarIsce3App.bash can choose workflow --start.
+
+    dolphin_config / half_window_preset / preset_naming feed HE5 method-string on
+    later he5-only regenerates. Omit (None) to keep an existing sidecar value.
+    """
     path = Path(work_dir) / RUN_SLICE_SIDECAR
+    existing = read_run_slice_sidecar(work_dir)
     mode = canonical_dolphin_mode(dolphin_mode)
     lines = [
         f"dolphin_dir={dolphin_dir}",
@@ -92,6 +100,22 @@ def write_run_slice_sidecar(
     ]
     if data_type:
         lines.append(f"data_type={data_type}")
+    elif existing.get("data_type"):
+        lines.append(f"data_type={existing['data_type']}")
+
+    cfg = dolphin_config if dolphin_config is not None else existing.get("dolphin_config")
+    if cfg:
+        lines.append(f"dolphin_config={cfg}")
+
+    hw = half_window_preset if half_window_preset is not None else existing.get("half_window_preset")
+    if hw:
+        lines.append(f"half_window_preset={hw}")
+
+    if preset_naming is not None:
+        lines.append(f"preset_naming={'true' if preset_naming else 'false'}")
+    elif "preset_naming" in existing:
+        lines.append(f"preset_naming={existing['preset_naming']}")
+
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 

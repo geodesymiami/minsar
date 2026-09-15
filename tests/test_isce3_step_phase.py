@@ -29,17 +29,27 @@ class TestInferDatasetFromName(unittest.TestCase):
     def test_cslc_opera_template_stem(self) -> None:
         self.assertEqual(
             infer_dataset_from_name("unittestHawaiiPunaCSLCOperaSenD87"),
-            ("cslc", "opera"),
+            ("cslc", "opera", None),
         )
 
     def test_safe_single_run_and_disp_aliases(self) -> None:
-        self.assertEqual(infer_dataset_from_name("HawaiiPunaSAFESenD87"), ("safe", None))
-        self.assertEqual(infer_dataset_from_name("HawaiiPunaCSLCSenD87.template"), ("cslc", None))
-        self.assertEqual(infer_dataset_from_name("HawaiiPunaDISPS1SenD87"), ("disp", None))
-        self.assertEqual(infer_dataset_from_name("HawaiiPunaDISPSenD87"), ("disp", None))
+        self.assertEqual(infer_dataset_from_name("HawaiiPunaSAFESenD87"), ("safe", None, None))
+        self.assertEqual(infer_dataset_from_name("HawaiiPunaCSLCSenD87.template"), ("cslc", None, None))
+        self.assertEqual(infer_dataset_from_name("HawaiiPunaDISPS1SenD87"), ("disp", None, None))
+        self.assertEqual(infer_dataset_from_name("HawaiiPunaDISPSenD87"), ("disp", None, None))
+
+    def test_cslc_dolphin_config_token(self) -> None:
+        self.assertEqual(
+            infer_dataset_from_name("PopoQTestCSLCDispS1ProcessSenD143"),
+            ("cslc", None, "disp-s1-process"),
+        )
+        self.assertEqual(
+            infer_dataset_from_name("PopoQTestCSLCPydanticSenD143"),
+            ("cslc", None, "pydantic"),
+        )
 
     def test_bare_name_has_no_tokens(self) -> None:
-        self.assertEqual(infer_dataset_from_name("HawaiiPunaSenD87"), (None, None))
+        self.assertEqual(infer_dataset_from_name("HawaiiPunaSenD87"), (None, None, None))
 
 
 class TestStageSelection(unittest.TestCase):
