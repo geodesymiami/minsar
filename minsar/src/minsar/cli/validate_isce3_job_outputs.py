@@ -101,7 +101,43 @@ def _validated_step_names(steps: list[dict[str, object]], workflows: dict[str, o
     return (discovered - _NON_VALIDATED_STEPS) & all_rules
 
 
-def _workflow_rules(config: dict[str, object], steps: list[dict[str, object]], data_type: str | None) -> tuple[str, dict[str, list[str]]]:
+def _infer_data_type_from_project(work_dir: Path) -> str | None:
+    """Resolve safe/cslc/disp from the project directory name."""
+    from minsar.src.minsar.cli.create_isce3_runfiles import infer_dataset_from_name
+
+    workflow, _mode = infer_dataset_from_name(work_dir.name)
+    return workflow
+
+
+def _pick_workflow(
+    work_dir: Path,
+    candidates: list[str],
+    explicit: str | None,
+) -> str:
+    """Choose one workflow when job files alone are ambiguous (e.g. --start dolphin)."""
+    if not candidates:
+        raise ValueError("could not infer one workflow from the generated job files; use --data-type")
+    if explicit:
+        if explicit not in candidates and candidates:
+            raise ValueError(f"--data-type {explicit} does not match generated job files")
+        return explicit
+    sidecar_type = read_run_slice_sidecar(work_dir).get("data_type")
+    if sidecar_type in candidates:
+        return sidecar_type
+    inferred = _infer_data_type_from_project(work_dir)
+    if inferred in candidates:
+        return inferred
+    if len(candidates) == 1:
+        return candidates[0]
+    raise ValueError("could not infer one workflow from the generated job files; use --data-type")
+
+
+def _workflow_rules(
+    config: dict[str, object],
+    steps: list[dict[str, object]],
+    data_type: str | None,
+    work_dir: Path,
+) -> tuple[str, dict[str, list[str]]]:
     workflows = config.get("workflows")
     if not isinstance(workflows, dict):
         raise ValueError("validation defaults are missing workflows")
@@ -116,9 +152,7 @@ def _workflow_rules(config: dict[str, object], steps: list[dict[str, object]], d
             for name, rules in workflows.items()
             if isinstance(rules, dict) and step_names.issubset(set(rules))
         ]
-    if len(candidates) != 1:
-        raise ValueError("could not infer one workflow from the generated job files; use --data-type")
-    workflow = candidates[0]
+    workflow = _pick_workflow(work_dir, candidates, data_type)
     rules = workflows.get(workflow)
     if not isinstance(rules, dict):
         raise ValueError(f"validation defaults contain no {workflow} workflow")
@@ -190,7 +224,7 @@ def main(iargs: list[str] | None = None) -> int:
         workflows = config["workflows"]
         if not isinstance(workflows, dict):
             raise ValueError("validation defaults are missing workflows")
-        workflow, rules = _workflow_rules(config, steps, args.data_type)
+        workflow, rules = _workflow_rules(config, steps, args.data_type, work_dir)
         dolphin_dir = read_dolphin_dir_sidecar(work_dir)
         dolphin_mode = _read_dolphin_mode(work_dir)
         rules = _effective_rules(workflow, rules, workflows, dolphin_mode)

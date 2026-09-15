@@ -78,14 +78,21 @@ def write_run_slice_sidecar(
     phase: str,
     yaml_name: str,
     dolphin_mode: str = DEFAULT_DOLPHIN_MODE,
+    data_type: str | None = None,
 ) -> None:
     """Record resolved DIR/layer so minsarIsce3App.bash can choose workflow --start."""
     path = Path(work_dir) / RUN_SLICE_SIDECAR
     mode = canonical_dolphin_mode(dolphin_mode)
-    path.write_text(
-        f"dolphin_dir={dolphin_dir}\nlayer={layer}\nphase={phase}\nyaml={yaml_name}\ndolphin_mode={mode}\n",
-        encoding="utf-8",
-    )
+    lines = [
+        f"dolphin_dir={dolphin_dir}",
+        f"layer={layer}",
+        f"phase={phase}",
+        f"yaml={yaml_name}",
+        f"dolphin_mode={mode}",
+    ]
+    if data_type:
+        lines.append(f"data_type={data_type}")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def read_run_slice_sidecar(work_dir: Path) -> dict[str, str]:

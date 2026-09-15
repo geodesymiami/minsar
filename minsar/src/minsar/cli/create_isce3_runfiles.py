@@ -18,12 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from minsar.utils.bbox_cli_argv import fix_argv_for_negative_bbox_sn_we
-from minsar.utils.dolphin_config_import import (
-    is_dolphin_config_path,
-    load_algo_mapping,
-    merge_imported_into_dolphin_yaml,
-    write_stripped_algo_yaml,
-)
+from minsar.utils.isce3_project_data import link_project_dir
 from minsar.utils.dolphin_presets import (
     DEFAULT_DOLPHIN_CONFIG,
     DEFAULT_HALF_WINDOW,
@@ -114,7 +109,6 @@ DISP_S1_PRODUCE_DIR = "disp_s1_produce"
 DISP_S1_PROCESS_CMD = "disp_s1_process.py"
 DEFAULT_DISP_S1_MINISTACK_SIZE = 15
 # half_window is (y, x); strides is (y, x). See minsar.utils.dolphin_presets.
-IMPORTED_ALGO_YAML = ".minsar_imported_algo.yaml"
 
 ARGV_FIX_KW = {
     "consume_one": (
@@ -190,7 +184,8 @@ def _normalize_reference_method(value: str) -> str:
 
 _DATA_TYPE_NAME_TOKEN = {"safe": "SAFE", "cslc": "CSLC", "disp": "DISPS1"}
 # Longer tokens first so DISPS1 is not partially stripped as DISP.
-_DATA_TYPE_NAME_SUFFIX_RE = re.compile(r"(DISPS1|CSLC|SAFE|DISP)$", re.IGNORECASE)
+# Uppercase only: PopoTestDisps1 is a basename, not a DISPS1 data-type suffix.
+_DATA_TYPE_NAME_SUFFIX_RE = re.compile(r"(DISPS1|CSLC|SAFE|DISP)$")
 _LEGACY_DOLPHIN_MODE_SUFFIX_RE = re.compile(r"(Opera|Standard)$", re.IGNORECASE)
 _ORBIT_LABEL_SUFFIX_RE = re.compile(
     r"(?P<sat>Sen|S1|TSX|ALOS2|CSK|RS2|ENV|Nisar|Alos2)(?P<pass>[AD])(?P<orbit>\d+)$",
@@ -827,43 +822,6 @@ def _geometry_stitch_command(
     return f"stitch_sweets_geometry.py --config {config_name} --sy {sy} --sx {sx} --overwrite"
 
 
-def _merge_algo_cli(
-    yaml_name: str,
-    imported_path: str,
-    half_window: tuple[int, int] | None,
-    strides: tuple[int, int] | None,
-    ministack_size: int | None = None,
-) -> str:
-    """Shell command to merge imported algorithm fields into generated YAML."""
-    parts = [
-        f"merge_dolphin_algo_config.py --target {shlex.quote(yaml_name)} "
-        f"--from {shlex.quote(imported_path)}"
-    ]
-    if half_window is not None:
-        parts.append(f"--hwy {half_window[0]} --hwx {half_window[1]}")
-    if strides is not None:
-        parts.append(f"--sy {strides[0]} --sx {strides[1]}")
-    if ministack_size is not None:
-        parts.append(f"--ministack-size {int(ministack_size)}")
-    return " ".join(parts)
-
-
-def _normalize_dolphin_config_positionals(args: argparse.Namespace) -> None:
-    """Move a .yaml/.yml/.nc from name into dolphin_config when needed."""
-    config = getattr(args, "dolphin_config", None)
-    name = getattr(args, "name", None)
-    if config is None and name is not None and is_dolphin_config_path(name):
-        args.dolphin_config = name
-        args.name = None
-    if getattr(args, "dolphin_config", None) is not None:
-        path = Path(str(args.dolphin_config)).expanduser()
-        if not is_dolphin_config_path(path):
-            raise ValueError(
-                f"dolphin config must be .yaml, .yml, or .nc; got {args.dolphin_config!r}"
-            )
-        args.dolphin_config = str(path)
-
-
 def _hdfeos5_method_string(preset: str, preset_naming: bool = True) -> str:
     """HE5 post_processing_method label for dolphin2hdfeos5."""
     if not preset_naming:
@@ -1005,9 +963,8 @@ def _dolphin_body_commands(
     embed_config: bool,
     prefix: list[str] | None = None,
     wrapped_only: bool = False,
-    merge_algo_cmd: str | None = None,
 ) -> list[str]:
-    """cleanup, optional dolphin config (+ algo merge), then dolphin run (or wrapped-only)."""
+    """cleanup, optional dolphin config, then dolphin run (or wrapped-only)."""
     commands = list(prefix or [])
     commands.append(f"cleanup_dolphin_ministacks.py {dolphin_dir}")
     if embed_config:
@@ -1025,8 +982,6 @@ def _dolphin_body_commands(
                 dolphin_dir=dolphin_dir,
             )
         )
-        if merge_algo_cmd:
-            commands.append(merge_algo_cmd)
     if wrapped_only:
         commands.append(f"run_dolphin_wrapped.py --config {yaml_name}")
     else:
@@ -1046,7 +1001,6 @@ def _cslc_dolphin_commands(
     yaml_name: str = "dolphin_config.yaml",
     embed_config: bool = True,
     wrapped_only: bool = False,
-    merge_algo_cmd: str | None = None,
 ) -> list[str]:
     """Shell commands for CSLC dolphin config + run (worker flags set at generate time)."""
     return _dolphin_body_commands(
@@ -1061,7 +1015,6 @@ def _cslc_dolphin_commands(
         yaml_name=yaml_name,
         embed_config=embed_config,
         wrapped_only=wrapped_only,
-        merge_algo_cmd=merge_algo_cmd,
     )
 
 
@@ -1076,7 +1029,6 @@ def _cslc_dolphin_wrapped_commands(
     dolphin_dir: str = DEFAULT_DOLPHIN_DIR,
     yaml_name: str = "dolphin_config.yaml",
     embed_config: bool = True,
-    merge_algo_cmd: str | None = None,
 ) -> list[str]:
     """CSLC dolphin_wrapped: per-burst phase linking only; writes DIR YAML."""
     stop = _dolphin_stop_after_stitch_flags()
@@ -1093,7 +1045,6 @@ def _cslc_dolphin_wrapped_commands(
         yaml_name=yaml_name,
         embed_config=embed_config,
         wrapped_only=True,
-        merge_algo_cmd=merge_algo_cmd,
     )
 
 
@@ -1206,8 +1157,6 @@ def create_parser() -> argparse.ArgumentParser:
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window 8 16 --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --half-window-preset standard --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --reference-method BORDER --start-date 20220101 --end-date 20241212
- create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna dolphin_config.yaml --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212
- create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna OPERA_L3_DISP-S1.nc --flight-dir desc --data-type cslc --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type disp-s1 --start-date 20220101 --end-date 20241212
  create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --start-date 20170101 --end-date 20211231
  create_isce3_runfiles.py 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type safe --start-date 20170101 --end-date 20211231
@@ -1238,14 +1187,6 @@ def create_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("input", help="MinSAR template, or AOI when followed by NAME")
     parser.add_argument("name", nargs="?", help="AOI project basename; full name adds SAFE|CSLC|DISPS1, Opera if --dolphin-mode opera, and SenA/D##")
-    parser.add_argument(
-        "dolphin_config",
-        nargs="?",
-        help=(
-            "optional dolphin_config.yaml/.yml, or OPERA DISP-S1 .nc "
-            "(uses metadata/dolphin_workflow_config when present)"
-        ),
-    )
     parser.add_argument("--safe", action="store_true", help="SAFE workflow (same as --data-type safe)")
     parser.add_argument("--cslc", action="store_true", help="CSLC workflow (same as --data-type cslc)")
     parser.add_argument(
@@ -1325,6 +1266,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--dolphin-config",
         type=normalize_dolphin_config,
         default=DEFAULT_DOLPHIN_CONFIG,
+        dest="dolphin_config_preset",
         metavar="PRESET",
         choices=DOLPHIN_CONFIG_CHOICES,
         help=f"{DOLPHIN_CONFIG_HELP} (Default: {DEFAULT_DOLPHIN_CONFIG}; single-run only)",
@@ -1388,6 +1330,12 @@ def create_parser() -> argparse.ArgumentParser:
         default=DEFAULT_REFERENCE_METHOD,
         metavar="METHOD",
         help="opera-utils disp-s1-reformat reference: NONE, POINT, MEDIAN, BORDER, HIGH_COHERENCE (default: HIGH_COHERENCE)",
+    )
+    parser.add_argument(
+        "--link-project-dir",
+        metavar="DIR",
+        default=None,
+        help="testing: symlink data/, geometry/, watermask.tif, and dolphin/geometry/ from an existing project (e.g. ../PopoCSLCSenD143)",
     )
     parser.add_argument("--run", action="store_true", help="after creating files, run run_isce3_workflow.bash run_files_isce3 --start 1 --end N")
     parser.add_argument("--print-project", action="store_true", help=argparse.SUPPRESS)
@@ -1820,7 +1768,6 @@ def _create_files(
             embed_config=embed_config,
             half_window=getattr(args, "half_window_yx", None),
             strides=getattr(args, "strides_yx", None),
-            imported_algo=getattr(args, "imported_algo", None),
             ministack_size=(
                 int(args.ministack_size) if getattr(args, "ministack_size", None) else None
             ),
@@ -2084,7 +2031,6 @@ def _cslc_dolphin_script(
     dolphin_dir: str = DEFAULT_DOLPHIN_DIR,
     yaml_name: str = "dolphin_config.yaml",
     embed_config: bool = True,
-    merge_algo_cmd: str | None = None,
 ) -> str:
     """Commands for CSLC dolphin config + run."""
     return (
@@ -2100,7 +2046,6 @@ def _cslc_dolphin_script(
                 dolphin_dir=dolphin_dir,
                 yaml_name=yaml_name,
                 embed_config=embed_config,
-                merge_algo_cmd=merge_algo_cmd,
             )
         )
         + "\n"
@@ -2136,7 +2081,6 @@ def _sweets_stage_bodies(
     embed_config: bool = True,
     half_window: tuple[int, int] | None = None,
     strides: tuple[int, int] | None = None,
-    imported_algo: dict | None = None,
     ministack_size: int | None = None,
     dolphin_mode: str = DEFAULT_DOLPHIN_MODE,
     reference_method: str = DEFAULT_REFERENCE_METHOD,
@@ -2206,18 +2150,6 @@ def _sweets_stage_bodies(
         return bodies
     disp_s1_process = ""
     reformat_disp = ""
-    merge_algo_cmd = None
-    imported_path: Path | None = None
-    if imported_algo is not None:
-        imported_path = work_dir / IMPORTED_ALGO_YAML
-        write_stripped_algo_yaml(imported_algo, imported_path)
-        merge_algo_cmd = _merge_algo_cli(
-            yaml_name,
-            IMPORTED_ALGO_YAML,
-            half_window,
-            strides,
-            ministack_size=ministack_size,
-        )
     if isce3_steps.download_only_selection(selected, workflow):
         if workflow == "safe":
             bodies = {
@@ -2249,14 +2181,6 @@ def _sweets_stage_bodies(
             dolphin_dir=dolphin_dir,
         )
         _run_in_sweets(work_dir, ["bash", "-c", yaml_cmd])
-        if imported_algo is not None and imported_path is not None:
-            merge_imported_into_dolphin_yaml(
-                work_dir / yaml_name,
-                imported_algo,
-                half_window=half_window,
-                strides=strides,
-                ministack_size=ministack_size,
-            )
     unwrap_cmds = "\n".join(_cslc_dolphin_unwrap_commands(yaml_name, dolphin_dir)) + "\n"
     ts_cmds = "\n".join(_cslc_dolphin_timeseries_commands(yaml_name)) + "\n"
     if workflow == "safe":
@@ -2284,7 +2208,6 @@ def _sweets_stage_bodies(
                 embed_config=embed_config,
                 prefix=[geom],
                 wrapped_only=True,
-                merge_algo_cmd=merge_algo_cmd,
             )
             bodies["dolphin_wrapped"] = "\n".join(wrapped) + "\n"
             bodies["dolphin_unwrap"] = unwrap_cmds
@@ -2303,7 +2226,6 @@ def _sweets_stage_bodies(
                     yaml_name=yaml_name,
                     embed_config=embed_config,
                     prefix=[geom],
-                    merge_algo_cmd=merge_algo_cmd,
                 )
             )
         return bodies
@@ -2322,7 +2244,6 @@ def _sweets_stage_bodies(
                     dolphin_dir=dolphin_dir,
                     yaml_name=yaml_name,
                     embed_config=embed_config,
-                    merge_algo_cmd=merge_algo_cmd,
                 )
             )
             + "\n",
@@ -2344,7 +2265,6 @@ def _sweets_stage_bodies(
             dolphin_dir=dolphin_dir,
             yaml_name=yaml_name,
             embed_config=embed_config,
-            merge_algo_cmd=merge_algo_cmd,
         ),
         "dolphin_2_hdfeos5": hdfeos5,
         "ingest_insarmaps": ingest,
@@ -2729,7 +2649,6 @@ def main(iargs: list[str] | None = None) -> int:
     args, extras = create_parser().parse_known_args(argv)
     try:
         if args.print_project:
-            _normalize_dolphin_config_positionals(args)
             parse_passthrough_pairs(extras)
             print(_resolve_project_name(args))
             return 0
@@ -2739,7 +2658,6 @@ def main(iargs: list[str] | None = None) -> int:
             raise ValueError("use --half-window-preset, not --window-preset")
         if any(token == "--copy-dolphin-inputs" or token.startswith("--copy-dolphin-inputs=") for token in (*argv, *extras)):
             raise ValueError("removed --copy-dolphin-inputs; inputs are always symlinked")
-        _normalize_dolphin_config_positionals(args)
         if args.dostep and (args.step_start or args.step_end):
             raise ValueError("--dostep cannot be combined with --start or --end")
         half_window_cli = None
@@ -2748,24 +2666,11 @@ def main(iargs: list[str] | None = None) -> int:
         strides_cli = None
         if args.stride is not None:
             strides_cli = _parse_yx_pair(args.stride, "--stride")
-        imported_algo = None
-        if args.dolphin_config:
-            config_path = Path(args.dolphin_config).expanduser().resolve()
-            if not config_path.is_file():
-                raise ValueError(f"dolphin config not found: {config_path}")
-            if config_path.suffix.lower() == ".nc":
-                from minsar.utils.extract_dolphin_config_yaml import extract_config_yaml
-
-                src_name, _ = extract_config_yaml(config_path)
-                print(f"Using OPERA DISP config from NetCDF dataset: {src_name}")
-            imported_algo = load_algo_mapping(config_path)
         args.half_window_yx, args.strides_yx = resolve_half_window_strides(
             args.preset,
             half_window=half_window_cli,
             strides=strides_cli,
-            imported=imported_algo,
         )
-        args.imported_algo = imported_algo
         parse_passthrough_pairs(extras)
         passthrough = list(extras)
         if getattr(args, "unwrap_method", None):
@@ -2779,7 +2684,7 @@ def main(iargs: list[str] | None = None) -> int:
             if workflow == "disp":
                 raise ValueError("--dolphin-config applies only to SAFE/CSLC single-run Dolphin")
         if workflow in {"safe", "cslc"} and args.dolphin_mode != "opera":
-            passthrough = single_run_science_passthrough(args.dolphin_config, passthrough)
+            passthrough = single_run_science_passthrough(args.dolphin_config_preset, passthrough)
         extra_flags = passthrough_cli_flags(passthrough)
         if not args.queue:
             raise ValueError("No queue: set QUEUENAME or pass --queue")
@@ -2828,6 +2733,11 @@ def main(iargs: list[str] | None = None) -> int:
         workflow = _apply_dataset_inference(
             args, workflow, argv, str(context["project"]), work_dir
         )
+        if args.link_project_dir and not args.dry_run:
+            work_dir.mkdir(parents=True, exist_ok=True)
+            dolphin_link_dir = args.dolphin_dir or DEFAULT_DOLPHIN_DIR
+            for dest in link_project_dir(work_dir, args.link_project_dir, dolphin_dir=dolphin_link_dir):
+                print(f"Linked: {dest} -> {dest.resolve()}")
         split_dolphin = _use_dolphin_split(workflow, args.no_dolphin_split)
         selected = _resolve_selected_stages(args, workflow, split_dolphin)
         layer = "wrapped"
@@ -2887,7 +2797,7 @@ def main(iargs: list[str] | None = None) -> int:
             strides=args.strides_yx,
             reference_method=args.reference_method,
             unwrap_method=getattr(args, "unwrap_method", None),
-            dolphin_config=args.dolphin_config if args.dolphin_mode != "opera" else None,
+            dolphin_config=args.dolphin_config_preset if args.dolphin_mode != "opera" else None,
         )
         if args.dry_run:
             return 0
@@ -2925,6 +2835,7 @@ def main(iargs: list[str] | None = None) -> int:
                 phase=args.phase,
                 yaml_name=yaml_name,
                 dolphin_mode=args.dolphin_mode,
+                data_type=workflow,
             )
         stages = _create_files(
             args,

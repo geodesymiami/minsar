@@ -25,7 +25,6 @@ Template or project names that contain SAFE, CSLC, or DISPS1/DISP (and Opera) se
 Aliases: download, dolphin, hdfeos5, ingest, dolphin2hdfeos5. Hyphens and run_NN_ prefixes are accepted (dolphin-2-hdfeos5, run_04_dolphin_2_hdfeos5).
 upload is the last workflow step (run file only, no SLURM job). A full run ends at upload.
 --dostep stops at that step; use --dostep upload or --end upload to upload existing products.
-Supports dolphin config from config.yaml or OPERA_DISP-S1.nc (uses metadata/dolphin_workflow_config).
 Additional --section.option flags go to dolphin config.
 
 options:
@@ -47,6 +46,7 @@ options:
   --dolphin-mode MODE   {single-run,opera} (one Dolphin stack or local DISP-S1; not for disp-s1) (Default: single-run)
   --dolphin-config PRESET
                         single-run science preset: disp-s1, disp-s1-process, pydantic (Default: disp-s1)
+  --link-project-dir DIR  testing: symlink data/, geometry/, watermask.tif, dolphin/geometry/ from an existing project (e.g. ../PopoCSLCSenD143)
   --reference-method METHOD
                         disp-s1-reformat reference: NONE, POINT, MEDIAN, BORDER, HIGH_COHERENCE (Default: HIGH_COHERENCE)
   --backend BACKEND     auto, local, or slurm (Default: auto)
@@ -64,8 +64,6 @@ Examples:
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --stride 2 4 --half-window 6 12  --start-date 20220101 --end-date 20241212
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --half-window-preset dry --start-date 20220101 --end-date 20241212
   ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna --flight-dir desc --data-type cslc --dolphin-mode opera --reference-method BORDER --start-date 20220101 --end-date 20241212
-  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna dolphin_config.yaml --flight-dir desc --start-date 20220101 --end-date 20241212
-  ${SCRIPT_NAME} 19.45:19.51,-154.915:-154.835 HawaiiPuna OPERA_L3_DISP-S1.nc --flight-dir desc --start-date 20220101 --end-date 20241212
   ${SCRIPT_NAME} 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --start-date 20170101 --end-date 20211231
   ${SCRIPT_NAME} 18.985:19.054,-98.686:-98.58 Popo --flight-dir desc --data-type cslc --start-date 20170101 --end-date 20211231
 EOF
@@ -78,7 +76,7 @@ die() {
 
 is_consume_one() {
     case "$1" in
-        --data-type|--platform|--flight-dir|--start-date|--end-date|--track|--relativeOrbit|--frame-id|--queue|--long-queue|--config|--half-window-preset|--burst-count-method|--dolphin-dir|--from-dolphin-dir|--unwrap-method|--ministack-size|--dolphin-mode|--dolphin-config|--reference-method|--backend)
+        --data-type|--platform|--flight-dir|--start-date|--end-date|--track|--relativeOrbit|--frame-id|--queue|--long-queue|--config|--half-window-preset|--burst-count-method|--dolphin-dir|--from-dolphin-dir|--link-project-dir|--unwrap-method|--ministack-size|--dolphin-mode|--dolphin-config|--reference-method|--backend)
             return 0
             ;;
     esac
@@ -449,7 +447,7 @@ predict_project_name() {
     local predicted="" base_name match matches=()
     if [[ -f "${positionals[0]}" ]]; then
         predicted="$(basename "${positionals[0]}" .template)"
-    elif [[ ${#positionals[@]} -ge 2 ]] && ! is_dolphin_config_positional "${positionals[1]}"; then
+    elif [[ ${#positionals[@]} -ge 2 ]]; then
         predicted="$(PYTHONPATH="$MINSAR_HOME" python3 "$GENERATOR" --print-project "${positionals[@]}" "${gen_args[@]}" 2>/dev/null || true)"
         predicted="${predicted//$'\n'/}"
         predicted="${predicted#"${predicted%%[![:space:]]*}"}"
@@ -474,6 +472,17 @@ enter_work_dir() {
     refresh_work_dir
     mkdir -p "$work_dir"
     cd "$work_dir"
+}
+
+link_project_dir() {
+    [[ -n "${link_project_dir:-}" ]] || return 0
+    PYTHONPATH="$MINSAR_HOME" python3 - <<PY
+from pathlib import Path
+from minsar.utils.isce3_project_data import link_project_dir as link_project
+
+for dest in link_project(Path(${work_dir@Q}), ${link_project_dir@Q}, dolphin_dir=${cli_dolphin_dir@Q}):
+    print(f"Linked: {dest} -> {dest.resolve()}")
+PY
 }
 
 log_app_command() {
@@ -563,6 +572,8 @@ explicit_dolphin_dir=false
 explicit_data_type=false
 explicit_dolphin_mode=false
 sleep_time=""
+link_project_dir=""
+cli_dolphin_dir="dolphin"
 positionals=()
 gen_args=()
 gen_step_args=()
@@ -609,6 +620,7 @@ while [[ $# -gt 0 ]]; do
             [[ -n "${2:-}" && "$2" != --* ]] || die "$1 requires a value"
             explicit_dolphin_dir=true
             has_science=true
+            cli_dolphin_dir="$2"
             gen_args+=("$1" "$2")
             shift 2
             ;;
@@ -669,6 +681,9 @@ while [[ $# -gt 0 ]]; do
                     --dolphin-mode)
                         explicit_dolphin_mode=true
                         ;;
+                    --link-project-dir)
+                        link_project_dir="$2"
+                        ;;
                 esac
                 if [[ -n "${2:-}" && "$2" != --* ]]; then
                     gen_args+=("$1" "$2")
@@ -696,25 +711,10 @@ fi
 [[ -n "$app_start" ]] && app_start="$(normalize_step "$app_start")"
 [[ -n "$app_end" ]] && app_end="$(normalize_step "$app_end")"
 
-is_dolphin_config_positional() {
-    case "$1" in
-        *.yaml|*.yml|*.nc|*.YAML|*.YML|*.NC)
-            return 0
-            ;;
-    esac
-    return 1
-}
-
 if [[ "${#positionals[@]}" -eq 1 ]]; then
     template="${positionals[0]}"
     if [[ ! -f "$template" && "$template" != *.template ]]; then
         die "AOI input requires a project NAME (and --flight-dir)"
-    fi
-    project="$(basename "$template" .template)"
-elif [[ "${#positionals[@]}" -eq 2 ]] && is_dolphin_config_positional "${positionals[1]}"; then
-    template="${positionals[0]}"
-    if [[ ! -f "$template" && "$template" != *.template ]]; then
-        die "AOI input requires a project NAME before dolphin config"
     fi
     project="$(basename "$template" .template)"
 else
@@ -760,6 +760,7 @@ if resolved="$(project_from_generator_log "$gen_out")"; then
 fi
 if [[ "$work_dir" != "${SCRATCHDIR}/${project}" ]]; then
     enter_work_dir
+    link_project_dir
     log_app_command --file-only "$work_dir"
 fi
 if [[ "$dry_run" == true ]]; then
