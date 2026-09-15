@@ -531,6 +531,7 @@ log_app_command() {
         seen+=("$real")
         echo "$banner" >> "${real}/log"
         echo "$line" >> "${real}/log"
+        printf '%s\n' "$line" > "${real}/minsar_log"
     done
 }
 

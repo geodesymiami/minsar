@@ -836,6 +836,26 @@ def _hdfeos5_command(preset: str, preset_naming: bool = True, dolphin_dir: str =
     return f"dolphin2hdfeos5.py {dolphin_dir} --method-string {method} --watermask {watermask}"
 
 
+def _hdfeos5_plot_commands(dolphin_dir: str = DEFAULT_DOLPHIN_DIR) -> list[str]:
+    """Plot HE5 summary PNGs and build pic/index.html after dolphin_2_hdfeos5."""
+    he5 = f"{dolphin_dir}/timeseries/S1*.he5"
+    return [
+        f"plot_hdfeos5_pngs.py {he5} -t *.template",
+        f"create_html.py {dolphin_dir}/pic",
+    ]
+
+
+def _opera_hdfeos5_plot_commands() -> list[str]:
+    return [
+        "plot_hdfeos5_pngs.py ./*.he5 -t *.template",
+        "create_html.py pic",
+    ]
+
+
+def _hdfeos5_run_body(hdfeos5_cmd: str, plot_commands: list[str]) -> str:
+    return hdfeos5_cmd + "\n" + "\n".join(plot_commands)
+
+
 def _opera_hdfeos5_command(context: dict[str, object]) -> str:
     """dolphin2hdfeos5 from a locally produced DISP-S1 stack NetCDF."""
     project = str(context["project"])
@@ -858,9 +878,9 @@ def _upload_command(
 ) -> str:
     """Run-file body: upload .he5 and insarmaps.log via upload_data_products.py."""
     if workflow == "disp" or dolphin_mode == "opera":
-        return "upload_data_products.py ./*.he5 insarmaps.log"
+        return "upload_data_products.py pic ./*.he5 insarmaps.log"
     timeseries = f"{dolphin_dir}/timeseries"
-    return f"upload_data_products.py {timeseries}/S1*.he5 {timeseries}/insarmaps.log insarmaps.log"
+    return f"upload_data_products.py {dolphin_dir} {timeseries}/S1*.he5 insarmaps.log"
 
 
 def _cslc_slc_files_arg(context: dict[str, object]) -> str:
@@ -2093,14 +2113,19 @@ def _sweets_stage_bodies(
     kind = "safe" if workflow == "safe" else "cslc"
     cfg = SWEETS_CONFIG
     download = _sweets_download_script(kind)
-    hdfeos5 = _hdfeos5_command(preset, preset_naming, dolphin_dir=dolphin_dir)
+    hdfeos5 = _hdfeos5_run_body(
+        _hdfeos5_command(preset, preset_naming, dolphin_dir=dolphin_dir),
+        _hdfeos5_plot_commands(dolphin_dir),
+    )
     ingest = f"ingest_insarmaps.bash {dolphin_dir}/timeseries"
     geom = _geometry_stitch_command(strides, cfg)
     if isce3_steps.post_only_selection(selected, workflow, dolphin_mode):
         if dolphin_mode == "opera" and workflow in {"cslc", "safe"}:
             bodies = {
                 "reformat_disp": _reformat_disp_command(context, reference_method=reference_method) + "\n",
-                "dolphin_2_hdfeos5": _opera_hdfeos5_command(context),
+                "dolphin_2_hdfeos5": _hdfeos5_run_body(
+                    _opera_hdfeos5_command(context), _opera_hdfeos5_plot_commands()
+                ),
                 "ingest_insarmaps": _opera_ingest_command(),
             }
         else:
@@ -2142,7 +2167,9 @@ def _sweets_stage_bodies(
             download_key: download_body,
             "disp_s1_process": disp_s1_process,
             "reformat_disp": reformat_disp,
-            "dolphin_2_hdfeos5": _opera_hdfeos5_command(context),
+            "dolphin_2_hdfeos5": _hdfeos5_run_body(
+                _opera_hdfeos5_command(context), _opera_hdfeos5_plot_commands()
+            ),
             "ingest_insarmaps": _opera_ingest_command(),
         }
         if workflow == "safe":

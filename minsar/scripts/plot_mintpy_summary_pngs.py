@@ -253,8 +253,11 @@ def _run_view_jobs(
     run_parallel = False
     num_cores = 1
     if cluster:
-        from mintpy.utils import cluster as mintpy_cluster
-        num_workers_fmt = mintpy_cluster.DaskCluster.format_num_worker(cluster, num_workers)
+        try:
+            from mintpy.objects import cluster as mintpy_cluster
+        except ImportError:
+            from mintpy.utils import cluster as mintpy_cluster  # older MintPy
+        num_workers_fmt = mintpy_cluster.DaskCluster.format_num_worker(cluster, str(num_workers))
         num_cores, run_parallel, Parallel, delayed = ut.check_parallel(
             len(iargs_list),
             print_msg=False,

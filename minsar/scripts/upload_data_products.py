@@ -83,6 +83,43 @@ def _is_insarmaps_log(path):
     return os.path.basename(str(path).rstrip("/")) == "insarmaps.log"
 
 
+def _is_pic_dir(path):
+    """True when path is a pic output directory."""
+    return os.path.basename(str(path).rstrip("/")) == "pic"
+
+
+def _is_dolphin_dir(path):
+    """True for ISCE3 dolphin work tree root (dolphin or dolphin_*)."""
+    base = os.path.basename(str(path).rstrip("/"))
+    return base == "dolphin" or base.startswith("dolphin_")
+
+
+def _copy_minsar_log_to_pic(pic_dir, work_dir):
+    """Copy project minsar_log (last minsarIsce3App command) into pic/ for Jetstream."""
+    src = os.path.join(work_dir, "minsar_log")
+    if not os.path.isfile(src):
+        log_path = os.path.join(work_dir, "log")
+        if os.path.isfile(log_path):
+            with open(log_path, encoding="utf-8", errors="replace") as fh:
+                matches = [ln for ln in fh if "minsarIsce3App" in ln]
+            if matches:
+                with open(src, "w", encoding="utf-8") as fh:
+                    fh.write(matches[-1].rstrip("\n") + "\n")
+    if os.path.isfile(src):
+        shutil.copy2(src, os.path.join(pic_dir, "minsar_log"))
+
+
+def _pic_dir_for_upload(data_dir):
+    """Return local pic directory for upload.log URL, or None."""
+    data_dir = data_dir.rstrip("/")
+    if _is_pic_dir(data_dir) and os.path.isdir(data_dir):
+        return data_dir
+    pic_dir = data_dir + "/pic"
+    if os.path.isdir(pic_dir):
+        return pic_dir
+    return None
+
+
 def add_log_remote_hdfeos5(scp_list, work_dir):
     # add uploaded he5 files to remote log file
 
@@ -202,6 +239,22 @@ def main(iargs=None):
                   '/'+ data_dir +'/geo/geo_*.shp',
                   '/'+ data_dir +'/geo/geo_*.shx',
                   ])
+        elif _is_dolphin_dir(data_dir):
+            pic_path = data_dir + '/pic'
+            if os.path.isdir(pic_path):
+                _copy_minsar_log_to_pic(pic_path, inps.work_dir)
+                create_html_if_needed(pic_path)
+                scp_list.extend(['/' + pic_path])
+            if not inps.piconly_flag:
+                scp_list.extend(['/' + data_dir + '/timeseries/S1*.he5'])
+        elif _is_pic_dir(data_dir) and os.path.isdir(data_dir):
+            print(f"Uploading pic directory: {data_dir}")
+            _copy_minsar_log_to_pic(data_dir, inps.work_dir)
+            create_html_if_needed(data_dir)
+            scp_list.extend(['/' + data_dir])
+        elif data_dir.endswith('.he5') or glob.has_magic(data_dir):
+            print(f"Uploading HE5 pattern: {data_dir}")
+            scp_list.extend(['/' + data_dir])
         elif 'miaplpy' in data_dir:
             # Handle --all flag: upload entire directory
             if inps.all_flag:
@@ -303,11 +356,10 @@ def main(iargs=None):
         if _is_insarmaps_log(data_dir):
             continue
 
-        # Check if this directory has a pic subdirectory
-        pic_dir = data_dir + '/pic'
-        if os.path.isdir(pic_dir):
-            # If pic exists, URL points to pic directory
-            remote_url = 'http://' + REMOTEHOST_DATA + REMOTE_DIR + project_name + '/' + data_dir + '/pic'
+        pic_dir = _pic_dir_for_upload(data_dir)
+        if pic_dir:
+            rel_pic = os.path.relpath(pic_dir, inps.work_dir)
+            remote_url = 'http://' + REMOTEHOST_DATA + REMOTE_DIR + project_name + '/' + rel_pic
 
             # Append to main upload.log
             with open('upload.log', 'a') as f:

@@ -43,16 +43,21 @@ def build_html(directory_path):
         return
 
     # Define the preferred order of images (temporalCoherence_lowpass_gaussian can be handy for miaplpy DS to eliminate indiviudal high temporal coherence pixels)
-    preferred_order = ['geo_velocity.png',
-                       'geo_temporalCoherence.png', 'geo_temporalCoherence_lowpass_gaussian.png',
-                       'geo_maskTempCoh.png','geo_maskTempCoh_lowpass_gaussian.png','geo_maskPS.png',
-                       'temporalCoherence.png','temporalCoherence_lowpass_gaussian.png',
+    preferred_order = ['velocity.png', 'geo_velocity.png',
+                       'temporalCoherence.png', 'geo_temporalCoherence.png', 'geo_temporalCoherence_lowpass_gaussian.png',
+                       'temporalCoherence_lowpass_gaussian.png',
+                       'mask.png', 'geo_maskTempCoh.png','geo_maskTempCoh_lowpass_gaussian.png','geo_maskPS.png',
                        'maskTempCoh.png','maskTempCoh_lowpass_gaussian.png', 'maskPS.png',
-                       'geo_avgSpatialCoh.png','avgSpatialCoh.png',
-                       'maskConnComp.png',
+                       'avgSpatialCoherence.png', 'geo_avgSpatialCoherence.png', 'geo_avgSpatialCoh.png','avgSpatialCoh.png',
+                       'phaseSimilarity.png', 'recommendedDensity.png', 'persistentScattererDensity.png',
+                       'waterMask.png', 'conncomp.png',
+                       'geo_phaseSimilarity.png', 'geo_recommendedDensity.png',
+                       'geo_persistentScattererDensity.png', 'geo_waterMask.png',
+                       'geo_maskConnComp.png', 'maskConnComp.png',
+                       'displacement.png',
                        'network.png','coherenceHistory.png','coherenceMatrix.png','rms_timeseries*.png',
                        'numTriNonzeroIntAmbiguity.png','numInvIfgram.png',
-                       'velocity.png','geometryRadar.png',
+                       'geometryRadar.png',
                        'coherence_?.png', 'coherence_??.png',
                        'unwrapPhase_wrap_?.png','unwrapPhase_wrap_??.png',
                        'unwrapPhase_?.png', 'unwrapPhase_??.png',
@@ -110,6 +115,35 @@ def build_html(directory_path):
     for template_file in template_files:
         header_tag = f'  <h2>{template_file}</h2>\n'
         with open(template_file, 'r') as file:
+            html_content += header_tag + '<pre>\n' + file.read() + '</pre>\n'
+
+    insarmaps_log = 'insarmaps.log'
+    if os.path.isfile(insarmaps_log):
+        with open(insarmaps_log) as f:
+            lines = f.read().splitlines()
+            insarmaps_str = lines[-1] if lines else ""
+        if insarmaps_str.startswith('http://') or insarmaps_str.startswith('https://'):
+            html_content += (
+                '  <div style="margin: 0.5em 0;">\n'
+                '    <h2 style="margin: 0; font-weight: bold; font-size: 1.25em;">'
+                'insarmaps:</h2>\n'
+                f'    <p style="margin: 0; font-weight: normal; font-size: 0.75em;">'
+                f'<a href="{insarmaps_str}" target="_blank" rel="noopener" '
+                'style="font-weight: normal; font-size: inherit;">'
+                f'{insarmaps_str}</a></p>\n'
+                '  </div>\n'
+            )
+
+    upload_log = 'upload.log'
+    if os.path.isfile(upload_log):
+        header_tag = f'  <h2>{upload_log}</h2>\n'
+        with open(upload_log, 'r') as file:
+            html_content += header_tag + '<pre>\n' + file.read() + '</pre>\n'
+
+    minsar_log = 'minsar_log'
+    if os.path.isfile(minsar_log):
+        header_tag = f'  <h2>{minsar_log}</h2>\n'
+        with open(minsar_log, 'r') as file:
             html_content += header_tag + '<pre>\n' + file.read() + '</pre>\n'
 
     # Close the HTML tags
