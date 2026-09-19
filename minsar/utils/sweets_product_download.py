@@ -6,11 +6,63 @@ import re
 import sys
 import time
 from collections import defaultdict
+from datetime import datetime
+from itertools import product
 from pathlib import Path
 
 SAFE_KEY_RE = re.compile(r"_(\d{8})T\d{6}_.*_(\d{6})_[0-9A-F]{6}_")
+MISSING_BURSTS_LOG = "missing_bursts.txt"
+MISSING_BURSTS_HEADER = (
+    "# ASF burst SLC acquisitions skipped (not downloaded; processing continues without them).\n"
+    "# Columns: YYYYMMDD orbit swath pol  reason\n"
+)
 DEFAULT_BURST_DOWNLOAD_RETRIES = 10
 BURST_DOWNLOAD_RETRY_SLEEP_SECS = 60
+
+
+class MissingBurstsLog:
+    """Append skipped SAFE acquisition records under the sweets data directory."""
+
+    def __init__(self, out_dir: Path) -> None:
+        self.path = Path(out_dir) / MISSING_BURSTS_LOG
+        self._seen: set[tuple[str, int, str, str]] = set()
+        if self.path.is_file():
+            for line in self.path.read_text(encoding="utf-8").splitlines():
+                parts = line.split()
+                if len(parts) >= 5 and parts[0].isdigit() and len(parts[0]) == 8:
+                    orbit_s = parts[1].removeprefix("orbit=")
+                    if orbit_s.isdigit():
+                        self._seen.add((parts[0], int(orbit_s), parts[2], parts[3]))
+
+    def record(
+        self,
+        *,
+        orbit: int | str,
+        swath: str,
+        pol: str,
+        reason: str,
+        yyyymmdd: str | None = None,
+        search_results: list | None = None,
+    ) -> None:
+        """Record one skipped acquisition; dedupe by date, orbit, swath, pol."""
+        orbit_int = int(orbit) if str(orbit).isdigit() else 0
+        date = yyyymmdd or _acquisition_date_for_orbit(search_results or [], orbit_int)
+        if not date:
+            date = "00000000"
+        key = (date, orbit_int, swath, pol)
+        if key in self._seen:
+            return
+        self._seen.add(key)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        if not self.path.is_file() or self.path.stat().st_size == 0:
+            self.path.write_text(MISSING_BURSTS_HEADER, encoding="utf-8")
+        line = f"{date} orbit={orbit_int:06d} {swath} {pol}  {reason.strip()}\n"
+        with self.path.open("a", encoding="utf-8") as handle:
+            handle.write(line)
+        print(
+            f"Skipping acquisition {date} orbit {orbit_int:06d} {swath} {pol}: {reason}",
+            file=sys.stderr,
+        )
 
 
 def safe_acquisition_key(path: Path) -> tuple[int, str] | None:
@@ -96,6 +148,90 @@ def _dedupe_bursts(bursts: list) -> list:
     return unique
 
 
+def _parse_burst_start_date(result) -> str | None:
+    """Return YYYYMMDD from an ASF S1 burst search hit."""
+    props = result.properties
+    raw = props.get("startTime") or props.get("start") or props.get("processingDate")
+    if not raw:
+        return None
+    text = str(raw).replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(text).strftime("%Y%m%d")
+    except ValueError:
+        match = re.search(r"(\d{8})", str(raw))
+        return match.group(1) if match else None
+
+
+def _acquisition_date_for_orbit(search_results: list, orbit: int) -> str | None:
+    """Best-effort acquisition date for an absolute orbit from ASF search hits."""
+    for result in search_results:
+        if int(result.properties["orbit"]) == orbit:
+            date = _parse_burst_start_date(result)
+            if date:
+                return date
+    return None
+
+
+def _find_group_skip_missing(
+    orbit: int | None,
+    footprint,
+    polarizations: list[str] | None,
+    swaths: list[str] | None,
+    mode: str,
+    min_bursts: int,
+    start_date: datetime | None,
+    end_date: datetime | None,
+    use_relative_orbit: bool,
+    missing_log: MissingBurstsLog,
+) -> list:
+    """Like burst2safe.find_group, but skip orbit/swath/pol groups missing on Vertex."""
+    import asf_search
+    from burst2safe.search import get_burst_group, sanitize_group_search_inputs
+
+    if use_relative_orbit and not (start_date and end_date):
+        raise ValueError("You must provide start and end dates when using relative orbit number.")
+
+    polarizations, swaths = sanitize_group_search_inputs(polarizations, swaths, mode)
+    opts = dict(
+        dataset=asf_search.constants.DATASET.SLC_BURST,
+        intersectsWith=footprint.wkt,
+        beamMode=mode,
+    )
+    if use_relative_orbit:
+        assert start_date is not None
+        assert end_date is not None
+        opts["relativeOrbit"] = orbit
+        opts["start"] = (f"{start_date.strftime('%Y-%m-%d')}T00:00:00Z",)
+        opts["end"] = (f"{end_date.strftime('%Y-%m-%d')}T23:59:59Z",)
+    else:
+        opts["absoluteOrbit"] = orbit
+    search_results = list(asf_search.geo_search(**opts))
+
+    grouped: list = []
+    if use_relative_orbit:
+        absolute_orbits = sorted({int(result.properties["orbit"]) for result in search_results})
+        group_definitions = product(polarizations, swaths, absolute_orbits)
+    else:
+        group_definitions = product(polarizations, swaths)
+
+    for group_definition in group_definitions:
+        try:
+            sub_results = get_burst_group(search_results, *group_definition, min_bursts=min_bursts)
+        except ValueError as exc:
+            pol, swath, *rest = group_definition
+            abs_orbit = rest[0] if rest else None
+            missing_log.record(
+                orbit=abs_orbit if abs_orbit is not None else "?",
+                swath=str(swath),
+                pol=str(pol),
+                reason=str(exc),
+                search_results=search_results,
+            )
+            continue
+        grouped.extend(sub_results)
+    return grouped
+
+
 def _fetch_burst_id_range(template_bursts: list, needed: list[int]) -> list:
     """Search ASF for needed relative burst IDs on the template group's orbit/swath/pol."""
     import asf_search
@@ -114,7 +250,7 @@ def _fetch_burst_id_range(template_bursts: list, needed: list[int]) -> list:
     )
 
 
-def fill_consecutive_burst_ids(results: list) -> list:
+def fill_consecutive_burst_ids(results: list, *, missing_log: MissingBurstsLog | None = None) -> list:
     """Add skipped burst IDs so each orbit/swath/pol group is consecutive.
 
     burst2safe will not pack a SAFE unless relative burst IDs are consecutive.
@@ -133,7 +269,6 @@ def fill_consecutive_burst_ids(results: list) -> list:
     needed = list(range(all_ids[0], all_ids[-1] + 1))
 
     filled: list = []
-    skipped: list[int] = []
     for key, bursts in groups.items():
         orbit, swath, pol = key
         have = _relative_burst_ids(bursts)
@@ -148,18 +283,19 @@ def fill_consecutive_burst_ids(results: list) -> list:
             have = _relative_burst_ids(bursts)
         if have != needed:
             missing = [burst_id for burst_id in needed if burst_id not in have]
-            print(
-                f"Skipping orbit {orbit} {swath} {pol}: still missing burst IDs {missing} after ASF search",
-                file=sys.stderr,
-            )
-            skipped.append(orbit)
+            reason = f"missing relative burst IDs {missing} after ASF search (need {needed})"
+            if missing_log is not None:
+                missing_log.record(
+                    orbit=orbit,
+                    swath=swath,
+                    pol=pol,
+                    reason=reason,
+                    search_results=bursts,
+                )
+            else:
+                print(f"Skipping orbit {orbit} {swath} {pol}: {reason}", file=sys.stderr)
             continue
         filled.extend(_dedupe_bursts(bursts))
-    if skipped:
-        print(
-            f"Skipped {len(skipped)} SAFE acquisition(s) with incomplete burst IDs: {skipped}",
-            file=sys.stderr,
-        )
     if not filled:
         raise RuntimeError(
             f"SAFE search found no acquisition with consecutive burst IDs {needed}. "
@@ -168,11 +304,10 @@ def fill_consecutive_burst_ids(results: list) -> list:
     return filled
 
 
-def search_safe_bursts(search) -> list:
+def search_safe_bursts(search, *, missing_log: MissingBurstsLog | None = None) -> list:
     """ASF burst hits for a BurstSearch, with consecutive burst-ID gaps filled."""
-    from burst2safe.search import find_group
-
-    results = find_group(
+    log = missing_log or MissingBurstsLog(search.out_dir)
+    results = _find_group_skip_missing(
         search.track,
         search.aoi,
         search.polarizations,
@@ -182,8 +317,9 @@ def search_safe_bursts(search) -> list:
         use_relative_orbit=True,
         start_date=search.start,
         end_date=search.end,
+        missing_log=log,
     )
-    return fill_consecutive_burst_ids(list(results))
+    return fill_consecutive_burst_ids(list(results), missing_log=log)
 
 
 def expected_safe_keys(search) -> set[tuple[int, str]]:
@@ -241,7 +377,8 @@ def download_safes(search, *, skip_existing: bool = True, retries: int = DEFAULT
     from burst2safe.safe import Safe
 
     search.out_dir.mkdir(parents=True, exist_ok=True)
-    results = search_safe_bursts(search)
+    missing_log = MissingBurstsLog(search.out_dir)
+    results = search_safe_bursts(search, missing_log=missing_log)
     burst_infos = burst_utils.get_burst_infos(results, search.out_dir)
     if search.flight_direction:
         burst_infos = [info for info in burst_infos if info.direction.upper() == search.flight_direction.upper()]
@@ -264,8 +401,18 @@ def download_safes(search, *, skip_existing: bool = True, retries: int = DEFAULT
         try:
             Safe.check_group_validity(burst_set)
         except ValueError as exc:
-            orbit = burst_set[0].absolute_orbit if burst_set else "?"
-            print(f"Skipping orbit {orbit}: {exc}", file=sys.stderr)
+            info = burst_set[0] if burst_set else None
+            orbit = info.absolute_orbit if info else "?"
+            swath = info.swath if info else "?"
+            pol = info.polarization if info else "?"
+            date = info.date.strftime("%Y%m%d") if info and info.date is not None else None
+            missing_log.record(
+                orbit=orbit,
+                swath=str(swath),
+                pol=str(pol),
+                reason=str(exc),
+                yyyymmdd=date,
+            )
             continue
         valid_sets.append(burst_set)
     if not valid_sets:
@@ -282,6 +429,11 @@ def download_safes(search, *, skip_existing: bool = True, retries: int = DEFAULT
         safe = Safe(burst_set, search.all_anns, search.out_dir)
         safe_paths.append(safe.create_safe())
         safe.cleanup()
+    if missing_log.path.is_file() and missing_log.path.stat().st_size > len(MISSING_BURSTS_HEADER):
+        print(
+            f"Skipped acquisitions logged to {missing_log.path} ({len(missing_log._seen)} date(s))",
+            file=sys.stderr,
+        )
     return safe_paths
 
 

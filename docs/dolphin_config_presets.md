@@ -1,159 +1,153 @@
 # Dolphin config presets and workflow stages
 
-MinSAR single-run CSLC/SAFE Dolphin uses one `dolphin_config.yaml`, but the workflow runs it in **three science layers** (`dolphin_wrapped`, `dolphin_unwrap`, `dolphin_timeseries`). The `--dolphin-config` preset only sets a **subset** of YAML keys at `dolphin config` time; other knobs come from `--half-window`, `--stride`, `--ministack-size`, or any leftover `--section.option` flags.
+MinSAR single-run CSLC/SAFE Dolphin writes one `dolphin_config.yaml`, then runs it in three layers: **`dolphin_wrapped`** → **`dolphin_unwrap`** → **`dolphin_timeseries`**.
 
-## `--dolphin-config` presets
+**Default bundle:** `--dolphin-config disp-s1`
 
-| Preset | Project name token | HE5 `post_processing_method` | What the preset adds beyond Dolphin defaults |
-|--------|-------------------|------------------------------|-----------------------------------------------|
-| `disp-s1` (default) | *(none)* | `dolphin` (+ optional `Dry`/`Wet`/`Arctic`) | `amp_dispersion_threshold` 0.2; unwrap preprocess: `interpolation_cor_threshold` 0.3, `interpolation_similarity_threshold` **0.25**, `max_radius` 71 |
-| `disp-s1-downloaded` | `DispS1Downloaded` | `dolphinDispS1Downloaded` | Same amp/interp_cor/max_radius as above; `interpolation_similarity_threshold` **0.4**; phase linking: `ministack_size` 100, `max_num_compressed` 100, `compressed_slc_plan` **ALWAYS_FIRST**, `output_reference_idx` 0 |
-| `disp-s1-process` | `DispS1Process` | `dolphinDispS1Process` | `amp_dispersion_threshold` **0.25**; unwrap preprocess: `interpolation_cor_threshold` **0.001**, `interpolation_similarity_threshold` 0.4, `max_radius` **150** |
-| `pydantic` | `Pydantic` | `dolphinPydantic` | No extra science flags (Dolphin package defaults only) |
+Presets compose. Later wins: **`--dolphin-config` → `--phase-linking-preset` → `--unwrap-preset` → explicit flags** (`--ministack-size`, `--no-watermask`, …).
 
-Source: `minsar/utils/dolphin_presets.py` (`DOLPHIN_CONFIG_SCIENCE`).
-
-### Related CLI (not part of `--dolphin-config`)
-
-| Flag | Effect |
-|------|--------|
-| `--half-window Y X` / `--half-window-preset {standard,dry,wet,arctic}` | `phase_linking.half_window` (default standard = 6×12; dry = 5×11) |
-| `--stride Y X` | `output_options.strides` (default 3×6) |
-| `--ministack-size N` | Overrides `phase_linking.ministack_size` for any preset |
-| `--unwrap-method NAME` | Shortcut for `unwrap_options.unwrap_method` |
-| Any `--phase-linking.*`, `--unwrap-options.*`, `--timeseries-options.*` | Merged with preset; explicit flags win |
-
-Worker keys (`n_parallel_bursts`, `threads_per_worker`, `n_parallel_jobs`, …) are set at config generation from node CPU count and burst count; they do not change science results.
-
-### Downloaded OPERA vs local presets
-
-`--data-type disp-s1` downloads OPERA L3 DISP-S1 products (`dispS1` HE5 tag). That path does **not** use `--dolphin-config`; science was fixed at ASF/JPL production time.
-
-`disp-s1-downloaded` approximates the **algorithm_parameters** embedded in downloaded products for a **local** continuous single-run. OPERA products use `last_per_ministack` in per-batch historical processing; MinSAR uses `always_first` because Dolphin rejects `last_per_ministack` when `ministack_size < n_slcs`.
+Values: [`minsar/utils/dolphin_presets.py`](../minsar/utils/dolphin_presets.py).  
+**Planned (not in code yet):** `--phase-linking-preset`, `--unwrap-preset`, `--no-watermask`, stage-aware `--link-project-dir`.
 
 ---
 
-## Workflow steps (single-run CSLC)
+## Global settings (all presets)
 
+These apply independently of `--dolphin-config` / layer presets.
+
+| Setting | Default | Flag |
+|---------|---------|------|
+| Half-window | 6×12 (Y×X) | `--half-window-preset standard` or `--half-window Y X` (dry 5×11, wet 9×18, arctic 9×19) |
+| Strides | 3×6 | `--stride Y X` |
+| Water mask | `watermask.tif` | default; **`--no-watermask`** (planned) omits mask |
+| Worker counts | from node CPUs | not science; set at config generation |
+
+Used in **`dolphin_wrapped`** (phase linking). Unwrap preprocess runs **after stitch, before SNAPHU** in **`dolphin_unwrap`**.
+
+---
+
+## `--dolphin-config` (bundled preset)
+
+Default: **`disp-s1`**. Bundles **`--phase-linking-preset`** + **`--unwrap-preset`** (same name) + project/HE5 naming. Unwrap preprocess values are in [**`--unwrap-preset`**](#--unwrap-preset-planned-dolphin_unwrap-only) below.
+
+### Phase linking + PS (`dolphin_wrapped`)
+
+| Preset | ministack | max compressed | compressed plan | output ref idx | PS amp disp |
+|--------|-----------|----------------|-----------------|--------------|-------------|
+| **disp-s1** (default) | 15† | 10† | always_first† | null† | **0.2** |
+| **disp-s1-downloaded** | **100** | **100** | **ALWAYS_FIRST** | **0** | **0.2** |
+| **disp-s1-process** | 15† | 10† | always_first† | null† | **0.25** |
+
+†Dolphin default — MinSAR does not pass these flags for this preset.
+
+### Project / HE5 naming
+
+| Preset | Project token | HE5 `post_processing_method` |
+|--------|---------------|------------------------------|
+| **disp-s1** | *(none)* | `dolphin` (+ optional Dry/Wet/Arctic from half-window) |
+| **disp-s1-downloaded** | `DispS1Downloaded` | `dolphinDispS1Downloaded` |
+| **disp-s1-process** | `DispS1Process` | `dolphinDispS1Process` |
+
+### Bundle = layer presets combined
+
+| `--dolphin-config` | Same as |
+|--------------------|---------|
+| `disp-s1` | `--phase-linking-preset default` + `--unwrap-preset disp-s1` |
+| `disp-s1-downloaded` | `--phase-linking-preset downloaded` + `--unwrap-preset disp-s1-downloaded` |
+| `disp-s1-process` | `--phase-linking-preset default` + `--unwrap-preset disp-s1-process` |
+
+---
+
+## `--phase-linking-preset` (planned; `dolphin_wrapped` only)
+
+Not **`--link-project-dir`**. Not **`--half-window-preset`**.
+
+| Value | ministack | max compressed | compressed plan | output ref idx |
+|-------|-----------|----------------|-----------------|--------------|
+| **default** (omit flag) | 15† | 10† | always_first† | null† |
+| **downloaded** | **100** | **100** | **ALWAYS_FIRST** | **0** |
+
+†No extra flags passed; Dolphin package defaults.
+
+Override: `--ministack-size N`.  
+Alone with `--link-project-dir`: restart **`dolphin_wrapped`**, link inputs only (no source dolphin work tree).
+
+---
+
+## `--unwrap-preset` (planned; `dolphin_unwrap` only)
+
+| Value | interp cor | interp sim | max radius |
+|-------|------------|------------|------------|
+| **disp-s1** | **0.3** | **0.25** | **71** |
+| **disp-s1-downloaded** | **0.3** | **0.4** | **71** |
+| **disp-s1-process** | **0.001** | **0.4** | **150** |
+
+Alone with `--link-project-dir`: restart **`dolphin_unwrap`**, link source `dolphin/interferograms/` (or burst trees).
+
+---
+
+## Other flags
+
+| Flag | Layer | Effect |
+|------|-------|--------|
+| `--ministack-size N` | wrapped | Overrides `--phase-linking-preset` |
+| `--unwrap-method NAME` | unwrap | `unwrap_options.unwrap_method` |
+| `--no-watermask` (planned) | wrapped | No mask; restart **dolphin_wrapped** |
+| `--link-project-dir DIR` (planned) | — | Symlink from source; auto restart from earliest changed layer |
+| `--phase-linking.*`, `--unwrap-options.*`, `--timeseries-options.*` | varies | Explicit override; wins over presets |
+
+---
+
+## Workflow timeline
+
+```text
+dolphin_wrapped     phase_linking, ps_options, mask, strides
+dolphin_unwrap      stitch → preprocess (unwrap preset) → SNAPHU
+dolphin_timeseries  timeseries_options
+dolphin_2_he5       recommended mask (TC/sim); not unwrap preprocess
 ```
-download_cslc → dolphin_wrapped → dolphin_unwrap → dolphin_timeseries → dolphin_2_he5 → ingest_insarmaps → upload
-```
-
-| MinSAR step | Scripts | Dolphin work |
-|-------------|---------|--------------|
-| **dolphin_wrapped** | `cleanup_dolphin_ministacks.py`, `dolphin config …`, `run_dolphin_wrapped.py` | Per-burst phase linking, PS detection, interferogram network at burst level. **No** stitch, unwrap, or timeseries. |
-| **dolphin_unwrap** | `run_dolphin_stitch.py`, `resize_dolphin_unwrap_jobfile.py`, `run_dolphin_unwrap.py` | Stitch burst ifgs → **preprocess / interpolation** on wrapped phase → **SNAPHU (or other) unwrap**. |
-| **dolphin_timeseries** | `run_dolphin_timeseries.py` | Network inversion, velocity, temporal coherence / similarity products used later for HE5. |
-| **dolphin_2_he5** | `dolphin2he5.py` | Build HDF-EOS5; `-m recommended` mask from quality layers (separate from unwrap preprocess). |
-
-Monolithic mode (`create_isce3_runfiles.py --no-dolphin-split`): one `dolphin run` job instead of the three steps above.
 
 ---
 
-## Which YAML keys apply in which step
+## `--link-project-dir` (planned)
 
-Classification follows `layer_for_key()` in `minsar/utils/isce3_dolphin_experiment.py`.
+Infer earliest changed layer; **`--start` optional override**.
 
-### Wrapped layer → `dolphin_wrapped`
+| Change | Link from SOURCE | Also link SOURCE/dolphin/ | Restart |
+|--------|------------------|---------------------------|---------|
+| Wrapped | data/, geometry/, sweets, watermask*, geometry/ | — | dolphin_wrapped |
+| Unwrap | same | interferograms/ or t143_* bursts | dolphin_unwrap |
+| Timeseries | same | interferograms/ + unwrapped/ | dolphin_timeseries |
 
-| Key group | Examples | Role |
-|-----------|----------|------|
-| `phase_linking.*` | `half_window`, `ministack_size`, `max_num_compressed`, `compressed_slc_plan`, `output_reference_idx`, `shp_method`, `shp_alpha` | Sequential EMI / phase linking, compressed SLC plan, similarity rasters |
-| `ps_options.*` | `amp_dispersion_threshold` | Persistent scatterer mask (`PS/ps_pixels.tif`) |
-| `interferogram_network.*` | `max_bandwidth`, `reference_idx` | Which ifgs exist after linking |
-| `output_options.strides` | `--stride` | Multilook stride for linked products |
-| `mask_file` | `watermask.tif` | AOI / water mask for linking |
-
-**Preset unwrap preprocess keys** (`unwrap_options.preprocess_options.*`) are written into YAML at config time but **are not executed** during `dolphin_wrapped`.
-
-### Unwrap layer → `dolphin_unwrap`
-
-| Key group | Examples | Role |
-|-----------|----------|------|
-| `unwrap_options.preprocess_options.*` | `interpolation_cor_threshold`, `interpolation_similarity_threshold`, `max_radius`, `alpha` | Fill/mask low-quality pixels on **wrapped** interferograms **before** unwrap |
-| `unwrap_options.run_interpolation` | default on (`--unwrap-options.run-interpolation` at config) | Enable that preprocess step |
-| `unwrap_options.run_goldstein` | optional Goldstein filter | Pre-unwrap filtering |
-| `unwrap_options.unwrap_method`, `snaphu_options.*` | SNAPHU tiles, cost, init | Phase unwrapping |
-| `unwrap_options.zero_where_masked` | | Zero phase/corr on mask before unwrap |
-| `unwrap_options.n_parallel_jobs` | | Parallel unwrap jobs (worker sizing) |
-
-**When interpolation runs:** inside `run_dolphin_unwrap.py` → `dolphin.workflows.unwrapping.run()`, **after** stitch, **before** SNAPHU. It is **not** applied during `dolphin_wrapped` and **not** after unwrap completes.
-
-### Timeseries layer → `dolphin_timeseries`
-
-| Key group | Examples | Role |
-|-----------|----------|------|
-| `timeseries_options.*` | `correlation_threshold`, `apply_mask_to_timeseries`, inversion method | Inversion mask and solver options |
-
-### HE5 step (not a Dolphin run stage)
-
-| Key | Role |
-|-----|------|
-| `dolphin2he5.py -m recommended` | OPERA-style mask from averaged TC + similarity (OR rule, 0.6 / 0.4); independent of unwrap preprocess thresholds |
+\*Skip watermask with `--no-watermask`.
 
 ---
 
-## Are `dolphin_wrapped` results the same for `disp-s1` and `disp-s1-process`?
-
-**No**, in general — but the difference is **small** between those two presets specifically.
-
-| Parameter | `disp-s1` | `disp-s1-process` | Affects wrapped? |
-|-----------|-----------|---------------------|------------------|
-| `amp_dispersion_threshold` | 0.2 | 0.25 | **Yes** — different PS pixel set |
-| `ministack_size` / compressed plan | Dolphin defaults (15, `always_first`) | same | No difference from preset alone |
-| `interpolation_*` / `max_radius` | 0.3 / 0.25 / 71 | 0.001 / 0.4 / 150 | **No** at wrapped stage (stored in YAML only) |
-
-So `dolphin_wrapped` outputs differ mainly through **PS selection** (`amp_dispersion_threshold`). Phase linking, ministacks, and similarity rasters are otherwise the same unless you change `--half-window`, `--ministack-size`, or other wrapped-layer flags.
-
-`disp-s1-downloaded` **does** change wrapped outputs strongly (`ministack_size` 100, `max_num_compressed` 100, `output_reference_idx` 0, different sequential linking).
-
----
-
-## Rerunning with different options (without redoing everything)
-
-MinSAR already splits unwrap from wrapped. Layer-aware reruns use `--from-dolphin-dir` and optional auto `--dolphin-dir` naming (see `docs/README_minsarIsce3App.md`).
-
-| Change | Earliest step to rerun | Inputs symlinked from source dir |
-|--------|------------------------|----------------------------------|
-| `phase_linking.*`, `ps_options.*`, strides, network | `dolphin_wrapped` | none |
-| `unwrap_options.*` (including preprocess / interpolation) | `dolphin_unwrap` | `interferograms/` |
-| `timeseries_options.*` | `dolphin_timeseries` | `interferograms/`, `unwrapped/` |
-
-Example — same wrapped products, stricter unwrap preprocess:
+## Examples
 
 ```bash
-minsarIsce3App.bash AOI NAME --data-type cslc --from-dolphin-dir dolphin --unwrap-options.preprocess-options.interpolation-similarity-threshold 0.4 --start dolphin_unwrap
+minsarIsce3App.bash AOI NAME --data-type cslc --dolphin-config disp-s1 --half-window-preset dry
+minsarIsce3App.bash AOI NAME --data-type cslc --link-project-dir ../PopoCSLCSenD143 --unwrap-preset disp-s1-downloaded
+minsarIsce3App.bash AOI NAME --data-type cslc --dolphin-config disp-s1 --phase-linking-preset downloaded --unwrap-preset disp-s1-process
 ```
-
-Example — new preset on existing CSLCs (full rerun from wrapped):
-
-```bash
-minsarIsce3App.bash AOI NAME --data-type cslc --dolphin-config disp-s1-process --half-window 5 11 --start dolphin
-```
-
-### Can `dolphin_unwrap` be split further?
-
-**Today:** `dolphin_unwrap` = **stitch** + **unwrap job** (preprocess + SNAPHU in one `unwrapping.run()` call). There is **no** separate MinSAR step for “interpolation only” or “unwrap only after interpolation.”
-
-| Sub-step | Script today | Separate SLURM job? |
-|----------|--------------|---------------------|
-| Stitch burst ifgs | `run_dolphin_stitch.py` | Runs at start of `dolphin_unwrap` job |
-| Preprocess / interpolation | inside `run_dolphin_unwrap.py` | Same job as unwrap |
-| SNAPHU unwrap | inside `run_dolphin_unwrap.py` | Same job |
-
-To try **different preprocess options after unwrapping** you would need **post-unwrap** logic (not in Dolphin preprocess); that lives in **timeseries** (`timeseries_options.correlation_threshold`, etc.) or HE5 remasking (`remask_he5.py`), not in `unwrap_options.preprocess_options`.
-
-To try **different preprocess without redoing wrapped**: rerun from `dolphin_unwrap` with new `unwrap_options.preprocess_options.*` (new `dolphin_dir` or edited YAML). That **re-runs** stitch + preprocess + unwrap together; stitch is cheap relative to unwrap.
-
-Adding a dedicated “preprocess-only” or “unwrap-only” MinSAR step would require new wrapper scripts around Dolphin’s workflow API; it is not implemented now.
 
 ---
 
-## Quick reference: preset → stage impact
+## Appendix: `--dolphin-config pydantic`
 
-| Preset | `dolphin_wrapped` | `dolphin_unwrap` | `dolphin_timeseries` | HE5 name token |
-|--------|-------------------|------------------|----------------------|----------------|
-| `disp-s1` | PS threshold | preprocess 0.25 sim | defaults | `dolphin` |
-| `disp-s1-downloaded` | ministack 100, ref idx 0, PS 0.2 | preprocess 0.4 sim | defaults | `dolphinDispS1Downloaded` |
-| `disp-s1-process` | PS 0.25 | preprocess 0.001 cor, 0.4 sim, radius 150 | defaults | `dolphinDispS1Process` |
-| `pydantic` | Dolphin defaults | Dolphin defaults | Dolphin defaults | `dolphinPydantic` |
+For completeness only. Passes **no** extra science flags; Dolphin package defaults apply. Project token `Pydantic`; HE5 `dolphinPydantic`. Rarely used in production.
+
+---
+
+## Downloaded OPERA vs local presets
+
+`--data-type disp-s1` downloads OPERA L3 products (`dispS1` HE5 tag) — no local presets.
+
+Local `disp-s1-downloaded` / `--phase-linking-preset downloaded` approximate OPERA embedded parameters for continuous single-run (`ALWAYS_FIRST`, not batch `LAST_PER_MINISTACK`).
+
+---
+
+## Related docs
+
+- [`docs/README_minsarIsce3App.md`](README_minsarIsce3App.md)
+- [`docs/dolphin_mode_chaining.md`](dolphin_mode_chaining.md)

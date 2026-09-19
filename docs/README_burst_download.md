@@ -46,6 +46,18 @@ Skip with **`--no-check-subswath-coverage`**. Lon repair requires re-fetching th
 | `SLC/dates_removed.txt` | `check_SAFE_completeness.py` | Incomplete `.SAFE` directories (missing required internal files), not geometric AOI coverage. |
 | `removed_dates_*.txt` | `check_burst2safe_job_outputs.py` | Dates inferred from burst2safe stderr problem strings; deletes matching paths under the job directory. |
 
+## SWEETS / isce3 SAFE download (`sweets_download.py`)
+
+MinSAR’s isce3 path downloads burst SLCs via `minsar/utils/sweets_product_download.py`. When ASF has no burst product for a track/swath/polarization on a given pass, or relative burst IDs cannot be filled, that acquisition is **skipped** and the workflow continues.
+
+Skipped acquisitions are appended to **`data/missing_bursts.txt`** (next to the `.SAFE` directories), one line per date:
+
+```text
+20170415 orbit=003227 IW2 VV  No bursts found for orbit 3227, swath IW2, polarization VV. ...
+```
+
+`check_sweets_download.py` expects only acquisitions that survived the search; it does not fail on dates listed in `missing_bursts.txt`.
+
 ## check_burst2safe_job_outputs.py
 
 Used to validate burst2safe job outputs and optionally clean problem dates; see script help and [architecture_docs/BURST_DOWNLOAD.md](../architecture_docs/BURST_DOWNLOAD.md).
