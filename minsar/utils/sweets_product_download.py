@@ -9,6 +9,7 @@ from collections import defaultdict
 from datetime import datetime
 from itertools import product
 from pathlib import Path
+from typing import Callable
 
 SAFE_KEY_RE = re.compile(r"_(\d{8})T\d{6}_.*_(\d{6})_[0-9A-F]{6}_")
 MISSING_BURSTS_LOG = "missing_bursts.txt"
@@ -63,6 +64,21 @@ class MissingBurstsLog:
             f"Skipping acquisition {date} orbit {orbit_int:06d} {swath} {pol}: {reason}",
             file=sys.stderr,
         )
+
+
+def skipped_safe_keys(out_dir: Path) -> set[tuple[int, str]]:
+    """Return (absolute_orbit, yyyymmdd) keys listed in data/missing_bursts.txt."""
+    path = Path(out_dir) / MISSING_BURSTS_LOG
+    keys: set[tuple[int, str]] = set()
+    if not path.is_file():
+        return keys
+    for line in path.read_text(encoding="utf-8").splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[0].isdigit() and len(parts[0]) == 8:
+            orbit_s = parts[1].removeprefix("orbit=")
+            if orbit_s.isdigit():
+                keys.add((int(orbit_s), parts[0]))
+    return keys
 
 
 def safe_acquisition_key(path: Path) -> tuple[int, str] | None:
@@ -146,6 +162,72 @@ def _dedupe_bursts(bursts: list) -> list:
         seen.add(file_id)
         unique.append(burst)
     return unique
+
+
+def _dedupe_search_bursts(bursts: list) -> list:
+    """Keep one ASF hit per orbit, swath, polarization, and relative burst ID."""
+    seen: set[tuple[int, str, str, int]] = set()
+    unique: list = []
+    for burst in bursts:
+        props = burst.properties
+        key = (
+            int(props["orbit"]),
+            str(props["burst"]["subswath"]),
+            str(props["polarization"]),
+            int(props["burst"]["relativeBurstID"]),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(burst)
+    return unique
+
+
+def _dedupe_burst_infos(burst_infos: list) -> list:
+    """Keep one BurstInfo per orbit, swath, polarization, and burst ID."""
+    seen: set[tuple[int, str, str, int]] = set()
+    unique: list = []
+    for info in burst_infos:
+        burst_id = int(info.burst_id) if info.burst_id is not None else -1
+        key = (int(info.absolute_orbit), str(info.swath), str(info.polarization), burst_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(info)
+    return unique
+
+
+def _partition_valid_burst_sets(
+    burst_infos: list,
+    missing_log: MissingBurstsLog,
+    *,
+    drop_duplicates: Callable[[list], list] | None = None,
+) -> list[list]:
+    """Split burst infos into per-orbit groups that pass burst2safe validity checks."""
+    from burst2safe import utils as burst_utils
+    from burst2safe.safe import Safe
+
+    dedupe = drop_duplicates or _dedupe_burst_infos
+    abs_orbits = burst_utils.drop_duplicates([info.absolute_orbit for info in burst_infos])
+    valid_sets: list[list] = []
+    for orbit in abs_orbits:
+        burst_set = dedupe([info for info in burst_infos if info.absolute_orbit == orbit])
+        if not burst_set:
+            continue
+        try:
+            Safe.check_group_validity(burst_set)
+        except ValueError as exc:
+            info = burst_set[0]
+            missing_log.record(
+                orbit=info.absolute_orbit,
+                swath=str(info.swath),
+                pol=str(info.polarization),
+                reason=str(exc),
+                yyyymmdd=info.date.strftime("%Y%m%d") if info.date is not None else None,
+            )
+            continue
+        valid_sets.append(burst_set)
+    return valid_sets
 
 
 def _parse_burst_start_date(result) -> str | None:
@@ -263,15 +345,19 @@ def fill_consecutive_burst_ids(results: list, *, missing_log: MissingBurstsLog |
     for result in results:
         groups[_burst_group_key(result)].append(result)
 
-    all_ids = _relative_burst_ids(results)
-    if not all_ids:
+    if not groups:
         return []
-    needed = list(range(all_ids[0], all_ids[-1] + 1))
 
     filled: list = []
     for key, bursts in groups.items():
         orbit, swath, pol = key
+        bursts = _dedupe_search_bursts(bursts)
         have = _relative_burst_ids(bursts)
+        if not have:
+            continue
+        # Per acquisition: fill only gaps between bursts ASF returned for this pass.
+        # Do not require every date to share the same burst-ID span across the stack.
+        needed = list(range(have[0], have[-1] + 1))
         if have != needed:
             missing = [burst_id for burst_id in needed if burst_id not in have]
             print(
@@ -279,7 +365,7 @@ def fill_consecutive_burst_ids(results: list, *, missing_log: MissingBurstsLog |
                 f"(ASF intersected {have}, need {needed})",
                 file=sys.stderr,
             )
-            bursts = _fetch_burst_id_range(bursts, needed)
+            bursts = _dedupe_search_bursts(_fetch_burst_id_range(bursts, needed))
             have = _relative_burst_ids(bursts)
         if have != needed:
             missing = [burst_id for burst_id in needed if burst_id not in have]
@@ -295,10 +381,10 @@ def fill_consecutive_burst_ids(results: list, *, missing_log: MissingBurstsLog |
             else:
                 print(f"Skipping orbit {orbit} {swath} {pol}: {reason}", file=sys.stderr)
             continue
-        filled.extend(_dedupe_bursts(bursts))
+        filled.extend(_dedupe_search_bursts(_dedupe_bursts(bursts)))
     if not filled:
         raise RuntimeError(
-            f"SAFE search found no acquisition with consecutive burst IDs {needed}. "
+            "SAFE search found no acquisition with consecutive burst IDs after gap fill. "
             "ASF did not return the middle burst(s) for any date in the range."
         )
     return filled
@@ -326,15 +412,19 @@ def expected_safe_keys(search) -> set[tuple[int, str]]:
     """Return expected (absolute_orbit, yyyymmdd) keys for a BurstSearch config."""
     from burst2safe import utils as burst_utils
 
-    results = search_safe_bursts(search)
+    missing_log = MissingBurstsLog(search.out_dir)
+    results = search_safe_bursts(search, missing_log=missing_log)
     infos = burst_utils.get_burst_infos(results, search.out_dir)
     if search.flight_direction:
         infos = [info for info in infos if info.direction.upper() == search.flight_direction.upper()]
+    valid_sets = _partition_valid_burst_sets(infos, missing_log)
     expected = {
         (int(info.absolute_orbit), info.date.strftime("%Y%m%d"))
-        for info in infos
+        for burst_set in valid_sets
+        for info in burst_set
         if info.date is not None
     }
+    expected -= skipped_safe_keys(search.out_dir)
     if not expected:
         raise RuntimeError("SAFE search found no expected acquisitions")
     return expected
@@ -349,6 +439,14 @@ def valid_safe_keys(out_dir: Path) -> set[tuple[int, str]]:
         if key and readable:
             valid.add(key)
     return valid
+
+
+def _format_exc(exc: BaseException) -> str:
+    """Return a non-empty error string (GDAL RuntimeError can have blank str())."""
+    text = str(exc).strip()
+    if text:
+        return text
+    return f"{type(exc).__name__} (no message)"
 
 
 def _download_bursts_with_retries(burst_infos, *, retries: int = DEFAULT_BURST_DOWNLOAD_RETRIES) -> None:
@@ -378,11 +476,13 @@ def download_safes(search, *, skip_existing: bool = True, retries: int = DEFAULT
 
     search.out_dir.mkdir(parents=True, exist_ok=True)
     missing_log = MissingBurstsLog(search.out_dir)
+    on_disk = sorted(search.out_dir.glob("S1[ABCD]_*.SAFE"))
     results = search_safe_bursts(search, missing_log=missing_log)
     burst_infos = burst_utils.get_burst_infos(results, search.out_dir)
     if search.flight_direction:
         burst_infos = [info for info in burst_infos if info.direction.upper() == search.flight_direction.upper()]
 
+    skipped_keys = skipped_safe_keys(search.out_dir)
     if skip_existing:
         valid = valid_safe_keys(search.out_dir)
         burst_infos = [
@@ -390,51 +490,51 @@ def download_safes(search, *, skip_existing: bool = True, retries: int = DEFAULT
             for info in burst_infos
             if info.date is not None
             and (int(info.absolute_orbit), info.date.strftime("%Y%m%d")) not in valid
+            and (int(info.absolute_orbit), info.date.strftime("%Y%m%d")) not in skipped_keys
         ]
         if not burst_infos:
-            return sorted(search.out_dir.glob("S1[ABCD]_*.SAFE"))
+            return on_disk
 
-    abs_orbits = burst_utils.drop_duplicates([info.absolute_orbit for info in burst_infos])
-    burst_sets = [[info for info in burst_infos if info.absolute_orbit == orbit] for orbit in abs_orbits]
-    valid_sets: list[list] = []
-    for burst_set in burst_sets:
+    valid_sets = _partition_valid_burst_sets(burst_infos, missing_log)
+    if not valid_sets:
+        if skip_existing and on_disk:
+            print(
+                f"No new downloadable SAFE acquisitions ({len(on_disk)} already on disk; "
+                f"see {missing_log.path})",
+                file=sys.stderr,
+            )
+            return on_disk
+        raise RuntimeError("No SAFE acquisition has a valid consecutive burst group")
+    safe_paths: list[Path] = list(on_disk)
+    for burst_set in valid_sets:
+        info = burst_set[0]
         try:
-            Safe.check_group_validity(burst_set)
-        except ValueError as exc:
-            info = burst_set[0] if burst_set else None
-            orbit = info.absolute_orbit if info else "?"
-            swath = info.swath if info else "?"
-            pol = info.polarization if info else "?"
-            date = info.date.strftime("%Y%m%d") if info and info.date is not None else None
+            _download_bursts_with_retries(burst_set, retries=retries)
+            for item in burst_set:
+                item.add_shape_info()
+                item.add_start_stop_utc()
+            safe = Safe(burst_set, search.all_anns, search.out_dir)
+            safe_paths.append(safe.create_safe())
+            safe.cleanup()
+        except (OSError, RuntimeError, ValueError) as exc:
             missing_log.record(
-                orbit=orbit,
-                swath=str(swath),
-                pol=str(pol),
-                reason=str(exc),
-                yyyymmdd=date,
+                orbit=info.absolute_orbit,
+                swath=str(info.swath),
+                pol=str(info.polarization),
+                reason=_format_exc(exc),
+                yyyymmdd=info.date.strftime("%Y%m%d") if info.date is not None else None,
             )
             continue
-        valid_sets.append(burst_set)
-    if not valid_sets:
-        raise RuntimeError("No SAFE acquisition has a valid consecutive burst group")
-    burst_sets = valid_sets
-    burst_infos = [info for burst_set in burst_sets for info in burst_set]
-
-    _download_bursts_with_retries(burst_infos, retries=retries)
-    safe_paths: list[Path] = []
-    for burst_set in burst_sets:
-        for info in burst_set:
-            info.add_shape_info()
-            info.add_start_stop_utc()
-        safe = Safe(burst_set, search.all_anns, search.out_dir)
-        safe_paths.append(safe.create_safe())
-        safe.cleanup()
+    if not safe_paths:
+        raise RuntimeError(
+            "No SAFE acquisition could be downloaded and assembled; see missing_bursts.txt"
+        )
     if missing_log.path.is_file() and missing_log.path.stat().st_size > len(MISSING_BURSTS_HEADER):
         print(
             f"Skipped acquisitions logged to {missing_log.path} ({len(missing_log._seen)} date(s))",
             file=sys.stderr,
         )
-    return safe_paths
+    return sorted(set(safe_paths))
 
 
 def _result_name(result: object) -> str:

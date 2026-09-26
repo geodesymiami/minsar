@@ -11,11 +11,13 @@ from pathlib import Path
 
 from minsar.objects import message_rsmas
 from minsar.utils.sweets_product_download import (
+    _format_exc,
     _hdf5_has_datasets,
     _result_name,
     _safe_is_readable,
     expected_safe_keys,
     safe_acquisition_key,
+    skipped_safe_keys,
     valid_safe_keys,
 )
 
@@ -78,7 +80,14 @@ def check_safe_download(work_dir: Path, config: Path, delete: bool) -> int:
             print(f"Deleted {path}", file=sys.stderr)
 
     valid = valid_safe_keys(search.out_dir)
-    missing = sorted(expected - valid)
+    skipped = skipped_safe_keys(search.out_dir)
+    missing = sorted(expected - valid - skipped)
+    if skipped:
+        print(
+            f"Skipped SAFE acquisitions (see {search.out_dir / 'missing_bursts.txt'}): "
+            + ", ".join(f"{date}/orbit-{orbit:06d}" for orbit, date in sorted(skipped)),
+            file=sys.stderr,
+        )
     if missing:
         print(
             "Missing SAFE acquisitions: "
@@ -196,7 +205,7 @@ def main(iargs: list[str] | None = None) -> int:
             return 0
         return status
     except RuntimeError as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(f"Error: {_format_exc(exc)}", file=sys.stderr)
         return 1
 
 

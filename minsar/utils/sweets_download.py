@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 from minsar.objects import message_rsmas
+from minsar.utils.sweets_product_download import _format_exc
 
 DESCRIPTION = (
     "Download DEM, water mask, and SAFE or OPERA CSLC products for a sweets config. "
@@ -80,7 +81,7 @@ def main(iargs: list[str] | None = None) -> int:
     try:
         download_products(work_dir, inps.config, skip_existing=not inps.force, download_retries=inps.download_retries)
     except (OSError, RuntimeError, ValueError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
+        print(f"Error: {_format_exc(exc)}", file=sys.stderr)
         return 1
     return 0
 
