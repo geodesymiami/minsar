@@ -45,6 +45,8 @@ helptext="                                                                      
    --dostep STEP         run processing at the named step only                   \n\
    --download-method {slc, burst2safe, burst2stack, ssara-slc, ssara-bash, ssara-python} (default: burst2stack) \n\
    --delta-lat [DEG]     download larger error (default 0; bare --delta-lat: 0.2) \n\
+   --minsar.excludeDates DATES  exclude YYYYMMDD scenes (comma-separated; merges with template) \n\
+   --exclude-dates DATES        alias for --minsar.excludeDates \n\
    --suffix [TAG|auto]   pass --suffix to ingest_insarmaps (bare --suffix: auto from minTempCoh) \n\
                                                                                  \n\
    --mintpy              use smallbaselineApp.py for time series [default]       \n\
@@ -82,6 +84,8 @@ Using AOI and name as postional arguments (for options run: create_template.py -
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --coregistration geometry [--platform S1] --miaplpy   \n\
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --geometry [--platform S1] --miaplpy   \n\
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --tropo no --insarmaps-dataset DS --no-mintpy --miaplpy   \n\
+      minsarApp.bash  $TE/GalapagosSenDT128.template --exclude-dates 20260619 --start jobfiles   \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --exclude-dates 20260619 --quick-run 2026   \n\
 To test:  \n\
       minsarApp.bash -0.86:-0.81,-91.19:-91.13 qtestGalapagos --flight-dir asc,desc --start-date 20181001 --end-date 20181231 --no-mintpy --miaplpy  \n\
                                                                                  \n\
@@ -168,10 +172,8 @@ download_ECMWgF_before_mintpy_flag=0
 
 args=( "$@" )    # copy of command line arguments
 POSITIONAL=()
+cli_exclude_dates=""
 
-##################################
-create_template_array $template_file
-##################################
 # set defaults steps (insarmaps_flag and upload_flag are set to 0 if not given on command line or in template file )
 download_flag=1
 preprocess_flag=1
@@ -360,6 +362,14 @@ do
                 shift
             fi
             ;;
+        --minsar.excludeDates|--exclude-dates)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: $key requires a YYYYMMDD list (comma-separated)." >&2
+                exit 1
+            fi
+            cli_exclude_dates="$2"
+            shift 2
+            ;;
         --suffix)
             if [[ $# -ge 2 ]] && [[ "$2" != -* ]]; then
                 ingest_suffix_tag="$2"
@@ -377,6 +387,12 @@ do
 esac
 done
 set -- "${POSITIONAL[@]}" # restore positional parameters
+
+if [[ -n "$cli_exclude_dates" ]]; then
+    exclude_dates_py="${SCRIPT_DIR}/../utils/template_exclude_dates.py"
+    run_command "python3 ${exclude_dates_py} ${template_file} ${cli_exclude_dates} --merge"
+fi
+create_template_array "$template_file"
 
 ingest_suffix_opt=""
 [[ -n "$ingest_suffix_tag" ]] && ingest_suffix_opt="--suffix ${ingest_suffix_tag}"

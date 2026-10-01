@@ -25,6 +25,7 @@ Optional MintPy / MinSAR template overrides:
 
 ``--tropo METHOD`` / ``--mintpy.troposphericDelay.method METHOD`` (e.g. ``no``, ``auto``, ``pyaps``)
 ``--insarmaps-dataset DATASET`` / ``--minsar.insarmaps_dataset DATASET`` (e.g. ``DS``, ``filt*DS``, ``geo``)
+``--minsar.excludeDates DATES`` / ``--exclude-dates DATES`` (comma-separated YYYYMMDD; also sets topsStack.excludeDates)
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ from minsar.utils.bbox_cli_argv import (
 )
 from minsar.utils.convert_bbox import _input_to_bounds
 from minsar.utils.exclude_season import parse_exclude_season
+from minsar.utils.template_exclude_dates import patch_template_text, normalize_exclude_dates_arg
 from minsar.utils.ssaraopt_to_mintpy_plot import apply_mintpy_plot_line, resolve_mintpy_plot_value
 from minsar.utils.sar_platform import SAR_PLATFORM_KNOWN, normalize_sar_platform_token
 
@@ -513,6 +515,8 @@ Examples:
   create_template.py 36.331:36.486,25.318:25.492 Santorini --start-date 20230101 --end-date 20241231
   create_template.py 36.331:36.486,25.318:25.492 Santorini --period 20210101:20221231
   create_template.py 36.331:36.486,25.318:25.492 Santorini --exclude-season 1101-0430
+  create_template.py 36.331:36.486,25.318:25.492 Santorini --exclude-dates 20260619
+  create_template.py 36.331:36.486,25.318:25.492 Santorini --minsar.excludeDates 20260619,20260207
   create_template.py 36.331:36.486,25.318:25.492 Santorini --flight-dir asc
   create_template.py 36.331:36.486,25.318:25.492 Santorini --platform S1
   create_template.py 36.331:36.486,25.318:25.492 Santorini --geometry
@@ -532,6 +536,14 @@ Examples:
     parser.add_argument("--quick-run", type=int, metavar="YEAR", nargs="?", const=2026, default=None, help="Jan 1 to Feb 28 for YEAR (default: 2026)")
     parser.add_argument("--last-year", action="store_true", help="full previous year")
     parser.add_argument("--exclude-season", metavar="MMDD-MMDD", help="ssaraopt.excludeSeason (e.g. 1101-0430 excludes Nov 1-Apr 30)")
+    parser.add_argument(
+        "--minsar.excludeDates",
+        "--exclude-dates",
+        dest="minsar_exclude_dates",
+        metavar="DATES",
+        default=None,
+        help="Comma-separated YYYYMMDD to exclude (sets minsar.excludeDates and topsStack.excludeDates)",
+    )
     parser.add_argument("--flight-dir", dest="flight_dir", default="asc,desc", type=normalize_flight_dir, metavar="DIR", help="asc, desc, asc,desc, desc,asc, both (Default: asc,desc)")
     parser.add_argument("--platform", default="S1", metavar="NAME", help="get_sar_coverage sensor (default S1); use S1 (NISAR/ALOS2 unsupported here)")
     parser.add_argument("--coregistration", dest="tops_coregistration", default=None, choices=["geometry", "NESD"], metavar="MODE", help="topsStack.coregistration; Default: NESD")
@@ -731,6 +743,15 @@ def main(
         mintpy_tropospheric_delay_method=mintpy_tropospheric_delay_method,
         minsar_insarmaps_dataset=minsar_insarmaps_dataset,
     )
+
+    if inps.minsar_exclude_dates is not None:
+        try:
+            exclude_dates_csv = normalize_exclude_dates_arg(inps.minsar_exclude_dates)
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1, None, None, ""
+        if exclude_dates_csv:
+            content = patch_template_text(content, exclude_dates_csv, merge=False)
 
     out_base = f"{name}{primary_label}"
     out_dir = Path.cwd()
