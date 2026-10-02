@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Recreate MinSAR overlay symlinks listed in setup/install_minsar.bash (additions → tools / env).
+Recreate MinSAR overlay symlinks listed in setup/install_additions.bash (additions → tools / env).
 
 Interprets the same lines the installer would run:
 
 - **Skipped (not executed in bash):** blank lines and **full-line** comments (first non-whitespace
   character is ``#``), e.g. ``#ln -sf ...`` or ``# patches...``.
 - **Trailing comments** on a command line (``ln ... # note``) are ignored, like bash.
-- **Linux-only ISCE/miniforge symlinks:** in ``install_minsar.bash`` these are the ``ln -sf``
+- **Linux-only ISCE/miniforge symlinks:** in ``install_additions.bash`` these are the ``ln -sf``
   lines whose destination path contains ``tools/miniforge3/envs/minsar``. That matches the block
   under ``if [[ "$(uname)" == "Linux" ]]; then`` (without relying on fragile nested ``if``/``fi``
   parsing). On macOS and other non-Linux hosts those lines are skipped (same as the installer).
@@ -28,6 +28,7 @@ Must be run with the shell current directory set to the repository root (``$MINS
 Usage (from repository root):
     python3 minsar/utils/update_symlinks.py
     python3 minsar/utils/update_symlinks.py --dry-run
+    python3 minsar/utils/update_symlinks.py --ignore-mintpy-drift
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ import argparse
 import os
 import platform
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -44,7 +46,7 @@ _LN_SF = re.compile(
     r"^\s*ln\s+-sf\s+(\$MINSAR_HOME/\S+)\s+(\$MINSAR_HOME/\S+)\s*(?:#.*)?$"
 )
 
-# Destinations under this path appear only in the Linux-guarded ISCE section of install_minsar.bash
+# Destinations under this path appear only in the Linux-guarded ISCE section of install_additions.bash
 _LINUX_ONLY_DST_MARK = "miniforge3/envs/minsar"
 
 
@@ -84,7 +86,7 @@ def parse_executable_ln_sf_lines(
     install_bash: Path, *, on_linux: bool
 ) -> list[tuple[str, str]]:
     """
-    Return (src_token, dst_token) for each ``ln -sf`` that would run in install_minsar.bash.
+    Return (src_token, dst_token) for each ``ln -sf`` that would run in install_additions.bash.
 
     Omits lines that bash would not execute (full-line comments). Omits Linux-only miniforge
     ISCE symlinks when ``on_linux`` is False (e.g. on macOS).
@@ -143,7 +145,7 @@ def symlink_already_correct(link_path: Path, src: Path) -> bool:
 
 def ensure_symlink(src: Path, link_path: Path, dry_run: bool) -> str:
     """
-    Create or replace symlink link_path -> src (absolute targets, like install_minsar.bash).
+    Create or replace symlink link_path -> src (absolute targets, like install_additions.bash).
 
     Returns:
         noop — already correct symlink (caller prints nothing)
@@ -174,7 +176,7 @@ def ensure_symlink(src: Path, link_path: Path, dry_run: bool) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
-            "Create symlinks from setup/install_minsar.bash (additions overlays). "
+            "Create symlinks from setup/install_additions.bash (additions overlays). "
             "Only prints lines when a symlink must be created or updated, or for warnings/errors."
         )
     )
@@ -182,6 +184,11 @@ def main(argv: list[str] | None = None) -> int:
         "--dry-run",
         action="store_true",
         help="Print only symlinks that would be created or replaced (no changes on disk)",
+    )
+    parser.add_argument(
+        "--ignore-mintpy-drift",
+        action="store_true",
+        help="Continue even when additions/mintpy/*_orig.py differs from tools/MintPy HEAD",
     )
     args = parser.parse_args(argv)
 
@@ -193,7 +200,19 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    install_bash = minsar_home / "setup" / "install_minsar.bash"
+    drift_cmd = [
+        sys.executable,
+        str(minsar_home / "minsar/utils/check_mintpy_overlay_drift.py"),
+        "--minsar-home",
+        str(minsar_home),
+    ]
+    if args.ignore_mintpy_drift:
+        drift_cmd.append("--ignore-mintpy-drift")
+    drift_proc = subprocess.run(drift_cmd, check=False)
+    if drift_proc.returncode != 0:
+        return drift_proc.returncode
+
+    install_bash = minsar_home / "setup" / "install_additions.bash"
 
     if not install_bash.is_file():
         print(f"Error: install script not found: {install_bash}", file=sys.stderr)

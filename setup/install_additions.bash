@@ -2,6 +2,46 @@
 set -eo pipefail
 
 MINSAR_HOME="${MINSAR_HOME:-$PWD}"
+IGNORE_MINTPY_DRIFT=0
+
+usage() {
+    cat <<'EOF'
+usage: install_additions.bash [-h] [--ignore-mintpy-drift]
+
+Install MinSAR additions (symlinks into tools/MintPy, MiaplPy, ISCE, SNAPHU).
+
+options:
+  -h, --help              Show this help
+  --ignore-mintpy-drift   Install MintPy symlinks even when *_orig.py pins
+                          differ from tools/MintPy HEAD (does not change additions/)
+
+Examples:
+  ./setup/install_additions.bash
+  ./setup/install_additions.bash --ignore-mintpy-drift
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --ignore-mintpy-drift)
+            IGNORE_MINTPY_DRIFT=1
+            shift
+            ;;
+        -?*|--*)
+            echo "Error: Unknown option: $1" >&2
+            echo "Use install_additions.bash --help for available options" >&2
+            exit 1
+            ;;
+        *)
+            echo "Error: Unknown argument: $1" >&2
+            exit 1
+            ;;
+    esac
+done
 
 ###  Install SNAPHU #################
 if [[ -x tools/snaphu-v2.0.7/bin/snaphu ]]; then
@@ -15,6 +55,10 @@ else
 fi
 
 ### Adding not-commited MintPy fixes
+drift_args=()
+[[ "$IGNORE_MINTPY_DRIFT" -eq 1 ]] && drift_args+=(--ignore-mintpy-drift)
+python3 "$MINSAR_HOME/minsar/utils/check_mintpy_overlay_drift.py" --minsar-home "$MINSAR_HOME" "${drift_args[@]}"
+
 ln -sf $MINSAR_HOME/additions/mintpy/plot_network.py $MINSAR_HOME/tools/MintPy/src/mintpy
 ln -sf $MINSAR_HOME/additions/mintpy/save_hdfeos5.py $MINSAR_HOME/tools/MintPy/src/mintpy
 ln -sf $MINSAR_HOME/additions/mintpy/cli/save_hdfeos5.py $MINSAR_HOME/tools/MintPy/src/mintpy/cli
@@ -25,6 +69,9 @@ ln -sf $MINSAR_HOME/additions/mintpy/save_explorer.py $MINSAR_HOME/tools/MintPy/
 ln -sf $MINSAR_HOME/additions/mintpy/cli/save_explorer.py $MINSAR_HOME/tools/MintPy/src/mintpy/cli
 ln -sf $MINSAR_HOME/additions/mintpy/save_qgis.py $MINSAR_HOME/tools/MintPy/src/mintpy
 ln -sf $MINSAR_HOME/additions/mintpy/cli/save_qgis.py $MINSAR_HOME/tools/MintPy/src/mintpy/cli
+ln -sf $MINSAR_HOME/additions/mintpy/view.py $MINSAR_HOME/tools/MintPy/src/mintpy/view.py
+ln -sf $MINSAR_HOME/additions/mintpy/cli/view.py $MINSAR_HOME/tools/MintPy/src/mintpy/cli/view.py
+ln -sf $MINSAR_HOME/additions/mintpy/utils/web_basemap.py $MINSAR_HOME/tools/MintPy/src/mintpy/utils/web_basemap.py
 
 ### Adding not-committed MiaplPy fixes
 ln -sf $MINSAR_HOME/additions/miaplpy/prep_slc_isce.py $MINSAR_HOME/tools/MiaplPy/src/miaplpy/prep_slc_isce.py
