@@ -476,6 +476,16 @@ def main(iargs=None):
             upload_cmd = f'rsync -avz --progress {inps.work_dir}{pattern} {REMOTE_CONNECTION_DIR}/{project_name}/{"/".join(pattern.split("/")[0:-1])}'
             upload_commands.append(upload_cmd)
 
+    for data_dir in inps.data_dirs:
+        raw = data_dir.rstrip('/')
+        if _is_insarmaps_log(raw):
+            continue
+        local = os.path.join(inps.work_dir, raw)
+        if os.path.isdir(local):
+            unique_dirs.add(os.path.relpath(local, inps.work_dir))
+        elif _is_pic_dir(raw):
+            unique_dirs.add(os.path.basename(raw.lstrip('./')))
+
     # Step 2: Create ALL remote directories with ONE SSH command
     if unique_dirs:
         print('\nCreating all remote directories with one SSH command...')
@@ -494,21 +504,11 @@ def main(iargs=None):
         if status != 0:
             raise Exception('ERROR uploading using rsync in upload_data_products.py')
 
-    # Step 4: Adjust permissions for all uploaded directories
-    print('\nAdjusting permissions for all uploaded directories...')
-
-    # Get all unique top-level directories from inps.data_dirs
-    unique_top_dirs = set()
-    for data_dir in inps.data_dirs:
-        data_dir = data_dir.rstrip('/')
-        # Get the top-level directory (e.g., 'mintpy' from 'mintpy/geo')
-        top_dir = data_dir.split('/')[0]
-        unique_top_dirs.add(top_dir)
-
-    # Adjust permissions for all top-level directories at once
-    if unique_top_dirs:
-        all_paths = ' '.join([f'{REMOTE_DIR}{project_name}/{d}' for d in sorted(unique_top_dirs)])
-        command = f'ssh {REMOTEUSER}@{REMOTEHOST_DATA} "chmod -R u=rwX,go=rX {all_paths}"'
+    # Step 4: Adjust permissions under the project directory on the remote host
+    if upload_commands or unique_dirs:
+        print('\nAdjusting permissions for all uploaded directories...')
+        project_remote = f'{REMOTE_DIR}{project_name}'
+        command = f'ssh {REMOTEUSER}@{REMOTEHOST_DATA} "chmod -R u=rwX,go=rX {project_remote}"'
         print(command)
         status = subprocess.Popen(command, shell=True).wait()
         if status != 0:
