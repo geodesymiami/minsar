@@ -62,6 +62,7 @@ python3 "$MINSAR_HOME/minsar/utils/check_mintpy_overlay_drift.py" --minsar-home 
 ln -sf $MINSAR_HOME/additions/mintpy/plot_network.py $MINSAR_HOME/tools/MintPy/src/mintpy
 ln -sf $MINSAR_HOME/additions/mintpy/save_hdfeos5.py $MINSAR_HOME/tools/MintPy/src/mintpy
 ln -sf $MINSAR_HOME/additions/mintpy/cli/save_hdfeos5.py $MINSAR_HOME/tools/MintPy/src/mintpy/cli
+ln -sf $MINSAR_HOME/additions/mintpy/hdfeos5_geocode_helper.py $MINSAR_HOME/tools/MintPy/src/mintpy
 ln -sf $MINSAR_HOME/additions/mintpy/cli/geocode.py $MINSAR_HOME/tools/MintPy/src/mintpy/cli
 ln -sf $MINSAR_HOME/additions/mintpy/cli/geocode_orig.py $MINSAR_HOME/tools/MintPy/src/mintpy/cli
 ln -sf $MINSAR_HOME/additions/mintpy/save_explorer.py $MINSAR_HOME/tools/MintPy/src/mintpy

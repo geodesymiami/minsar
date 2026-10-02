@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Geocode S1*.he5 (HDFEOS5) files.
+"""Helpers for geocoding S1*.he5 (HDFEOS5) via mintpy.cli.geocode.
 
 Full in-place (B2): read HDFEOS5 → geocode → write HDFEOS5.
-No extract step, no temp directory (minimal temp for lookup only).
+Called from additions/mintpy/cli/geocode.py for .he5 inputs (use geocode.py, not hdfeos5_geocode_helper.py as CLI).
 """
 
 import os
@@ -111,7 +111,7 @@ def _create_hdf5_dataset(group, dsName, data, compression=COMPRESSION):
     )
 
 
-def main(inps):
+def geocode_he5(inps):
     """Geocode .he5 file(s). inps: parsed namespace from mintpy.cli.geocode_orig.create_parser()."""
     he5_files = [f for f in inps.file if f.endswith('.he5') and os.path.isfile(f)]
     if not he5_files:
@@ -324,21 +324,3 @@ def main(inps):
             except OSError:
                 pass
     return 0
-
-
-def cli_main(iargs=None):
-    from mintpy.cli.geocode_orig import create_parser, read_template2inps
-    from mintpy.utils import utils as ut
-
-    iargs = iargs if iargs is not None else sys.argv[1:]
-    parser = create_parser()
-    inps = parser.parse_args(args=iargs)
-    inps.argv = iargs
-    if inps.templateFile:
-        inps = read_template2inps(inps.templateFile, inps)
-    inps.file = ut.get_file_list(inps.file)
-    sys.exit(main(inps) or 0)
-
-
-if __name__ == '__main__':
-    cli_main()

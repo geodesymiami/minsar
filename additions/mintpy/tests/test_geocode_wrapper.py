@@ -4,7 +4,7 @@ Unit tests for additions/mintpy/cli/geocode.py (MinSAR geocode wrapper).
 
 Tests that:
 1. Non-.he5 input delegates to geocode_orig (original MintPy behavior preserved)
-2. .he5 input delegates to geocode_hdfeos5
+2. .he5 input delegates to hdfeos5_geocode_helper.geocode_he5
 3. .he5 detection logic works correctly
 4. All original geocode args pass through to geocode_orig
 
@@ -40,13 +40,11 @@ def _inject_geocode_orig_module(mock_main, mock_parser=None):
     sys.modules["mintpy.cli.geocode_orig"] = fake
 
 
-def _inject_geocode_hdfeos5_module(mock_main):
-    """Inject minsar.utils.geocode_hdfeos5 into sys.modules for .he5 delegation tests."""
-    if "minsar.utils" not in sys.modules:
-        sys.modules["minsar.utils"] = types.ModuleType("minsar.utils")
-    fake = types.ModuleType("minsar.utils.geocode_hdfeos5")
-    fake.main = mock_main
-    sys.modules["minsar.utils.geocode_hdfeos5"] = fake
+def _inject_hdfeos5_geocode_helper_module(mock_geocode_he5):
+    """Inject mintpy.hdfeos5_geocode_helper into sys.modules for .he5 delegation tests."""
+    fake = types.ModuleType("mintpy.hdfeos5_geocode_helper")
+    fake.geocode_he5 = mock_geocode_he5
+    sys.modules["mintpy.hdfeos5_geocode_helper"] = fake
 
 
 def _load_geocode_wrapper():
@@ -109,21 +107,21 @@ class TestGeocodeWrapperDelegation(unittest.TestCase):
     def _create_mock_inps(self, files):
         return argparse.Namespace(file=files if isinstance(files, list) else [files])
 
-    def test_he5_input_delegates_to_geocode_hdfeos5(self):
-        """When input file is .he5, geocode_hdfeos5.main() should be called with parsed inps."""
+    def test_he5_input_delegates_to_hdfeos5_geocode_helper(self):
+        """When input file is .he5, hdfeos5_geocode_helper.geocode_he5() should be called with parsed inps."""
         mock_inps = self._create_mock_inps(["file.he5"])
         mock_parser = MagicMock()
         mock_parser.parse_args.return_value = mock_inps
-        mock_he5_main = MagicMock()
+        mock_geocode_he5 = MagicMock()
         _inject_geocode_orig_module(MagicMock(), mock_parser)
-        _inject_geocode_hdfeos5_module(mock_he5_main)
+        _inject_hdfeos5_geocode_helper_module(mock_geocode_he5)
 
         geocode_module = _load_geocode_wrapper()
         iargs = ["file.he5", "-l", "geometryRadar.h5"]
         with patch("mintpy.utils.utils.get_file_list", side_effect=lambda x: x if isinstance(x, list) else [x]):
             geocode_module.main(iargs)
-        mock_he5_main.assert_called_once()
-        self.assertIs(mock_he5_main.call_args[0][0], mock_inps)
+        mock_geocode_he5.assert_called_once()
+        self.assertIs(mock_geocode_he5.call_args[0][0], mock_inps)
 
     def test_h5_input_delegates_to_geocode_orig(self):
         """When input file is .h5 (not .he5), geocode_orig.main() should be called."""

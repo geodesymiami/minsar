@@ -77,7 +77,7 @@ Filtered DS uses prefix `filt` + network prefix: `--suffix "filt${prefix}DS"`.
 
 ## Geocoded HE5
 
-`geocode_hdfeos5.py` writes sibling files with **`geo_`** prepended to the radar basename:
+`geocode.py` on radar `.he5` (via `hdfeos5_geocode_helper`) writes sibling files with **`geo_`** prepended to the radar basename:
 
 ```text
 geo_S1_desc_124_miaplpy_20141010_20180104_…_filtDel4DS.he5
@@ -99,7 +99,7 @@ MintPy short forms may include `…_mintpy_YYYYMMDD_XXXXXXXX.he5` or `…_XXXXXX
 | `save_miaplpy_hdfeos5.bash` | MiaplPy step 10: PS/DS/filtDS + geocode aux |
 | `create_save_hdfeos5_jobfile.py` | SLURM job for step 10 |
 | `reference_point_hdfeos5.bash` | Re-reference in-memory; may write short name |
-| `geocode_hdfeos5.py` | `geo_` + radar basename |
+| `geocode.py` (`.he5` input) | `geo_` + radar basename |
 | `extract_hdfeos5.py` | Reverse export (not naming) |
 | `sarvey2insarmaps.py` | SARvey CSV/MBTiles ingest; same base pattern via `get_output_filename()`, corners always from CSV bbox |
 

@@ -204,7 +204,7 @@ def ensure_radar_lookup(he5_path, lookup_pre=None):
         if os.path.isfile(candidate):
             return candidate
 
-    # Extract geometry only into a temp dir (same idea as geocode_hdfeos5._ensure_lookup).
+    # Extract geometry only into a temp dir (same idea as hdfeos5_geocode_helper._ensure_lookup).
     extract = shutil.which("extract_hdfeos5.py")
     if not extract:
         raise FileNotFoundError(

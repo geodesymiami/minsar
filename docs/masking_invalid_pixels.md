@@ -99,7 +99,7 @@ tsview.py S1_….he5
 
 | | Radar HE5 | Geo HE5 |
 |---|---|---|
-| Typical source | MintPy / MiaplPy `save_hdfeos5.py` + `geometryRadar.h5` | MintPy `geo_*` + `geometryGeo.h5`, `geocode_hdfeos5.py` (`geo_` prefix), or ISCE3 `dolphin2he5.py` |
+| Typical source | MintPy / MiaplPy `save_hdfeos5.py` + `geometryRadar.h5` | MintPy `geo_*` + `geometryGeo.h5`, `geocode.py` on `.he5` (`geo_` prefix), or ISCE3 `dolphin2he5.py` |
 | `Y_FIRST` / `X_STEP` | usually absent | present |
 | `quality/mask` | copy of `maskTempCoh.h5` | copy of `geo_maskTempCoh.h5`, or ISCE3 `-m` rule |
 | Displacement NaN-filled from mask | no (MintPy) | no (MintPy and ISCE3 `dolphin2he5`) |
