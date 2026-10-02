@@ -165,6 +165,9 @@ fi
 if [[ -f ~/accounts/login_alias.bash ]]; then
    source ~/accounts/login_alias.bash
 fi
+if [[ -f ~/accounts/mapbox_access_token.env ]]; then
+    source ~/accounts/mapbox_access_token.env
+fi
 
 # Avoid Cursor/VS Code prompt hook error in subshells or SSH.
 if [[ -n "${PROMPT_COMMAND:-}" ]] && ! type __vsc_prompt_cmd_original &>/dev/null; then
