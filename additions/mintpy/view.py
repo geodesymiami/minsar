@@ -681,6 +681,10 @@ def plot_slice(ax, data, metadata, inps):
 
         ax.format_coord = format_coord
 
+        # MinSAR: scatter uses axis('equal'), which expands limits; clamp to geo subset extent
+        ax.set_xlim(inps.extent[0], inps.extent[1])
+        ax.set_ylim(inps.extent[2], inps.extent[3])
+
     #------------------------ Plot in Y/X-coordinate ------------------------------------------------#
     else:
         inps.fig_coord = 'yx'
