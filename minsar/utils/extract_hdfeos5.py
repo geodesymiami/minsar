@@ -153,16 +153,47 @@ def extract_timeseries(file_path, coords, out_dir=""):
 
     return out_file
 
+def extract_velocity(file_path, coords, out_dir="", start_date=None, end_date=None):
+    """
+    Estimate LOS velocity from displacement time-series via MintPy timeseries2velocity
+    (default timeFunc: polynomial=1, same as timeseries2velocity.py with no template).
+    """
+    out_file = os.path.join(out_dir, "geo_velocity.h5" if coords == "GEO" else "velocity.h5")
+    iargs = [file_path, "-o", out_file]
+    if start_date:
+        iargs.extend(["--start-date", start_date])
+    if end_date:
+        iargs.extend(["--end-date", end_date])
+    print("\ntimeseries2velocity.py", " ".join(iargs))
+    import mintpy.cli.timeseries2velocity
+    mintpy.cli.timeseries2velocity.main(iargs)
+    print(f"Extracted velocity -> {out_file}")
+    return out_file
+
 def main():
     parser = argparse.ArgumentParser(
         description="Extract slices from a MintPy HDFEOS file (reverse of save_hdfeos5.py).  "
                     "By default extracts mask, avgSpatialCoherence, temporalCoherence, and geometry. "
-                    "Use --all to also extract the displacement (timeseries) datasets."
+                    "Use --all to also extract the displacement (timeseries) datasets.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="Examples:\n"
+               "  extract_hdfeos5.py S1_*.he5\n"
+               "  extract_hdfeos5.py S1_*.he5 --all --velocity\n"
+               "  extract_hdfeos5.py S1_*.he5 --velocity --start-date 20190101 --end-date 20201231",
     )
     parser.add_argument("infile", help="Input S1* HDFEOS file.")
     parser.add_argument("--all", action="store_true",
                         help="Extract all slices including the displacement (timeseries) datasets.")
+    parser.add_argument("--velocity", action="store_true",
+                        help="Estimate velocity with MintPy timeseries2velocity (default timeFunc options).")
+    parser.add_argument("--start-date", dest="start_date", metavar="YYYYMMDD",
+                        help="First date for velocity fit (default: first date in file). Requires --velocity.")
+    parser.add_argument("--end-date", dest="end_date", metavar="YYYYMMDD",
+                        help="Last date for velocity fit (default: last date in file). Requires --velocity.")
     args = parser.parse_args()
+
+    if (args.start_date or args.end_date) and not args.velocity:
+        parser.error("--start-date and --end-date require --velocity")
 
     file_list = glob.glob(args.infile)
     if not file_list:
@@ -193,6 +224,12 @@ def main():
 
     if args.all:
         extract_timeseries(file_path, coords, out_dir)
+
+    if args.velocity:
+        extract_velocity(
+            file_path, coords, out_dir,
+            start_date=args.start_date, end_date=args.end_date,
+        )
 
 if __name__ == "__main__":
     main()
