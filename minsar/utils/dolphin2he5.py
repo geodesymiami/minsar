@@ -220,7 +220,9 @@ def run_dolphin(inps, vmin, vmin_sim, suffix: str) -> Path:
         post_processing_method=method_name,
     )
     # Write .he5 next to the GeoTIFF timeseries inputs (dolphin/timeseries/).
-    return _write_he5(inps, ts_dir, stack, date_list, grid, quality, mask, latitude, longitude, metadata, suffix, bperp=None)
+    return _write_he5(
+        inps, ts_dir, stack, date_list, grid, quality, mask, latitude, longitude, metadata, suffix, vmin, vmin_sim, bperp=None
+    )
 
 
 def run_opera(inps, vmin, vmin_sim, suffix: str) -> Path:
@@ -270,11 +272,11 @@ def run_opera(inps, vmin, vmin_sim, suffix: str) -> Path:
     )
     out_dir = run_dir
     return _write_he5(
-        inps, out_dir, stack, date_list, grid, quality, mask, latitude, longitude, metadata, suffix, bperp=bperp
+        inps, out_dir, stack, date_list, grid, quality, mask, latitude, longitude, metadata, suffix, vmin, vmin_sim, bperp=bperp
     )
 
 
-def _write_he5(inps, out_dir, stack, date_list, grid, quality, mask, latitude, longitude, metadata, suffix, bperp):
+def _write_he5(inps, out_dir, stack, date_list, grid, quality, mask, latitude, longitude, metadata, suffix, vmin, vmin_sim, bperp):
     shape = (int(grid["LENGTH"]), int(grid["WIDTH"]))
     if inps.outfile:
         out_path = Path(inps.outfile).expanduser().resolve()
