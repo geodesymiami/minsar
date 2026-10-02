@@ -20,26 +20,15 @@ if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     helptext="
 Examples:
     $SCRIPT_NAME mintpy
-    $SCRIPT_NAME miaplpy/network_single_reference
+    $SCRIPT_NAME miaplpy/network_single_reference --dataset PS,DS,filt*DS --suffix auto
     $SCRIPT_NAME S1_IW1_128_20180303_XXXXXXXX__S00878_S00791_W091201_W091113.he5
     $SCRIPT_NAME TSX_036_20170923_20251008_N2598W08016_N2576W08016_N2576W08011_N2598W08011.csv
-    $SCRIPT_NAME hvGalapagosSenD128/mintpy --ref-lalo -0.81,-91.190
-    $SCRIPT_NAME hvGalapagosSenD128/miaplpy/network_single_reference
-    $SCRIPT_NAME miaplpy/network_single_reference --dataset geo
-    $SCRIPT_NAME miaplpy/network_single_reference --dataset PS
-    $SCRIPT_NAME miaplpy/network_single_reference --dataset filt*DS
-    $SCRIPT_NAME miaplpy/network_single_reference --dataset PS,DS
-    $SCRIPT_NAME miaplpy/network_single_reference --dataset PS,DS,filt*DS
-    $SCRIPT_NAME mintpy --dataset geo                    # default: both steps (HDFEOS5→JSON/mbtiles + insarmaps)
-    $SCRIPT_NAME mintpy --dataset geo --hdfeos5_2json_mbtiles   # step 1 only (same as --step 1)
-    $SCRIPT_NAME mintpy --dataset geo --step 1
-    $SCRIPT_NAME mintpy --step 1                         # dataset defaults to geo
-    $SCRIPT_NAME mintpy --json_mbtiles2insarmaps         # step 2 only (same as --step 2); requires prior step 1
-    $SCRIPT_NAME mintpy --dataset geo --suffix thermal
-    $SCRIPT_NAME miaplpy/network_single_reference --suffix auto
-    $SCRIPT_NAME mintpy --submit
     $SCRIPT_NAME hvGalapagosSenD128/mintpy --ref-lalo -0.81,-91.190 --submit
-    $SCRIPT_NAME mintpy --dataset geo --insarmapshost \$INSARMAPSHOST2
+    $SCRIPT_NAME mintpy --dataset geo --step 1
+    $SCRIPT_NAME mintpy --json_mbtiles2insarmaps
+    $SCRIPT_NAME mintpy --dataset geo --suffix thermal --insarmapshost \$INSARMAPSHOST2 --quiet-summary
+    $SCRIPT_NAME mintpy --mask-thresh 0.85 --overwrite
+    $SCRIPT_NAME timeseries/S1_….he5 -m tc+sim --vmin 0.7 --vmin-sim 0.5
 
   Options:
       --ref-lalo LAT,LON or LAT LON   Reference point (lat,lon or lat lon)
@@ -58,6 +47,11 @@ Examples:
       --submit                        Run ingest now (inline on Mac/Jetstream; jobfile + run_workflow on SLURM login)
                                       Prints InsarMaps URLs after completion when using --submit
       --debug                         Enable debug mode (set -x)
+      -m MASK, --mask-source MASK     Remask before ingest (same as remask_he5.py): recommended, tc, similarity, tc+sim, recommendedDensity, psDensity
+      --vmin FLOAT                    Cutoff for -m (not used with -m recommended)
+      --vmin-sim FLOAT                Similarity cutoff for -m tc+sim
+      --mask-thresh FLOAT             Alias for -m tc --vmin (MintPy minTempCoh-style)
+      --overwrite                     Replace input .he5 when remasking (no _tcNNN suffix; no backup)
       Default (no step flags): run both steps in order.
 
       Uses environment variables
@@ -90,6 +84,11 @@ ingest_step="all"
 # Default values for options (lowercase - local/temporary variables)
 geom_file=()
 mask_thresh=""
+mask_source=""
+mask_vmin=""
+mask_vmin_sim=""
+mask_overwrite=0
+ingest_mask_active=0
 ref_lalo=()
 dataset="geo"
 lat_step=""
@@ -139,6 +138,25 @@ do
         --mask-thresh)
             mask_thresh="$2"
             shift 2
+            ;;
+        -m|--mask-source)
+            [[ $# -lt 2 ]] && { echo "Error: $key requires a MASK argument" >&2; exit 1; }
+            mask_source="$2"
+            shift 2
+            ;;
+        --vmin)
+            [[ $# -lt 2 ]] && { echo "Error: --vmin requires a FLOAT argument" >&2; exit 1; }
+            mask_vmin="$2"
+            shift 2
+            ;;
+        --vmin-sim)
+            [[ $# -lt 2 ]] && { echo "Error: --vmin-sim requires a FLOAT argument" >&2; exit 1; }
+            mask_vmin_sim="$2"
+            shift 2
+            ;;
+        --overwrite)
+            mask_overwrite=1
+            shift
             ;;
         --ref-lalo)
             shift
@@ -269,6 +287,60 @@ validate_dataset() {
     done
 }
 validate_dataset "$dataset"
+
+# Resolve remask options (same semantics as remask_he5.py)
+resolve_ingest_mask_options() {
+    if [[ -n "$mask_thresh" || -n "$mask_source" || -n "$mask_vmin" || -n "$mask_vmin_sim" || "$mask_overwrite" == 1 ]]; then
+        ingest_mask_active=1
+    fi
+    if [[ -n "$mask_thresh" ]]; then
+        if [[ -n "$mask_source" && "$mask_source" != "tc" ]]; then
+            echo "Error: --mask-thresh implies -m tc; do not combine with -m $mask_source" >&2
+            exit 1
+        fi
+        if [[ -n "$mask_vmin" && "$mask_vmin" != "$mask_thresh" ]]; then
+            echo "Error: --mask-thresh conflicts with --vmin" >&2
+            exit 1
+        fi
+        mask_source="tc"
+        mask_vmin="$mask_thresh"
+    fi
+    if [[ $ingest_mask_active -eq 1 && "$ingest_step" == "step2" ]]; then
+        echo "Error: mask options cannot be used with --step 2 / --json_mbtiles2insarmaps" >&2
+        exit 1
+    fi
+}
+resolve_ingest_mask_options
+
+ingest_apply_remask() {
+    local he5="$1"
+    local -a cmd=(remask_he5.py "$he5")
+    [[ -n "$mask_source" ]] && cmd+=(-m "$mask_source")
+    [[ -n "$mask_vmin" ]] && cmd+=(--vmin "$mask_vmin")
+    [[ -n "$mask_vmin_sim" ]] && cmd+=(--vmin-sim "$mask_vmin_sim")
+    [[ "$mask_overwrite" == 1 ]] && cmd+=(--overwrite)
+    echo "####################################" | tee -a "$LOG_FILE" >&2
+    echo "Remask before ingest: ${cmd[*]}" | tee -a "$LOG_FILE" >&2
+    local remask_tmp new_path remask_status
+    remask_tmp=$(mktemp "${TMPDIR:-/tmp}/ingest_remask.XXXXXX")
+    "${cmd[@]}" 2>&1 | tee -a "$LOG_FILE" "$remask_tmp" >&2
+    remask_status=${PIPESTATUS[0]}
+    if [[ "$remask_status" -ne 0 ]]; then
+        rm -f "$remask_tmp"
+        echo "Error: remask_he5.py failed (exit $remask_status); see log above" >&2
+        exit 1
+    fi
+    new_path=$(sed -nE 's/^Output:[[:space:]]+(.+\.he5)( \(overwrite\))?/\1/p' "$remask_tmp" | tail -1)
+    if [[ -z "$new_path" ]]; then
+        new_path=$(sed -nE 's/^ HDFEOS file remasked:[[:space:]]+(.+\.he5)/\1/p' "$remask_tmp" | tail -1)
+    fi
+    rm -f "$remask_tmp"
+    if [[ -z "$new_path" || ! -f "$new_path" ]]; then
+        echo "Error: remask_he5.py did not produce an output .he5" >&2
+        exit 1
+    fi
+    echo "$new_path"
+}
 
 # Normalize --suffix (same rules as sarvey2insarmaps.py)
 normalize_suffix() {
@@ -488,6 +560,10 @@ ingest_submit_slurm_job() {
     [[ $quiet_summary == 1 ]] && cmd+=(--quiet-summary)
     [[ -n "$num_workers_cli" ]] && cmd+=(--num-workers "$num_workers_cli")
     [[ -n "$mbtiles_num_workers_cli" ]] && cmd+=(--mbtiles-num-workers "$mbtiles_num_workers_cli")
+    [[ -n "$mask_source" ]] && cmd+=(-m "$mask_source")
+    [[ -n "$mask_vmin" ]] && cmd+=(--vmin "$mask_vmin")
+    [[ -n "$mask_vmin_sim" ]] && cmd+=(--vmin-sim "$mask_vmin_sim")
+    [[ "$mask_overwrite" == 1 ]] && cmd+=(--overwrite)
     case "$ingest_step" in
         step1) cmd+=(--hdfeos5_2json_mbtiles) ;;
         step2) cmd+=(--json_mbtiles2insarmaps) ;;
@@ -532,6 +608,13 @@ fi
 for ingest_file in "${ingest_files[@]}"; do
     if [[ -n "$suffix" ]]; then
         ingest_file="$(apply_ingest_suffix "$ingest_file" "$suffix")"
+    fi
+    if [[ $ingest_mask_active -eq 1 ]]; then
+        if [[ "$input_format" == "csv" ]]; then
+            echo "Warning: mask options ignored for CSV input" >&2
+        else
+            ingest_file="$(ingest_apply_remask "$ingest_file")"
+        fi
     fi
     echo "####################################"
     echo "Processing: $ingest_file"

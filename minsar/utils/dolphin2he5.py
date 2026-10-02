@@ -310,6 +310,9 @@ def _write_he5(inps, out_dir, stack, date_list, grid, quality, mask, latitude, l
         dem_err=same_shape(quality.get("dem_err"), shape),
         bperp=bperp,
         metadata=metadata,
+        mask_source=inps.mask_source,
+        mask_vmin=vmin,
+        mask_vmin_sim=vmin_sim,
     )
     print(f"\nIngest with:\n  ingest_insarmaps.bash \"{out_path}\"")
     return out_path

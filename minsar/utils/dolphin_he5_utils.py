@@ -88,6 +88,7 @@ REMASK_HE5_EXAMPLES = """Examples:
   remask_he5.py S1_….he5 -m psDensity
   remask_he5.py S1_….he5 -m psDensity --vmin 0.5
   remask_he5.py S1_…_tc070sim050.he5 -m recommended
+  remask_he5.py S1_….he5 -m tc --vmin 0.85 --overwrite
 """
 # One underscore-separated token after the MintPy stem (also strip older tcNNN_simNNN).
 MASK_SUFFIX_RE = re.compile(
@@ -156,6 +157,64 @@ def add_mask_arguments(parser: argparse.ArgumentParser) -> None:
         dest="vmin_sim",
         help="Similarity cutoff for -m tc+sim (default: 0.4)",
     )
+
+
+HE5_TS_GROUP = "HDFEOS/GRIDS/timeseries"
+
+
+def apply_mask_provenance(
+    metadata: dict,
+    source: str,
+    vmin: float,
+    vmin_sim: float | None,
+) -> None:
+    """Record mask rule in HE5 metadata dict (writefile.write root/group attrs)."""
+    metadata["maskSource"] = source
+    metadata["maskVmin"] = str(vmin)
+    if vmin_sim is not None:
+        metadata["maskVminSim"] = str(vmin_sim)
+    else:
+        metadata.pop("maskVminSim", None)
+    if source == "tc":
+        metadata["minTempCoh"] = str(vmin)
+    note = f"mask -m {source} --vmin {vmin}"
+    if vmin_sim is not None:
+        note += f" --vmin-sim {vmin_sim}"
+    stamp = date.today().isoformat()
+    prev = metadata.get("history", "")
+    metadata["history"] = f"{prev}; {note} ({stamp})" if prev else f"{note} ({stamp})"
+
+
+def _write_mask_provenance_attrs(h5obj, source: str, vmin: float, vmin_sim: float | None) -> None:
+    h5obj.attrs["maskSource"] = source
+    h5obj.attrs["maskVmin"] = str(vmin)
+    if vmin_sim is not None:
+        h5obj.attrs["maskVminSim"] = str(vmin_sim)
+    elif "maskVminSim" in h5obj.attrs:
+        del h5obj.attrs["maskVminSim"]
+    if source == "tc":
+        h5obj.attrs["minTempCoh"] = str(vmin)
+    note = f"mask -m {source} --vmin {vmin}"
+    if vmin_sim is not None:
+        note += f" --vmin-sim {vmin_sim}"
+    stamp = date.today().isoformat()
+    prev = _he5_attr_str(h5obj.attrs, "history")
+    h5obj.attrs["history"] = f"{prev}; {note} ({stamp})" if prev else f"{note} ({stamp})"
+
+
+def apply_mask_provenance_h5(
+    h5_path: Path,
+    source: str,
+    vmin: float,
+    vmin_sim: float | None,
+) -> None:
+    """Write mask provenance on HDF-EOS5 root and MintPy metadata groups."""
+    with h5py.File(h5_path, "r+") as f:
+        _write_mask_provenance_attrs(f, source, vmin, vmin_sim)
+        if HE5_TS_GROUP in f:
+            _write_mask_provenance_attrs(f[HE5_TS_GROUP], source, vmin, vmin_sim)
+        if HE5_OBS in f:
+            _write_mask_provenance_attrs(f[HE5_OBS], source, vmin, vmin_sim)
 
 
 def resolve_mask_thresholds(source: str, vmin: float | None, vmin_sim: float | None) -> tuple[float, float | None]:
@@ -990,6 +1049,9 @@ def create_hdfeos_output(
     persistent_scatterer_density: np.ndarray = None,
     dem_err: np.ndarray = None,
     metadata: dict = None,
+    mask_source: str | None = None,
+    mask_vmin: float | None = None,
+    mask_vmin_sim: float | None = None,
 ):
     """Write a MintPy-style HDF-EOS5 file from Dolphin/OPERA arrays."""
     if metadata is None:
@@ -1089,6 +1151,8 @@ def create_hdfeos_output(
         else:
             metadata["PROJECT_NAME"] = os.path.basename(parent)
     metadata["REF_DATE"] = str(date_list[0])
+    if mask_source is not None and mask_vmin is not None:
+        apply_mask_provenance(metadata, mask_source, mask_vmin, mask_vmin_sim)
 
     writefile.write(hdfeos_dict, out_file=output_path, metadata=metadata)
     print(f"\n HDFEOS file created: {output_path}")
@@ -1856,19 +1920,37 @@ def remask_he5_file(
     vmin: float,
     vmin_sim: float | None,
 ) -> Path:
-    """Copy HE5, replace quality/mask in memory, write to out_path."""
+    """Copy HE5, replace quality/mask and displacement, write to out_path."""
+    import os
     import shutil
 
     in_path = Path(in_path).expanduser().resolve()
     out_path = Path(out_path).expanduser().resolve()
-    out_path.parent.mkdir(parents=True, exist_ok=True)
     stack, shape, quality = quality_from_he5(in_path)
     mask = build_mask(shape, stack, quality, source=source, vmin=vmin, vmin_sim=vmin_sim)
     stack = apply_mask_to_displacement(stack, mask)
-    shutil.copy2(in_path, out_path)
-    with h5py.File(out_path, "r+") as f:
-        dset = f[f"{HE5_QUALITY}/mask"]
-        dset[...] = mask.astype(dset.dtype)
-        f[f"{HE5_OBS}/displacement"][...] = stack
+    inplace = in_path == out_path
+    if inplace:
+        work_path = out_path.with_name(f".{out_path.name}.remask.tmp")
+    else:
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        work_path = out_path
+    try:
+        shutil.copy2(in_path, work_path)
+        with h5py.File(work_path, "r+") as f:
+            dset = f[f"{HE5_QUALITY}/mask"]
+            dset[...] = mask.astype(dset.dtype)
+            f[f"{HE5_OBS}/displacement"][...] = stack
+            _write_mask_provenance_attrs(f, source, vmin, vmin_sim)
+            if HE5_TS_GROUP in f:
+                _write_mask_provenance_attrs(f[HE5_TS_GROUP], source, vmin, vmin_sim)
+            if HE5_OBS in f:
+                _write_mask_provenance_attrs(f[HE5_OBS], source, vmin, vmin_sim)
+        if inplace:
+            os.replace(work_path, out_path)
+    except Exception:
+        if inplace and work_path.exists():
+            work_path.unlink()
+        raise
     print(f"\n HDFEOS file remasked: {out_path}")
     return out_path

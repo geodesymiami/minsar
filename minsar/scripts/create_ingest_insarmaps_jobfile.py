@@ -9,6 +9,7 @@ import argparse
 import shutil
 from minsar.objects import message_rsmas
 from minsar.job_submission import JOB_SUBMIT
+from minsar.utils.dolphin_he5_utils import add_mask_arguments
 
 
 def _positive_int(string):
@@ -39,6 +40,8 @@ EXAMPLE = """Examples:
     create_ingest_insarmaps_jobfile.py mintpy --step 2
     create_ingest_insarmaps_jobfile.py mintpy --dataset geo --suffix thermal
     create_ingest_insarmaps_jobfile.py miaplpy/network_single_reference --suffix auto
+    create_ingest_insarmaps_jobfile.py mintpy --mask-thresh 0.85 --overwrite
+    create_ingest_insarmaps_jobfile.py timeseries/S1_….he5 -m tc --vmin 0.7
 """
 ###########################################################################################
 def create_parser():
@@ -75,7 +78,10 @@ def create_parser():
                             help='Job runs only insarmaps upload; requires prior step 1')
     step_group.add_argument('--step', dest='ingest_step_arg', type=int, choices=[1, 2], default=None, metavar='N',
                             help='Job runs only step N (ingest_insarmaps.bash --step N): 1=HDFEOS5→JSON/mbtiles, 2=insarmaps')
-    
+    add_mask_arguments(parser)
+    parser.add_argument('--mask-thresh', dest='mask_thresh', type=float, default=None, help='Alias for -m tc --vmin (passed to ingest_insarmaps.bash)')
+    parser.add_argument('--overwrite', dest='overwrite', action='store_true', help='Replace input .he5 when remasking (ingest_insarmaps.bash)')
+
     # SLURM job options (from create_insarmaps_jobfile.py)
     parser.add_argument("--queue", dest="queue", metavar="QUEUE", 
                         default=os.getenv('QUEUENAME'), 
@@ -149,6 +155,17 @@ def main(iargs=None):
         command_parts.extend(['--num-workers', str(inps.num_workers)])
     if inps.mbtiles_num_workers is not None:
         command_parts.extend(['--mbtiles-num-workers', str(inps.mbtiles_num_workers)])
+
+    if inps.mask_thresh is not None:
+        command_parts.extend(['--mask-thresh', str(inps.mask_thresh)])
+    elif inps.mask_source != 'recommended' or inps.vmin is not None or inps.vmin_sim is not None:
+        command_parts.extend(['-m', inps.mask_source])
+        if inps.vmin is not None:
+            command_parts.extend(['--vmin', str(inps.vmin)])
+        if inps.vmin_sim is not None:
+            command_parts.extend(['--vmin-sim', str(inps.vmin_sim)])
+    if inps.overwrite:
+        command_parts.append('--overwrite')
 
     if getattr(inps, 'ingest_step', None) == 'step1':
         command_parts.append('--hdfeos5_2json_mbtiles')

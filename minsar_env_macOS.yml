@@ -1,0 +1,86 @@
+name: minsar
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+#   - isce2     # [linux]; interim fetchOrbit: docs/ISCE2_UPGRADE.md — remove symlink in install_additions.bash when isce2=2.6.4
+  - gdal
+  - libgdal-pg     # PostgreSQL/PostGIS vector driver (split out of libgdal since ~3.9.1) #FA 9/26 added to avoid pinning gdal3.6 (was not included for ock file generation)
+  - mintpy
+  - sardem
+  - numpy
+  - pandas
+  - xarray
+  - netcdf4
+  - packaging
+  - zarr
+  - uv
+# Mintpy
+  - cartopy
+  - cvxopt
+  - dask>=1.0
+  - dask-jobqueue>=0.3
+  - h5py
+  - lxml
+  - matplotlib
+  - pyaps3>=0.3
+  - pykml>=0.2
+  - pyproj
+  - pyresample
+  - pysolid
+  - scikit-image
+  - scipy
+# Miaplpy
+  - c-compiler
+  - cython
+  - rasterio
+  - setuptools
+  - pulp
+  - opencv
+  - scikit-learn
+  - defusedxml
+  - simplekml
+# tools
+  - wget
+  - git
+  - tree
+# minsar
+  - jupyter
+  - natsort
+  - pdf2image  # create_html
+  - folium
+  - contextily
+# PlotData
+  - gmt
+  - pygmt
+  - geopandas
+  - pyogrio
+# insarmaps_scripts
+  - tippecanoe
+  - libpq
+  - postgresql
+  - psycopg2
+  - pycurl
+# Sarvey
+  - PySide6
+  - cmcrameri
+  - gstools
+  - numba
+#   - pymaxflow              # for sarvey: Linux only, insert '#' on Mac
+# VSM
+  - corner
+  - emcee
+# Precip
+  - paramiko
+# Pip
+  - pip:
+      - georaster           # view_scatterplot
+      - bypy                # Baidu cloud interface
+      - burst2safe          # minsar
+      - asf_search          # minsar
+      - fuzzywuzzy          # Precip
+      - jupyter-ai          #
+      - geocoder            # insarmaps_sccripts
+      - kamui               #
+#       - pymaxflow          # for sarvey: Mac only,  '#' will be removed on Mac
+#      - requests>=2.20.0    # sardem

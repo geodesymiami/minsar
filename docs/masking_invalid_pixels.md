@@ -129,12 +129,19 @@ dolphin2he5.py qMiamiMiaDISPSenA48-stack.nc --method-string dispS1 --watermask q
 
 No `-m` flag means `-m recommended`. Template `mintpy.networkInversion.minTempCoh` is unused on this path.
 
-Stronger mask without re-download (`remask_he5.py` writes a new file):
+Stronger mask without re-download (`remask_he5.py`; default adds `_tcNNN` / `_tcNNNsimMMM` to the basename):
 
 ```bash
 cd $SCRATCHDIR/qMiamiMiaDISPSenA48
 remask_he5.py timeseries/S1_asc_048_operaDisp_20160927_20210104_N2578W08031_N2581W08031_N2581W08026_N2578W08026.he5 -m tc+sim --vmin 0.7 --vmin-sim 0.5
 ingest_insarmaps.bash timeseries/S1_asc_048_operaDisp_20160927_20210104_N2578W08031_N2581W08031_N2581W08026_N2578W08026_tc070sim050.he5
+```
+
+Replace the export name in place (no suffix, no backup): `--overwrite`. Same flags on `ingest_insarmaps.bash` (remask step before JSON/mbtiles). MintPy shortcut: `--mask-thresh 0.85` is `-m tc --vmin 0.85`.
+
+```bash
+remask_he5.py timeseries/S1_….he5 -m tc --vmin 0.85 --overwrite
+ingest_insarmaps.bash mintpy --mask-thresh 0.85 --overwrite
 ```
 
 ```bash
@@ -192,7 +199,9 @@ info.py timeseries/S1_….he5
 | `observation/displacement` | Source cube (Dolphin/OPERA values, including pixels outside `quality/mask`) |
 | `geometry/shadowMask` | stored, not in `-m` rules |
 
-`remask_he5.py` rewrites **`quality/mask` only**. Ingest / `view.py` displacement still apply the new mask. **Older HE5s** that were NaN-filled at write time cannot be loosened; reconvert with current `dolphin2he5.py` (or keep `*-stack.nc`). Water stays out of `quality/mask` even when the cube has a number there.
+Root / group metadata (after `dolphin2he5.py` or remask): **`maskSource`**, **`maskVmin`**, optional **`maskVminSim`**, and for `-m tc` also **`minTempCoh`**. Check with `info.py timeseries/S1_….he5`.
+
+`remask_he5.py` rewrites **`quality/mask`**, **NaN-fills `observation/displacement`** outside the mask, and updates mask metadata. **Older HE5s** that were NaN-filled at write time cannot be loosened; reconvert with current `dolphin2he5.py` (or keep `*-stack.nc`). Water stays out of `quality/mask` even when the cube has a number there.
 
 Dolphin ministack TC/similarity vary by batch; the HE5 stores the **averaged** 2-D layers, not per-ministack masks.
 
