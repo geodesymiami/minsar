@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-############################################################
-# MinSAR addition: Geocode S1*.he5 (HDFEOS5) files
-# Full in-place (B2): read HDFEOS5 → geocode → write HDFEOS5
-# No extract step, no temp directory (minimal temp for lookup only)
-############################################################
+"""Geocode S1*.he5 (HDFEOS5) files.
 
+Full in-place (B2): read HDFEOS5 → geocode → write HDFEOS5.
+No extract step, no temp directory (minimal temp for lookup only).
+"""
 
 import os
 import shutil
@@ -327,13 +326,19 @@ def main(inps):
     return 0
 
 
-if __name__ == '__main__':
+def cli_main(iargs=None):
     from mintpy.cli.geocode_orig import create_parser, read_template2inps
     from mintpy.utils import utils as ut
+
+    iargs = iargs if iargs is not None else sys.argv[1:]
     parser = create_parser()
-    inps = parser.parse_args(args=sys.argv[1:])
-    inps.argv = sys.argv[1:]
+    inps = parser.parse_args(args=iargs)
+    inps.argv = iargs
     if inps.templateFile:
         inps = read_template2inps(inps.templateFile, inps)
     inps.file = ut.get_file_list(inps.file)
     sys.exit(main(inps) or 0)
+
+
+if __name__ == '__main__':
+    cli_main()

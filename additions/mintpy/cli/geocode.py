@@ -23,7 +23,7 @@ def main(iargs=None):
             inps = read_template2inps(inps.templateFile, inps)
         inps.file = ut.get_file_list(inps.file)
         if inps.file and any(f.endswith('.he5') for f in inps.file):
-            from mintpy.geocode_hdfeos5 import main as he5_main
+            from minsar.utils.geocode_hdfeos5 import main as he5_main
             he5_main(inps)
             return
     except SystemExit as e:

@@ -41,10 +41,12 @@ def _inject_geocode_orig_module(mock_main, mock_parser=None):
 
 
 def _inject_geocode_hdfeos5_module(mock_main):
-    """Inject mintpy.geocode_hdfeos5 into sys.modules for .he5 delegation tests."""
-    fake = types.ModuleType("mintpy.geocode_hdfeos5")
+    """Inject minsar.utils.geocode_hdfeos5 into sys.modules for .he5 delegation tests."""
+    if "minsar.utils" not in sys.modules:
+        sys.modules["minsar.utils"] = types.ModuleType("minsar.utils")
+    fake = types.ModuleType("minsar.utils.geocode_hdfeos5")
     fake.main = mock_main
-    sys.modules["mintpy.geocode_hdfeos5"] = fake
+    sys.modules["minsar.utils.geocode_hdfeos5"] = fake
 
 
 def _load_geocode_wrapper():
