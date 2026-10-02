@@ -20,6 +20,7 @@ from minsar.objects import message_rsmas
 from minsar.objects.auto_defaults import PathFind
 from minsar.objects.dataset_template import Template
 from minsar.utils.dolphin_presets import OPERA_DISP_METHOD_STRING
+from minsar.utils.isce3_steps import he5_run_body, opera_he5_plot_commands
 from minsar.utils.generate_sweets_config import (
     S1_START_DEFAULT,
     bbox_wsene,
@@ -306,7 +307,10 @@ def format_disp_stage_commands(
             f"{check}\n"
         ),
         "reformat_disp": reformat,
-        "dolphin_2_he5": f"dolphin2he5.py {stack_name} --method-string {OPERA_DISP_METHOD_STRING} --watermask {stack_name}",
+        "dolphin_2_he5": he5_run_body(
+            f"dolphin2he5.py {stack_name} --method-string {OPERA_DISP_METHOD_STRING} --watermask {stack_name}",
+            opera_he5_plot_commands(),
+        ),
         "ingest_insarmaps": "ingest_insarmaps.bash .",
     }
 

@@ -181,9 +181,10 @@ def _resolve_index(step: str, available: tuple[str, ...]) -> int:
     value = expand_step_alias(step, "start", available)
     normalized = normalize_step(value)
     if normalized.isdigit():
-        index = int(normalized)
-        if 0 <= index < len(available):
-            return index
+        # Match run_isce3_workflow.bash: numeric STEP is run_NN (1-based), not list index.
+        number = int(normalized)
+        if 1 <= number <= len(available):
+            return number - 1
         raise ValueError(f"unknown step index: {step}")
     for index, name in enumerate(available):
         if normalized == name:
@@ -418,3 +419,27 @@ def filter_generator_argv(
         out.extend(argv[index : index + advance])
         index += advance
     return out
+
+
+def opera_he5_plot_commands() -> list[str]:
+    """Post-HE5 summary PNGs and pic/index.html at project root (OPERA / DISP-S1 stack)."""
+    return [
+        "plot_he5_pngs.py ./*.he5 -t *.template",
+        "create_html.py pic",
+    ]
+
+
+def dolphin_he5_plot_commands(dolphin_dir: str = "dolphin") -> list[str]:
+    """Post-HE5 summary PNGs and pic/index.html under a Dolphin work tree."""
+    he5 = f"{dolphin_dir}/timeseries/S1*.he5"
+    return [
+        f"plot_he5_pngs.py {he5} -t *.template",
+        f"create_html.py {dolphin_dir}/pic",
+    ]
+
+
+def he5_run_body(he5_cmd: str, plot_commands: list[str]) -> str:
+    """Run-file body: HE5 conversion plus plot/html lines."""
+    if not plot_commands:
+        return he5_cmd
+    return he5_cmd + "\n" + "\n".join(plot_commands)

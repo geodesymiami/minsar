@@ -944,26 +944,6 @@ def _he5_command(
     return f"dolphin2he5.py {dolphin_dir} --method-string {method} --watermask {watermask}"
 
 
-def _he5_plot_commands(dolphin_dir: str = DEFAULT_DOLPHIN_DIR) -> list[str]:
-    """Plot HE5 summary PNGs and build pic/index.html after dolphin_2_he5."""
-    he5 = f"{dolphin_dir}/timeseries/S1*.he5"
-    return [
-        f"plot_he5_pngs.py {he5} -t *.template",
-        f"create_html.py {dolphin_dir}/pic",
-    ]
-
-
-def _opera_he5_plot_commands() -> list[str]:
-    return [
-        "plot_he5_pngs.py ./*.he5 -t *.template",
-        "create_html.py pic",
-    ]
-
-
-def _he5_run_body(he5_cmd: str, plot_commands: list[str]) -> str:
-    return he5_cmd + "\n" + "\n".join(plot_commands)
-
-
 def _opera_he5_command(context: dict[str, object]) -> str:
     """dolphin2he5 from a locally produced DISP-S1 stack NetCDF."""
     project = str(context["project"])
@@ -2228,14 +2208,14 @@ def _sweets_stage_bodies(
     kind = "safe" if workflow == "safe" else "cslc"
     cfg = SWEETS_CONFIG
     download = _sweets_download_script(kind)
-    he5 = _he5_run_body(
+    he5 = isce3_steps.he5_run_body(
         _he5_command(
             preset,
             preset_naming,
             dolphin_dir=dolphin_dir,
             dolphin_config=dolphin_config,
         ),
-        _he5_plot_commands(dolphin_dir),
+        isce3_steps.dolphin_he5_plot_commands(dolphin_dir),
     )
     ingest = f"ingest_insarmaps.bash {dolphin_dir}/timeseries"
     geom = _geometry_stitch_command(strides, cfg)
@@ -2243,8 +2223,8 @@ def _sweets_stage_bodies(
         if dolphin_mode == "opera" and workflow in {"cslc", "safe"}:
             bodies = {
                 "reformat_disp": _reformat_disp_command(context, reference_method=reference_method) + "\n",
-                "dolphin_2_he5": _he5_run_body(
-                    _opera_he5_command(context), _opera_he5_plot_commands()
+                "dolphin_2_he5": isce3_steps.he5_run_body(
+                    _opera_he5_command(context), isce3_steps.opera_he5_plot_commands()
                 ),
                 "ingest_insarmaps": _opera_ingest_command(),
             }
@@ -2287,8 +2267,8 @@ def _sweets_stage_bodies(
             download_key: download_body,
             "disp_s1_process": disp_s1_process,
             "reformat_disp": reformat_disp,
-            "dolphin_2_he5": _he5_run_body(
-                _opera_he5_command(context), _opera_he5_plot_commands()
+            "dolphin_2_he5": isce3_steps.he5_run_body(
+                _opera_he5_command(context), isce3_steps.opera_he5_plot_commands()
             ),
             "ingest_insarmaps": _opera_ingest_command(),
         }
