@@ -579,6 +579,25 @@ def _finite_scatter_values(data):
     return np.asarray(data, dtype=np.float64)
 
 
+def _radar_lalo_scatter_mask(data, inps):
+    """True where a radar pixel should appear in lat/lon scatter (mask + finite data/geometry)."""
+    vals = _finite_scatter_values(data)
+    plot_ok = np.isfinite(vals)
+    if np.ma.isMaskedArray(data):
+        plot_ok &= ~np.ma.getmaskarray(data)
+    msk = getattr(inps, 'msk', None)
+    if msk is not None:
+        msk = np.asarray(msk, dtype=bool)
+        if msk.shape == plot_ok.shape:
+            plot_ok &= msk
+        elif msk.size == plot_ok.size:
+            plot_ok &= msk.reshape(plot_ok.shape)
+        else:
+            vprint(f'WARNING: mask shape {msk.shape} != data shape {plot_ok.shape}; '
+                   'mask not applied in lat/lon scatter')
+    return vals, plot_ok
+
+
 def plot_slice(ax, data, metadata, inps):
     """Plot one slice of matrix
     Parameters: ax       : matplot.pyplot axes object
@@ -832,8 +851,8 @@ def plot_slice(ax, data, metadata, inps):
                       'use --coord radar for y/x')
                 inps._radar_lalo_msg = True
 
-            vals = _finite_scatter_values(data)
-            finite = np.isfinite(vals) & np.isfinite(lats) & np.isfinite(lons)
+            vals, plot_ok = _radar_lalo_scatter_mask(data, inps)
+            finite = plot_ok & np.isfinite(lats) & np.isfinite(lons)
             if np.any(finite):
                 lon_min = float(np.min(lons[finite]))
                 lon_max = float(np.max(lons[finite]))
