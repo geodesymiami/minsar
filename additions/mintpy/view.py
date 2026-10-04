@@ -464,6 +464,121 @@ def prep_slice(cmd, auto_fig=False):
 
 
 ##################################################################################################
+def _lookup_file_from_mintpy():
+    """Return MintPy get_lookup_file() when that helper exists."""
+    get_lookup_file = getattr(ut, 'get_lookup_file', None)
+    if get_lookup_file is None:
+        try:
+            from mintpy.utils import utils1 as ut1
+            get_lookup_file = getattr(ut1, 'get_lookup_file', None)
+        except Exception:
+            get_lookup_file = None
+    if get_lookup_file is None:
+        return None
+    try:
+        return get_lookup_file(abspath=True, print_msg=False)
+    except TypeError:
+        try:
+            return get_lookup_file()
+        except Exception:
+            return None
+    except Exception:
+        return None
+
+
+def _is_radar_latlon_lookup(path, metadata):
+    """True when path is a radar-coordinate latitude/longitude lookup for this file."""
+    if not path or not os.path.isfile(path):
+        return False
+    try:
+        ds_list = readfile.get_dataset_list(path)
+        atr = readfile.read_attribute(path)
+    except Exception:
+        return False
+    if not all(name in ds_list for name in ('latitude', 'longitude')):
+        return False
+    # geocoded geometry is a regular grid, not one lat/lon per radar pixel
+    if 'Y_FIRST' in atr:
+        return False
+    try:
+        if int(atr['LENGTH']) != int(metadata['LENGTH']) or int(atr['WIDTH']) != int(metadata['WIDTH']):
+            return False
+    except (KeyError, TypeError, ValueError):
+        pass
+    return True
+
+
+def find_geometry_radar(metadata, inps=None):
+    """First geometryRadar.h5 (or MintPy lookup) with per-pixel latitude and longitude."""
+    if inps is not None and hasattr(inps, '_geom_radar_file'):
+        return inps._geom_radar_file or None
+    file_path = metadata.get('FILE_PATH') or ''
+    file_dir = os.path.dirname(os.path.abspath(file_path)) if file_path else ''
+    candidates = []
+    if file_dir:
+        candidates.append(os.path.join(file_dir, 'inputs', 'geometryRadar.h5'))
+        candidates.append(os.path.join(os.path.dirname(file_dir), 'inputs', 'geometryRadar.h5'))
+
+    def _cache(path):
+        if inps is not None:
+            inps._geom_radar_file = path or ''
+        return path or None
+
+    seen = set()
+    for path in candidates:
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        if _is_radar_latlon_lookup(path, metadata):
+            return _cache(path)
+
+    lookup = _lookup_file_from_mintpy()
+    if lookup and lookup not in seen and _is_radar_latlon_lookup(lookup, metadata):
+        return _cache(lookup)
+    if inps is not None:
+        inps._geom_radar_file = ''
+    return None
+
+
+def read_radar_lat_lon(geom_file, inps):
+    """Latitude/longitude on the same box and multilook step as the displayed data."""
+    key = (os.path.abspath(geom_file), tuple(inps.pix_box), int(inps.multilook_num))
+    cache = getattr(inps, '_radar_lalo_cache', None)
+    if cache is not None and cache[0] == key:
+        return cache[1], cache[2]
+    kwargs = dict(
+        box=inps.pix_box,
+        xstep=inps.multilook_num,
+        ystep=inps.multilook_num,
+        print_msg=False,
+    )
+    lats = readfile.read(geom_file, datasetName='latitude', **kwargs)[0]
+    lons = readfile.read(geom_file, datasetName='longitude', **kwargs)[0]
+    inps._radar_lalo_cache = (key, lats, lons)
+    return lats, lons
+
+
+def _subset_row_col(y, x, inps, center=False):
+    """Array index of radar (y, x) inside the displayed subset."""
+    row = y - inps.pix_box[1]
+    col = x - inps.pix_box[0]
+    step = inps.multilook_num
+    if step > 1 and center:
+        row = int((row - int(step / 2)) / step)
+        col = int((col - int(step / 2)) / step)
+    else:
+        row = int(row // step)
+        col = int(col // step)
+    return row, col
+
+
+def _finite_scatter_values(data):
+    """2D values with masked and non-finite samples set to NaN."""
+    if np.ma.isMaskedArray(data):
+        return np.ma.filled(np.asarray(data, dtype=np.float64), np.nan)
+    return np.asarray(data, dtype=np.float64)
+
+
 def plot_slice(ax, data, metadata, inps):
     """Plot one slice of matrix
     Parameters: ax       : matplot.pyplot axes object
@@ -478,6 +593,9 @@ def plot_slice(ax, data, metadata, inps):
     """
     global vprint
     vprint = print if inps.print_msg else lambda *args, **kwargs: None
+    # fig_coord is overwritten to 'yx' for radar plots; keep the CLI choice (--coord radar opts out)
+    if not hasattr(inps, '_coord_choice'):
+        inps._coord_choice = inps.fig_coord
 
     def extent2meshgrid(extent: tuple, ds_shape: list):
         """Get mesh grid coordinates for a given extent and shape.
@@ -687,114 +805,201 @@ def plot_slice(ax, data, metadata, inps):
 
     #------------------------ Plot in Y/X-coordinate ------------------------------------------------#
     else:
-        inps.fig_coord = 'yx'
-        vprint('plotting in Y/X coordinate ...')
+        geom_file = None
+        lats = lons = None
+        # radar file + scatter + geometry lat/lon: one marker per pixel, no grid resampling
+        use_radar_lalo = (
+            'Y_FIRST' not in metadata
+            and inps.style == 'scatter'
+            and inps._coord_choice != 'radar'
+        )
+        if use_radar_lalo:
+            geom_file = find_geometry_radar(metadata, inps)
+            if geom_file:
+                lats, lons = read_radar_lat_lon(geom_file, inps)
+                if lats.shape != data.shape or lons.shape != data.shape:
+                    vprint(f'WARNING: latitude/longitude shape {lats.shape} != data shape {data.shape}; '
+                           'plotting in Y/X')
+                    geom_file = None
+                    lats = lons = None
+            else:
+                vprint('no geometryRadar.h5 with latitude/longitude; plotting in Y/X coordinate')
 
-        # Plot DEM
-        if inps.dem_file:
-            vprint('plotting DEM background ...')
-            pp.plot_dem_background(
-                ax=ax,
-                geo_box=None,
-                dem=dem,
-                inps=inps,
-                print_msg=inps.print_msg,
+        if geom_file and lats is not None:
+            inps.radar_lalo_scatter = True
+            if not getattr(inps, '_radar_lalo_msg', False):
+                print(f'plotting radar pixels at lat/lon from {geom_file} (no grid resampling); '
+                      'use --coord radar for y/x')
+                inps._radar_lalo_msg = True
+
+            vals = _finite_scatter_values(data)
+            finite = np.isfinite(vals) & np.isfinite(lats) & np.isfinite(lons)
+            if np.any(finite):
+                lon_min = float(np.min(lons[finite]))
+                lon_max = float(np.max(lons[finite]))
+                lat_min = float(np.min(lats[finite]))
+                lat_max = float(np.max(lats[finite]))
+                pad_x = max((lon_max - lon_min) * 0.02, 1e-6)
+                pad_y = max((lat_max - lat_min) * 0.02, 1e-6)
+                inps.extent = (lon_min - pad_x, lon_max + pad_x, lat_min - pad_y, lat_max + pad_y)
+            else:
+                vprint('WARNING: no finite lat/lon/data pixels to plot')
+                inps.extent = (0.0, 1.0, 0.0, 1.0)
+
+            basemap = getattr(inps, 'basemap', None)
+            if basemap:
+                from mintpy.utils.web_basemap import add_web_basemap
+                add_web_basemap(
+                    ax,
+                    xlim=inps.extent[0:2],
+                    ylim=inps.extent[2:4],
+                    provider_key=basemap,
+                    alpha=getattr(inps, 'basemap_alpha', 1.0),
+                    print_msg=inps.print_msg,
+                )
+
+            vprint('plotting data via matplotlib.pyplot.scatter in lat/lon ...')
+            im = ax.scatter(
+                lons[finite], lats[finite], c=vals[finite],
+                marker='o', s=inps.scatter_marker_size, **kwargs,
             )
-
-        # extent = (left, right, bottom, top) in data coordinates
-        inps.extent = (inps.pix_box[0]-0.5, inps.pix_box[2]-0.5,
-                       inps.pix_box[3]-0.5, inps.pix_box[1]-0.5)
-
-        # Plot Data
-        if inps.disp_dem_blend:
-            im = pp.plot_blend_image(ax, data, dem, inps, print_msg=inps.print_msg)
-
-        elif inps.style == 'image':
-            vprint('plotting data via matplotlib.pyplot.imshow ...')
-            im = ax.imshow(data, extent=inps.extent, interpolation=inps.interpolation, **kwargs)
-
-        elif inps.style == 'scatter':
-            vprint('plotting data via matplotlib.pyplot.scatter (can take some time) ...')
-            xx, yy = extent2meshgrid(inps.extent, data.shape)
-            im = ax.scatter(xx, yy, c=data.flatten(), marker='o', s=inps.scatter_marker_size, **kwargs)
             ax.axis('equal')
+            ax.set_xlim(inps.extent[0], inps.extent[1])
+            ax.set_ylim(inps.extent[2], inps.extent[3])
+            ax.tick_params(labelsize=inps.font_size)
+            ax.set_xlabel('Longitude', fontsize=inps.font_size)
+            ax.set_ylabel('Latitude', fontsize=inps.font_size)
+
+            if inps.disp_ref_pixel:
+                ref_y, ref_x = None, None
+                if inps.ref_yx:
+                    ref_y, ref_x = inps.ref_yx[0], inps.ref_yx[1]
+                elif 'REF_Y' in metadata.keys():
+                    ref_y, ref_x = int(metadata['REF_Y']), int(metadata['REF_X'])
+                if ref_y is not None and ref_x is not None:
+                    row, col = _subset_row_col(ref_y, ref_x, inps, center=True)
+                    if 0 <= row < lats.shape[0] and 0 <= col < lats.shape[1]:
+                        if np.isfinite(lats[row, col]) and np.isfinite(lons[row, col]):
+                            ax.plot(lons[row, col], lats[row, col], inps.ref_marker, ms=inps.ref_marker_size)
+                            vprint('plot reference point')
+
+            if inps.pts_yx is not None:
+                pts_lon, pts_lat = [], []
+                for y, x in inps.pts_yx:
+                    row, col = _subset_row_col(y, x, inps, center=False)
+                    if 0 <= row < lats.shape[0] and 0 <= col < lats.shape[1]:
+                        if np.isfinite(lats[row, col]) and np.isfinite(lons[row, col]):
+                            pts_lon.append(lons[row, col])
+                            pts_lat.append(lats[row, col])
+                if pts_lon:
+                    ax.plot(pts_lon, pts_lat, inps.pts_marker, ms=inps.ref_marker_size, mec='black', mew=1.)
+                    vprint('plot points of interest')
+
+            def format_coord(x, y):
+                return f'E={x:.{lalo_digit}f}, N={y:.{lalo_digit}f}'
+
+            ax.format_coord = format_coord
 
         else:
-            raise ValueError(f'Un-recognized plotting style: {inps.style}!')
-        ax.tick_params(labelsize=inps.font_size)
+            inps.fig_coord = 'yx'
+            vprint('plotting in Y/X coordinate ...')
 
-        # Plot Seed Point
-        if inps.disp_ref_pixel:
-            ref_y, ref_x = None, None
-            if inps.ref_yx:
-                ref_y, ref_x = inps.ref_yx[0], inps.ref_yx[1]
-            elif 'REF_Y' in metadata.keys():
-                ref_y, ref_x = int(metadata['REF_Y']), int(metadata['REF_X'])
+            # Plot DEM
+            if inps.dem_file:
+                vprint('plotting DEM background ...')
+                pp.plot_dem_background(
+                    ax=ax,
+                    geo_box=None,
+                    dem=dem,
+                    inps=inps,
+                    print_msg=inps.print_msg,
+                )
 
-            if ref_y and ref_x:
-                ax.plot(ref_x, ref_y, inps.ref_marker, ms=inps.ref_marker_size)
-                vprint('plot reference point')
+            # extent = (left, right, bottom, top) in data coordinates
+            inps.extent = (inps.pix_box[0]-0.5, inps.pix_box[2]-0.5,
+                           inps.pix_box[3]-0.5, inps.pix_box[1]-0.5)
 
-        # Plot points of interest
-        if inps.pts_yx is not None:
-            ax.plot(inps.pts_yx[:, 1], inps.pts_yx[:, 0],
-                    inps.pts_marker, ms=inps.ref_marker_size,
-                    mec='black', mew=1.)
-            vprint('plot points of interest')
+            # Plot Data
+            if inps.disp_dem_blend:
+                im = pp.plot_blend_image(ax, data, dem, inps, print_msg=inps.print_msg)
 
-        # temporary test code
-        temp_test = False
-        if temp_test:
-            # Champlain Towers South AOI
-            pts_yx = np.array([
-                [929,1456],
-                [933,1457],
-                [933,1436],
-                [930,1431],
-                [929,1456],
-            ])
-            ax.plot(pts_yx[:, 1], pts_yx[:, 0], '-', ms=inps.ref_marker_size, mec='black', mew=1.)
+            elif inps.style == 'image':
+                vprint('plotting data via matplotlib.pyplot.imshow ...')
+                im = ax.imshow(data, extent=inps.extent, interpolation=inps.interpolation, **kwargs)
 
-        ax.set_xlim(inps.extent[0:2])
-        ax.set_ylim(inps.extent[2:4])
+            elif inps.style == 'scatter':
+                vprint('plotting data via matplotlib.pyplot.scatter (can take some time) ...')
+                xx, yy = extent2meshgrid(inps.extent, data.shape)
+                im = ax.scatter(xx, yy, c=data.flatten(), marker='o', s=inps.scatter_marker_size, **kwargs)
+                ax.axis('equal')
 
-        # Status bar
+            else:
+                raise ValueError(f'Un-recognized plotting style: {inps.style}!')
+            ax.tick_params(labelsize=inps.font_size)
 
-        # read lats/lons if exist
-        geom_file = os.path.join(os.path.dirname(metadata['FILE_PATH']), 'inputs/geometryRadar.h5')
-        if os.path.isfile(geom_file):
-            geom_ds_list = readfile.get_dataset_list(geom_file)
-            if all(x in geom_ds_list for x in ['latitude', 'longitude']):
-                lats = readfile.read(geom_file, datasetName='latitude',  box=inps.pix_box, print_msg=False)[0]
+            # Plot Seed Point
+            if inps.disp_ref_pixel:
+                ref_y, ref_x = None, None
+                if inps.ref_yx:
+                    ref_y, ref_x = inps.ref_yx[0], inps.ref_yx[1]
+                elif 'REF_Y' in metadata.keys():
+                    ref_y, ref_x = int(metadata['REF_Y']), int(metadata['REF_X'])
+
+                if ref_y and ref_x:
+                    ax.plot(ref_x, ref_y, inps.ref_marker, ms=inps.ref_marker_size)
+                    vprint('plot reference point')
+
+            # Plot points of interest
+            if inps.pts_yx is not None:
+                ax.plot(inps.pts_yx[:, 1], inps.pts_yx[:, 0],
+                        inps.pts_marker, ms=inps.ref_marker_size,
+                        mec='black', mew=1.)
+                vprint('plot points of interest')
+
+            # temporary test code
+            temp_test = False
+            if temp_test:
+                # Champlain Towers South AOI
+                pts_yx = np.array([
+                    [929,1456],
+                    [933,1457],
+                    [933,1436],
+                    [930,1431],
+                    [929,1456],
+                ])
+                ax.plot(pts_yx[:, 1], pts_yx[:, 0], '-', ms=inps.ref_marker_size, mec='black', mew=1.)
+
+            ax.set_xlim(inps.extent[0:2])
+            ax.set_ylim(inps.extent[2:4])
+
+            # Status bar: lat/lon from geometryRadar.h5 when present (same lookup as scatter)
+            geom_file = find_geometry_radar(metadata, inps)
+            if geom_file:
+                lats = readfile.read(geom_file, datasetName='latitude', box=inps.pix_box, print_msg=False)[0]
                 lons = readfile.read(geom_file, datasetName='longitude', box=inps.pix_box, print_msg=False)[0]
             else:
-                msg = f'WARNING: no latitude / longitude found in file: {os.path.basename(geom_file)}, '
-                msg += 'skip showing lat/lon in the status bar.'
-                vprint(msg)
                 geom_file = None
-        else:
-            geom_file = None
 
-        def format_coord(x, y):
-            # y/x
-            msg = f'x={x:.1f}, y={y:.1f}'
-            # value
-            col = int(np.rint(x - inps.pix_box[0]))
-            row = int(np.rint(y - inps.pix_box[1]))
-            if 0 <= col < num_col and 0 <= row < num_row:
-                v = data[row, col]
-                msg += ', v=[]' if np.isnan(v) or np.ma.is_masked(v) else f', v={v:.3f}'
-                # DEM
-                if inps.dem_file:
-                    h = dem[row, col]
-                    msg += ', h=[]' if np.isnan(h) else f', h={h:.1f} m'
-                # lat/lon
-                if geom_file:
-                    msg += f', E={lons[row, col]:.{lalo_digit}f}'
-                    msg += f', N={lats[row, col]:.{lalo_digit}f}'
-            return msg
+            def format_coord(x, y):
+                # y/x
+                msg = f'x={x:.1f}, y={y:.1f}'
+                # value
+                col = int(np.rint(x - inps.pix_box[0]))
+                row = int(np.rint(y - inps.pix_box[1]))
+                if 0 <= col < num_col and 0 <= row < num_row:
+                    v = data[row, col]
+                    msg += ', v=[]' if np.isnan(v) or np.ma.is_masked(v) else f', v={v:.3f}'
+                    # DEM
+                    if inps.dem_file:
+                        h = dem[row, col]
+                        msg += ', h=[]' if np.isnan(h) else f', h={h:.1f} m'
+                    # lat/lon
+                    if geom_file is not None and row < lats.shape[0] and col < lats.shape[1]:
+                        msg += f', E={lons[row, col]:.{lalo_digit}f}'
+                        msg += f', N={lats[row, col]:.{lalo_digit}f}'
+                return msg
 
-        ax.format_coord = format_coord
+            ax.format_coord = format_coord
 
 
     #---------------------- Figure Setting ----------------------------------------#
@@ -811,13 +1016,15 @@ def plot_slice(ax, data, metadata, inps):
         ax.set_title(inps.fig_title, fontsize=inps.font_size, color=inps.font_color)
 
     # 3.3 Flip Left-Right / Up-Down
-    if inps.flip_lr:
-        vprint('flip figure left and right')
-        ax.invert_xaxis()
+    # lat/lon scatter is already east/north; radar auto-flip would reverse the map
+    if not getattr(inps, 'radar_lalo_scatter', False):
+        if inps.flip_lr:
+            vprint('flip figure left and right')
+            ax.invert_xaxis()
 
-    if inps.flip_ud:
-        vprint('flip figure up and down')
-        ax.invert_yaxis()
+        if inps.flip_ud:
+            vprint('flip figure up and down')
+            ax.invert_yaxis()
 
     # 3.4 Turn off axis
     if not inps.disp_axis:

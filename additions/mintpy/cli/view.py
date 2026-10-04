@@ -21,6 +21,7 @@ EXAMPLE = """example:
   view.py velocity.h5 --sub-lat 31.05 31.10 --sub-lon 130.05 130.10  #subset in lalo / yx
   view.py velocity.h5 velocity --mask waterBody.h5 --mask-vmax 1
   view.py velocity.h5 velocity --style scatter --scatter-size 12
+  view.py velocity.h5 velocity --style scatter --coord radar --scatter-size 12
 
   view.py timeseries.h5
   view.py timeseries.h5 --ref-date 20101120     #change reference date
@@ -173,11 +174,14 @@ def cmd_line_parse(iargs=None):
         if '--cbar-ext' in inps.argv:
             print('WARNING: --cbar-ext is NOT compatible with --dem-blend, ignore --cbar-ext and continue.')
 
-    # check: conflicted options (geo-only options if inpput file is in radar-coordinates)
-    geo_opt_names = ['--coord', '--show-gnss', '--coastline', '--lalo-label', '--lalo-step', '--scalebar', '--shp-file', '--add-basemap']
+    # radar-coordinate files: geo-only options stay off
+    # --coord is honored (--coord radar keeps y/x scatter). Scatter may use --add-basemap.
+    geo_opt_names = ['--show-gnss', '--coastline', '--lalo-label', '--lalo-step', '--scalebar', '--shp-file', '--add-basemap']
     geo_opt_names = list(set(geo_opt_names) & set(inps.argv))
     if geo_opt_names and 'Y_FIRST' not in readfile.read_attribute(inps.file).keys():
         for opt_name in geo_opt_names:
+            if opt_name == '--add-basemap' and getattr(inps, 'style', None) == 'scatter':
+                continue
             print(f'WARNING: {opt_name} is NOT supported for files in radar-coordinate, ignore it and continue.')
             if opt_name == '--add-basemap':
                 inps.basemap = None
