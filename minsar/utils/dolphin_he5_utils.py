@@ -805,6 +805,23 @@ def same_shape(arr, shape):
     return arr
 
 
+def reference_yx_from_he5(he5_path: Path) -> tuple[int, int] | None:
+    """MintPy REF_Y/REF_X from an existing HE5 (root or timeseries group attrs)."""
+    he5_path = Path(he5_path)
+    with h5py.File(he5_path, "r") as f:
+        candidates = [f]
+        if HE5_TS_GROUP in f:
+            candidates.append(f[HE5_TS_GROUP])
+        if HE5_OBS in f:
+            candidates.append(f[HE5_OBS])
+        for obj in candidates:
+            ry = _he5_attr_str(obj.attrs, "REF_Y")
+            rx = _he5_attr_str(obj.attrs, "REF_X")
+            if ry and rx:
+                return int(float(ry)), int(float(rx))
+    return None
+
+
 def build_mask(
     shape,
     stack,
@@ -812,6 +829,7 @@ def build_mask(
     source="recommended",
     vmin=0.6,
     vmin_sim=0.4,
+    ref_yx: tuple[int, int] | None = None,
 ) -> np.ndarray:
     """Build quality/mask from base layers (water, finite, all-zero) plus -m rule."""
     mask = np.ones(shape, dtype=bool)
@@ -829,6 +847,14 @@ def build_mask(
             # not a real time series (the reference epoch is 0 for all pixels, but
             # other dates are not). OPERA writes those as NaN in the product.
             zero_all = np.all(arr == 0, axis=0)
+            if ref_yx is not None:
+                ry, rx = ref_yx
+                if 0 <= ry < shape[0] and 0 <= rx < shape[1] and zero_all[ry, rx]:
+                    zero_all[ry, rx] = False
+                    print(
+                        f"All-zero:   keep REF_Y={ry} REF_X={rx} "
+                        "(spatial reference; zero on every date)"
+                    )
             n_zero = int(np.count_nonzero(zero_all))
             if n_zero:
                 print(f"All-zero:   drop {n_zero} pixels with displacement 0 on every date")
@@ -1927,7 +1953,14 @@ def remask_he5_file(
     in_path = Path(in_path).expanduser().resolve()
     out_path = Path(out_path).expanduser().resolve()
     stack, shape, quality = quality_from_he5(in_path)
-    mask = build_mask(shape, stack, quality, source=source, vmin=vmin, vmin_sim=vmin_sim)
+    ref_yx = reference_yx_from_he5(in_path)
+    mask = build_mask(
+        shape, stack, quality, source=source, vmin=vmin, vmin_sim=vmin_sim, ref_yx=ref_yx
+    )
+    if ref_yx is not None:
+        ry, rx = ref_yx
+        if 0 <= ry < shape[0] and 0 <= rx < shape[1]:
+            mask[ry, rx] = True
     stack = apply_mask_to_displacement(stack, mask)
     inplace = in_path == out_path
     if inplace:

@@ -2,8 +2,9 @@
 """Rebuild quality/mask in an HDF-EOS5 file from embedded quality layers.
 
 Same -m / --vmin / --vmin-sim as dolphin2he5.py. Also drops pixels that are
-0.0 on every date. Default: new .he5 with a mask suffix. Use --overwrite to
-replace the input path (no suffix). NaN-fills displacement outside mask.
+0.0 on every date (except MintPy REF_Y/REF_X). Default: new .he5 with a mask
+suffix. Use --overwrite to replace the input path (no suffix). NaN-fills
+displacement outside mask.
 """
 
 from __future__ import annotations
