@@ -18,6 +18,8 @@ EXAMPLE = """Examples:
   display_VLM.py MIA_VLM.csv --sub-lat 25.78 25.81 --sub-lon -80.31 -80.265 --ref-lalo 25.81018 -80.28961 --vlim -0.5 0.5 --style scatter --scatter-size 1 --add-basemap
   display_VLM.py MIA_VLM.csv --sub-lat 25.78 25.81 --sub-lon -80.31 -80.265 --ref-lalo 25.808 -80.28961 --vlim -0.5 0.5 --style scatter --scatter-size 10 --mask geo_polygon_mask.h5
   display_VLM.py MIA_VLM.csv --style scatter --no-display -o MIA_VLM.png
+  display_VLM.py MIA_VLM.csv --notick --no-display -o MIA_VLM.png
+  display_VLM.py MIA_VLM.csv --nowhitespace --no-display -o MIA_VLM.png
 """
 
 
@@ -107,6 +109,7 @@ def cmd_line_parse(iargs=None):
     if inps.lalo_step:
         inps.lalo_label = True
 
+    # Same coupled options as mintpy/cli/view.py cmd_line_parse
     if not inps.disp_whitespace:
         inps.disp_axis = False
         inps.disp_title = False
@@ -114,6 +117,9 @@ def cmd_line_parse(iargs=None):
 
     if not inps.disp_axis:
         inps.disp_tick = False
+
+    if inps.flip_lr or inps.flip_ud:
+        inps.auto_flip = False
 
     if inps.basemap is not None:
         alpha = inps.basemap_alpha
@@ -245,6 +251,45 @@ def apply_vlm_font_scale(inps) -> None:
         inps.font_size = VLM_FONT_SIZE
 
 
+def apply_map_tick_labels(ax, inps, geo_box: list[float], vprint) -> None:
+    """Geo lat/lon ticks or --lalo-label (view.py plot_slice, before axis off in finalize)."""
+    if not inps.disp_axis:
+        return
+    if inps.lalo_label:
+        from cartopy import crs as ccrs
+
+        proj = getattr(inps, "map_proj_obj", None) or ccrs.PlateCarree()
+        inps.map_proj_obj = proj
+        pp.draw_lalo_label(
+            ax=ax,
+            geo_box=geo_box,
+            lalo_step=inps.lalo_step,
+            lalo_loc=inps.lalo_loc,
+            lalo_max_num=inps.lalo_max_num,
+            lalo_offset=inps.lalo_offset,
+            font_size=inps.lalo_font_size if inps.lalo_font_size else inps.font_size,
+            projection=proj,
+            print_msg=inps.print_msg,
+        )
+    elif inps.disp_tick:
+        ax.tick_params(
+            which="both",
+            direction="in",
+            labelsize=inps.font_size,
+            left=True,
+            right=True,
+            top=True,
+            bottom=True,
+        )
+        if inps.cbar_loc == "bottom":
+            ax.tick_params(bottom=False, top=True, labelbottom=False, labeltop=True)
+        ax.xaxis.set_visible(True)
+        ax.yaxis.set_visible(True)
+    else:
+        ax.get_xaxis().set_ticks([])
+        ax.get_yaxis().set_ticks([])
+
+
 def finalize_figure_view_style(ax, inps, im, vprint) -> None:
     """Match view.py plot_slice figure block (colorbar, title, axis, ticks)."""
     if inps.disp_cbar:
@@ -266,16 +311,7 @@ def finalize_figure_view_style(ax, inps, im, vprint) -> None:
         ax.axis("off")
         vprint("turn off axis display")
 
-    if inps.disp_tick:
-        if inps.cbar_loc == "bottom":
-            ax.tick_params(bottom=False, top=True, labelbottom=False, labeltop=True)
-        ax.xaxis.set_visible(True)
-        ax.yaxis.set_visible(True)
-    else:
-        ax.get_xaxis().set_ticks([])
-        ax.get_yaxis().set_ticks([])
-
-    if inps.ylabel_rot:
+    if inps.ylabel_rot and inps.disp_tick and inps.disp_axis:
         tick_kwargs = dict(rotation=inps.ylabel_rot)
         if inps.ylabel_rot % 90 == 0:
             tick_kwargs["va"] = "center"
@@ -311,11 +347,15 @@ def plot_reference_point(ax, inps) -> None:
     """Same marker as view.py: default black square (ks) at --ref-lalo."""
     if not (inps.disp_ref_pixel and inps.ref_lalo):
         return
+    plot_kw = {}
+    if getattr(inps, "map_proj_obj", None) is not None:
+        plot_kw["transform"] = inps.map_proj_obj
     ax.plot(
         inps.ref_lalo[1],
         inps.ref_lalo[0],
         inps.ref_marker,
         ms=inps.ref_marker_size,
+        **plot_kw,
     )
 
 
@@ -425,7 +465,15 @@ def plot_vlm(inps) -> None:
     prepare_view_style(inps, geo_box)
     vprint(f"subset coverage in lat/lon: {geo_box}")
 
-    fig, ax = plt.subplots(figsize=inps.fig_size)
+    use_cartopy = bool(inps.lalo_label or inps.coastline)
+    if use_cartopy:
+        from cartopy import crs as ccrs
+
+        inps.map_proj_obj = ccrs.PlateCarree()
+        fig = plt.figure(figsize=inps.fig_size)
+        ax = fig.add_subplot(1, 1, 1, projection=inps.map_proj_obj)
+    else:
+        fig, ax = plt.subplots(figsize=inps.fig_size)
     if not inps.disp_whitespace:
         fig.subplots_adjust(left=0, right=1, bottom=0, top=1)
 
@@ -441,22 +489,30 @@ def plot_vlm(inps) -> None:
             print_msg=inps.print_msg,
         )
 
+    if inps.coastline:
+        vprint(f"draw coast line with resolution: {inps.coastline}")
+        ax.coastlines(resolution=inps.coastline, linewidth=inps.coastline_linewidth)
+
     # Same scatter kwargs as view.py (do not zero linewidths; that shrinks markers).
-    kwargs = {
-        "cmap": inps.colormap,
-        "vmin": inps.vlim[0],
-        "vmax": inps.vlim[1],
-        "alpha": inps.transparency,
-        "zorder": 1,
-    }
+    scatter_kw = dict(
+        cmap=inps.colormap,
+        vmin=inps.vlim[0],
+        vmax=inps.vlim[1],
+        alpha=inps.transparency,
+        zorder=1,
+    )
+    if use_cartopy:
+        scatter_kw["transform"] = inps.map_proj_obj
     vprint(f"display range: [{inps.vlim[0]}, {inps.vlim[1]}] {inps.disp_unit}")
 
     vprint(f'plotting data as {inps.style} via matplotlib.pyplot.scatter (can take some time) ...')
-    im = ax.scatter(lon, lat, c=vlm, marker="o", s=inps.scatter_marker_size, **kwargs)
-    # Same window as view.py imshow: pixel-aligned extent, equal aspect inside the axes.
-    ax.set_xlim(extent[0], extent[1])
-    ax.set_ylim(extent[2], extent[3])
-    ax.set_aspect("equal", adjustable="box")
+    im = ax.scatter(lon, lat, c=vlm, marker="o", s=inps.scatter_marker_size, **scatter_kw)
+    if use_cartopy:
+        ax.set_extent([extent[0], extent[1], extent[2], extent[3]], crs=inps.map_proj_obj)
+    else:
+        ax.set_xlim(extent[0], extent[1])
+        ax.set_ylim(extent[2], extent[3])
+        ax.set_aspect("equal", adjustable="box")
 
     if inps.shp_file:
         snwe = (geo_box[3], geo_box[1], geo_box[0], geo_box[2])
@@ -482,21 +538,7 @@ def plot_vlm(inps) -> None:
             linewidth=inps.scalebar_linewidth,
         )
 
-    if inps.disp_tick:
-        ax.tick_params(
-            which="both",
-            direction="in",
-            labelsize=inps.font_size,
-            left=True,
-            right=True,
-            top=True,
-            bottom=True,
-        )
-        if inps.cbar_loc == "bottom":
-            ax.tick_params(bottom=False, top=True, labelbottom=False, labeltop=True)
-    else:
-        ax.get_xaxis().set_ticks([])
-        ax.get_yaxis().set_ticks([])
+    apply_map_tick_labels(ax, inps, geo_box, vprint)
 
     if inps.disp_ref_pixel and inps.ref_lalo:
         plot_reference_point(ax, inps)
