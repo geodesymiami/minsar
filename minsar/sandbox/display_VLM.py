@@ -4,15 +4,16 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from mpl_toolkits.axes_grid1 import make_axes_locatable
 
-from mintpy.utils import arg_utils, plot as pp
+from mintpy import view as mintpy_view
+from mintpy.utils import arg_utils, plot as pp, readfile
 
 EXAMPLE = """Examples:
   display_VLM.py MIA_VLM.csv --sub-lat 25.78 25.81 --sub-lon -80.31 -80.265 --ref-lalo 25.81018 -80.28961 --vlim -0.5 0.5 --style scatter --scatter-size 1 --add-basemap
@@ -46,6 +47,7 @@ def create_parser(subparsers=None):
 
     parser.add_argument(
         "--noverbose",
+        "--no-verbose",
         dest="print_msg",
         action="store_false",
         help="Disable verbose messages (default: print).",
@@ -86,6 +88,13 @@ def create_parser(subparsers=None):
     parser = arg_utils.add_reference_argument(parser)
     parser = arg_utils.add_save_argument(parser)
     parser = arg_utils.add_subset_argument(parser)
+    parser.add_argument(
+        "--geo-grid",
+        dest="geo_grid_file",
+        default=None,
+        metavar="FILE",
+        help="Geocoded .h5 for view.py subset geo_box (figure size and map extent).",
+    )
     parser.add_argument(
         "--no-display",
         dest="disp_fig",
@@ -134,6 +143,9 @@ def cmd_line_parse(iargs=None):
     if inps.zero_mask and not inps.mask_file:
         inps.mask_file = "no"
 
+    if not inps.transparency:
+        inps.transparency = 1.0
+
     if inps.style != "scatter":
         parser.error("display_VLM.py supports --style scatter only (CSV point data).")
 
@@ -152,9 +164,32 @@ def cmd_line_parse(iargs=None):
     return inps
 
 
-def read_vlm_csv(csv_path: Path) -> pd.DataFrame:
+def vlm_disp_unit_from_headers(columns: list[str]) -> str | None:
+    """Parse display unit from the VLM column header (e.g. 'VLM (in IGS14 cm/yr)')."""
+    for col in columns:
+        low = col.lower()
+        if "vlm" not in low or "std" in low:
+            continue
+        m = re.search(r"\(([^)]+)\)", col)
+        text = m.group(1) if m else col
+        um = re.search(r"(cm|mm|m)\s*/\s*(yr|year)", text, flags=re.I)
+        if um:
+            u = um.group(1).lower()
+            t = um.group(2).lower()
+            return f"{u}/{'year' if t.startswith('year') else 'yr'}"
+        um = re.search(r"(cm|mm|m)\s*/\s*(yr|year)", col, flags=re.I)
+        if um:
+            u = um.group(1).lower()
+            t = um.group(2).lower()
+            return f"{u}/{'year' if t.startswith('year') else 'yr'}"
+    return None
+
+
+def read_vlm_csv(csv_path: Path) -> tuple[pd.DataFrame, str | None]:
     df = pd.read_csv(csv_path)
-    df.columns = [c.strip() for c in df.columns]
+    raw_columns = [c.strip() for c in df.columns]
+    disp_unit = vlm_disp_unit_from_headers(raw_columns)
+    df.columns = raw_columns
     rename = {}
     for col in df.columns:
         low = col.lower()
@@ -171,7 +206,7 @@ def read_vlm_csv(csv_path: Path) -> pd.DataFrame:
         raise ValueError(f"{csv_path}: expected Longitude, Latitude, and VLM columns (got {list(df.columns)})")
     df = df.dropna(subset=["lon", "lat", "vlm"])
     df = df[np.isfinite(df["lon"]) & np.isfinite(df["lat"]) & np.isfinite(df["vlm"])]
-    return df
+    return df, disp_unit
 
 
 def subset_dataframe(df: pd.DataFrame, inps) -> pd.DataFrame:
@@ -199,21 +234,19 @@ def geo_limits(inps, lon: np.ndarray, lat: np.ndarray) -> tuple[tuple[float, flo
     return xlim, ylim
 
 
-# Same integer size view.py uses for title, ticks, and colorbar (MintPy --fontsize is int).
-VLM_FONT_SIZE = 10
-
-_TITLE_SUFFIXES = (
-    "network_delaunay_4/geo_velocity.h5",
-    "network_delaunay4/geo_velocity.h5",
-)
-
-
 def clean_plot_title(title: str) -> str:
-    """Drop redundant network/geo_velocity tail from titles (airport comment plots)."""
-    out = title
-    for suffix in _TITLE_SUFFIXES:
-        out = out.replace(suffix, "")
-    return out.rstrip("/")
+    """Short title: RUN velocity.h5 (drop network_* dirs from path)."""
+    p = Path(title)
+    if p.suffix.lower() == ".csv":
+        return p.name
+    parts = p.resolve().parts
+    run = next((x for x in parts if x.startswith("miaplpy_") or x.startswith("mintpy_")), None)
+    if run:
+        return f"{run} {p.name}"
+    parent = p.parent.name
+    if parent.startswith("network_"):
+        parent = p.parent.parent.name
+    return f"{parent} {p.name}" if parent else title
 
 
 def geo_box_from_limits(xlim: tuple[float, float], ylim: tuple[float, float]) -> list[float]:
@@ -224,35 +257,183 @@ def geo_box_from_limits(xlim: tuple[float, float], ylim: tuple[float, float]) ->
 
 
 def view_geo_box(inps, xlim: tuple[float, float], ylim: tuple[float, float]) -> list[float]:
-    """Pixel-aligned [W, N, E, S] using the same subset logic as view.py.
+    """Pixel-aligned [W, N, E, S] using the same subset logic as view.py."""
+    from mintpy import subset
+    from mintpy.utils import readfile, utils as ut
 
-    view.py converts --sub-lat/--sub-lon to a pixel box on the geocoded grid,
-    then back to lat/lon. Figure size is auto_figure_size of that span.
-    """
-    mask_file = getattr(inps, "mask_file", None)
-    if mask_file not in (None, "no", "") and os.path.isfile(mask_file):
-        from mintpy import subset
-        from mintpy.utils import readfile, utils as ut
-
-        atr = readfile.read_attribute(mask_file)
-        if "Y_FIRST" in atr and "X_FIRST" in atr:
-            pix_box, _geo = subset.subset_input_dict2box(vars(inps), atr)
-            coord = ut.coordinate(atr)
-            pix_box = coord.check_box_within_data_coverage(pix_box)
-            return list(coord.box_pixel2geo(pix_box))
+    for candidate in (getattr(inps, "geo_grid_file", None), getattr(inps, "mask_file", None)):
+        if candidate in (None, "no", "") or not os.path.isfile(candidate):
+            continue
+        atr = readfile.read_attribute(candidate)
+        if "Y_FIRST" not in atr:
+            continue
+        pix_box, _geo = subset.subset_input_dict2box(vars(inps), atr)
+        coord = ut.coordinate(atr)
+        pix_box = coord.check_box_within_data_coverage(pix_box)
+        return list(coord.box_pixel2geo(pix_box))
     return geo_box_from_limits(xlim, ylim)
 
 
-def apply_vlm_font_scale(inps) -> None:
-    """Use the same font size as view.py for title, ticks, and colorbar."""
-    if inps.font_size:
-        inps.font_size = int(inps.font_size)
+def _geocoded_grid_file(inps) -> str | None:
+    for candidate in (getattr(inps, "geo_grid_file", None), getattr(inps, "mask_file", None)):
+        if candidate in (None, "no", "") or not os.path.isfile(candidate):
+            continue
+        atr = readfile.read_attribute(candidate)
+        if "Y_FIRST" in atr:
+            return candidate
+    return None
+
+
+def _colormap_object(inps) -> None:
+    cmap_name = inps.colormap if inps.colormap else "jet"
+    if isinstance(cmap_name, str):
+        inps.colormap = pp.ColormapExt(
+            cmap_name,
+            cmap_lut=inps.cmap_lut,
+            vlist=inps.cmap_vlist,
+        ).colormap
+
+
+def geo_velocity_dlim_for_colorbar(inps, grid_file: str) -> tuple[float, float] | None:
+    """Data min/max on the geo velocity grid (same as view.py for colorbar extend arrows)."""
+    if not grid_file or not os.path.isfile(grid_file):
+        return None
+    pix_box = getattr(inps, "pix_box", None)
+    if not pix_box:
+        return None
+
+    data = readfile.read(grid_file, datasetName="velocity", box=pix_box, print_msg=False)[0]
+    atr = readfile.read_attribute(grid_file)
+
+    msk, _ = pp.read_mask(
+        grid_file,
+        mask_file=inps.mask_file,
+        datasetName="velocity",
+        box=pix_box,
+        vmin=inps.mask_vmin,
+        vmax=inps.mask_vmax,
+        print_msg=False,
+    )
+    if inps.zero_mask:
+        data = np.ma.masked_where(data == 0.0, data)
+    if msk is not None:
+        data = np.ma.masked_where(msk == 0, data)
+
+    if "REF_Y" in atr and "REF_X" in atr:
+        ref_y, ref_x = int(atr["REF_Y"]), int(atr["REF_X"])
+        ref_row = ref_y - pix_box[1]
+        ref_col = ref_x - pix_box[0]
+        if 0 <= ref_row < data.shape[0] and 0 <= ref_col < data.shape[1]:
+            ref_val = data[ref_row, ref_col]
+            if np.ma.is_masked(ref_val) or not np.isfinite(float(ref_val)):
+                pass
+            else:
+                data = data - float(ref_val)
+
+    data, _, _, _ = pp.scale_data4disp_unit_and_rewrap(
+        data,
+        metadata=atr,
+        disp_unit=inps.disp_unit,
+        wrap=inps.wrap,
+        wrap_range=inps.wrap_range,
+        print_msg=False,
+    )
+    return float(np.nanmin(data)), float(np.nanmax(data))
+
+
+def sync_inps_with_view_geo(inps, dlim: tuple[float, float], vprint) -> list[float]:
+    """MintPy view.py subset geo_box, figure size, colormap, and flip flags."""
+    from mintpy import subset
+    from mintpy.utils import utils as ut
+
+    mintpy_view.vprint = vprint
+    grid_file = _geocoded_grid_file(inps)
+    if grid_file:
+        atr = readfile.read_attribute(grid_file)
+        inps.width = int(atr["WIDTH"])
+        inps.length = int(atr["LENGTH"])
+        inps.dsetNum = 1
+        if not getattr(inps, "fig_coord", None):
+            inps.fig_coord = "geo"
+        coord = ut.coordinate(atr)
+        inps.pix_box, _geo = subset.subset_input_dict2box(vars(inps), atr)
+        inps.pix_box = coord.check_box_within_data_coverage(inps.pix_box)
+        geo_box = list(coord.box_pixel2geo(inps.pix_box))
+        inps.geo_box = geo_box
+        vprint(f"subset coverage in lat/lon: {geo_box}")
+        inps.colormap = pp.auto_colormap_name(
+            atr,
+            inps.colormap,
+            datasetName="velocity",
+            print_msg=inps.print_msg,
+        )
+        geo_unit, inps.wrap = pp.check_disp_unit_and_wrap(
+            atr,
+            disp_unit=inps.disp_unit,
+            wrap=inps.wrap,
+            wrap_range=inps.wrap_range,
+            print_msg=inps.print_msg,
+        )
+        if not getattr(inps, "vlm_csv_disp_unit", None):
+            inps.disp_unit = geo_unit
+        if getattr(inps, "auto_flip", True):
+            inps.flip_lr, inps.flip_ud = pp.auto_flip_direction(
+                atr,
+                print_msg=inps.print_msg,
+            )
+        if inps.font_size:
+            inps.font_size = int(inps.font_size)
+        elif not inps.font_size:
+            inps.font_size = 16
+        mintpy_view.update_figure_setting(inps)
     else:
-        inps.font_size = VLM_FONT_SIZE
+        xlim = tuple(sorted(inps.subset_lon)) if inps.subset_lon else None
+        ylim = tuple(sorted(inps.subset_lat)) if inps.subset_lat else None
+        if xlim is None or ylim is None:
+            raise RuntimeError(
+                "VLM plot needs --geo-grid FILE (geocoded .h5) or --sub-lat/--sub-lon with a geocoded --mask "
+                "so figure size matches view.py."
+            )
+        geo_box = geo_box_from_limits(xlim, ylim)
+        if inps.font_size:
+            inps.font_size = int(inps.font_size)
+        elif not inps.font_size:
+            inps.font_size = 16
+        if not inps.fig_size:
+            length = abs(geo_box[3] - geo_box[1])
+            width = abs(geo_box[2] - geo_box[0])
+            inps.fig_size = pp.auto_figure_size(
+                ds_shape=(length, width),
+                disp_cbar=inps.disp_cbar,
+                print_msg=inps.print_msg,
+            )
+        if not inps.disp_unit and not getattr(inps, "vlm_csv_disp_unit", None):
+            inps.disp_unit = "cm/year"
+        elif getattr(inps, "vlm_csv_disp_unit", None):
+            inps.disp_unit = inps.vlm_csv_disp_unit
+        if not inps.colormap:
+            inps.colormap = "jet"
+
+    if grid_file:
+        grid_dlim = geo_velocity_dlim_for_colorbar(inps, grid_file)
+        if grid_dlim is not None:
+            vprint(
+                f"colorbar data range from {os.path.basename(grid_file)}: "
+                f"[{grid_dlim[0]:.6g}, {grid_dlim[1]:.6g}] {inps.disp_unit}"
+            )
+            dlim = grid_dlim
+
+    inps.dlim = [float(dlim[0]), float(dlim[1])]
+    if not inps.vlim:
+        inps.vlim = list(inps.dlim)
+    inps.cbar_ext = None
+    _colormap_object(inps)
+    inps.extent = (geo_box[0], geo_box[2], geo_box[3], geo_box[1])
+    return geo_box
 
 
-def apply_map_tick_labels(ax, inps, geo_box: list[float], vprint) -> None:
-    """Geo lat/lon ticks or --lalo-label (view.py plot_slice, before axis off in finalize)."""
+def apply_geo_axis_ticks_before_cbar(ax, inps, geo_box: list[float], vprint) -> None:
+    """view.py plot_slice geo branch: lalo-label or tick_params before colorbar."""
     if not inps.disp_axis:
         return
     if inps.lalo_label:
@@ -271,7 +452,7 @@ def apply_map_tick_labels(ax, inps, geo_box: list[float], vprint) -> None:
             projection=proj,
             print_msg=inps.print_msg,
         )
-    elif inps.disp_tick:
+    else:
         ax.tick_params(
             which="both",
             direction="in",
@@ -281,66 +462,6 @@ def apply_map_tick_labels(ax, inps, geo_box: list[float], vprint) -> None:
             top=True,
             bottom=True,
         )
-        if inps.cbar_loc == "bottom":
-            ax.tick_params(bottom=False, top=True, labelbottom=False, labeltop=True)
-        ax.xaxis.set_visible(True)
-        ax.yaxis.set_visible(True)
-    else:
-        ax.get_xaxis().set_ticks([])
-        ax.get_yaxis().set_ticks([])
-
-
-def finalize_figure_view_style(ax, inps, im, vprint) -> None:
-    """Match view.py plot_slice figure block (colorbar, title, axis, ticks)."""
-    if inps.disp_cbar:
-        divider = make_axes_locatable(ax)
-        cax = divider.append_axes(inps.cbar_loc, inps.cbar_size, pad=inps.cbar_size, axes_class=plt.Axes)
-        inps, _cbar = pp.plot_colorbar(inps, im, cax)
-
-    if inps.disp_title:
-        ax.set_title(inps.fig_title, fontsize=inps.font_size, color=inps.font_color)
-
-    if inps.flip_lr:
-        vprint("flip figure left and right")
-        ax.invert_xaxis()
-    if inps.flip_ud:
-        vprint("flip figure up and down")
-        ax.invert_yaxis()
-
-    if not inps.disp_axis:
-        ax.axis("off")
-        vprint("turn off axis display")
-
-    if inps.ylabel_rot and inps.disp_tick and inps.disp_axis:
-        tick_kwargs = dict(rotation=inps.ylabel_rot)
-        if inps.ylabel_rot % 90 == 0:
-            tick_kwargs["va"] = "center"
-        plt.setp(ax.get_yticklabels(), **tick_kwargs)
-        vprint(f"rotate Y-axis tick labels by {inps.ylabel_rot} deg")
-
-
-def prepare_view_style(inps, geo_box: list[float]) -> None:
-    """Align figure size with view.py update_figure_setting (geo spans + colorbar)."""
-    # geo_box is [W, N, E, S], same indices as view.py
-    lat_span = abs(geo_box[1] - geo_box[3])
-    lon_span = abs(geo_box[2] - geo_box[0])
-    apply_vlm_font_scale(inps)
-    if not inps.fig_size:
-        inps.fig_size = pp.auto_figure_size(
-            ds_shape=(lat_span, lon_span),
-            disp_cbar=inps.disp_cbar,
-            print_msg=inps.print_msg,
-        )
-    if not inps.disp_unit:
-        inps.disp_unit = "cm/year"
-    if inps.vlim:
-        inps.dlim = [inps.vlim[0], inps.vlim[1]]
-    cmap_name = inps.colormap if inps.colormap else "jet"
-    inps.colormap = pp.ColormapExt(
-        cmap_name,
-        cmap_lut=inps.cmap_lut,
-        vlist=inps.cmap_vlist,
-    ).colormap
 
 
 def plot_reference_point(ax, inps) -> None:
@@ -439,7 +560,11 @@ def reference_vlm_values(lon: np.ndarray, lat: np.ndarray, vlm: np.ndarray, ref_
 def plot_vlm(inps) -> None:
     vprint = print if inps.print_msg else lambda *args, **kwargs: None
     csv_path = Path(inps.file).resolve()
-    df = read_vlm_csv(csv_path)
+    df, csv_unit = read_vlm_csv(csv_path)
+    if csv_unit:
+        inps.disp_unit = csv_unit
+        inps.vlm_csv_disp_unit = csv_unit
+        vprint(f"display unit from CSV: {inps.disp_unit}")
     df = subset_dataframe(df, inps)
     if df.empty:
         raise RuntimeError(f"No VLM points to display in {csv_path} (after subset).")
@@ -453,17 +578,20 @@ def plot_vlm(inps) -> None:
         vprint(f"input reference point in lat/lon: {inps.ref_lalo}")
         vlm, ref_val = reference_vlm_values(lon, lat, vlm, inps.ref_lalo)
         if ref_val is not None:
-            vprint(f"referencing VLM to nearest CSV sample by subtracting {ref_val:.6f} cm/yr")
+            vprint(
+                f"referencing VLM to nearest CSV sample by subtracting "
+                f"{ref_val:.6f} {inps.disp_unit or 'cm/year'}"
+            )
         else:
             vprint("WARNING: reference point has no finite VLM nearby; skip re-referencing.")
 
-    xlim, ylim = geo_limits(inps, lon, lat)
-    geo_box = view_geo_box(inps, xlim, ylim)
-    extent = (geo_box[0], geo_box[2], geo_box[3], geo_box[1])  # W, E, S, N
-    if not inps.vlim:
-        inps.vlim = [float(np.nanmin(vlm)), float(np.nanmax(vlm))]
-    prepare_view_style(inps, geo_box)
-    vprint(f"subset coverage in lat/lon: {geo_box}")
+    vlm_dlim = (float(np.nanmin(vlm)), float(np.nanmax(vlm)))
+    geo_box = sync_inps_with_view_geo(inps, vlm_dlim, vprint)
+    extent = inps.extent
+    vprint(f"VLM scatter range: [{vlm_dlim[0]:.6g}, {vlm_dlim[1]:.6g}] {inps.disp_unit}")
+    vprint(f"data    range: {inps.dlim} {inps.disp_unit}")
+    vprint(f"display range: {inps.vlim} {inps.disp_unit}")
+    vprint(f"display data in transparency: {inps.transparency}")
 
     use_cartopy = bool(inps.lalo_label or inps.coastline)
     if use_cartopy:
@@ -503,16 +631,15 @@ def plot_vlm(inps) -> None:
     )
     if use_cartopy:
         scatter_kw["transform"] = inps.map_proj_obj
-    vprint(f"display range: [{inps.vlim[0]}, {inps.vlim[1]}] {inps.disp_unit}")
 
     vprint(f'plotting data as {inps.style} via matplotlib.pyplot.scatter (can take some time) ...')
     im = ax.scatter(lon, lat, c=vlm, marker="o", s=inps.scatter_marker_size, **scatter_kw)
     if use_cartopy:
         ax.set_extent([extent[0], extent[1], extent[2], extent[3]], crs=inps.map_proj_obj)
     else:
-        ax.set_xlim(extent[0], extent[1])
-        ax.set_ylim(extent[2], extent[3])
-        ax.set_aspect("equal", adjustable="box")
+        ax.axis("equal")
+    ax.set_xlim(extent[0], extent[1])
+    ax.set_ylim(extent[2], extent[3])
 
     if inps.shp_file:
         snwe = (geo_box[3], geo_box[1], geo_box[0], geo_box[2])
@@ -538,14 +665,14 @@ def plot_vlm(inps) -> None:
             linewidth=inps.scalebar_linewidth,
         )
 
-    apply_map_tick_labels(ax, inps, geo_box, vprint)
+    apply_geo_axis_ticks_before_cbar(ax, inps, geo_box, vprint)
 
     if inps.disp_ref_pixel and inps.ref_lalo:
         plot_reference_point(ax, inps)
         vprint("plot reference point")
 
     inps.fig_title = clean_plot_title(inps.fig_title if inps.fig_title else inps.file)
-    finalize_figure_view_style(ax, inps, im, vprint)
+    mintpy_view.finalize_plot_axes(ax, im, inps)
 
     if inps.save_fig:
         if not inps.outfile:

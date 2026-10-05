@@ -66,9 +66,18 @@ def update_inps_with_file_metadata(inps, metadata):
     # Convert subset input into bounding box in radar / geo coordinate
     # geo_box = None if atr is not geocoded.
     coord = ut.coordinate(metadata)
-    inps.pix_box, inps.geo_box = subset.subset_input_dict2box(vars(inps), metadata)
-    inps.pix_box = coord.check_box_within_data_coverage(inps.pix_box)
-    inps.geo_box = coord.box_pixel2geo(inps.pix_box)
+    subset_lat = getattr(inps, 'subset_lat', None)
+    subset_lon = getattr(inps, 'subset_lon', None)
+    if ('Y_FIRST' not in metadata and subset_lat is not None and subset_lon is not None):
+        # Radar grid: lalo2yx fails; keep full y/x read and filter lat/lon in scatter plot.
+        width = int(inps.width)
+        length = int(inps.length)
+        inps.pix_box = (0, 0, width, length)
+        inps.geo_box = None
+    else:
+        inps.pix_box, inps.geo_box = subset.subset_input_dict2box(vars(inps), metadata)
+        inps.pix_box = coord.check_box_within_data_coverage(inps.pix_box)
+        inps.geo_box = coord.box_pixel2geo(inps.pix_box)
     # Out message
     inps.data_box = (0, 0, inps.width, inps.length)
     vprint('data   coverage in y/x: '+str(inps.data_box))
@@ -579,6 +588,30 @@ def _finite_scatter_values(data):
     return np.asarray(data, dtype=np.float64)
 
 
+def _ref_marker_size_for_plot(inps):
+    """Match reference marker to tiny scatter points (s vs ms units)."""
+    ms = float(inps.ref_marker_size)
+    if inps.style == 'scatter':
+        s = float(inps.scatter_marker_size)
+        if s < 1.0:
+            ms = max(0.15, min(ms, s * 150.0))
+    return ms
+
+
+def _radar_lalo_geo_subset_mask(lats, lons, inps):
+    """Pixels inside --sub-lat / --sub-lon when subset was given for a radar file."""
+    keep = np.ones(lats.shape, dtype=bool)
+    subset_lat = getattr(inps, 'subset_lat', None)
+    subset_lon = getattr(inps, 'subset_lon', None)
+    if subset_lat is not None:
+        lat_s, lat_n = sorted(subset_lat)
+        keep &= (lats >= lat_s) & (lats <= lat_n)
+    if subset_lon is not None:
+        lon_w, lon_e = sorted(subset_lon)
+        keep &= (lons >= lon_w) & (lons <= lon_e)
+    return keep
+
+
 def _radar_lalo_scatter_mask(data, inps):
     """True where a radar pixel should appear in lat/lon scatter (mask + finite data/geometry)."""
     vals = _finite_scatter_values(data)
@@ -654,6 +687,7 @@ def plot_slice(ax, data, metadata, inps):
 
     #----------------------- Plot in Geo-coordinate --------------------------------------------#
     if (inps.geo_box
+            and 'Y_FIRST' in metadata
             and inps.coord_unit.startswith(('deg', 'meter'))
             and inps.fig_coord == 'geo'):
         vprint('plot in geo-coordinate')
@@ -853,7 +887,12 @@ def plot_slice(ax, data, metadata, inps):
 
             vals, plot_ok = _radar_lalo_scatter_mask(data, inps)
             finite = plot_ok & np.isfinite(lats) & np.isfinite(lons)
-            if np.any(finite):
+            if getattr(inps, 'subset_lat', None) is not None and getattr(inps, 'subset_lon', None) is not None:
+                finite &= _radar_lalo_geo_subset_mask(lats, lons, inps)
+                lat_s, lat_n = sorted(inps.subset_lat)
+                lon_w, lon_e = sorted(inps.subset_lon)
+                inps.extent = (lon_w, lon_e, lat_s, lat_n)
+            elif np.any(finite):
                 lon_min = float(np.min(lons[finite]))
                 lon_max = float(np.max(lons[finite]))
                 lat_min = float(np.min(lats[finite]))
@@ -885,10 +924,14 @@ def plot_slice(ax, data, metadata, inps):
             ax.axis('equal')
             ax.set_xlim(inps.extent[0], inps.extent[1])
             ax.set_ylim(inps.extent[2], inps.extent[3])
-            ax.tick_params(labelsize=inps.font_size)
-            ax.set_xlabel('Longitude', fontsize=inps.font_size)
-            ax.set_ylabel('Latitude', fontsize=inps.font_size)
+            if inps.disp_axis and inps.disp_tick:
+                ax.tick_params(labelsize=inps.font_size)
+                ax.set_xlabel('Longitude', fontsize=inps.font_size)
+                ax.set_ylabel('Latitude', fontsize=inps.font_size)
+            elif inps.disp_axis:
+                ax.tick_params(labelsize=inps.font_size)
 
+            ref_ms = _ref_marker_size_for_plot(inps)
             if inps.disp_ref_pixel:
                 ref_y, ref_x = None, None
                 if inps.ref_yx:
@@ -899,7 +942,7 @@ def plot_slice(ax, data, metadata, inps):
                     row, col = _subset_row_col(ref_y, ref_x, inps, center=True)
                     if 0 <= row < lats.shape[0] and 0 <= col < lats.shape[1]:
                         if np.isfinite(lats[row, col]) and np.isfinite(lons[row, col]):
-                            ax.plot(lons[row, col], lats[row, col], inps.ref_marker, ms=inps.ref_marker_size)
+                            ax.plot(lons[row, col], lats[row, col], inps.ref_marker, ms=ref_ms)
                             vprint('plot reference point')
 
             if inps.pts_yx is not None:
@@ -1021,7 +1064,13 @@ def plot_slice(ax, data, metadata, inps):
             ax.format_coord = format_coord
 
 
-    #---------------------- Figure Setting ----------------------------------------#
+    ax, inps, im, cbar = finalize_plot_axes(ax, im, inps)
+    return ax, inps, im, cbar
+
+
+def finalize_plot_axes(ax, im, inps):
+    """Single-subplot figure settings (colorbar, title, flip, axis, ticks)."""
+    vprint = print if inps.print_msg else lambda *args, **kwargs: None
 
     # 3.1 Colorbar
     cbar = None
@@ -1276,6 +1325,11 @@ def update_figure_setting(inps):
             if inps.geo_box and inps.fig_coord == 'geo':
                 length = abs(inps.geo_box[3] - inps.geo_box[1])
                 width  = abs(inps.geo_box[2] - inps.geo_box[0])
+            elif (getattr(inps, 'subset_lat', None) is not None
+                  and getattr(inps, 'subset_lon', None) is not None):
+                # Radar lat/lon scatter: geo_box is None; match geo figure aspect from subset
+                length = abs(float(inps.subset_lat[1]) - float(inps.subset_lat[0]))
+                width = abs(float(inps.subset_lon[1]) - float(inps.subset_lon[0]))
             # auto figure size
             inps.fig_size = pp.auto_figure_size(
                 ds_shape=(length, width),
