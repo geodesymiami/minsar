@@ -612,6 +612,23 @@ def _radar_lalo_geo_subset_mask(lats, lons, inps):
     return keep
 
 
+def map_display_extent(inps):
+    """Map axis/basemap limits (W, E, S, N); use CLI --sub-lat/--sub-lon when set."""
+    subset_lat = getattr(inps, 'subset_lat', None)
+    subset_lon = getattr(inps, 'subset_lon', None)
+    if subset_lat is not None and subset_lon is not None:
+        lat_s, lat_n = sorted(subset_lat)
+        lon_w, lon_e = sorted(subset_lon)
+        return (float(lon_w), float(lon_e), float(lat_s), float(lat_n))
+    geo_box = getattr(inps, 'geo_box', None)
+    if geo_box:
+        return (geo_box[0], geo_box[2], geo_box[3], geo_box[1])
+    extent = getattr(inps, 'extent', None)
+    if extent:
+        return extent
+    return None
+
+
 def _radar_lalo_scatter_mask(data, inps):
     """True where a radar pixel should appear in lat/lon scatter (mask + finite data/geometry)."""
     vals = _finite_scatter_values(data)
@@ -692,8 +709,10 @@ def plot_slice(ax, data, metadata, inps):
             and inps.fig_coord == 'geo'):
         vprint('plot in geo-coordinate')
 
-        # extent info for matplotlib.imshow and other functions
-        inps.extent = (inps.geo_box[0], inps.geo_box[2], inps.geo_box[3], inps.geo_box[1])  # (W, E, S, N)
+        # Pixel-aligned corners for imshow/scatter georef; CLI subset for axis/basemap (match radar lalo).
+        data_extent = (inps.geo_box[0], inps.geo_box[2], inps.geo_box[3], inps.geo_box[1])  # (W, E, S, N)
+        display_extent = map_display_extent(inps) or data_extent
+        inps.extent = display_extent
         SNWE = (inps.geo_box[3], inps.geo_box[1], inps.geo_box[0], inps.geo_box[2])
 
         # MinSAR: web tile basemap (degrees only; under DEM and data)
@@ -703,8 +722,8 @@ def plot_slice(ax, data, metadata, inps):
                 from mintpy.utils.web_basemap import add_web_basemap
                 add_web_basemap(
                     ax,
-                    xlim=inps.extent[0:2],
-                    ylim=inps.extent[2:4],
+                    xlim=display_extent[0:2],
+                    ylim=display_extent[2:4],
                     provider_key=basemap,
                     alpha=getattr(inps, 'basemap_alpha', 1.0),
                     print_msg=inps.print_msg,
@@ -748,12 +767,12 @@ def plot_slice(ax, data, metadata, inps):
 
         elif inps.style == 'image':
             vprint(f'plotting data as {inps.style} via matplotlib.pyplot.imshow ...')
-            im = ax.imshow(data, extent=inps.extent, origin='upper', interpolation=inps.interpolation,
+            im = ax.imshow(data, extent=data_extent, origin='upper', interpolation=inps.interpolation,
                            animated=inps.animation, **kwargs)
 
         elif inps.style == 'scatter':
             vprint(f'plotting data as {inps.style} via matplotlib.pyplot.scatter (can take some time) ...')
-            xx, yy = extent2meshgrid(inps.extent, data.shape)
+            xx, yy = extent2meshgrid(data_extent, data.shape)
             im = ax.scatter(xx, yy, c=data.flatten(), marker='o', s=inps.scatter_marker_size, **kwargs)
             ax.axis('equal')
 
@@ -852,9 +871,9 @@ def plot_slice(ax, data, metadata, inps):
 
         ax.format_coord = format_coord
 
-        # MinSAR: scatter uses axis('equal'), which expands limits; clamp to geo subset extent
-        ax.set_xlim(inps.extent[0], inps.extent[1])
-        ax.set_ylim(inps.extent[2], inps.extent[3])
+        # MinSAR: scatter uses axis('equal'), which expands limits; clamp to map display extent
+        ax.set_xlim(display_extent[0], display_extent[1])
+        ax.set_ylim(display_extent[2], display_extent[3])
 
     #------------------------ Plot in Y/X-coordinate ------------------------------------------------#
     else:
@@ -1322,14 +1341,13 @@ def update_figure_setting(inps):
             inps.font_size = 16
         if not inps.fig_size:
             # update length/width based on lat/lon
-            if inps.geo_box and inps.fig_coord == 'geo':
-                length = abs(inps.geo_box[3] - inps.geo_box[1])
-                width  = abs(inps.geo_box[2] - inps.geo_box[0])
-            elif (getattr(inps, 'subset_lat', None) is not None
+            if (getattr(inps, 'subset_lat', None) is not None
                   and getattr(inps, 'subset_lon', None) is not None):
-                # Radar lat/lon scatter: geo_box is None; match geo figure aspect from subset
                 length = abs(float(inps.subset_lat[1]) - float(inps.subset_lat[0]))
                 width = abs(float(inps.subset_lon[1]) - float(inps.subset_lon[0]))
+            elif inps.geo_box and inps.fig_coord == 'geo':
+                length = abs(inps.geo_box[3] - inps.geo_box[1])
+                width  = abs(inps.geo_box[2] - inps.geo_box[0])
             # auto figure size
             inps.fig_size = pp.auto_figure_size(
                 ds_shape=(length, width),

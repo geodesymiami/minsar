@@ -961,14 +961,14 @@ def snwe_wkt(south, north, west, east) -> str:
 
 
 def degree_geotransform(latitude: np.ndarray, longitude: np.ndarray) -> dict:
-    """UL-pixel lon/lat and adjacent-pixel steps (MintPy Y_FIRST/X_FIRST)."""
-    lat0 = float(latitude[0, 0])
-    lon0 = float(longitude[0, 0])
+    """MintPy Y_FIRST/X_FIRST are the UL corner; input lat/lon are pixel centers."""
+    lat_c = float(latitude[0, 0])
+    lon_c = float(longitude[0, 0])
     x_step = float(longitude[0, 1] - longitude[0, 0]) if longitude.shape[1] > 1 else 0.0
     y_step = float(latitude[1, 0] - latitude[0, 0]) if latitude.shape[0] > 1 else 0.0
     return {
-        "X_FIRST": str(lon0),
-        "Y_FIRST": str(lat0),
+        "X_FIRST": str(lon_c - 0.5 * x_step),
+        "Y_FIRST": str(lat_c - 0.5 * y_step),
         "X_STEP": str(x_step),
         "Y_STEP": str(y_step),
         "X_UNIT": "degrees",

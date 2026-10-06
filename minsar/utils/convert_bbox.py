@@ -210,9 +210,13 @@ def run_convert_bbox(input_str, lat_delta, lon_delta, asf_only=False, asf_start=
         print("")
         print("WKT (paste in Vertex if needed):")
         print(wkt)
+        print("")
+        print(f"--sub-lat {min_lat} {max_lat} --sub-lon {min_lon} {max_lon}")
         return
 
     print(wkt)
+    print("")
+    print(f"--sub-lat {min_lat} {max_lat} --sub-lon {min_lon} {max_lon}")
     print("")
     print("mintpy.subset.lalo                   = " + subset_str + "    #[S:N,W:E / no], auto for no")
     print("miaplpy.subset.lalo                  = " + subset_str + "    #[S:N,W:E / no], auto for no")

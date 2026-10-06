@@ -284,6 +284,17 @@ def _geocoded_grid_file(inps) -> str | None:
     return None
 
 
+def _velocity_geo_grid_file(inps) -> str | None:
+    """Geocoded geo_velocity (or similar) used for view.py-matched colorbar dlim."""
+    path = getattr(inps, "geo_grid_file", None)
+    if path in (None, "no", "") or not os.path.isfile(path):
+        return None
+    atr = readfile.read_attribute(path)
+    if "Y_FIRST" not in atr:
+        return None
+    return path
+
+
 def _colormap_object(inps) -> None:
     cmap_name = inps.colormap if inps.colormap else "jet"
     if isinstance(cmap_name, str):
@@ -330,10 +341,17 @@ def geo_velocity_dlim_for_colorbar(inps, grid_file: str) -> tuple[float, float] 
             else:
                 data = data - float(ref_val)
 
+    geo_unit, _wrap = pp.check_disp_unit_and_wrap(
+        atr,
+        disp_unit=None,
+        wrap=inps.wrap,
+        wrap_range=inps.wrap_range,
+        print_msg=False,
+    )
     data, _, _, _ = pp.scale_data4disp_unit_and_rewrap(
         data,
         metadata=atr,
-        disp_unit=inps.disp_unit,
+        disp_unit=geo_unit,
         wrap=inps.wrap,
         wrap_range=inps.wrap_range,
         print_msg=False,
@@ -414,21 +432,32 @@ def sync_inps_with_view_geo(inps, dlim: tuple[float, float], vprint) -> list[flo
         if not inps.colormap:
             inps.colormap = "jet"
 
-    if grid_file:
-        grid_dlim = geo_velocity_dlim_for_colorbar(inps, grid_file)
+    vel_grid = _velocity_geo_grid_file(inps)
+    if vel_grid:
+        grid_dlim = geo_velocity_dlim_for_colorbar(inps, vel_grid)
         if grid_dlim is not None:
             vprint(
-                f"colorbar data range from {os.path.basename(grid_file)}: "
-                f"[{grid_dlim[0]:.6g}, {grid_dlim[1]:.6g}] {inps.disp_unit}"
+                f"colorbar data range from {os.path.basename(vel_grid)}: "
+                f"[{grid_dlim[0]:.6g}, {grid_dlim[1]:.6g}] (view.py match)"
             )
             dlim = grid_dlim
+    elif inps.vlim:
+        vprint(
+            "WARNING: no --geo-grid geocoded velocity .h5; colorbar extend may not match view.py "
+            "(pass --geo-grid or include a geo_velocity.h5 on the airport_comment_plots command line)."
+        )
 
     inps.dlim = [float(dlim[0]), float(dlim[1])]
+    inps.colorbar_dlim = list(inps.dlim)
     if not inps.vlim:
         inps.vlim = list(inps.dlim)
-    inps.cbar_ext = None
     _colormap_object(inps)
-    inps.extent = (geo_box[0], geo_box[2], geo_box[3], geo_box[1])
+    inps.extent = mintpy_view.map_display_extent(inps) or (
+        geo_box[0],
+        geo_box[2],
+        geo_box[3],
+        geo_box[1],
+    )
     return geo_box
 
 
@@ -672,6 +701,8 @@ def plot_vlm(inps) -> None:
         vprint("plot reference point")
 
     inps.fig_title = clean_plot_title(inps.fig_title if inps.fig_title else inps.file)
+    if getattr(inps, "colorbar_dlim", None):
+        inps.dlim = list(inps.colorbar_dlim)
     mintpy_view.finalize_plot_axes(ax, im, inps)
 
     if inps.save_fig:
