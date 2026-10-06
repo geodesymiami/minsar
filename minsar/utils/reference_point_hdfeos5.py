@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """In-memory reference-point update for MintPy HDFEOS5 (.he5) files.
 
-Resolves lat/lon from GEO metadata or in-file geometry latitude/longitude
-(MintPy geo2radar + geometryRadar.h5 only as fallback). Subtracts the
+Resolves lat/lon from in-file geometry latitude/longitude when present.
+Y_FIRST/X_FIRST is a fallback (inexact on UTM-derived DISP grids). MintPy
+geo2radar + geometryRadar.h5 is the radar fallback. Subtracts the
 reference time series from the displacement cube in memory when the pixel
 changes. Default is in-place (same basename). Use --output to write a
 different path.
@@ -29,8 +30,8 @@ MAX_INMEMORY_BYTES = 4 * 1024**3
 
 DESCRIPTION = """\
 Change the spatial reference point of an HDFEOS5 timeseries in place (or to --output).
-GEO files use Y_FIRST/X_FIRST; RADAR files use in-file latitude/longitude
-(or --lookup / geometryRadar.h5 / temporary extract as fallback).
+Looks up the pixel in geometry latitude/longitude when those datasets exist.
+Falls back to Y_FIRST/X_FIRST, then geometryRadar.h5.
 Prints current and new reference; quits if the pixel is unchanged.
 """
 
@@ -160,13 +161,28 @@ def lalo_to_yx_from_arrays(lat2d, lon2d, lat, lon):
     return int(ref_y), int(ref_x)
 
 
+def _as_latlon_grids(lat, lon):
+    """Return 2D lat/lon grids, or (None, None) if the arrays cannot be paired."""
+    lat = np.asarray(lat)
+    lon = np.asarray(lon)
+    if lat.ndim == 2 and lon.ndim == 2 and lat.shape == lon.shape:
+        return lat, lon
+    if lat.ndim == 1 and lon.ndim == 1 and lat.size and lon.size:
+        lon2d, lat2d = np.meshgrid(lon, lat)
+        return lat2d, lon2d
+    return None, None
+
+
 def lalo_to_yx_he5_geometry(he5_path, lat, lon):
-    """Return (y, x) from in-file geometry lat/lon, or None if datasets missing."""
+    """Return (y, x) from in-file geometry lat/lon, or None if unusable."""
     with h5py.File(he5_path, "r") as f:
         if LAT_PATH not in f or LON_PATH not in f:
             return None
-        lat2d = f[LAT_PATH][()]
-        lon2d = f[LON_PATH][()]
+        lat2d, lon2d = _as_latlon_grids(f[LAT_PATH][()], f[LON_PATH][()])
+    if lat2d is None:
+        return None
+    if not np.isfinite(lat2d).any() or not np.isfinite(lon2d).any():
+        return None
     return lalo_to_yx_from_arrays(lat2d, lon2d, lat, lon)
 
 
@@ -230,15 +246,21 @@ def ensure_radar_lookup(he5_path, lookup_pre=None):
 
 
 def resolve_ref_yx(he5_path, lat, lon, lookup=None):
-    """Return (ref_y, ref_x, meta, coords) for lat/lon on HE5."""
+    """Return (ref_y, ref_x, meta, coords) for lat/lon on HE5.
+
+    In-file latitude/longitude win over Y_FIRST/X_FIRST. DISP-S1 HE5 files keep
+    the native UTM 30 m grid, so a single degree step is only exact at the
+    upper-left pixel.
+    """
     meta = read_he5_metadata(he5_path)
-    if is_geo_coords(meta):
-        ref_y, ref_x = lalo_to_yx_geo(meta, lat, lon)
-        return ref_y, ref_x, meta, "GEO"
-    _log("Resolving reference pixel from in-file latitude/longitude ...")
+    geo = is_geo_coords(meta)
     yx = lalo_to_yx_he5_geometry(he5_path, lat, lon)
     if yx is not None:
-        return yx[0], yx[1], meta, "RADAR"
+        _log("Resolving reference pixel from in-file latitude/longitude ...")
+        return yx[0], yx[1], meta, "GEO" if geo else "RADAR"
+    if geo:
+        ref_y, ref_x = lalo_to_yx_geo(meta, lat, lon)
+        return ref_y, ref_x, meta, "GEO"
     _log("In-file lat/lon not found; using geometryRadar.h5 lookup ...")
     lookup_path = ensure_radar_lookup(he5_path, lookup_pre=lookup)
     ref_y, ref_x = lalo_to_yx_radar(meta, lat, lon, lookup_path)
