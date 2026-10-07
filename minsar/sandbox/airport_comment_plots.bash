@@ -67,6 +67,8 @@ options:
   --fontsize N              title, ticks, colorbar [default: ${VIEW_FONT_SIZE}]
   --noaxis                  hide x/y axes (frame, tick labels, and Longitude/Latitude text)
   --notick                  hide tick numbers (and axis title text on radar scatter plots)
+  --noscalebar, --nosbar    hide the map scale bar (MintPy default: show)
+  --scalebar LEN X Y        scale bar length and position ratios [MintPy default: 0.2 0.2 0.1]
   --nowhitespace            hide axis, title, and colorbar
   --noreference             do not plot MintPy reference pixel
   --ref-size N              reference marker size [view.py default: 6; use ~0.5 with tiny --scatter-size]
@@ -77,6 +79,7 @@ options:
 Examples:
   ${SCRIPT_NAME} ../ShirzaeiComment/MIA_VLM.csv miaplpy_201509_202101/network_delaunay_4/geo_velocity.h5 miaplpy_201509_202609_075/network_delaunay_4/geo_velocity.h5 mintpy_2015-2021/geo_velocity.h5 mintpy_2015-2026/geo_velocity.h5 --scatter-size 0.5 --notick --noaxis
   ${SCRIPT_NAME} ../ShirzaeiComment/MIA_VLM.csv miaplpy_201509_202609/network_delaunay_4/velocity.h5 --notick --mask geo_temporalCoherence --mask-vmin 0.8 --scatter-size 1 --no-verbose
+  ${SCRIPT_NAME} geo_velocity.h5 --noscalebar
 "
 
 usage() {
@@ -629,9 +632,17 @@ while [[ $# -gt 0 ]]; do
             VIEW_FIG_ARGS+=(--noverbose)
             shift
             ;;
-        --nowhitespace|--noaxis|--notick|--nocbar|--nocolorbar|--notitle|--title-in|--title4sen|--title4sentinel1|--lalo-label|--flip-lr|--flip-ud|--noflip|--noreference)
+        --nowhitespace|--noaxis|--notick|--nocbar|--nocolorbar|--noscalebar|--nosbar|--notitle|--title-in|--title4sen|--title4sentinel1|--lalo-label|--flip-lr|--flip-ud|--noflip|--noreference)
             VIEW_FIG_ARGS+=("$1")
             shift
+            ;;
+        --scalebar)
+            [[ $# -ge 4 ]] || { echo "Error: --scalebar requires LEN X Y" >&2; exit 1; }
+            for _sb in "$2" "$3" "$4"; do
+                [[ "$_sb" =~ ^[+-]?([0-9]*\.?[0-9]+|[0-9]+\.?)$ ]] || { echo "Error: --scalebar values must be numeric (got: $_sb)" >&2; exit 1; }
+            done
+            VIEW_FIG_ARGS+=("$1" "$2" "$3" "$4")
+            shift 4
             ;;
         --ref-size|--ref-marker)
             [[ $# -ge 2 ]] || { echo "Error: $1 requires a value" >&2; exit 1; }
