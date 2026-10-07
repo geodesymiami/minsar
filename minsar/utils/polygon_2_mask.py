@@ -11,6 +11,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 
+import h5py
 import numpy as np
 from mintpy.utils import readfile, writefile
 from shapely.geometry import Polygon
@@ -23,7 +24,8 @@ from minsar.utils.subset_hdfeos5 import get_hdfeos_geometry_atr
 DESCRIPTION = """\
 Create a MintPy mask HDF5 on the grid of a geocoded reference file (.he5 or geo *.h5).
 Pixels inside any polygon from the KMZ/KML inputs are 1; all others are 0.
-Default output geo_polygon_mask.h5 is written in the current working directory.
+A regular lat/lon grid is sampled at pixel centers. A projected HE5 uses its
+per-pixel latitude/longitude. Default output geo_polygon_mask.h5 is written in CWD.
 """
 
 EXAMPLE = """Examples:
@@ -145,13 +147,52 @@ def expand_kmz_arguments(raw_paths: list[str]) -> list[Path]:
 
 
 def _regular_lat_lon_grid(shape: tuple[int, ...], atr: dict) -> tuple[np.ndarray, np.ndarray]:
+    """Pixel-center lat/lon. MintPy Y_FIRST/X_FIRST are the upper-left corner."""
     length, width = shape
     y0 = float(atr["Y_FIRST"])
     x0 = float(atr["X_FIRST"])
     y_step = float(atr["Y_STEP"])
     x_step = float(atr["X_STEP"])
-    lat = y0 + np.arange(length, dtype=np.float64)[:, None] * y_step
-    lon = x0 + np.arange(width, dtype=np.float64)[None, :] * x_step
+    rows = np.arange(length, dtype=np.float64) + 0.5
+    cols = np.arange(width, dtype=np.float64) + 0.5
+    lat = np.broadcast_to((y0 + rows * y_step)[:, None], (length, width)).copy()
+    lon = np.broadcast_to(x0 + cols * x_step, (length, width)).copy()
+    return lat, lon
+
+
+def _axis_aligned_latlon(lat: np.ndarray, lon: np.ndarray, tol_deg: float = 1e-5) -> bool:
+    """True when each row is one latitude and each column is one longitude."""
+    lat = np.asarray(lat, dtype=np.float64)
+    lon = np.asarray(lon, dtype=np.float64)
+    if lat.ndim != 2 or lon.ndim != 2 or lat.shape != lon.shape:
+        return False
+    if not (np.isfinite(lat).any() and np.isfinite(lon).any()):
+        return False
+    if lat.shape[1] > 1:
+        row_span = np.nanmax(lat, axis=1) - np.nanmin(lat, axis=1)
+        if float(np.nanmax(row_span)) > tol_deg:
+            return False
+    if lon.shape[0] > 1:
+        col_span = np.nanmax(lon, axis=0) - np.nanmin(lon, axis=0)
+        if float(np.nanmax(col_span)) > tol_deg:
+            return False
+    return True
+
+
+def _he5_geometry_latlon(path: Path) -> tuple[np.ndarray, np.ndarray] | None:
+    """2D latitude/longitude from an HDF-EOS5 file, or None."""
+    if path.suffix.lower() != ".he5":
+        return None
+    base = "HDFEOS/GRIDS/timeseries/geometry"
+    with h5py.File(path, "r") as f:
+        lat_name = f"{base}/latitude"
+        lon_name = f"{base}/longitude"
+        if lat_name not in f or lon_name not in f:
+            return None
+        lat = np.asarray(f[lat_name][:], dtype=np.float64)
+        lon = np.asarray(f[lon_name][:], dtype=np.float64)
+    if lat.ndim != 2 or lon.ndim != 2 or lat.shape != lon.shape:
+        return None
     return lat, lon
 
 
@@ -192,8 +233,19 @@ def read_reference_grid(geocode_path: Path) -> tuple[tuple[int, int], dict]:
 
 
 def lat_lon_grids(geocode_path: Path, shape: tuple[int, int], atr: dict) -> tuple[np.ndarray, np.ndarray]:
+    he5_ll = _he5_geometry_latlon(geocode_path)
+    if he5_ll is not None and he5_ll[0].shape == shape and not _axis_aligned_latlon(*he5_ll):
+        print("Grid:       per-pixel lat/lon (projected raster)")
+        print(
+            "Warning:    view.py places this mask with Y_FIRST, which is only exact "
+            "near the northwest corner. Regenerate the HE5 on a regular lat/lon grid "
+            "for the mask to sit on the basemap."
+        )
+        return he5_ll
+
     keys = ("Y_FIRST", "X_FIRST", "Y_STEP", "X_STEP")
     if all(k in atr for k in keys):
+        print("Grid:       regular lat/lon, pixel centers")
         return _regular_lat_lon_grid(shape, atr)
 
     geom_candidates = [
