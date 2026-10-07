@@ -20,6 +20,7 @@ import numpy as np
 import rasterio
 from affine import Affine
 from rasterio.transform import xy as rasterio_xy
+from rasterio.warp import Resampling, reproject, transform as warp_transform
 from mintpy.utils import writefile
 from pyproj import CRS
 
@@ -990,6 +991,279 @@ def corner_attrs(latitude: np.ndarray, longitude: np.ndarray) -> dict:
     }
 
 
+# Continuous layers. Masks and labels stay nearest so class ids are not blended.
+_BILINEAR_LAYERS = (
+    "temporal_coherence",
+    "avg_spatial_coherence",
+    "phase_similarity",
+    "recommended_density",
+    "persistent_scatterer_density",
+    "dem_err",
+    "height",
+    "incidence",
+    "azimuth",
+)
+_NEAREST_LAYERS = ("shadow", "watermask", "conncomp")
+
+
+def _crs_is_geographic(crs) -> bool:
+    """True for missing CRS, EPSG:4326, or any geographic CRS."""
+    if crs is None:
+        return True
+    if getattr(crs, "is_geographic", False):
+        return True
+    try:
+        return crs.to_epsg() == 4326
+    except Exception:
+        return False
+
+
+def _rasterio_crs(crs):
+    """rasterio CRS from a rasterio or pyproj CRS."""
+    if isinstance(crs, rasterio.crs.CRS):
+        return crs
+    return rasterio.crs.CRS.from_wkt(crs.to_wkt())
+
+
+def _meters_per_degree(lat_deg: float) -> tuple[float, float]:
+    """Meridional and prime-vertical meters per degree at lat_deg."""
+    lat = np.deg2rad(float(lat_deg))
+    m_lat = 111132.92 - 559.82 * np.cos(2.0 * lat) + 1.175 * np.cos(4.0 * lat)
+    m_lon = 111412.84 * np.cos(lat) - 93.5 * np.cos(3.0 * lat)
+    return float(m_lat), float(m_lon)
+
+
+def _matches_grid(arr, height: int, width: int) -> bool:
+    if arr is None:
+        return False
+    shape = np.asarray(arr).shape
+    return len(shape) in (2, 3) and shape[-2:] == (height, width)
+
+
+def _warp_plane(src, src_transform, src_crs, dst_transform, dst_crs, dst_shape, resampling, fill, nodata):
+    """Warp one 2D band. Destination starts as fill; samples outside the source stay fill."""
+    dst = np.full(dst_shape, fill, dtype=np.float32)
+    kwargs = {}
+    if nodata is not None:
+        kwargs["src_nodata"] = nodata
+        kwargs["dst_nodata"] = nodata
+    reproject(
+        source=np.ascontiguousarray(src, dtype=np.float32),
+        destination=dst,
+        src_transform=src_transform,
+        src_crs=src_crs,
+        dst_transform=dst_transform,
+        dst_crs=dst_crs,
+        resampling=resampling,
+        **kwargs,
+    )
+    return dst
+
+
+def _warp_array(arr, src_transform, src_crs, dst_transform, dst_crs, dst_shape, resampling, fill, nodata):
+    """Warp a 2D array or a (time, y, x) cube."""
+    data = np.asarray(arr)
+    if data.ndim == 2:
+        return _warp_plane(
+            data, src_transform, src_crs, dst_transform, dst_crs, dst_shape, resampling, fill, nodata
+        )
+    bands = [
+        _warp_plane(
+            data[i], src_transform, src_crs, dst_transform, dst_crs, dst_shape, resampling, fill, nodata
+        )
+        for i in range(data.shape[0])
+    ]
+    return np.stack(bands, axis=0)
+
+
+def _warp_nearest(arr, src_transform, src_crs, dst_transform, dst_crs, dst_shape):
+    """Nearest-neighbor warp. Float bands keep NaN; integer bands fill outside with 0."""
+    src = np.asarray(arr)
+    if np.issubdtype(src.dtype, np.floating):
+        return _warp_array(
+            src, src_transform, src_crs, dst_transform, dst_crs, dst_shape,
+            Resampling.nearest, np.nan, np.nan,
+        )
+    warped = _warp_array(
+        src, src_transform, src_crs, dst_transform, dst_crs, dst_shape,
+        Resampling.nearest, 0.0, None,
+    )
+    return np.rint(warped).astype(src.dtype)
+
+
+def _ref_on_degree_grid(ref_lat, ref_lon, west, north, dlon, dlat, n_row, n_col, mask):
+    """Nearest output pixel to a source lat/lon, then the nearest valid mask pixel."""
+    col = int(np.round((ref_lon - west) / dlon - 0.5))
+    row = int(np.round((north - ref_lat) / dlat - 0.5))
+    row = int(np.clip(row, 0, n_row - 1))
+    col = int(np.clip(col, 0, n_col - 1))
+    if mask is None or mask[row, col]:
+        return row, col
+    ys, xs = np.nonzero(mask)
+    if ys.size == 0:
+        return row, col
+    k = int(np.argmin((ys - row) ** 2 + (xs - col) ** 2))
+    return int(ys[k]), int(xs[k])
+
+
+def regrid_to_geographic(stack, mask, quality, latitude, longitude, grid, ref_y, ref_x):
+    """Resample a projected raster onto a regular WGS84 grid.
+
+    MintPy places geocoded data with Y_FIRST/X_STEP only, so each row must be
+    one latitude. UTM rows are not parallels; resampling is required. A grid
+    that is already geographic is returned unchanged.
+    """
+    crs = grid.get("crs")
+    if _crs_is_geographic(crs):
+        return stack, mask, quality, latitude, longitude, grid, int(ref_y), int(ref_x)
+
+    src_transform = grid["transform"]
+    height, width = int(grid["LENGTH"]), int(grid["WIDTH"])
+    src_crs = _rasterio_crs(crs)
+    dst_crs = rasterio.crs.CRS.from_epsg(4326)
+    dx_m = float(np.hypot(src_transform.a, src_transform.d))
+    dy_m = float(np.hypot(src_transform.b, src_transform.e))
+    if dx_m <= 0.0 or dy_m <= 0.0:
+        raise ValueError(f"source pixel size must be positive, got dx={dx_m} dy={dy_m}")
+
+    corners = ((0, 0), (width, 0), (width, height), (0, height))
+    xs, ys = [], []
+    for col, row in corners:
+        x, y = src_transform * (col, row)
+        xs.append(x)
+        ys.append(y)
+    lons, lats = warp_transform(src_crs, dst_crs, xs, ys)
+    west, east = float(np.min(lons)), float(np.max(lons))
+    south, north = float(np.min(lats)), float(np.max(lats))
+    m_lat, m_lon = _meters_per_degree(float(np.mean(lats)))
+    dlat = dy_m / m_lat
+    dlon = dx_m / m_lon
+    n_col = max(1, int(np.ceil((east - west) / dlon - 1e-9)))
+    n_row = max(1, int(np.ceil((north - south) / dlat - 1e-9)))
+    dst_transform = Affine.translation(west, north) * Affine.scale(dlon, -dlat)
+    dst_shape = (n_row, n_col)
+
+    stack_out = _warp_array(
+        stack, src_transform, src_crs, dst_transform, dst_crs, dst_shape,
+        Resampling.bilinear, np.nan, np.nan,
+    )
+    mask_f = _warp_array(
+        np.asarray(mask, dtype=np.float32), src_transform, src_crs, dst_transform, dst_crs, dst_shape,
+        Resampling.nearest, 0.0, None,
+    )
+    mask_out = mask_f >= 0.5
+
+    quality_out = dict(quality)
+    for key in _BILINEAR_LAYERS:
+        arr = quality.get(key)
+        if not _matches_grid(arr, height, width):
+            continue
+        quality_out[key] = _warp_array(
+            arr, src_transform, src_crs, dst_transform, dst_crs, dst_shape,
+            Resampling.bilinear, np.nan, np.nan,
+        )
+    for key in _NEAREST_LAYERS:
+        arr = quality.get(key)
+        if not _matches_grid(arr, height, width):
+            continue
+        quality_out[key] = _warp_nearest(
+            arr, src_transform, src_crs, dst_transform, dst_crs, dst_shape
+        )
+
+    cols = np.arange(n_col, dtype=np.float64)
+    rows = np.arange(n_row, dtype=np.float64)
+    lon_out = np.broadcast_to(west + (cols + 0.5) * dlon, dst_shape).copy()
+    lat_out = np.broadcast_to((north - (rows + 0.5) * dlat)[:, np.newaxis], dst_shape).copy()
+
+    ref_y, ref_x = int(ref_y), int(ref_x)
+    if not (0 <= ref_y < height and 0 <= ref_x < width):
+        ref_y, ref_x = height // 2, width // 2
+    x_c, y_c = src_transform * (ref_x + 0.5, ref_y + 0.5)
+    ref_lon_a, ref_lat_a = warp_transform(src_crs, dst_crs, [x_c], [y_c])
+    new_y, new_x = _ref_on_degree_grid(
+        float(ref_lat_a[0]), float(ref_lon_a[0]), west, north, dlon, dlat, n_row, n_col, mask_out
+    )
+
+    src_epsg = src_crs.to_epsg()
+    src_label = f"EPSG:{src_epsg}" if src_epsg else src_crs.to_string()
+    print(
+        f"Regrid:     {height}x{width} {src_label} -> {n_row}x{n_col} EPSG:4326"
+        f"  dlat={dlat:.8f} dlon={dlon:.8f}"
+    )
+    print(f"Regrid:     REF pixel ({ref_y}, {ref_x}) -> ({new_y}, {new_x})")
+
+    new_grid = {
+        "LENGTH": n_row,
+        "WIDTH": n_col,
+        "transform": dst_transform,
+        "crs": CRS.from_epsg(4326),
+        "bbox": None,
+    }
+    return stack_out, mask_out, quality_out, lat_out, lon_out, new_grid, new_y, new_x
+
+
+def refresh_geo_metadata(metadata, latitude, longitude, ref_y, ref_x) -> dict:
+    """Overwrite MintPy geo attributes so they match a regular lat/lon grid."""
+    lat = np.asarray(latitude)
+    lon = np.asarray(longitude)
+    south = float(lat[-1, 0])
+    north = float(lat[0, 0])
+    west = float(lon[0, 0])
+    east = float(lon[0, -1])
+    if south > north:
+        south, north = north, south
+    if west > east:
+        west, east = east, west
+    footprint = snwe_wkt(south, north, west, east)
+    metadata.update(degree_geotransform(lat, lon))
+    metadata.update(corner_attrs(lat, lon))
+    metadata["LENGTH"] = str(lat.shape[0])
+    metadata["WIDTH"] = str(lon.shape[1])
+    metadata["REF_Y"] = str(int(ref_y))
+    metadata["REF_X"] = str(int(ref_x))
+    metadata["REF_LAT"] = float(lat[int(ref_y), int(ref_x)])
+    metadata["REF_LON"] = float(lon[int(ref_y), int(ref_x)])
+    metadata["data_footprint"] = footprint
+    metadata["scene_footprint"] = footprint
+    return metadata
+
+
+def _latlon_is_axis_aligned(latitude, longitude, tol_deg: float = 1e-5) -> bool:
+    """True when each row is one latitude and each column is one longitude."""
+    lat = np.asarray(latitude, dtype=np.float64)
+    lon = np.asarray(longitude, dtype=np.float64)
+    if lat.ndim == 1 and lon.ndim == 1:
+        return True
+    if lat.ndim != 2 or lon.ndim != 2 or lat.shape != lon.shape:
+        return False
+    if not (np.isfinite(lat).any() and np.isfinite(lon).any()):
+        return False
+    if lat.shape[1] > 1:
+        row_span = np.nanmax(lat, axis=1) - np.nanmin(lat, axis=1)
+        if float(np.nanmax(row_span)) > tol_deg:
+            return False
+    if lon.shape[0] > 1:
+        col_span = np.nanmax(lon, axis=0) - np.nanmin(lon, axis=0)
+        if float(np.nanmax(col_span)) > tol_deg:
+            return False
+    return True
+
+
+def geographic_xy_from_latlon(latitude, longitude):
+    """Pixel-center longitude/latitude axes, EPSG:4326, and GDAL affine."""
+    lat = np.asarray(latitude, dtype=np.float64)
+    lon = np.asarray(longitude, dtype=np.float64)
+    if lat.ndim == 1 and lon.ndim == 1:
+        y, x = lat, lon
+    else:
+        y = np.nanmean(lat, axis=1)
+        x = np.nanmean(lon, axis=0)
+    dx = float(x[1] - x[0]) if x.size > 1 else 0.0
+    dy = float(y[1] - y[0]) if y.size > 1 else 0.0
+    transform = Affine.translation(float(x[0]) - dx / 2.0, float(y[0]) - dy / 2.0) * Affine.scale(dx, dy)
+    return x, y, CRS.from_epsg(4326), transform
+
+
 def read_dolphin_wavelength(dataset_dir: Path, dolphin_dir: Path, ts_dir: Path) -> float | None:
     for cfg in (
         dolphin_dir / "dolphin_config.yaml",
@@ -1755,8 +2029,31 @@ def _stack_encoding(ds) -> dict:
     return encoding
 
 
+def _xy_axis_attrs(crs: CRS) -> tuple[dict, dict]:
+    """CF attributes for the x and y axes of a stack NetCDF."""
+    if _crs_is_geographic(crs):
+        x_attrs = {"standard_name": "longitude", "long_name": "longitude", "units": "degrees_east"}
+        y_attrs = {"standard_name": "latitude", "long_name": "latitude", "units": "degrees_north"}
+        return x_attrs, y_attrs
+    x_attrs = {
+        "standard_name": "projection_x_coordinate",
+        "long_name": "x coordinate of projection",
+        "units": "m",
+    }
+    y_attrs = {
+        "standard_name": "projection_y_coordinate",
+        "long_name": "y coordinate of projection",
+        "units": "m",
+    }
+    return x_attrs, y_attrs
+
+
 def write_opera_stack_nc(he5_path: Path, out_path: Path) -> Path:
-    """Write an opera-utils-style *-stack.nc from an HDF-EOS5 file."""
+    """Write an opera-utils-style *-stack.nc from an HDF-EOS5 file.
+
+    Axis-aligned degree grids stay in EPSG:4326. Other lat/lon grids are
+    written as a regular UTM grid, which matches a native projected HE5.
+    """
     import xarray as xr
 
     he5_path = Path(he5_path).expanduser().resolve()
@@ -1764,12 +2061,16 @@ def write_opera_stack_nc(he5_path: Path, out_path: Path) -> Path:
     loaded = load_he5_stack(he5_path)
     disp = loaded["displacement"]
     n_time, length, width = disp.shape
-    x, y, crs, transform = projected_xy_from_latlon(loaded["latitude"], loaded["longitude"])
+    if _latlon_is_axis_aligned(loaded["latitude"], loaded["longitude"]):
+        x, y, crs, transform = geographic_xy_from_latlon(loaded["latitude"], loaded["longitude"])
+    else:
+        x, y, crs, transform = projected_xy_from_latlon(loaded["latitude"], loaded["longitude"])
     if not (np.isfinite(x).all() and np.isfinite(y).all()):
         raise ValueError(
-            f"Could not build UTM x/y from HE5 geometry in {he5_path.name} "
+            f"Could not build x/y from HE5 geometry in {he5_path.name} "
             "(latitude/longitude are NaN and X_FIRST/Y_FIRST are missing or invalid)"
         )
+    x_attrs, y_attrs = _xy_axis_attrs(crs)
     time_sec = _yyyymmdd_to_cf_seconds(loaded["date_list"])
     layers = loaded["layers"]
     bperp = np.asarray(loaded["bperp"], dtype=np.float32)
@@ -1791,8 +2092,8 @@ def write_opera_stack_nc(he5_path: Path, out_path: Path) -> Path:
     grid_attrs = {"grid_mapping": "spatial_ref"}
     coords = {
         "time": ("time", time_sec, time_attrs),
-        "y": ("y", y, {"standard_name": "projection_y_coordinate", "long_name": "y coordinate of projection", "units": "m"}),
-        "x": ("x", x, {"standard_name": "projection_x_coordinate", "long_name": "x coordinate of projection", "units": "m"}),
+        "y": ("y", y, y_attrs),
+        "x": ("x", x, x_attrs),
     }
     data_vars = {
         "spatial_ref": (

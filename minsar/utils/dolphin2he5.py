@@ -2,9 +2,11 @@
 """Convert Dolphin/sweets or OPERA DISP stack to MintPy HDF-EOS5 (.he5).
 
 Writes the same HDFEOS tree as MintPy/MiaplPy ``save_hdfeos5.py`` so
-``view.py`` and ``ingest_insarmaps.bash`` work. Default mask matches OPERA
-DISP-S1 recommended_mask (TC 0.6 / similarity 0.4) and drops pixels that are
-0.0 on every date (Dolphin unwrap nodata).
+``view.py`` and ``ingest_insarmaps.bash`` work. Projected rasters are
+resampled onto a regular lat/lon grid so MintPy's Y_FIRST/X_STEP geocoding
+matches the pixels. Default mask matches OPERA DISP-S1 recommended_mask
+(TC 0.6 / similarity 0.4) and drops pixels that are 0.0 on every date
+(Dolphin unwrap nodata).
 
 ``--reverse`` converts an HDF-EOS5 file back to an opera-utils ``*-stack.nc``.
 """
@@ -36,6 +38,8 @@ try:
         load_quality_layers,
         mask_filename_suffix,
         read_reference_point,
+        refresh_geo_metadata,
+        regrid_to_geographic,
         resolve_mask_thresholds,
         resolve_required_files,
         resolve_run_paths,
@@ -61,6 +65,8 @@ except ImportError:
         load_quality_layers,
         mask_filename_suffix,
         read_reference_point,
+        refresh_geo_metadata,
+        regrid_to_geographic,
         resolve_mask_thresholds,
         resolve_required_files,
         resolve_run_paths,
@@ -71,7 +77,8 @@ except ImportError:
 
 DESCRIPTION = (
     "Convert Dolphin GeoTIFF or OPERA DISP *-stack.nc into HDF-EOS5 "
-    "(default -m recommended). --reverse writes *-stack.nc from a .he5"
+    "(default -m recommended). Projected rasters are resampled to a regular "
+    "lat/lon grid. --reverse writes *-stack.nc from a .he5"
 )
 
 
@@ -277,6 +284,12 @@ def run_opera(inps, vmin, vmin_sim, suffix: str) -> Path:
 
 
 def _write_he5(inps, out_dir, stack, date_list, grid, quality, mask, latitude, longitude, metadata, suffix, vmin, vmin_sim, bperp):
+    ref_y = int(float(metadata["REF_Y"]))
+    ref_x = int(float(metadata["REF_X"]))
+    stack, mask, quality, latitude, longitude, grid, ref_y, ref_x = regrid_to_geographic(
+        stack, mask, quality, latitude, longitude, grid, ref_y, ref_x
+    )
+    refresh_geo_metadata(metadata, latitude, longitude, ref_y, ref_x)
     shape = (int(grid["LENGTH"]), int(grid["WIDTH"]))
     if inps.outfile:
         out_path = Path(inps.outfile).expanduser().resolve()
