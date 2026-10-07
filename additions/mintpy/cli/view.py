@@ -9,6 +9,7 @@
 
 
 import os
+import shlex
 import sys
 
 from mintpy.utils import arg_utils
@@ -200,7 +201,7 @@ def cmd_line_parse(iargs=None):
     # check: --noverbose option
     # print view.py command line if --noverbose (used in smallbaselineApp.py)
     if not inps.print_msg:
-        print('view.py', ' '.join(inps.argv))
+        print('view.py', ' '.join(shlex.quote(arg) for arg in inps.argv))
 
     return inps
 
