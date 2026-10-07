@@ -673,8 +673,11 @@ def plot_slice(ax, data, metadata, inps):
         Returns:    xx/yy  - 1D np.ndarray of the data coordinates
         """
         height, width = ds_shape
-        x = np.linspace(extent[0], extent[1], width)
-        y = np.linspace(extent[2], extent[3], height)[::-1]  # reverse the Y-axis
+        # Extent is the outer pixel edge; place markers at pixel centers, not on the corners.
+        dx = (extent[1] - extent[0]) / width
+        dy = (extent[3] - extent[2]) / height
+        x = extent[0] + (np.arange(width) + 0.5) * dx
+        y = extent[3] - (np.arange(height) + 0.5) * dy
         xx, yy = np.meshgrid(x, y)
         return xx.flatten(), yy.flatten()
 
