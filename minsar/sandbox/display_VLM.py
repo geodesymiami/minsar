@@ -509,6 +509,20 @@ def plot_reference_point(ax, inps) -> None:
     )
 
 
+def mask_allowed_for_vlm(mask_file: str) -> bool:
+    """VLM CSV has no temporal coherence; only geocoded polygon area masks."""
+    base = os.path.basename(mask_file)
+    stem = base[:-3] if base.lower().endswith(".h5") else base
+    if stem.startswith("geo_"):
+        stem = stem[4:]
+    if stem == "polygon_mask":
+        return True
+    lower = base.lower()
+    if "polygon" in lower and "coherence" not in lower and "similarity" not in lower:
+        return True
+    return False
+
+
 def read_vlm_mask(inps):
     """Read geocoded mask grid (MintPy view.py / plot.read_mask semantics)."""
     if inps.mask_file in (None, "no", ""):
@@ -552,6 +566,12 @@ def keep_points_by_mask(
 
 
 def apply_vlm_mask(df: pd.DataFrame, inps, vprint) -> pd.DataFrame:
+    if inps.mask_file not in (None, "no", "") and not mask_allowed_for_vlm(inps.mask_file):
+        vprint(
+            f"WARNING: VLM CSV ignores --mask {os.path.basename(inps.mask_file)} "
+            "(only geo polygon masks apply, e.g. geo_polygon_mask.h5)."
+        )
+        inps.mask_file = "no"
     msk = read_vlm_mask(inps)
     if msk is None:
         if inps.zero_mask:

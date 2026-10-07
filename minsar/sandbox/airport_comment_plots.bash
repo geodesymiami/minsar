@@ -5,9 +5,9 @@ set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
-DISPLAY_VLM="${SCRIPT_DIR}/display_VLM.py"
 PNGS_TO_PPTX="${SCRIPT_DIR}/pngs_to_pptx.py"
 PIC_DIR="pic"
+RUN_LOG="log"
 PPT_NAME="airport_comment_plots.pptx"
 
 SUB_LAT0="25.78"
@@ -43,7 +43,8 @@ usage: ${SCRIPT_NAME} [OPTIONS] DATASET [DATASET ...]
 Plot PNGs in ./pic (VLM CSV via display_VLM.py; *.h5 velocity via view.py).
 If ./pic exists, its contents are removed before plotting (not with --dry-run).
 Without -m/--mask, plots are unmasked. With --mask, mask applies to every dataset (VLM CSV and *.h5; see --mask).
-Always saves with --no-display / --nodisplay. Writes ${PPT_NAME} in ./pic (one slide per PNG). Logs to pic/log.
+Always saves with --no-display / --nodisplay. Writes ${PPT_NAME} in ./pic (one slide per PNG).
+Logs plot commands to ./log (append) and ${PIC_DIR}/log (per run; cleared with ./pic).
 Default colorbar: rectangle (--cbar-ext neither); override with --cbar-ext min|max|both on the command line.
 
 options:
@@ -54,8 +55,9 @@ options:
   --vlim VMIN VMAX            [default: ${VLIM0} ${VLIM1}]
   --style STYLE               [default: ${STYLE}]
   --scatter-size N            marker size for CSV and geo velocity [default: ${SCATTER_SIZE}]
-  -m, --mask NAME             mask for all datasets (stem or .h5; geo_* or radar name OK)
-                              path used as-is if it exists; else geo_STEM.h5 or STEM.h5 per dataset dir
+  -m, --mask NAME             mask for *.h5 velocity (stem or .h5; geo_* or radar name OK)
+                              each velocity.h5 uses geo_STEM.h5 or STEM.h5 in its own directory
+                              VLM CSV: geo_polygon_mask only (no temporalCoherence)
   --mask-vmin VALUE           view.py mask threshold when --mask is set [default: ${MASK_VMIN}]
   --add-basemap [PROVIDER]    web tiles for geo *.h5 and radar scatter (lat/lon); [default: ${BASEMAP}]
   --no-basemap                disable web basemap
@@ -94,19 +96,83 @@ resolve_plot_python() {
     exit 1
 }
 
+append_log() {
+    local msg="$1"
+    printf '%s\n' "$msg" >> "$RUN_LOG"
+    if [[ -d "$PIC_DIR" ]]; then
+        printf '%s\n' "$msg" >> "$PIC_LOG"
+    fi
+}
+
+short_log_path() {
+    local p="$1"
+    case "$p" in
+        --*|-*) printf '%s' "$p"; return ;;
+    esac
+    if [[ "$p" != /* ]]; then
+        printf '%s' "$p"
+        return
+    fi
+    if [[ "$p" == "$PWD/"* ]]; then
+        printf './%s' "${p#"$PWD"/}"
+        return
+    fi
+    case "$p" in
+        *.h5|*.csv|*.png|*.nc)
+            printf '%s' "$(basename "$p")"
+            ;;
+        *)
+            printf '%s' "$p"
+            ;;
+    esac
+}
+
+# Reproduction line: display_VLM.py / view.py on PATH, no python prefix, short paths.
+format_cmd_for_log() {
+    local -a args=("$@")
+    local -a work=()
+    local i=0 py scr
+
+    if [[ ${#args[@]} -ge 2 ]]; then
+        py="${args[0]}"
+        scr="${args[1]}"
+        if [[ "$py" == *python* ]] && [[ "$(basename "$scr")" == "display_VLM.py" ]]; then
+            work=(display_VLM.py)
+            i=2
+        elif [[ "$py" == *python* ]] && [[ "$(basename "$scr")" == "pngs_to_pptx.py" ]]; then
+            return 1
+        fi
+    fi
+    if [[ "$i" -eq 0 ]]; then
+        work=("${args[0]}")
+        i=1
+    fi
+    for (( ; i < ${#args[@]}; i++ )); do
+        work+=("$(short_log_path "${args[i]}")")
+    done
+    local line="" c
+    for c in "${work[@]}"; do
+        line+="$(printf '%q' "$c") "
+    done
+    printf '%s' "${line%% }"
+}
+
 log_plot_command() {
-    local cmd="$1"
-    printf '%s + %s\n' "$(date +'%Y%m%d-%H:%M')" "$cmd" >> "$PIC_LOG"
+    append_log "$(date +'%Y%m%d-%H:%M') + $1"
 }
 
 log_script_invocation() {
-    local line="" part
+    local line="" part idx=0
+    append_log '#########################################################'
     for part in "${SCRIPT_INVOCATION[@]}"; do
-        line+="$(printf '%q' "$part") "
+        if [[ "$idx" -eq 0 ]]; then
+            line+="$(printf '%q' "$(basename "$part")")"
+        else
+            line+=" $(printf '%q' "$part")"
+        fi
+        idx=$((idx + 1))
     done
-    line=${line%% }
-    printf '%s\n' '#########################################################################################' >> "$PIC_LOG"
-    printf '%s + %s\n' "$(date +'%Y%m%d-%H:%M')" "$line" >> "$PIC_LOG"
+    append_log "$(date +'%Y%m%d-%H:%M') + $line"
 }
 
 clean_plot_title() {
@@ -148,6 +214,65 @@ normalize_mask_stem() {
     printf '%s' "$s"
 }
 
+# True when --mask is a temporal-coherence layer (view.py uses --mask-vmin).
+mask_is_temporal_coherence() {
+    local spec="${1:-$USER_MASK_SPEC}"
+    local mask_file="${2:-}"
+    local stem bn
+    stem="$(normalize_mask_stem "$spec")"
+    [[ "$stem" == temporalCoherence ]] && return 0
+    bn="$(basename "$spec")"
+    bn="${bn%.h5}"
+    case "$bn" in
+        geo_temporalCoherence|temporalCoherence|*temporalCoherence*) return 0 ;;
+    esac
+    if [[ -n "$mask_file" ]]; then
+        bn="$(basename "$mask_file")"
+        bn="${bn%.h5}"
+        case "$bn" in
+            geo_temporalCoherence|temporalCoherence|*temporalCoherence*) return 0 ;;
+        esac
+    fi
+    return 1
+}
+
+plot_title_for_velocity() {
+    local title="$1" mask_file="$2"
+    if mask_is_temporal_coherence "$USER_MASK_SPEC" "$mask_file"; then
+        printf '%s [--mask-vmin %s]' "$title" "$MASK_VMIN"
+    else
+        printf '%s' "$title"
+    fi
+}
+
+# Co-located mask path using the same dirname as the dataset CLI argument (not absolute).
+mask_path_for_plot() {
+    local dataset="$1" mask_resolved="$2"
+    local ds_dir mask_bn
+    mask_bn="$(basename "$mask_resolved")"
+    ds_dir=$(dirname "$dataset")
+    if [[ "$ds_dir" == "." ]]; then
+        printf '%s' "$mask_bn"
+    else
+        printf '%s/%s' "$ds_dir" "$mask_bn"
+    fi
+}
+
+# VLM CSV has no InSAR temporal coherence; only polygon area masks (e.g. geo_polygon_mask.h5).
+mask_allowed_for_vlm() {
+    [[ -n "$USER_MASK_SPEC" ]] || return 1
+    local stem bn
+    stem="$(normalize_mask_stem "$USER_MASK_SPEC")"
+    bn="$(basename "$USER_MASK_SPEC")"
+    bn="${bn%.h5}"
+    [[ "$stem" == polygon_mask ]] && return 0
+    case "$bn" in
+        geo_polygon_mask|polygon_mask) return 0 ;;
+        geo_polygon_*|polygon_*) return 0 ;;
+    esac
+    return 1
+}
+
 # Candidate mask basenames for one velocity dataset (geocoded vs radar).
 mask_names_for_dataset() {
     local dataset="$1"
@@ -158,12 +283,12 @@ mask_names_for_dataset() {
     [[ "$spec_bn" == *.[hH]5 ]] || spec_bn="${spec_bn}.h5"
     lower_ext=$(printf '%s' "${dataset##*.}" | tr '[:upper:]' '[:lower:]')
     if [[ "$lower_ext" == "csv" ]] || dataset_is_geocoded "$dataset"; then
-        names+=( "geo_${stem}.h5" )
+        names+=( "geo_${stem}.h5" "${stem}.h5" )
         if [[ "$spec_bn" == geo_* ]]; then
             names+=( "$spec_bn" )
         fi
     else
-        names+=( "${stem}.h5" "$spec_bn" )
+        names+=( "${stem}.h5" "geo_${stem}.h5" "$spec_bn" )
     fi
     printf '%s\n' "${names[@]}" | awk '!seen[$0]++'
 }
@@ -253,7 +378,17 @@ layer_mask_for_dataset() {
     [[ "$dir" != "." ]] || dir="$PWD"
     lower_ext=$(printf '%s' "${dataset##*.}" | tr '[:upper:]' '[:lower:]')
 
-    if [[ -f "$USER_MASK_SPEC" ]]; then
+    # *.h5 velocity: mask must sit next to that velocity file (no other dataset dirs).
+    if [[ "$lower_ext" != "csv" && -f "$USER_MASK_SPEC" ]]; then
+        local spec_dir spec_abs
+        spec_abs="$(cd "$(dirname "$USER_MASK_SPEC")" && pwd)/$(basename "$USER_MASK_SPEC")"
+        spec_dir="$(dirname "$spec_abs")"
+        dir="$(cd "$dir" && pwd)"
+        if [[ "$spec_dir" == "$dir" ]]; then
+            printf '%s' "$spec_abs"
+            return 0
+        fi
+    elif [[ "$lower_ext" == "csv" && -f "$USER_MASK_SPEC" ]]; then
         printf '%s' "$(cd "$(dirname "$USER_MASK_SPEC")" && pwd)/$(basename "$USER_MASK_SPEC")"
         return 0
     fi
@@ -263,10 +398,10 @@ layer_mask_for_dataset() {
         tried+="${dir}/${base} "
         mask="${dir}/${base}"
         if [[ -f "$mask" ]]; then
-            printf '%s' "$mask"
+            printf '%s' "$(cd "$dir" && pwd)/$(basename "$mask")"
             return 0
         fi
-        if [[ ${#MASK_FALLBACK_DIRS[@]} -gt 0 ]]; then
+        if [[ "$lower_ext" == "csv" && ${#MASK_FALLBACK_DIRS[@]} -gt 0 ]]; then
             for try_dir in "${MASK_FALLBACK_DIRS[@]}"; do
                 mask="${try_dir}/${base}"
                 tried+="${mask} "
@@ -327,13 +462,13 @@ plot_vlm_csv() {
     local -a mask_args=() geo_grid_args=() cmd=() footer="" c
     local j
     if [[ "$use_mask" -eq 1 ]]; then
-        mask_args=(--mask "$mask_file" --mask-vmin "$MASK_VMIN")
+        mask_args=(--mask "$(mask_path_for_plot "$dataset" "$mask_file")")
     fi
     if [[ -n "$GEO_GRID_FILE" ]]; then
         geo_grid_args=(--geo-grid "$GEO_GRID_FILE")
     fi
     cmd=(
-        "$PLOT_PYTHON" "$DISPLAY_VLM" "$dataset"
+        display_VLM.py "$dataset"
         --title "$plot_title"
         "${geo_grid_args[@]}"
         --sub-lat "$SUB_LAT0" "$SUB_LAT1"
@@ -349,7 +484,7 @@ plot_vlm_csv() {
         "${PASS_ARGS[@]}"
     )
     footer="display_VLM.py"
-    for ((j = 2; j < ${#cmd[@]}; j++)); do
+    for ((j = 1; j < ${#cmd[@]}; j++)); do
         footer+=" $(printf '%q' "${cmd[j]}")"
     done
     PPT_FOOTER_OVERRIDE="$footer"
@@ -363,7 +498,7 @@ plot_velocity_h5() {
     local dataset="$1" out_png="$2" plot_title="$3" use_mask="$4" mask_file="$5"
     local -a mask_args=() geo_args=()
     if [[ "$use_mask" -eq 1 ]]; then
-        mask_args=(--mask "$mask_file" --mask-vmin "$MASK_VMIN")
+        mask_args=(--mask "$(mask_path_for_plot "$dataset" "$mask_file")" --mask-vmin "$MASK_VMIN")
     fi
     geo_args=(--sub-lat "$SUB_LAT0" "$SUB_LAT1" --sub-lon "$SUB_LON0" "$SUB_LON1")
     RECORD_PLOT_CMD=1
@@ -384,18 +519,16 @@ plot_velocity_h5() {
 
 run_or_dry() {
     local -a cmd=("$@")
-    local line="" c
-    for c in "${cmd[@]}"; do
-        line+="$(printf '%q' "$c") "
-    done
-    line=${line%% }
-    log_plot_command "$line"
+    local line=""
     if [[ "$RECORD_PLOT_CMD" -eq 1 ]]; then
-        PLOT_CMD_LINES+=("$line")
-        if [[ -n "${PPT_FOOTER_OVERRIDE:-}" ]]; then
-            PLOT_FOOTER_LINES+=("$PPT_FOOTER_OVERRIDE")
-        else
-            PLOT_FOOTER_LINES+=("$line")
+        if line="$(format_cmd_for_log "${cmd[@]}")"; then
+            log_plot_command "$line"
+            PLOT_CMD_LINES+=("$line")
+            if [[ -n "${PPT_FOOTER_OVERRIDE:-}" ]]; then
+                PLOT_FOOTER_LINES+=("$PPT_FOOTER_OVERRIDE")
+            else
+                PLOT_FOOTER_LINES+=("$line")
+            fi
         fi
     fi
     if [[ "$DRY_RUN" -eq 0 ]]; then
@@ -571,12 +704,15 @@ if [[ ${#DATASETS[@]} -eq 0 ]]; then
     exit 1
 fi
 
-if [[ ! -f "$DISPLAY_VLM" ]]; then
-    echo "Error: display_VLM.py not found: ${DISPLAY_VLM}" >&2
+PLOT_PYTHON="$(resolve_plot_python)"
+
+if ! command -v display_VLM.py >/dev/null 2>&1 && [[ -x "${SCRIPT_DIR}/display_VLM.py" ]]; then
+    PATH="${SCRIPT_DIR}:${PATH}"
+fi
+if ! command -v display_VLM.py >/dev/null 2>&1; then
+    echo "Error: display_VLM.py not found in PATH (source MinSAR/MintPy environment, then retry)." >&2
     exit 1
 fi
-
-PLOT_PYTHON="$(resolve_plot_python)"
 
 if ! command -v view.py >/dev/null 2>&1; then
     echo "Error: view.py not found in PATH (source MinSAR/MintPy environment, then retry)." >&2
@@ -638,13 +774,14 @@ for dataset in "${DATASETS[@]}"; do
         mask_file="$(layer_mask_for_dataset "$dataset")"
     fi
     if [[ "$lower" == "csv" ]]; then
-        if [[ -n "$USER_MASK_SPEC" ]]; then
+        if mask_allowed_for_vlm; then
+            mask_file="$(layer_mask_for_dataset "$dataset")"
             plot_vlm_csv "$dataset" "$out_png" "$plot_title" 1 "$mask_file"
         else
             plot_vlm_csv "$dataset" "$out_png" "$plot_title" 0 ""
         fi
     elif [[ -n "$USER_MASK_SPEC" ]]; then
-        plot_velocity_h5 "$dataset" "$out_png" "$plot_title" 1 "$mask_file"
+        plot_velocity_h5 "$dataset" "$out_png" "$(plot_title_for_velocity "$plot_title" "$mask_file")" 1 "$mask_file"
     else
         plot_velocity_h5 "$dataset" "$out_png" "$plot_title" 0 ""
     fi
@@ -678,6 +815,7 @@ if [[ "$DRY_RUN" -eq 0 && ${#OUT_PNGS[@]} -gt 0 ]]; then
     for png in "${OUT_PNGS[@]}"; do
         ppt_cmd+=("$png")
     done
-    RECORD_PLOT_CMD=0
-    run_or_dry "${ppt_cmd[@]}"
+    if [[ "$DRY_RUN" -eq 0 ]]; then
+        "${ppt_cmd[@]}"
+    fi
 fi

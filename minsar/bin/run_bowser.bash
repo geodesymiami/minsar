@@ -96,4 +96,5 @@ elif [[ "$ext" != "nc" ]]; then
 fi
 
 echo "bowser stack: $stack_abs"
-exec pixi run --manifest-path "$MANIFEST" bowser run --stack-file "$stack_abs" "${extra_args[@]}"
+# Frozen default env: a lock update re-solves writer/all and fails on rasterio
+exec pixi run --frozen -e default --manifest-path "$MANIFEST" bowser run --stack-file "$stack_abs" "${extra_args[@]}"
