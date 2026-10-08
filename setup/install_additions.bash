@@ -93,6 +93,7 @@ ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/topsStack/mergeBursts.py $MINS
 ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/topsStack/generateIgram.py $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/topsStack/generateIgram.py
 ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/topsStack/overlap_withDEM.py $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/topsStack/overlap_withDEM.py
 ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/topsStack/estimateRangeMisreg.py $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/topsStack/estimateRangeMisreg.py
+ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/topsStack/estimateAzimuthMisreg.py $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/topsStack/estimateAzimuthMisreg.py
 # TEMPORARY (isce2<2.6.4): Copernicus Data Space fetchOrbit. REMOVE when conda-lock pins isce2>=2.6.4.
 ln -sf "$MINSAR_HOME/tools/isce2/contrib/stack/topsStack/fetchOrbit.py" "$MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/topsStack/fetchOrbit.py"
 ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/stripmapStack/unpackFrame_ENV_raw.py $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/stripmapStack

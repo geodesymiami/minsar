@@ -928,53 +928,64 @@ function log_removed_bursts_missing() {
 # stack products/run_files already created (e.g. re-run with --start ifgram).
 function remove_unfixable_partial_swath_dates() {
     local slc_dir="${1:-SLC}"
-    local unfixable_file="$slc_dir/dates_unfixable_partial_swath.txt"
-    [[ -s "$unfixable_file" ]] || return 0
+    local unfixable_file coverage_file
+    local -a coverage_files=(
+        "$slc_dir/dates_unfixable_partial_swath.txt"
+        "$slc_dir/dates_inconsistent_burst_count.txt"
+    )
+    local found=0
+    for coverage_file in "${coverage_files[@]}"; do
+        [[ -s "$coverage_file" ]] && found=1
+    done
+    [[ $found -eq 1 ]] || return 0
 
     local -a stack_date_dirs=(secondarys coreg_secondarys coarse_interferograms interferograms merged)
 
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        local ymd
-        ymd="$(echo "$line" | sed -E 's/^([0-9]{8}).*/\1/')"
-        [[ "$ymd" =~ ^[0-9]{8}$ ]] || continue
-        echo "Removing partial-subswath date $ymd (see $unfixable_file)"
-        log_removed_bursts_missing "$slc_dir" "$line" "excluded from stack (partial subswath)"
+    for unfixable_file in "${coverage_files[@]}"; do
+        [[ -s "$unfixable_file" ]] || continue
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            local ymd
+            ymd="$(echo "$line" | sed -E 's/^([0-9]{8}).*/\1/')"
+            [[ "$ymd" =~ ^[0-9]{8}$ ]] || continue
+            echo "Removing unfixable-stack date $ymd (see $unfixable_file)"
+            log_removed_bursts_missing "$slc_dir" "$line" "excluded from stack (partial subswath or inconsistent burst count)"
 
-        shopt -s nullglob
-        local f
-        for f in "$slc_dir"/*"${ymd}"T*; do
-            rm -rf "$f"
-        done
-
-        local d
-        for d in "${stack_date_dirs[@]}"; do
-            [[ -d "$d/$ymd" ]] && rm -rf "$d/$ymd"
-        done
-
-        if [[ -d configs ]]; then
-            for f in configs/*"${ymd}"*; do
-                rm -f "$f"
-            done
-        fi
-        if [[ -d baselines ]]; then
-            for f in baselines/*"${ymd}"*; do
+            shopt -s nullglob
+            local f
+            for f in "$slc_dir"/*"${ymd}"T*; do
                 rm -rf "$f"
             done
-        fi
-        shopt -u nullglob
 
-        if [[ -d run_files ]]; then
-            _remove_date_from_run_files_bash run_files "$ymd" 2
-            shopt -s nullglob
-            for f in run_files/run_*_"${ymd}"_*.{e,o,time_log}; do
-                rm -f "$f"
+            local d
+            for d in "${stack_date_dirs[@]}"; do
+                [[ -d "$d/$ymd" ]] && rm -rf "$d/$ymd"
             done
-            if [[ -d run_files/stdout_run_04_fullBurst_geo2rdr ]]; then
-                for f in run_files/stdout_run_04_fullBurst_geo2rdr/*"${ymd}"*; do
+
+            if [[ -d configs ]]; then
+                for f in configs/*"${ymd}"*; do
                     rm -f "$f"
                 done
             fi
+            if [[ -d baselines ]]; then
+                for f in baselines/*"${ymd}"*; do
+                    rm -rf "$f"
+                done
+            fi
             shopt -u nullglob
-        fi
-    done < "$unfixable_file"
+
+            if [[ -d run_files ]]; then
+                _remove_date_from_run_files_bash run_files "$ymd" 2
+                shopt -s nullglob
+                for f in run_files/run_*_"${ymd}"_*.{e,o,time_log}; do
+                    rm -f "$f"
+                done
+                if [[ -d run_files/stdout_run_04_fullBurst_geo2rdr ]]; then
+                    for f in run_files/stdout_run_04_fullBurst_geo2rdr/*"${ymd}"*; do
+                        rm -f "$f"
+                    done
+                fi
+                shopt -u nullglob
+            fi
+        done < "$unfixable_file"
+    done
 }

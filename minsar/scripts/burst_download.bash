@@ -742,11 +742,31 @@ if [[ "$skip_check_subswath_coverage" -eq 0 ]]; then
         _run_coverage_check
     fi
 
+    # Still fewer bursts than the modal stack after homogenization: ASF has no extra
+    # bursts in the AOI — drop these dates (same cleanup path as partial subswath).
+    if [[ -s "$inconsistent_burst_file" ]]; then
+        echo "Warning: burst count still inconsistent after homogenization; excluding date(s) from stack. See $inconsistent_burst_file" >&2
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            ymd="$(echo "$line" | sed -E 's/^([0-9]{8}).*/\1/')"
+            [[ "$ymd" =~ ^[0-9]{8}$ ]] || continue
+            if ! grep -q "^${ymd} " "$unfixable_subswath_file" 2>/dev/null; then
+                echo "${ymd} missing=inconsistent_burst_count" >> "$unfixable_subswath_file"
+            fi
+        done < "$inconsistent_burst_file"
+        _remove_dates_from_coverage_file "$inconsistent_burst_file" "inconsistent burst count after homogenization"
+        : > "$inconsistent_burst_file"
+        _run_coverage_check
+    fi
+
     if command -v check_file_size.py &>/dev/null || [[ -f "$SCRIPT_DIR/check_file_size.py" ]]; then
+        size_check_rc=0
         if [[ -f "$SCRIPT_DIR/check_file_size.py" ]]; then
-            python3 "$SCRIPT_DIR/check_file_size.py" "$slc_dir" || true
+            python3 "$SCRIPT_DIR/check_file_size.py" "$slc_dir" || size_check_rc=$?
         else
-            check_file_size.py "$slc_dir" || true
+            check_file_size.py "$slc_dir" || size_check_rc=$?
+        fi
+        if [[ $size_check_rc -ne 0 ]]; then
+            echo "Warning: check_file_size.py reported burst-count outliers after subswath coverage repair (exit $size_check_rc)." >&2
         fi
     fi
 fi

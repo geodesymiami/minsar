@@ -32,9 +32,10 @@ It inspects each `SLC/*.SAFE` against the **original** AOI bbox (`extent_orig`):
 
 1. **Lon-only extension** — widen W and E only (lat unchanged) in steps of `0.02` deg up to `0.15` deg; re-fetch ASF listing; remove and re-run `burst2stack` for affected dates. Log: `SLC/burst2stack_lon_extension.log`. Final stacking extent: `SLC/extent_stack.txt`.
 2. **Azimuth trim / homogenize** — re-run `burst2stack` for dates with extra azimuth bursts or inconsistent burst counts using `extent_final` (lon from `extent_stack`, lat from `extent_orig`).
-3. **`check_file_size.py SLC`** — report remaining burst-count outliers.
+3. **Drop unfixable burst-count dates** — if a date is still listed in **`SLC/dates_inconsistent_burst_count.txt`** after homogenization (ASF has no additional bursts in the AOI), it is appended to **`SLC/dates_unfixable_partial_swath.txt`**, removed from **`SLC/`**, and logged in **`SLC/removed_bursts_missing.txt`** (e.g. `20260601 missing=inconsistent_burst_count`).
+4. **`check_file_size.py SLC`** — report any remaining burst-count outliers (warning only).
 
-Dates still missing a subswath after max lon extension are listed in **`SLC/dates_unfixable_partial_swath.txt`**, then **removed from `SLC/`** automatically (same as AOI-pruned dates). Each removed date is also appended to **`SLC/removed_bursts_missing.txt`** with the missing IW subswath(s), e.g. `20260320 missing=IW2`. Before stack steps, **`minsarApp.bash`** also removes those dates from **`secondarys/`**, **`coreg_secondarys/`**, matching **`configs/`** / **`baselines/`**, and prunes **`run_files/`** (from run step 2 onward) when present.
+Dates still missing a subswath after max lon extension are listed in **`SLC/dates_unfixable_partial_swath.txt`**, then **removed from `SLC/`** automatically (same as AOI-pruned dates). Each removed date is also appended to **`SLC/removed_bursts_missing.txt`** with the missing IW subswath(s), e.g. `20260320 missing=IW2`. Before stack steps, **`minsarApp.bash`** also removes those dates from **`secondarys/`**, **`coreg_secondarys/`**, matching **`configs/`** / **`baselines/`**, and prunes **`run_files/`** (from run step 2 onward) when present. It also honors a leftover **`SLC/dates_inconsistent_burst_count.txt`** from an earlier download.
 
 Skip with **`--no-check-subswath-coverage`**. Lon repair requires re-fetching the ASF listing (do not use `--skip-listing`).
 
