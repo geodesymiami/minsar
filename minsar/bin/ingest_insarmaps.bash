@@ -66,6 +66,8 @@ Examples:
       - INSARMAPS_RSH / INSARMAPS_SSH_JUMP : remote shell for step 2 (default: ssh).
                                       From Stampede use e.g. INSARMAPS_SSH_JUMP=exouser@\$REMOTEHOST_DATA
                                       so rsync/ssh hop through jetstream to the InsarMaps host.
+      - INSARMAPS_REMOTE_MINSAR_HOME : minsar tree on the InsarMaps host (default: /data/insarmaps2/code/minsar);
+                                      sourced before json_mbtiles2insarmaps (sets PROJ_LIB like s.bw2)
 
   Output: With --ref-lalo the selected .he5 in the input dir is modified in place. insarmaps.log appended. No backup files.
 
@@ -668,11 +670,11 @@ ingest_step2_rsync_and_remote_ingest() {
     local local_mbtiles="$3"
     local remote_user="${REMOTEUSER:-exouser}"
     local remote_pass_file="/data/insarmaps2/postgres_dir/.insaradmin_db_password"
-    local remote_path_prefix="${INSARMAPS_REMOTE_PATH:-/data/insarmaps2/code/minsar/tools/insarmaps_scripts:/data/insarmaps2/code/minsar/tools/miniforge3/envs/minsar/bin}"
+    local remote_minsar_home="${INSARMAPS_REMOTE_MINSAR_HOME:-/data/insarmaps2/code/minsar}"
     local remote_mbtiles_dir="${INSARMAPS_REMOTE_MBTILES_DIR:-/data/insarmaps2/mbtiles_dir}"
     local remote_data_dir remote_project_dir remote_json_dir remote_mbtiles json_basename mbtiles_basename
     local rsh mkdir_cmd rsync_cmd remote_status remote_body cleanup_cmd
-    local remote_json_q remote_mbtiles_q remote_pass_q remote_mbtiles_dir_q remote_project_q workers_q path_q
+    local remote_json_q remote_mbtiles_q remote_pass_q remote_mbtiles_dir_q remote_project_q workers_q remote_minsar_q
 
     rsh="$(ingest_step2_rsh)"
     read -r remote_data_dir remote_project_dir < <(ingest_remote_paths_for_scratch "$DATA_DIR")
@@ -688,24 +690,37 @@ ingest_step2_rsync_and_remote_ingest() {
     rsync_cmd="rsync -avzh --progress -e $(printf '%q' "$rsh") $(printf '%q' "${local_json_dir}/") $(printf '%q' "${remote_user}@${insarmaps_host}:${remote_json_dir}/")"
     run_command "$rsync_cmd"
 
-    # -p via sudo cat of remote password file (root-only); -u insaradmin.
+    # -p from remote password file (root-only); -u insaradmin.
     # Mbtiles: copy into mbtiles_dir on the host (HTTP /auth login to 127.0.0.1 is unreliable).
     remote_json_q=$(printf '%q' "$remote_json_dir")
     remote_mbtiles_q=$(printf '%q' "$remote_mbtiles")
     remote_pass_q=$(printf '%q' "$remote_pass_file")
     remote_mbtiles_dir_q=$(printf '%q' "$remote_mbtiles_dir")
     workers_q=$(printf '%q' "$MBTILES_NUM_WORKERS")
-    path_q=$(printf '%q' "$remote_path_prefix")
+    remote_minsar_q=$(printf '%q' "$remote_minsar_home")
 
     echo "####################################"
-    echo "Running json_mbtiles2insarmaps.py on ${remote_user}@${insarmaps_host} (--host 127.0.0.1)..."
-    echo "$(date +"%Y%m%d:%H-%M") * ${rsh} ${remote_user}@${insarmaps_host} json_mbtiles2insarmaps.py --host 127.0.0.1 --json_folder ${remote_json_dir}" | tee -a log
-    # Single remote bash -lc string (printf %q) so nested rsh (ssh jump ssh) still runs on the final host.
+    echo "Reading DB password from ${remote_user}@${insarmaps_host}:${remote_pass_file}"
+    # shellcheck disable=SC2086
+    pg_pass="$(${rsh} "${remote_user}@${insarmaps_host}" "sudo -n cat ${remote_pass_q} | tr -d '[:space:]'")"
+    if [[ -z "$pg_pass" ]]; then
+        echo "Error: empty password from ${remote_user}@${insarmaps_host}:${remote_pass_file}" >&2
+        exit 1
+    fi
+    pg_pass_q=$(printf '%q' "$pg_pass")
+
+    # Log the full remote ingest command (password included, for debugging).
+    ingest_cmd="json_mbtiles2insarmaps.py --num-workers ${MBTILES_NUM_WORKERS} -u insaradmin -p ${pg_pass} --host 127.0.0.1 --json_folder ${remote_json_dir}"
+    echo "####################################"
+    echo "Running.... ${rsh} ${remote_user}@${insarmaps_host} ${ingest_cmd}"
+    echo "$(date +"%Y%m%d:%H-%M") * ${rsh} ${remote_user}@${insarmaps_host} ${ingest_cmd}" | tee -a log
+
+    # Source remote minsar env (same as s.bw2) so PROJ_LIB/PROJ_DATA/GDAL_DATA are set — PATH-only
+    # triggers: ERROR 1: PROJ: proj_create_from_database: Open of .../share/proj failed
     remote_body="set -euo pipefail; "
-    remote_body+="export PATH=${path_q}:\$PATH; "
-    remote_body+="PG_PASS=\$(sudo -n cat ${remote_pass_q} | tr -d '[:space:]'); "
-    remote_body+="[[ -n \"\$PG_PASS\" ]] || { echo \"Error: empty password from ${remote_pass_file}\" >&2; exit 1; }; "
-    remote_body+="json_mbtiles2insarmaps.py --num-workers ${workers_q} -u insaradmin -p \"\$PG_PASS\" --host 127.0.0.1 --json_folder ${remote_json_q}; "
+    remote_body+="export MINSAR_HOME=${remote_minsar_q}; "
+    remote_body+="source \"\$MINSAR_HOME/setup/environment.bash\" >/dev/null; "
+    remote_body+="json_mbtiles2insarmaps.py --num-workers ${workers_q} -u insaradmin -p ${pg_pass_q} --host 127.0.0.1 --json_folder ${remote_json_q}; "
     remote_body+="sudo -n mkdir -p ${remote_mbtiles_dir_q}; "
     remote_body+="sudo -n cp -f ${remote_mbtiles_q} ${remote_mbtiles_dir_q}/; "
     remote_body+="sudo -n chown www-data:www-data ${remote_mbtiles_dir_q}/$(printf '%q' "$mbtiles_basename"); "
