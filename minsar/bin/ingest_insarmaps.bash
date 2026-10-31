@@ -12,8 +12,8 @@ echo "sourcing ${SCRIPT_DIR}/../lib/utils.sh ..."
 source ${SCRIPT_DIR}/../lib/utils.sh
 
 # Dependencies (PATH): reference_point_hdfeos5.bash, hdfeos5_2json_mbtiles.py, hdfeos5_or_csv_2json_mbtiles.py,
-#   json_mbtiles2insarmaps.py, get_data_footprint_centroid.py, get_zoomfactor_from_data_footprint.py.
-#   Sourced: minsarApp_specifics.sh, utils.sh.
+#   get_data_footprint_centroid.py, get_zoomfactor_from_data_footprint.py; step 2 needs rsync/ssh and
+#   json_mbtiles2insarmaps.py on the remote host. Sourced: minsarApp_specifics.sh, utils.sh.
 # Output: With --ref-lalo the selected .he5 in the input dir is modified in place. insarmaps.log appended. No backup files.
 
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
@@ -41,6 +41,10 @@ Examples:
                                       For a .csv input, step 1 runs hdfeos5_or_csv_2json_mbtiles.py instead of hdfeos5_2json_mbtiles.py
       --json_mbtiles2insarmaps        Run only insarmaps upload (assumes step 1 succeeded); same as --step 2
       --step N                        N is 1 or 2; same effect as the long names above. Also --step=N
+                                      Step 2: rsync JSON/ to REMOTEUSER@host:/data/scratch/<path-under-\$SCRATCHDIR>/,
+                                      then ssh-run json_mbtiles2insarmaps.py on the host (--host 127.0.0.1;
+                                      DB password from /data/insarmaps2/postgres_dir/.insaradmin_db_password).
+                                      After success, removes remote /data/scratch/<project>/ (includes JSON/)
       --num-workers N                 Parallel workers for hdfeos5_2json_mbtiles (sets HDFEOS_NUM_WORKERS; default 1 or env)
       --mbtiles-num-workers N         Parallel workers for json_mbtiles2insarmaps (sets MBTILES_NUM_WORKERS; default 6 or env)
       --quiet-summary                 suppress printing generated insarmaps URLs (still appends to insarmaps.log)
@@ -57,6 +61,11 @@ Examples:
       Uses environment variables
       - INSARMAPSHOST_RECENTDATA : when filename contains XXXXXXXX, else INSARMAPSHOST_OLDDATA
       - --insarmapshost overrides both when given
+      - REMOTEUSER : ssh/rsync user for step 2 (default: exouser)
+      - SCRATCHDIR : required for step 2 remote path under /data/scratch/
+      - INSARMAPS_RSH / INSARMAPS_SSH_JUMP : remote shell for step 2 (default: ssh).
+                                      From Stampede use e.g. INSARMAPS_SSH_JUMP=exouser@\$REMOTEHOST_DATA
+                                      so rsync/ssh hop through jetstream to the InsarMaps host.
 
   Output: With --ref-lalo the selected .he5 in the input dir is modified in place. insarmaps.log appended. No backup files.
 
@@ -604,6 +613,119 @@ else
     MBTILES_NUM_WORKERS="${MBTILES_NUM_WORKERS:-6}"
 fi
 
+# Map local DATA_DIR under $SCRATCHDIR to /data/scratch/<relpath> on the insarmaps host.
+# Prints: remote_data_dir  remote_project_dir
+#   e.g. /data/scratch/Proj/mintpy_x   /data/scratch/Proj
+ingest_remote_paths_for_scratch() {
+    local data_dir="$1"
+    local scratch_abs data_abs rel project_rel remote_data_dir remote_project_dir
+    if [[ -z "${SCRATCHDIR:-}" ]]; then
+        echo "Error: SCRATCHDIR must be set for step 2 remote upload (path under /data/scratch/)" >&2
+        exit 1
+    fi
+    scratch_abs=$(cd "$SCRATCHDIR" && pwd)
+    data_abs=$(cd "$data_dir" && pwd)
+    if [[ "$data_abs" != "$scratch_abs" && "$data_abs" != "$scratch_abs"/* ]]; then
+        echo "Error: data dir is not under \$SCRATCHDIR ($scratch_abs): $data_abs" >&2
+        exit 1
+    fi
+    rel="${data_abs#"$scratch_abs"/}"
+    if [[ -z "$rel" || "$rel" == "$data_abs" ]]; then
+        echo "Error: cannot derive path under \$SCRATCHDIR for: $data_abs" >&2
+        exit 1
+    fi
+    project_rel="${rel%%/*}"
+    if [[ -z "$project_rel" || "$project_rel" == "." || "$project_rel" == ".." ]]; then
+        echo "Error: invalid project name under \$SCRATCHDIR for: $data_abs" >&2
+        exit 1
+    fi
+    remote_data_dir="/data/scratch/${rel}"
+    remote_project_dir="/data/scratch/${project_rel}"
+    # Safety: never allow deleting /data/scratch itself
+    if [[ "$remote_project_dir" != /data/scratch/* || "$remote_project_dir" == "/data/scratch" ]]; then
+        echo "Error: refusing unsafe remote project path: $remote_project_dir" >&2
+        exit 1
+    fi
+    echo "$remote_data_dir" "$remote_project_dir"
+}
+
+# Remote shell for step 2 rsync/ssh (default: ssh). Nested hop example from Stampede:
+#   INSARMAPS_SSH_JUMP=exouser@149.165.154.65  →  rsh becomes: ssh exouser@… ssh
+ingest_step2_rsh() {
+    if [[ -n "${INSARMAPS_RSH:-}" ]]; then
+        echo "$INSARMAPS_RSH"
+    elif [[ -n "${INSARMAPS_SSH_JUMP:-}" ]]; then
+        echo "ssh ${INSARMAPS_SSH_JUMP} ssh"
+    else
+        echo "ssh"
+    fi
+}
+
+# Step 2: rsync JSON/ to host, then ssh-run json_mbtiles2insarmaps.py with local DB (--host 127.0.0.1).
+ingest_step2_rsync_and_remote_ingest() {
+    local insarmaps_host="$1"
+    local local_json_dir="$2"
+    local local_mbtiles="$3"
+    local remote_user="${REMOTEUSER:-exouser}"
+    local remote_pass_file="/data/insarmaps2/postgres_dir/.insaradmin_db_password"
+    local remote_path_prefix="${INSARMAPS_REMOTE_PATH:-/data/insarmaps2/code/minsar/tools/insarmaps_scripts:/data/insarmaps2/code/minsar/tools/miniforge3/envs/minsar/bin}"
+    local remote_mbtiles_dir="${INSARMAPS_REMOTE_MBTILES_DIR:-/data/insarmaps2/mbtiles_dir}"
+    local remote_data_dir remote_project_dir remote_json_dir remote_mbtiles json_basename mbtiles_basename
+    local rsh mkdir_cmd rsync_cmd remote_status remote_body cleanup_cmd
+    local remote_json_q remote_mbtiles_q remote_pass_q remote_mbtiles_dir_q remote_project_q workers_q path_q
+
+    rsh="$(ingest_step2_rsh)"
+    read -r remote_data_dir remote_project_dir < <(ingest_remote_paths_for_scratch "$DATA_DIR")
+    json_basename="$(basename "$local_json_dir")"
+    mbtiles_basename="$(basename "$local_mbtiles")"
+    remote_json_dir="${remote_data_dir}/${json_basename}"
+    remote_mbtiles="${remote_json_dir}/${mbtiles_basename}"
+
+    echo "####################################"
+    echo "Uploading JSON dir to ${remote_user}@${insarmaps_host}:${remote_json_dir}/ (rsh: $rsh)"
+    mkdir_cmd="${rsh} ${remote_user}@${insarmaps_host} mkdir -p $(printf '%q' "$remote_json_dir")"
+    run_command "$mkdir_cmd"
+    rsync_cmd="rsync -avzh --progress -e $(printf '%q' "$rsh") $(printf '%q' "${local_json_dir}/") $(printf '%q' "${remote_user}@${insarmaps_host}:${remote_json_dir}/")"
+    run_command "$rsync_cmd"
+
+    # -p via sudo cat of remote password file (root-only); -u insaradmin.
+    # Mbtiles: copy into mbtiles_dir on the host (HTTP /auth login to 127.0.0.1 is unreliable).
+    remote_json_q=$(printf '%q' "$remote_json_dir")
+    remote_mbtiles_q=$(printf '%q' "$remote_mbtiles")
+    remote_pass_q=$(printf '%q' "$remote_pass_file")
+    remote_mbtiles_dir_q=$(printf '%q' "$remote_mbtiles_dir")
+    workers_q=$(printf '%q' "$MBTILES_NUM_WORKERS")
+    path_q=$(printf '%q' "$remote_path_prefix")
+
+    echo "####################################"
+    echo "Running json_mbtiles2insarmaps.py on ${remote_user}@${insarmaps_host} (--host 127.0.0.1)..."
+    echo "$(date +"%Y%m%d:%H-%M") * ${rsh} ${remote_user}@${insarmaps_host} json_mbtiles2insarmaps.py --host 127.0.0.1 --json_folder ${remote_json_dir}" | tee -a log
+    # Single remote bash -lc string (printf %q) so nested rsh (ssh jump ssh) still runs on the final host.
+    remote_body="set -euo pipefail; "
+    remote_body+="export PATH=${path_q}:\$PATH; "
+    remote_body+="PG_PASS=\$(sudo -n cat ${remote_pass_q} | tr -d '[:space:]'); "
+    remote_body+="[[ -n \"\$PG_PASS\" ]] || { echo \"Error: empty password from ${remote_pass_file}\" >&2; exit 1; }; "
+    remote_body+="json_mbtiles2insarmaps.py --num-workers ${workers_q} -u insaradmin -p \"\$PG_PASS\" --host 127.0.0.1 --json_folder ${remote_json_q}; "
+    remote_body+="sudo -n mkdir -p ${remote_mbtiles_dir_q}; "
+    remote_body+="sudo -n cp -f ${remote_mbtiles_q} ${remote_mbtiles_dir_q}/; "
+    remote_body+="sudo -n chown www-data:www-data ${remote_mbtiles_dir_q}/$(printf '%q' "$mbtiles_basename"); "
+    remote_body+="echo \"Installed mbtiles: ${remote_mbtiles_dir}/${mbtiles_basename}\""
+    # shellcheck disable=SC2086
+    ${rsh} "${remote_user}@${insarmaps_host}" "bash -lc $(printf '%q' "$remote_body")"
+    remote_status=$?
+    if [[ "$remote_status" -ne 0 ]]; then
+        echo "${rsh} ${remote_user}@${insarmaps_host} json_mbtiles2insarmaps.py exited with a non-zero exit code (exit code: $remote_status). Exiting."
+        exit 1
+    fi
+
+    # Drop remote staging tree for this project (JSON and any parent dirs under /data/scratch/<project>).
+    remote_project_q=$(printf '%q' "$remote_project_dir")
+    echo "####################################"
+    echo "Removing remote project folder ${remote_user}@${insarmaps_host}:${remote_project_dir}"
+    cleanup_cmd="${rsh} ${remote_user}@${insarmaps_host} rm -rf ${remote_project_q}"
+    run_command "$cleanup_cmd"
+}
+
 # Process each input file (.he5 or .csv)
 for ingest_file in "${ingest_files[@]}"; do
     if [[ -n "$suffix" ]]; then
@@ -702,15 +824,16 @@ for ingest_file in "${ingest_files[@]}"; do
     fi
 
     if [[ "$ingest_step" == "all" || "$ingest_step" == "step2" ]]; then
+        if [[ ${#HOSTS[@]} -eq 0 || -z "${HOSTS[0]:-}" ]]; then
+            echo "Error: no InsarMaps host set (use --insarmapshost or INSARMAPSHOST_RECENTDATA / INSARMAPSHOST_OLDDATA)" >&2
+            exit 1
+        fi
         for insarmaps_host in "${HOSTS[@]}"; do
-            echo "####################################"
-            echo "Running json_mbtiles2insarmaps.py..."
-            cmd="json_mbtiles2insarmaps.py --num-workers $MBTILES_NUM_WORKERS -u \"$INSARMAPS_USER\" -p \"$INSARMAPS_PASS\" --host \"$insarmaps_host\" -P \"$DB_PASS\" -U \"$DB_USER\" --json_folder \"$JSON_DIR\" --mbtiles_file \"$MBTILES_FILE\""
-
-            run_command "$cmd"
+            [[ -z "$insarmaps_host" ]] && continue
+            ingest_step2_rsync_and_remote_ingest "$insarmaps_host" "$JSON_DIR" "$MBTILES_FILE"
         done
 
-        wait   # Wait for all ingests to complete (parallel uinsg & is not implemented)
+        wait   # Wait for all ingests to complete (parallel using & is not implemented)
 
         # Get center coordinates and zoom factorfrom data_footprint
         read CENTER_LAT CENTER_LON < <(get_data_footprint_centroid.py "$ingest_file" 2>/dev/null || echo "0.0000 0.0000")
