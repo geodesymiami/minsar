@@ -30,6 +30,29 @@ def _join_cmd(args: list[str]) -> str:
     return ' '.join(_quote_ssaraopt_arg(a) for a in args)
 
 
+def _expand_sentinel1_platform(value: str) -> str:
+    """Add SENTINEL-1C and SENTINEL-1D to a Sentinel-1 platform list."""
+    parts = [p.strip().strip("'\"") for p in value.split(',') if p.strip()]
+    if not any(p.upper().startswith('SENTINEL-1') for p in parts):
+        return value
+    have = {p.upper() for p in parts}
+    out = list(parts)
+    for extra in ('SENTINEL-1C', 'SENTINEL-1D'):
+        if extra not in have:
+            out.append(extra)
+    return ','.join(out)
+
+
+def _expand_platform_args(args: list[str]) -> list[str]:
+    expanded = []
+    for arg in args:
+        if arg.startswith('--platform='):
+            expanded.append('--platform=' + _expand_sentinel1_platform(arg.split('=', 1)[1]))
+        else:
+            expanded.append(arg)
+    return expanded
+
+
 ##############################################################################
 EXAMPLE = """example:
     generate_download_command.py $TE/GalapagosSenDT128.template
@@ -140,7 +163,8 @@ def generate_download_command(template,inps):
             f.write(_join_cmd(ssara_slc_download_cmd_python) + '\n')
 
     # create download_slc.sh (slc method)
-    asf_slc_download_cmd = ['asf_search_args.py', '--processingLevel=SLC'] + ssaraopt + ['--dir=SLC', '--print', '--download']
+    asf_ssaraopt = _expand_platform_args(ssaraopt)
+    asf_slc_download_cmd = ['asf_search_args.py', '--processingLevel=SLC'] + asf_ssaraopt + ['--dir=SLC', '--print', '--download']
     if effective_exclude_season:
         asf_slc_download_cmd.append(f"--exclude-season={effective_exclude_season}")
     with open('download_slc.sh', 'w') as f:
@@ -153,7 +177,7 @@ def generate_download_command(template,inps):
     #    f.write(' '.join(asf_slc_download_cmd) + '\n')
 
     # create download_burst2safe.sh (burst2safe method: download only, listing + two download runs)
-    asf_burst_download_opts = ['--processingLevel=BURST'] + ssaraopt + ['--dir=SLC']
+    asf_burst_download_opts = ['--processingLevel=BURST'] + asf_ssaraopt + ['--dir=SLC']
     if effective_exclude_season:
         asf_burst_download_opts.append(f"--exclude-season={effective_exclude_season}")
     rel_orbit = dataset_template.options.get('ssaraopt.relativeOrbit', '')

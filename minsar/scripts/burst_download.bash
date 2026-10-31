@@ -188,7 +188,7 @@ if [[ $skip_listing -eq 0 ]]; then
     if [[ $standalone_mode -eq 1 ]]; then
         # Standalone: build asf_download command from options
         asf_download.sh --processingLevel=BURST --relativeOrbit="$relative_orbit" \
-            --intersectsWith="$intersects_with" --platform=SENTINEL-1A,SENTINEL-1B \
+            --intersectsWith="$intersects_with" --platform=SENTINEL-1A,SENTINEL-1B,SENTINEL-1C,SENTINEL-1D \
             --start="$start_date" --end="$end_date" --parallel="$parallel" --dir="$slc_dir" \
             "${exclude_season_opt[@]}" --print \
             > "$slc_dir/asf_burst_listing.txt"
@@ -424,7 +424,7 @@ _refetch_listing_with_extended_aoi() {
     echo "Re-fetching burst listing with extended AOI ..."
     if [[ $standalone_mode -eq 1 ]]; then
         asf_download.sh --processingLevel=BURST --relativeOrbit="$relative_orbit" \
-            --intersectsWith="$polygon" --platform=SENTINEL-1A,SENTINEL-1B \
+            --intersectsWith="$polygon" --platform=SENTINEL-1A,SENTINEL-1B,SENTINEL-1C,SENTINEL-1D \
             --start="$start_date" --end="$end_date" --parallel="$parallel" --dir="$slc_dir" \
             "${exclude_season_opt[@]}" --print \
             > "$slc_dir/asf_burst_listing.txt"
