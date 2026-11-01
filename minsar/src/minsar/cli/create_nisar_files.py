@@ -27,8 +27,10 @@ def create_parser():
     parser.add_argument('--flightDirection', default=['DESCENDING', 'ASCENDING'], help='ASCENDING or DESCENDING')
     parser.add_argument('--intersectsWith', help='WKT POLYGON string')
     parser.add_argument('--processingLevel', dest='processing_level', choices=['GUNW', 'RSLC'], default='GUNW', help='Product type to download')
-    parser.add_argument('--start', default='20251029', help='Start date (YYYYMMDD or YYYY-MM-DD)')
-    parser.add_argument('--end', default=date.today().isoformat(), help='End date (YYYYMMDD or YYYY-MM-DD)')
+    parser.add_argument('--start-date', '--start', dest='start_date', default='20251029',
+                        help='Start date YYYYMMDD or YYYY-MM-DD (preferred: --start-date; --start is an alias)')
+    parser.add_argument('--end-date', '--end', dest='end_date', default=date.today().isoformat(),
+                        help='End date YYYYMMDD or YYYY-MM-DD (preferred: --end-date; --end is an alias)')
     parser.add_argument('--dir', help='Output directory for downloads')
     parser.add_argument('--download', action='store_true', help='Download the data (default if specified)')
     parser.add_argument('--process', action='store_true', help='Process/crop files after download')
@@ -207,8 +209,8 @@ def main():
     if inps.download:
         asf_inps = [
             '--intersectsWith', inps.intersectsWith,
-            '--start', inps.start,
-            '--end', inps.end,
+            '--start-date', inps.start_date,
+            '--end-date', inps.end_date,
             '--processingLevel', inps.processing_level,
             '--platform', 'NISAR',
             '--dir', inps.dir,

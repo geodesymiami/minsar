@@ -9,14 +9,14 @@ import datetime
 from mintpy.utils import ptime
 
 parser = argparse.ArgumentParser(description="Reduce time span of SLC stack inputs.")
-parser.add_argument('--start', required=True, type=str, help='Start date in YYYYMMDD format')
-parser.add_argument('--end', required=True, type=str, help='End date in YYYYMMDD format')
+parser.add_argument('--start-date', required=True, type=str, help='Start date in YYYYMMDD format')
+parser.add_argument('--end-date', required=True, type=str, help='End date in YYYYMMDD format')
 parser.add_argument('input_file', type=str, help='Path to input slcStack.h5 file name')
 parser.add_argument('-o', '--output_file', type=str, default='slcStack_reduced.h5', help='Output HDF5 file name')
 args = parser.parse_args()
 
-start_date = args.start
-end_date = args.end
+start_date = args.start_date
+end_date = args.end_date
 input_file = args.input_file
 output_file = args.output_file
 

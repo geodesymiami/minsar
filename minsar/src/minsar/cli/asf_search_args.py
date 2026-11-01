@@ -24,17 +24,17 @@ Usage Examples:
     Sentinel-1(IW, standard interferomrtric wide swath):
         asf_search_args.py --processingLevel=SLC --start-date=2014-10-04 --end-date=2015-10-05 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.78,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --relativeOrbit 142 --print
         asf_search_args.py --processingLevel=SLC --start-date=2014-10-04 --end-date=2015-10-05 --platform SENTINEL1 --print 
-        asf_search_args.py --processingLevel=CSLC --start=20141004 --end=20151005 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.78,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --print --dir=$SCRATCHDIR/CSLC
-        asf_search_args.py --processingLevel=CSLC --start=2014-10-04 --end=2015-10-05 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.7881,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --print --dir=$SCRATCHDIR/CSLC
-        asf_search_args.py --processingLevel=BURST --relativeOrbit=142 --intersectsWith='Polygon((-78.09 0.6, -77.74 0.6, -77.74 0.83, -78.09 0.83, -78.09 0.6))' --start=2014-10-31 --end=2015-01-01 --print
-        asf_search_args.py --processingLevel=SLC --start=2014-10-04 --end=2015-10-05 --relativeOrbit=170 --download --dir=$SCRATCHDIR/SLC --parallel=4
-        asf_search_args.py --processingLevel=SLC --relativeOrbit=35 --intersectsWith='POLYGON((-121.84 36.2,-121.8 36.2,-121.8 36.28,-121.84 36.28,-121.84 36.2))' --start=2016-01-01 --end=2026-04-10 --exclude-season=1005-0320 --print
+        asf_search_args.py --processingLevel=CSLC --start-date=20141004 --end-date=20151005 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.78,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --print --dir=$SCRATCHDIR/CSLC
+        asf_search_args.py --processingLevel=CSLC --start-date=2014-10-04 --end-date=2015-10-05 --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.7881,-77.91 0.85,-77.98 0.85,-77.98 0.78))' --print --dir=$SCRATCHDIR/CSLC
+        asf_search_args.py --processingLevel=BURST --relativeOrbit=142 --intersectsWith='Polygon((-78.09 0.6, -77.74 0.6, -77.74 0.83, -78.09 0.83, -78.09 0.6))' --start-date=2014-10-31 --end-date=2015-01-01 --print
+        asf_search_args.py --processingLevel=SLC --start-date=2014-10-04 --end-date=2015-10-05 --relativeOrbit=170 --download --dir=$SCRATCHDIR/SLC --parallel=4
+        asf_search_args.py --processingLevel=SLC --relativeOrbit=35 --intersectsWith='POLYGON((-121.84 36.2,-121.8 36.2,-121.8 36.28,-121.84 36.28,-121.84 36.2))' --start-date=2016-01-01 --end-date=2026-04-10 --exclude-season=1005-0320 --print
         asf_search_args.py --processingLevel=SLC --intersectsWith='POLYGON((-77.98 0.78,-77.91 0.78,-77.91 0.85,-77.98 0.85,-77.98 0.78))'
-        asf_search_args.py --processingLevel=BURST --start=2014-10-04 --end=2015-12-31 --burst-id=349025 --download
+        asf_search_args.py --processingLevel=BURST --start-date=2014-10-04 --end-date=2015-12-31 --burst-id=349025 --download
     Stripmap (SM):
-        asf_search_args.py --processingLevel=SLC --relativeOrbit 75 --intersectsWith='POLYGON((-24.5 14.8,-24.3 14.8,-24.3 15.1,-24.5 15.1,-24.5 14.8))' --start=2018-05-01 --end=2018-10-31 --beamMode=S6 --print
+        asf_search_args.py --processingLevel=SLC --relativeOrbit 75 --intersectsWith='POLYGON((-24.5 14.8,-24.3 14.8,-24.3 15.1,-24.5 15.1,-24.5 14.8))' --start-date=2018-05-01 --end-date=2018-10-31 --beamMode=S6 --print
     ALOS-2 (ScanSAR L1.1):
-        asf_search_args.py --processingLevel=1.1 --relativeOrbit 89 --intersectsWith='POLYGON((9.16 4.20,9.18 4.20,9.18 4.22,9.16 4.22,9.16 4.20))' --start=2014-10-04 --end=2015-12-31 --print
+        asf_search_args.py --processingLevel=1.1 --relativeOrbit 89 --intersectsWith='POLYGON((9.16 4.20,9.18 4.20,9.18 4.22,9.16 4.22,9.16 4.20))' --start-date=2014-10-04 --end-date=2015-12-31 --print
     NISAR GUNW (interferograms; use --platform NISAR):
         asf_search_args.py --processingLevel=GUNW --platform NISAR --intersectsWith='POLYGON((...))' --flightDirection DESCENDING --print
 
@@ -46,10 +46,10 @@ def create_parser(iargs=None, namespace=None):
     parser = argparse.ArgumentParser(description=EXAMPLE, formatter_class=argparse.RawTextHelpFormatter, epilog=epi)
 
     parser.add_argument('--intersectsWith', metavar='POLYGON', help='Poligon of the wanted area of interest to intersect with the search')
-    parser.add_argument('--start', metavar='YYYY-MM-DD or YYYYMMDD', help='Start date of the search')
-    parser.add_argument('--end', metavar='YYYY-MM-DD or YYYYMMDD', help='End date of the search')
-    parser.add_argument('--start-date', metavar='YYYY-MM-DD or YYYYMMDD', default=None, help='Start date of the search')
-    parser.add_argument('--end-date', metavar='YYYY-MM-DD or YYYYMMDD', default=None, help='End date of the search')
+    parser.add_argument('--start-date', metavar='YYYY-MM-DD or YYYYMMDD', default=None, help='Start date of the search (preferred)')
+    parser.add_argument('--end-date', metavar='YYYY-MM-DD or YYYYMMDD', default=None, help='End date of the search (preferred)')
+    parser.add_argument('--start', metavar='YYYY-MM-DD or YYYYMMDD', default=None, help='Alias for --start-date')
+    parser.add_argument('--end', metavar='YYYY-MM-DD or YYYYMMDD', default=None, help='Alias for --end-date')
     parser.add_argument('--processingLevel', dest='processing_level', choices=['SLC', 'CSLC', 'BURST', '1.1', 'DISP', 'GUNW', 'RSLC'], default='SLC', help='Product type to download')
     parser.add_argument('--beamMode', dest='beam_mode',  default=None, help='Beam mode (IW, S1 to S7)')
     parser.add_argument('--flightDirection', choices=['ASC', 'DESC', 'ASCENDING', 'DESCENDING'], default=None, help='Flight direction of the satellite (ASCENDING or DESCENDING)')
@@ -93,17 +93,19 @@ def create_parser(iargs=None, namespace=None):
         inps.dataset = [asf.DATASET.OPERA_S1]
         inps.platform = []
 
-    if inps.start or inps.start_date:
+    start_raw = inps.start_date or inps.start
+    if start_raw:
         try:
-            inps.start_date = datetime.datetime.strptime(inps.start if inps.start else inps.start_date, '%Y-%m-%d').date()
-        except:
-            inps.start_date = datetime.datetime.strptime(inps.start if inps.start else inps.start_date, '%Y%m%d').date()
+            inps.start_date = datetime.datetime.strptime(start_raw, '%Y-%m-%d').date()
+        except ValueError:
+            inps.start_date = datetime.datetime.strptime(start_raw, '%Y%m%d').date()
 
-    if inps.end or inps.end_date:
+    end_raw = inps.end_date or inps.end
+    if end_raw:
         try:
-            inps.end_date = datetime.datetime.strptime(inps.end if inps.end else inps.end_date, '%Y-%m-%d').date()
-        except:
-            inps.end_date = datetime.datetime.strptime(inps.end if inps.end else inps.end_date, '%Y%m%d').date()
+            inps.end_date = datetime.datetime.strptime(end_raw, '%Y-%m-%d').date()
+        except ValueError:
+            inps.end_date = datetime.datetime.strptime(end_raw, '%Y%m%d').date()
     else:
         inps.end_date = datetime.datetime.now().date()
 

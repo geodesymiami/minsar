@@ -163,7 +163,7 @@ def fix_argv_for_negative_bbox_sn_we(
 # Keyword dicts for each CLI (option names must match add_argument longopts).
 
 CONVERT_BBOX_ARGV_KW = {
-    "consume_one": ("--lat_delta", "--lon_delta", "--start", "--end"),
+    "consume_one": ("--lat_delta", "--lon_delta", "--start-date", "--end-date"),
     "consume_two": (),
     "flags": ("--asf",),
 }
@@ -191,8 +191,8 @@ CREATE_TEMPLATE_ARGV_KW = {
 GET_SAR_COVERAGE_ARGV_KW = {
     "consume_one": (
         "--platform",
-        "--start",
-        "--end",
+        "--start-date",
+        "--end-date",
         "--startDate",
         "--endDate",
         "--max-discovery",

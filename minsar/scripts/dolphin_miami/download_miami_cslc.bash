@@ -27,23 +27,28 @@ usage() {
     echo "Requires: conda env with asf_search (e.g. minsar env)."
     echo ""
     echo "Options:"
-    echo "  --start YYYY-MM-DD   Start date (default: ${START_DATE})"
-    echo "  --end YYYY-MM-DD    End date (default: ${END_DATE})"
-    echo "  --dir DIR           Download directory (default: ${DOWNLOAD_DIR})"
-    echo "  --parallel N        Parallel downloads (default: ${PARALLEL})"
-    echo "  --print-only        Only search and print results, do not download"
-    echo "  -h, --help          Show this help"
+    echo "  --start-date YYYY-MM-DD   Start date (default: ${START_DATE})"
+    echo "  --end-date YYYY-MM-DD     End date (default: ${END_DATE})"
+    echo "  --dir DIR                 Download directory (default: ${DOWNLOAD_DIR})"
+    echo "  --parallel N              Parallel downloads (default: ${PARALLEL})"
+    echo "  --print-only              Only search and print results, do not download"
+    echo "  -h, --help                Show this help"
 }
 
 PRINT_ONLY=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --start)   START_DATE="$2"; shift 2 ;;
-        --end)     END_DATE="$2";   shift 2 ;;
+        --start-date) START_DATE="$2"; shift 2 ;;
+        --end-date)   END_DATE="$2";   shift 2 ;;
         --dir)     DOWNLOAD_DIR="$2"; shift 2 ;;
         --parallel) PARALLEL="$2"; shift 2 ;;
         --print-only) PRINT_ONLY="--print"; shift ;;
         -h|--help) usage; exit 0 ;;
+        -?*|--*)
+            echo "Unknown option: $1" >&2
+            usage
+            exit 1
+            ;;
         *) echo "Unknown option: $1" >&2; usage; exit 1 ;;
     esac
 done
@@ -61,8 +66,8 @@ CMD=(
     python "${ASF_SCRIPT}"
     --processingLevel=CSLC
     --platform=SENTINEL1
-    --start="${START_DATE}"
-    --end="${END_DATE}"
+    --start-date="${START_DATE}"
+    --end-date="${END_DATE}"
     --intersectsWith="${MIA_POLYGON}"
     --dir="${DOWNLOAD_DIR}"
     --parallel="${PARALLEL}"

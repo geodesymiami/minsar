@@ -8,9 +8,9 @@ acquisition counts.
 
 Strategy:
   Discovery:
-    - S1/BURST: default period 2020-01-01 to 2020-02-01 (--start/--end). SLC maxResults=20, BURST maxResults=200.
+    - S1/BURST: default period 2020-01-01 to 2020-02-01 (--start-date/--end-date). SLC maxResults=20, BURST maxResults=200.
     - NISAR: fixed period 2026-01-01 to 2026-02-28 for discovery.
-    - ALOS-2: asf.search(maxResults=10000) over --start/--end.
+    - ALOS-2: asf.search(maxResults=10000) over --start-date/--end-date.
     Counting (always):
     - Date range: full period (2014-10-01 to today) unless --startDate/--endDate are set.
     - S1: search by intersection, then keep only dates where some granule footprint fully covers
@@ -1354,9 +1354,9 @@ def create_parser() -> argparse.ArgumentParser:
                             'ALOS2 / ALOS-2 for ALOS-2. '
                             'Example: --platform S1,ALOS2'
                         ))
-    parser.add_argument('--start', default='2020-01-01', metavar='YYYY-MM-DD',
+    parser.add_argument('--start-date', default='2020-01-01', metavar='YYYY-MM-DD',
                         help='Start date for discovery queries (default: 2020-01-01)')
-    parser.add_argument('--end', default=_DISCOVERY_END_DEFAULT, metavar='YYYY-MM-DD',
+    parser.add_argument('--end-date', default=_DISCOVERY_END_DEFAULT, metavar='YYYY-MM-DD',
                         help='End date for discovery queries (default: 2020-02-01). S1 and BURST use this; NISAR uses 2026-01-01 to 2026-02-28.')
     parser.add_argument('--startDate', default=None, metavar='YYYY-MM-DD',
                         help='Start date for acquisition count range (default: 2014-10-01).')
@@ -1394,15 +1394,15 @@ def main(iargs=None):
         sys.exit(1)
 
     try:
-        start = datetime.datetime.strptime(inps.start, '%Y-%m-%d').date()
+        start = datetime.datetime.strptime(inps.start_date, '%Y-%m-%d').date()
     except ValueError:
-        print(f"Error: --start must be YYYY-MM-DD", file=sys.stderr)
+        print(f"Error: --start-date must be YYYY-MM-DD", file=sys.stderr)
         sys.exit(1)
 
     try:
-        end = datetime.datetime.strptime(inps.end, '%Y-%m-%d').date()
+        end = datetime.datetime.strptime(inps.end_date, '%Y-%m-%d').date()
     except ValueError:
-        print(f"Error: --end must be YYYY-MM-DD", file=sys.stderr)
+        print(f"Error: --end-date must be YYYY-MM-DD", file=sys.stderr)
         sys.exit(1)
 
     # Count date range: full period (2014-10-01 to today) unless --startDate/--endDate

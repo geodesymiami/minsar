@@ -59,8 +59,8 @@ def create_parser():
         help="Unused; kept for backward compatibility (topsStack.boundingBox line was removed).",
     )
     parser.add_argument("--asf", action="store_true", help="Print ASF Vertex / Search URL for S1 BURST coverage (default dates as in get_sar_coverage.py)")
-    parser.add_argument("--start", default=ASF_DEFAULT_START, metavar="YYYY-MM-DD", help=f"Start date for ASF URL when --asf (default: {ASF_DEFAULT_START})")
-    parser.add_argument("--end", default=ASF_DEFAULT_END, metavar="YYYY-MM-DD", help=f"End date for ASF URL when --asf (default: {ASF_DEFAULT_END})")
+    parser.add_argument("--start-date", default=ASF_DEFAULT_START, metavar="YYYY-MM-DD", help=f"Start date for ASF URL when --asf (default: {ASF_DEFAULT_START})")
+    parser.add_argument("--end-date", default=ASF_DEFAULT_END, metavar="YYYY-MM-DD", help=f"End date for ASF URL when --asf (default: {ASF_DEFAULT_END})")
     return parser
 
 
@@ -233,8 +233,8 @@ def main(iargs=None):
         inps.lat_delta,
         inps.lon_delta,
         asf_only=inps.asf,
-        asf_start=inps.start,
-        asf_end=inps.end,
+        asf_start=inps.start_date,
+        asf_end=inps.end_date,
     )
 
 

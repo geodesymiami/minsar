@@ -2,6 +2,10 @@
 
 This document complements [architecture_docs/BURST_DOWNLOAD.md](../architecture_docs/BURST_DOWNLOAD.md).
 
+## Curated acquisition exclusions (`exclude_acquisitions.csv`)
+
+Before writing `SLC/run_burst2stack`, `burst_download.bash` drops dates listed in [`minsar/exclusions/exclude_acquisitions.csv`](../minsar/exclusions/exclude_acquisitions.csv) when **platform**, **relative orbit**, and project AOI **latitude** (`S:N`, same style as `subset.lalo`) match. One CSV row per date. Loader: `minsar/utils/exclude_acquisitions.py`.
+
 ## burst_download.bash: AOI vs burst footprints
 
 After all per-date `burst2stack` commands finish, `minsar/scripts/burst_download.bash` converts the **original** AOI extent (`extent_orig` from your polygon, not the overlap-extension padding) to S:N,W:E bounds and runs:
