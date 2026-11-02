@@ -50,7 +50,7 @@ Skip with **`--no-check-subswath-coverage`**. Lon repair requires re-fetching th
 | File | Source | Meaning |
 |------|--------|--------|
 | `SLC/removed_bursts_missing.txt` | `burst_download.bash`, `minsarApp.bash`, `check_job_outputs.py` | Dates removed from the stack because required IW subswath(s) were missing (`YYYYMMDD missing=IWn`). |
-| `SLC/dates_removed.txt` | `check_SAFE_completeness.py` | Incomplete `.SAFE` directories (missing required internal files), not geometric AOI coverage. |
+| `SLC/dates_removed.txt` | `check_SAFE_completeness.py` | Incomplete `.SAFE` directories (missing manifest, annotation XML, measurement TIFF, or `preview/map-overlay.kml`). Those dates are downloaded again. Not geometric AOI coverage. |
 | `removed_dates_*.txt` | `check_burst2safe_job_outputs.py` | Dates inferred from burst2safe stderr problem strings; deletes matching paths under the job directory. |
 
 ## SWEETS / isce3 SAFE download (`sweets_download.py`)

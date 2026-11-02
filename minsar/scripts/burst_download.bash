@@ -308,7 +308,7 @@ done
 echo "Wrote $run_file with $(wc -l < "$run_file" | tr -d ' \n') burst2stack commands."
 
 # 4a. Remove incomplete SAFEs (SLURM restart: timeout mid-write)
-# check_SAFE_completeness.py removes SAFEs missing required files (e.g. preview/map-overlay.kml)
+# check_SAFE_completeness.py removes SAFEs missing manifest, annotation XML, or a measurement TIFF
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR/check_SAFE_completeness.py" ]]; then
     python3 "$SCRIPT_DIR/check_SAFE_completeness.py" "$slc_dir" || true

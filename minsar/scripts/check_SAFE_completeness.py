@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
 Check that each .SAFE directory in the given directory is complete.
-If a required file (e.g. preview/map-overlay.kml) is missing, remove the SAFE
-and log the date to dates_removed.txt. The file is kept sorted by date (first column).
+A SAFE is complete when it has manifest.safe, preview/map-overlay.kml,
+at least one annotation XML, and at least one measurement TIFF.
+Incomplete SAFEs are removed and the date is logged to dates_removed.txt.
+The file is kept sorted by date (first column).
 """
 
 import argparse
@@ -14,8 +16,9 @@ import sys
 
 from minsar.objects import message_rsmas
 
-# Required paths inside each SAFE (relative to SAFE root). Extend this list as needed.
+# Required paths inside each SAFE (relative to SAFE root).
 REQUIRED_SAFE_PATHS = [
+    "manifest.safe",
     "preview/map-overlay.kml",
 ]
 
@@ -30,9 +33,39 @@ def _date_from_safe_name(safe_basename):
     return None
 
 
+def _nonempty_files(directory, suffixes):
+    """Return non-empty files in directory whose names end with one of suffixes."""
+    if not os.path.isdir(directory):
+        return []
+    found = []
+    for name in os.listdir(directory):
+        path = os.path.join(directory, name)
+        if not os.path.isfile(path) or os.path.getsize(path) == 0:
+            continue
+        lower = name.lower()
+        if any(lower.endswith(suffix) for suffix in suffixes):
+            found.append(path)
+    return found
+
+
+def incomplete_reason(safe_path):
+    """Return why safe_path is incomplete, or None if it is usable by ISCE."""
+    for req in REQUIRED_SAFE_PATHS:
+        full_path = os.path.join(safe_path, req)
+        if not os.path.isfile(full_path) or os.path.getsize(full_path) == 0:
+            return f"SAFE incomplete: {req} missing"
+    if not _nonempty_files(os.path.join(safe_path, "annotation"), (".xml",)):
+        return "SAFE incomplete: no annotation XML"
+    if not _nonempty_files(os.path.join(safe_path, "measurement"), (".tif", ".tiff")):
+        return "SAFE incomplete: no measurement TIFF"
+    return None
+
+
 def main(iargs=None):
     parser = argparse.ArgumentParser(
-        description="Check SAFE directories for required files; remove incomplete SAFEs and log to dates_removed.txt"
+        description="Remove .SAFE dirs missing manifest, annotation XML, or a measurement TIFF. Log dates to dates_removed.txt.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="Examples:\n  check_SAFE_completeness.py SLC\n  check_SAFE_completeness.py --dry-run SLC",
     )
     parser.add_argument("slc_dir", help="Directory containing .SAFE dirs (e.g. SLC)")
     parser.add_argument(
@@ -60,24 +93,19 @@ def main(iargs=None):
         if not os.path.isdir(safe_path):
             continue
         safe_basename = os.path.basename(safe_path)
-        incomplete_reason = None
-        for req in REQUIRED_SAFE_PATHS:
-            full_path = os.path.join(safe_path, req)
-            if not os.path.isfile(full_path):
-                incomplete_reason = f"SAFE incomplete: {req} missing"
-                break
-        if incomplete_reason is None:
+        reason = incomplete_reason(safe_path)
+        if reason is None:
             continue
         date_str = _date_from_safe_name(safe_basename)
         if inps.dry_run:
-            print(f"[dry-run] Would remove: {safe_path} ({incomplete_reason})")
+            print(f"[dry-run] Would remove: {safe_path} ({reason})")
             if date_str:
-                print(f"  -> would append to {dates_removed_file}: {date_str}  {incomplete_reason}")
+                print(f"  -> would append to {dates_removed_file}: {date_str}  {reason}")
             continue
         if date_str:
             with open(dates_removed_file, "a") as f:
-                f.write(f"{date_str}  {incomplete_reason}\n")
-        print(f"Removing incomplete SAFE: {safe_basename} ({incomplete_reason})")
+                f.write(f"{date_str}  {reason}\n")
+        print(f"Removing incomplete SAFE: {safe_basename} ({reason})")
         try:
             shutil.rmtree(safe_path)
         except Exception as e:
