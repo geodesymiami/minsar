@@ -2,9 +2,11 @@
 
 This document complements [architecture_docs/BURST_DOWNLOAD.md](../architecture_docs/BURST_DOWNLOAD.md).
 
-## Curated acquisition exclusions (`exclude_acquisitions.csv`)
+## Curated acquisition exclusions
 
-Before writing `SLC/run_burst2stack`, `burst_download.bash` drops dates listed in [`minsar/exclusions/exclude_acquisitions.csv`](../minsar/exclusions/exclude_acquisitions.csv) when **platform**, **relative orbit**, and project AOI **latitude** (`S:N`, same style as `subset.lalo`) match. One CSV row per date. Loader: `minsar/utils/exclude_acquisitions.py`.
+[`minsar/exclusions/exclude_acquisitions.csv`](../minsar/exclusions/exclude_acquisitions.csv) lists known-bad Sentinel-1 dates (one row per date): `platform`, `relativeOrbit`, `date` (YYYYMMDD), `lat_sn` (`S:N`, same lat half as download `subset.lalo`), and an optional `note`.
+
+Before writing `SLC/run_burst2stack`, [`burst_download.bash`](../minsar/scripts/burst_download.bash) drops dates that match the project **relative orbit** and whose download extent **latitude overlaps** `lat_sn` (via [`exclude_acquisitions.py`](../minsar/utils/exclude_acquisitions.py)). Matching dates are never fetched. This is separate from template `minsar.excludeDates` (post-download delete) and from MPC `remove_problem_data.py` / burst2safe `date_to_remove`.
 
 ## burst_download.bash: AOI vs burst footprints
 

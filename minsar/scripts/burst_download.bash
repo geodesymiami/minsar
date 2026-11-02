@@ -266,29 +266,27 @@ fi
 
 extent_orig="$extent"   # Store for AOI extension loop (extend from original each iteration)
 
-# 3b. Drop curated exclude_acquisitions.csv dates (platform + orbit + lat S:N overlap)
-dates_excl=$(python3 -c "
+# 3b. Drop curated problem dates (minsar/exclusions/exclude_acquisitions.csv): platform+orbit+lat S:N
+# Sentinel-1 burst listing always uses the S1 family; skip rows keyed as S1.
+dates_before_exclude="$dates"
+dates=$(python3 -c "
 import sys
 from minsar.utils.exclude_acquisitions import filter_iso_dates
-rel_orbit = int(sys.argv[1])
-extent = sys.argv[2]
-kept, skipped = filter_iso_dates(
-    sys.argv[3:], platform='S1', rel_orbit=rel_orbit, extent_wsen=extent,
-)
+platform, rel_orbit = sys.argv[1], int(sys.argv[2])
+extent = sys.argv[3:7]
+iso_dates = sys.argv[7:]
+kept, skipped = filter_iso_dates(iso_dates, platform, rel_orbit, extent)
 if skipped:
     print(
-        'exclude_acquisitions: skipping '
-        + ', '.join(skipped)
-        + f' (platform=S1 orbit={rel_orbit} lat overlap)',
+        'Excluded acquisitions (see minsar/exclusions/exclude_acquisitions.csv): '
+        + ', '.join(skipped),
         file=sys.stderr,
     )
 for d in kept:
     print(d)
-" "$rel_orbit" "$extent" $dates)
-dates="$dates_excl"
-
-if [[ -z "$dates" ]]; then
-    echo "All dates were excluded by exclude_acquisitions.csv (orbit=$rel_orbit). Nothing to run."
+" S1 "$rel_orbit" $extent $dates)
+if [[ -n "$dates_before_exclude" && -z "$dates" ]]; then
+    echo "All dates were excluded by exclude_acquisitions.csv. Nothing to run."
     exit 0
 fi
 

@@ -3,84 +3,105 @@
 
 from __future__ import annotations
 
-import argparse
 import csv
+import re
 from pathlib import Path
 
 from minsar.utils.sar_platform import normalize_sar_platform_token
 
-_DEFAULT_CSV = Path(__file__).resolve().parents[1] / "exclusions" / "exclude_acquisitions.csv"
+_DATE_RE = re.compile(r"^\d{8}$")
+_LAT_SN_RE = re.compile(r"^([+-]?\d+(?:\.\d+)?):([+-]?\d+(?:\.\d+)?)$")
+
+DEFAULT_CSV = (
+    Path(__file__).resolve().parents[1] / "exclusions" / "exclude_acquisitions.csv"
+)
 
 
 def default_csv_path() -> Path:
-    return _DEFAULT_CSV
+    """Return path to minsar/exclusions/exclude_acquisitions.csv."""
+    return DEFAULT_CSV
 
 
 def parse_lat_sn(lat_sn: str) -> tuple[float, float]:
-    """Parse ``S:N`` (same lat half as subset.lalo) into (south, north)."""
+    """Parse S:N latitude band; return (south, north)."""
     token = lat_sn.strip()
-    parts = token.split(":")
-    if len(parts) != 2:
+    match = _LAT_SN_RE.match(token)
+    if not match:
         raise ValueError(f"Invalid lat_sn '{lat_sn}'. Expected S:N, e.g. -1.6:1.7.")
-    south = float(parts[0])
-    north = float(parts[1])
+    south = float(match.group(1))
+    north = float(match.group(2))
     if south > north:
-        south, north = north, south
+        raise ValueError(f"Invalid lat_sn '{lat_sn}': south > north.")
     return south, north
 
 
 def lat_ranges_overlap(a_sn: tuple[float, float], b_sn: tuple[float, float]) -> bool:
-    """True if closed latitude intervals overlap."""
+    """True if inclusive latitude intervals [S,N] overlap."""
     a_s, a_n = a_sn
     b_s, b_n = b_sn
-    return not (a_n < b_s or b_n < a_s)
+    return a_s <= b_n and b_s <= a_n
 
 
-def parse_extent_wsen(extent_wsen) -> tuple[float, float, float, float]:
-    """Parse extent as W S E N (string or 4 numbers) into floats."""
+def _extent_lat_sn(extent_wsen) -> tuple[float, float]:
+    """Extract (S, N) from extent W S E N (iterable or whitespace string)."""
     if isinstance(extent_wsen, str):
         parts = extent_wsen.split()
     else:
         parts = list(extent_wsen)
     if len(parts) != 4:
         raise ValueError(f"extent must be W S E N (4 values); got {extent_wsen!r}")
-    west, south, east, north = (float(x) for x in parts)
+    south = float(parts[1])
+    north = float(parts[3])
     if south > north:
         south, north = north, south
-    return west, south, east, north
+    return south, north
 
 
-def load_exclude_rows(csv_path: Path | None = None) -> list[dict]:
-    """Load exclusion rows from CSV (allows spaces after commas for readability)."""
+def load_exclude_acquisitions(csv_path: Path | None = None) -> list[dict]:
+    """
+    Load exclusion rows from CSV.
+
+    Columns: platform, relativeOrbit, date, lat_sn, note (note optional).
+    Blank padding around fields is stripped.
+    """
     path = Path(csv_path) if csv_path is not None else default_csv_path()
     if not path.is_file():
-        raise FileNotFoundError(f"exclude acquisitions CSV not found: {path}")
+        raise FileNotFoundError(f"Exclusion CSV not found: {path}")
+
     rows: list[dict] = []
     with path.open(newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f, skipinitialspace=True)
-        required = {"platform", "relativeOrbit", "date", "lat_sn"}
         if reader.fieldnames is None:
-            raise ValueError(f"Empty or headerless CSV: {path}")
-        fields = {name.strip() for name in reader.fieldnames}
-        missing = required - fields
+            return rows
+        fieldnames = [name.strip() for name in reader.fieldnames]
+        reader.fieldnames = fieldnames
+        required = {"platform", "relativeOrbit", "date", "lat_sn"}
+        missing = required - set(fieldnames)
         if missing:
-            raise ValueError(f"CSV {path} missing columns: {sorted(missing)}")
-        for raw in reader:
-            if not raw or all(not (v or "").strip() for v in raw.values()):
-                continue
-            platform = normalize_sar_platform_token(raw["platform"].strip())
-            rel_orbit = int(raw["relativeOrbit"].strip())
-            date_str = raw["date"].strip()
-            if len(date_str) != 8 or not date_str.isdigit():
-                raise ValueError(f"Invalid date '{date_str}' in {path} (expected YYYYMMDD)")
-            lat_sn = raw["lat_sn"].strip()
-            parse_lat_sn(lat_sn)  # validate
+            raise ValueError(f"{path}: missing columns {sorted(missing)}")
+
+        for i, raw in enumerate(reader, start=2):
+            platform = (raw.get("platform") or "").strip()
+            orbit_s = (raw.get("relativeOrbit") or "").strip()
+            date_s = (raw.get("date") or "").strip()
+            lat_sn = (raw.get("lat_sn") or "").strip()
             note = (raw.get("note") or "").strip()
+            if not any((platform, orbit_s, date_s, lat_sn, note)):
+                continue
+            if not platform or not orbit_s or not date_s or not lat_sn:
+                raise ValueError(f"{path}:{i}: incomplete row {raw!r}")
+            if not _DATE_RE.match(date_s):
+                raise ValueError(f"{path}:{i}: invalid date '{date_s}' (need YYYYMMDD)")
+            try:
+                orbit = int(orbit_s)
+            except ValueError as exc:
+                raise ValueError(f"{path}:{i}: invalid relativeOrbit '{orbit_s}'") from exc
+            parse_lat_sn(lat_sn)  # validate
             rows.append(
                 {
-                    "platform": platform,
-                    "relativeOrbit": rel_orbit,
-                    "date": date_str,
+                    "platform": normalize_sar_platform_token(platform),
+                    "relativeOrbit": orbit,
+                    "date": date_s,
                     "lat_sn": lat_sn,
                     "note": note,
                 }
@@ -88,43 +109,32 @@ def load_exclude_rows(csv_path: Path | None = None) -> list[dict]:
     return rows
 
 
-def dates_to_skip(
-    platform: str,
-    rel_orbit: int,
-    extent_wsen,
-    *,
-    csv_path: Path | None = None,
-) -> frozenset[str]:
-    """Return YYYYMMDD dates to skip for this platform/orbit/AOI latitude."""
+def dates_to_skip(platform: str, rel_orbit: int, extent_wsen, csv_path: Path | None = None) -> frozenset[str]:
+    """Return YYYYMMDD dates to skip for this platform, orbit, and extent lat band."""
     plat = normalize_sar_platform_token(platform)
-    _, south, _, north = parse_extent_wsen(extent_wsen)
-    project_sn = (south, north)
-    skipped: set[str] = set()
-    for row in load_exclude_rows(csv_path):
+    orbit = int(rel_orbit)
+    proj_lat = _extent_lat_sn(extent_wsen)
+    skip: set[str] = set()
+    for row in load_exclude_acquisitions(csv_path):
         if row["platform"] != plat:
             continue
-        if row["relativeOrbit"] != int(rel_orbit):
+        if row["relativeOrbit"] != orbit:
             continue
-        if not lat_ranges_overlap(project_sn, parse_lat_sn(row["lat_sn"])):
+        if not lat_ranges_overlap(proj_lat, parse_lat_sn(row["lat_sn"])):
             continue
-        skipped.add(row["date"])
-    return frozenset(skipped)
+        skip.add(row["date"])
+    return frozenset(skip)
 
 
-def filter_iso_dates(
-    iso_dates,
-    *,
-    platform: str,
-    rel_orbit: int,
-    extent_wsen,
-    csv_path: Path | None = None,
-) -> tuple[list[str], list[str]]:
-    """Filter ``YYYY-MM-DD`` dates; return ``(kept, skipped)`` preserving order."""
-    skip_ymd = dates_to_skip(
-        platform, rel_orbit, extent_wsen, csv_path=csv_path
-    )
-    kept: list[str] = []
-    skipped: list[str] = []
+def filter_iso_dates(iso_dates, platform: str, rel_orbit: int, extent_wsen, csv_path: Path | None = None):
+    """
+    Drop ISO YYYY-MM-DD dates that match an exclusion row.
+
+    Returns (kept_iso_dates, skipped_iso_dates).
+    """
+    skip_ymd = dates_to_skip(platform, rel_orbit, extent_wsen, csv_path=csv_path)
+    kept = []
+    skipped = []
     for token in iso_dates:
         compact = token.replace("-", "")
         if compact in skip_ymd:
@@ -135,34 +145,23 @@ def filter_iso_dates(
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Filter ISO dates using minsar/exclusions/exclude_acquisitions.csv.",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""Examples:
-  exclude_acquisitions.py --rel-orbit 106 --extent '-92.0 -1.0 -89.0 1.0' 2026-04-01 2026-04-13
-  exclude_acquisitions.py --platform S1 --rel-orbit 128 --extent '-91.2 -0.9 -91.1 -0.8' 2014-12-13
-""",
-    )
-    parser.add_argument("--platform", default="S1", help="SAR platform token (default: S1)")
-    parser.add_argument("--rel-orbit", type=int, required=True, help="Relative orbit number")
-    parser.add_argument("--extent", required=True, help="Download extent as W S E N (one argument)")
-    parser.add_argument("--csv", default=None, help="Override path to exclude_acquisitions.csv")
-    parser.add_argument("dates", nargs="*", help="ISO dates YYYY-MM-DD to filter")
-    inps = parser.parse_args(argv)
+    """CLI: filter ISO dates. Usage: exclude_acquisitions.py PLATFORM REL_ORBIT W S E N DATE..."""
+    import sys
 
-    kept, skipped = filter_iso_dates(
-        inps.dates,
-        platform=inps.platform,
-        rel_orbit=inps.rel_orbit,
-        extent_wsen=inps.extent,
-        csv_path=Path(inps.csv) if inps.csv else None,
-    )
+    args = list(sys.argv[1:] if argv is None else argv)
+    if len(args) < 6:
+        print(
+            "usage: exclude_acquisitions.py PLATFORM REL_ORBIT W S E N [YYYY-MM-DD ...]",
+            file=sys.stderr,
+        )
+        return 2
+    platform, rel_orbit, w, s, e, n, *dates = args
+    kept, skipped = filter_iso_dates(dates, platform, int(rel_orbit), (w, s, e, n))
     if skipped:
         print(
-            "exclude_acquisitions: skipping "
-            + ", ".join(skipped)
-            + f" (platform={inps.platform} orbit={inps.rel_orbit} lat overlap)",
-            flush=True,
+            "Excluded acquisitions (platform+orbit+lat): "
+            + ", ".join(skipped),
+            file=sys.stderr,
         )
     for d in kept:
         print(d)
