@@ -183,6 +183,7 @@ CREATE_TEMPLATE_ARGV_KW = {
         "--insarmaps-dataset",
         "--insarmaps_dataset",
         "--minsar.insarmaps_dataset",
+        "--miaplpy.load.startDate",
     ),
     "consume_two": (),
     "flags": ("--last-year", "--geometry", "--mintpy-plot", "--mintpy-no-plot"),

@@ -24,6 +24,34 @@ done
 }
 
 ###########################################
+function set_template_assignment() {
+# Replace the value on the first uncommented "KEY = VALUE" line. Keeps spacing and any trailing comment.
+# Does not append the key when it is missing.
+    local file="$1"
+    local key="$2"
+    local value="$3"
+    python3 - "$file" "$key" "$value" <<'PY'
+import re
+import sys
+
+path, key, value = sys.argv[1:]
+with open(path, encoding="utf-8") as handle:
+    text = handle.read()
+pattern = re.compile(rf"^(\s*{re.escape(key)}\s*=\s*)(\S+)", re.M)
+if pattern.search(text) is None:
+    print(f"Error: {key} not found in {path}", file=sys.stderr)
+    sys.exit(1)
+
+def _replace(match):
+    return match.group(1) + value
+
+updated = pattern.sub(_replace, text, count=1)
+with open(path, "w", encoding="utf-8") as handle:
+    handle.write(updated)
+PY
+}
+
+###########################################
 # Reference lat/lon for horzvert (and similar): prefer minsar.reference.lalo, else
 # mintpy.reference.lalo, else empty minsar key. Uses global associative array
 # `template` (populate with create_template_array first).
