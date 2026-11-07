@@ -47,7 +47,8 @@ helptext="                                                                      
    --delta-lat [DEG]     download larger error (default 0; bare --delta-lat: 0.2) \n\
    --minsar.excludeDates DATES  exclude YYYYMMDD scenes (comma-separated; merges with template) \n\
    --exclude-dates DATES        alias for --minsar.excludeDates \n\
-   --miaplpy.load.startDate DATE  set miaplpy.load.startDate in the template (YYYYMMDD) \n\
+   --miaplpy.load.startDate DATE  set miaplpy.load.startDate (YYYYMMDD); the other load date becomes auto \n\
+   --miaplpy.load.endDate DATE    set miaplpy.load.endDate (YYYYMMDD); the other load date becomes auto \n\
    --suffix [TAG|auto]   pass --suffix to ingest_insarmaps (bare --suffix: auto from minTempCoh) \n\
                                                                                  \n\
    --mintpy              use smallbaselineApp.py for time series [default]       \n\
@@ -176,6 +177,7 @@ args=( "$@" )    # copy of command line arguments
 POSITIONAL=()
 cli_exclude_dates=""
 cli_miaplpy_load_start=""
+cli_miaplpy_load_end=""
 
 # set defaults steps (insarmaps_flag and upload_flag are set to 0 if not given on command line or in template file )
 download_flag=1
@@ -381,6 +383,14 @@ do
             cli_miaplpy_load_start="$2"
             shift 2
             ;;
+        --miaplpy.load.endDate)
+            if [[ $# -lt 2 || "$2" == -* ]]; then
+                echo "Error: --miaplpy.load.endDate requires YYYYMMDD." >&2
+                exit 1
+            fi
+            cli_miaplpy_load_end="$2"
+            shift 2
+            ;;
         --suffix)
             if [[ $# -ge 2 ]] && [[ "$2" != -* ]]; then
                 ingest_suffix_tag="$2"
@@ -403,12 +413,20 @@ if [[ -n "$cli_exclude_dates" ]]; then
     exclude_dates_py="${SCRIPT_DIR}/../utils/template_exclude_dates.py"
     run_command "python3 ${exclude_dates_py} ${template_file} ${cli_exclude_dates} --merge"
 fi
-if [[ -n "$cli_miaplpy_load_start" ]]; then
-    if [[ ! "$cli_miaplpy_load_start" =~ ^[0-9]{8}$ ]]; then
-        echo "Error: --miaplpy.load.startDate requires YYYYMMDD, got ${cli_miaplpy_load_start}" >&2
-        exit 1
-    fi
+if [[ -n "$cli_miaplpy_load_start" && ! "$cli_miaplpy_load_start" =~ ^[0-9]{8}$ ]]; then
+    echo "Error: --miaplpy.load.startDate requires YYYYMMDD, got ${cli_miaplpy_load_start}" >&2
+    exit 1
+fi
+if [[ -n "$cli_miaplpy_load_end" && ! "$cli_miaplpy_load_end" =~ ^[0-9]{8}$ ]]; then
+    echo "Error: --miaplpy.load.endDate requires YYYYMMDD, got ${cli_miaplpy_load_end}" >&2
+    exit 1
+fi
+# One side only: the other load bound is auto (no clip). Both sides: keep both dates.
+if [[ -n "$cli_miaplpy_load_start" || -n "$cli_miaplpy_load_end" ]]; then
+    [[ -z "$cli_miaplpy_load_start" ]] && cli_miaplpy_load_start="auto"
+    [[ -z "$cli_miaplpy_load_end" ]] && cli_miaplpy_load_end="auto"
     run_command "set_template_assignment \"${template_file}\" miaplpy.load.startDate ${cli_miaplpy_load_start}"
+    run_command "set_template_assignment \"${template_file}\" miaplpy.load.endDate ${cli_miaplpy_load_end}"
 fi
 create_template_array "$template_file"
 
