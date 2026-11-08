@@ -651,14 +651,13 @@ if [[ $preprocess_flag == "1" && $platform_str == *"SENTINEL-1"*  ]]; then
 fi
 
 # set isce_start/isce_stop from CLI + defaults
+# NESD/auto full=16 partial=12; geometry full=11 partial=7 (slc workflow uses the shorter pair).
+# --no-mintpy stops at partial (merge SLC). --isce-start without --isce-stop runs through full
+# so a resume past the partial step (NESD 13, geometry 8) is not an inverted range.
 isce_start="${isce_start_cli:-1}"
 if [[ "$isce_stop_cli_flag" == "1" ]]; then
     isce_stop="$isce_stop_cli"
-elif [[ "$platform_str" == *"SENTINEL-1"* && "$isce_start_cli_flag" == "1" ]]; then
-    # For Sentinel: if user provides --isce-start but omits --isce-stop, run ifgram-only range.
-    isce_stop="$partial_isce_run_stop"
-elif [[ "$platform_str" == *"SENTINEL-1"* && "$no_mintpy_cli_flag" == "1" ]]; then
-    # --no-mintpy (e.g. MiaplPy-only): default to partial ISCE, not full through unwrap.
+elif [[ "$platform_str" == *"SENTINEL-1"* && "$no_mintpy_cli_flag" == "1" && "$isce_start" -le "$partial_isce_run_stop" ]]; then
     isce_stop="$partial_isce_run_stop"
 else
     isce_stop="$full_isce_run_stop"

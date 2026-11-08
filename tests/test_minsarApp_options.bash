@@ -166,7 +166,7 @@ test_geometry_mintpy_defaults_to_stop_11() {
 
 test_isce_start_defaults_to_stop_12_for_nesd_auto() {
     print_test_start "ISCE stop defaults (NESD/auto)" \
-        "Verifies --isce-start without --isce-stop defaults to stop=12 for non-geometry coregistration."
+        "Verifies --isce-start without --isce-stop defaults to stop=16 for non-geometry coregistration."
     setup_minsar_app_test_env
 
     local tpl="$TEMPLATES/testproj.template"
@@ -174,8 +174,8 @@ test_isce_start_defaults_to_stop_12_for_nesd_auto() {
     local output
     output="$(run_minsar_app "$tpl" --isce-start 6)"
 
-    assert_contains "$output" "Running.... run_workflow.bash --start 6 --stop 12" \
-        "NESD/auto defaults to stop=12 when --isce-start is provided without --isce-stop"
+    assert_contains "$output" "Running.... run_workflow.bash --start 6 --stop 16" \
+        "NESD/auto defaults to stop=16 when --isce-start is provided without --isce-stop"
     assert_not_contains "$output" "run_download_orbits_asf.bash" \
         "Orbit download is skipped when inferred start is ifgram"
 
