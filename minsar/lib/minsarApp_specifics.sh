@@ -238,7 +238,7 @@ function _minsar_print_he5_path_colon_size() {
 # Under WORK_DIR with cwd set there: MiaplPy network_* directory (basename), or empty.
 function _minsar_footer_guess_network_dir() {
     local nd_saved
-    nd_saved=$(shopt -p nullglob)
+    nd_saved=$(shopt -p nullglob || true)
     shopt -s nullglob
     local -a m=( miaplpy_*/network_* )
     eval "${nd_saved}"
@@ -259,6 +259,18 @@ function _minsar_summary_log_tail_n() {
     else
         echo 1
     fi
+}
+
+###########################################
+# 0 when no session epoch is set, or the file mtime is after minsarApp started.
+function _minsar_updated_this_run() {
+    local f="$1"
+    local epoch="${MINSAR_RUN_START_EPOCH:-}"
+    local mtime
+    [[ -e "$f" ]] || return 1
+    [[ -z "$epoch" ]] && return 0
+    mtime=$(stat -c %Y "$f" 2>/dev/null || echo 0)
+    [[ "$mtime" -gt "$epoch" ]]
 }
 
 ###########################################
@@ -399,22 +411,27 @@ function print_summary() {
 
         network_dir="$(_minsar_footer_guess_network_dir)"
 
-        if [[ -d mintpy ]]; then
-            mapfile -t mintpy_he5 < <(find mintpy -maxdepth 1 -type f \( -iname '*.he5' \) -print 2>/dev/null | LC_ALL=C sort)
-        else
-            mintpy_he5=()
-        fi
-        if [[ -n "${network_dir}" && -d "${network_dir}" ]]; then
-            mapfile -t net_he5 < <(find "${network_dir}" -maxdepth 1 -type f \( -iname '*.he5' \) -print 2>/dev/null | LC_ALL=C sort)
-        else
-            net_he5=()
-        fi
-        if [[ -n "${network_dir}" && -d "${network_dir}" && ${#net_he5[@]} -eq 0 ]]; then
-            nd_saved_nullglob=$(shopt -p nullglob)
-            shopt -s nullglob
-            net_he5=( "${network_dir}"/*.he5 "${network_dir}"/*.HE5 )
-            eval "${nd_saved_nullglob}"
-        fi
+        # Products from this run only (mtime after MINSAR_RUN_START_EPOCH). Dated dirs
+        # are mintpy_*/ and miaplpy_*/network_*/, not a literal mintpy/ directory.
+        nd_saved_nullglob=$(shopt -p nullglob || true)
+        shopt -s nullglob
+        mintpy_he5=()
+        for d in mintpy mintpy_*; do
+            [[ -d "$d" ]] || continue
+            for f in "$d"/*.he5 "$d"/*.HE5; do
+                _minsar_updated_this_run "$f" || continue
+                mintpy_he5+=("$f")
+            done
+        done
+        net_he5=()
+        for d in miaplpy_*/network_*; do
+            [[ -d "$d" ]] || continue
+            for f in "$d"/*.he5 "$d"/*.HE5; do
+                _minsar_updated_this_run "$f" || continue
+                net_he5+=("$f")
+            done
+        done
+        eval "${nd_saved_nullglob}"
 
         if [[ ${#mintpy_he5[@]} -gt 0 || ${#net_he5[@]} -gt 0 ]]; then
             mapfile -t all_he5 < <(printf '%s\n' "${mintpy_he5[@]}" "${net_he5[@]}" | LC_ALL=C sort -u)
@@ -434,13 +451,20 @@ function print_summary() {
 
             _minsar_print_summary_log_if_updated "upload.log" "upload.log" "$session_start_epoch" "$tail_n"
 
-            ingest_data_dir="$network_dir"
-            [[ -z "$ingest_data_dir" && -d mintpy ]] && ingest_data_dir="mintpy"
+            # Project insarmaps.log is appended on every ingest. A stale
+            # miaplpy_*/network_*/pic/insarmaps.log must not hide that file.
             insarmaps_log=""
-            if [[ -n "$ingest_data_dir" ]]; then
-                insarmaps_log=$(minsar_insarmaps_log_path "$ingest_data_dir" "$wd" 2>/dev/null || true)
+            if [[ -f insarmaps.log ]] && _minsar_updated_this_run insarmaps.log; then
+                insarmaps_log="insarmaps.log"
             fi
-            [[ -z "$insarmaps_log" && -f insarmaps.log ]] && insarmaps_log="insarmaps.log"
+            if [[ -z "$insarmaps_log" ]]; then
+                ingest_data_dir="$network_dir"
+                [[ -z "$ingest_data_dir" && -d mintpy ]] && ingest_data_dir="mintpy"
+                if [[ -n "$ingest_data_dir" ]]; then
+                    insarmaps_log=$(minsar_insarmaps_log_path "$ingest_data_dir" "$wd" 2>/dev/null || true)
+                fi
+                [[ -z "$insarmaps_log" && -f insarmaps.log ]] && insarmaps_log="insarmaps.log"
+            fi
             if [[ -n "$insarmaps_log" ]]; then
                 _minsar_print_summary_log_if_updated "insarmaps.log" "$insarmaps_log" "$session_start_epoch" "$tail_n"
             fi
