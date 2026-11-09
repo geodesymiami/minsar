@@ -207,10 +207,10 @@ def _run_get_sar_coverage(aoi: str, platform: str = "S1") -> dict[str, str | int
     if not get_sar.exists():
         raise FileNotFoundError(f"get_sar_coverage.py not found: {get_sar}")
 
-    argv = [sys.executable, str(get_sar), aoi, "--platform", platform, "--select"]
-    print(f"Running {shlex.join(argv)}", file=sys.stderr)
+    args = [aoi, "--platform", platform, "--select"]
+    print(f"Running get_sar_coverage.py {shlex.join(args)}", file=sys.stderr)
     proc = subprocess.run(
-        argv,
+        [sys.executable, str(get_sar), *args],
         capture_output=True,
         text=True,
         cwd=Path.cwd(),
