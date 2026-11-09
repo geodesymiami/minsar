@@ -1,3 +1,4 @@
+# Lines starting with #, and dates prefixed with #, are ignored.
 platform, relativeOrbit, date,     lat_sn,   note
-S1,       106,           20260401, -1.6:1.7, Galapagos incomplete bursts
-S1,       106,           20260612, -1.6:1.7, Galapagos incomplete bursts
+#S1,       106,           20260401, -1.6:1.7, Galapagos incomplete bursts
+#S1,       106,           20260612, -1.6:1.7, Galapagos incomplete bursts

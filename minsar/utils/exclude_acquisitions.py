@@ -57,55 +57,71 @@ def _extent_lat_sn(extent_wsen) -> tuple[float, float]:
     return south, north
 
 
+def _iter_csv_lines(path: Path):
+    """Yield (lineno, line), skipping blanks and full-line # comments."""
+    with path.open(newline="", encoding="utf-8") as f:
+        for lineno, line in enumerate(f, start=1):
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            yield lineno, line
+
+
 def load_exclude_acquisitions(csv_path: Path | None = None) -> list[dict]:
     """
     Load exclusion rows from CSV.
 
     Columns: platform, relativeOrbit, date, lat_sn, note (note optional).
     Blank padding around fields is stripped.
+    A line whose first non-whitespace character is # is ignored.
+    A row whose date starts with # is ignored.
     """
     path = Path(csv_path) if csv_path is not None else default_csv_path()
     if not path.is_file():
         raise FileNotFoundError(f"Exclusion CSV not found: {path}")
 
+    lines = list(_iter_csv_lines(path))
     rows: list[dict] = []
-    with path.open(newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f, skipinitialspace=True)
-        if reader.fieldnames is None:
-            return rows
-        fieldnames = [name.strip() for name in reader.fieldnames]
-        reader.fieldnames = fieldnames
-        required = {"platform", "relativeOrbit", "date", "lat_sn"}
-        missing = required - set(fieldnames)
-        if missing:
-            raise ValueError(f"{path}: missing columns {sorted(missing)}")
+    if not lines:
+        return rows
 
-        for i, raw in enumerate(reader, start=2):
-            platform = (raw.get("platform") or "").strip()
-            orbit_s = (raw.get("relativeOrbit") or "").strip()
-            date_s = (raw.get("date") or "").strip()
-            lat_sn = (raw.get("lat_sn") or "").strip()
-            note = (raw.get("note") or "").strip()
-            if not any((platform, orbit_s, date_s, lat_sn, note)):
-                continue
-            if not platform or not orbit_s or not date_s or not lat_sn:
-                raise ValueError(f"{path}:{i}: incomplete row {raw!r}")
-            if not _DATE_RE.match(date_s):
-                raise ValueError(f"{path}:{i}: invalid date '{date_s}' (need YYYYMMDD)")
-            try:
-                orbit = int(orbit_s)
-            except ValueError as exc:
-                raise ValueError(f"{path}:{i}: invalid relativeOrbit '{orbit_s}'") from exc
-            parse_lat_sn(lat_sn)  # validate
-            rows.append(
-                {
-                    "platform": normalize_sar_platform_token(platform),
-                    "relativeOrbit": orbit,
-                    "date": date_s,
-                    "lat_sn": lat_sn,
-                    "note": note,
-                }
-            )
+    reader = csv.DictReader((line for _, line in lines), skipinitialspace=True)
+    if reader.fieldnames is None:
+        return rows
+    fieldnames = [name.strip() for name in reader.fieldnames]
+    reader.fieldnames = fieldnames
+    required = {"platform", "relativeOrbit", "date", "lat_sn"}
+    missing = required - set(fieldnames)
+    if missing:
+        raise ValueError(f"{path}: missing columns {sorted(missing)}")
+
+    for (lineno, _), raw in zip(lines[1:], reader):
+        platform = (raw.get("platform") or "").strip()
+        orbit_s = (raw.get("relativeOrbit") or "").strip()
+        date_s = (raw.get("date") or "").strip()
+        lat_sn = (raw.get("lat_sn") or "").strip()
+        note = (raw.get("note") or "").strip()
+        if date_s.startswith("#"):
+            continue
+        if not any((platform, orbit_s, date_s, lat_sn, note)):
+            continue
+        if not platform or not orbit_s or not date_s or not lat_sn:
+            raise ValueError(f"{path}:{lineno}: incomplete row {raw!r}")
+        if not _DATE_RE.match(date_s):
+            raise ValueError(f"{path}:{lineno}: invalid date '{date_s}' (need YYYYMMDD)")
+        try:
+            orbit = int(orbit_s)
+        except ValueError as exc:
+            raise ValueError(f"{path}:{lineno}: invalid relativeOrbit '{orbit_s}'") from exc
+        parse_lat_sn(lat_sn)  # validate
+        rows.append(
+            {
+                "platform": normalize_sar_platform_token(platform),
+                "relativeOrbit": orbit,
+                "date": date_s,
+                "lat_sn": lat_sn,
+                "note": note,
+            }
+        )
     return rows
 
 

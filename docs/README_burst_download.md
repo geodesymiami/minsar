@@ -4,7 +4,7 @@ This document complements [architecture_docs/BURST_DOWNLOAD.md](../architecture_
 
 ## Curated acquisition exclusions
 
-[`minsar/exclusions/exclude_acquisitions.csv`](../minsar/exclusions/exclude_acquisitions.csv) lists known-bad Sentinel-1 dates (one row per date): `platform`, `relativeOrbit`, `date` (YYYYMMDD), `lat_sn` (`S:N`, same lat half as download `subset.lalo`), and an optional `note`.
+[`minsar/exclusions/exclude_acquisitions.csv`](../minsar/exclusions/exclude_acquisitions.csv) lists known-bad Sentinel-1 dates (one row per date): `platform`, `relativeOrbit`, `date` (YYYYMMDD), `lat_sn` (`S:N`, same lat half as download `subset.lalo`), and an optional `note`. A line whose first non-whitespace character is `#`, or a row whose `date` starts with `#`, is ignored.
 
 Before writing `SLC/run_burst2stack`, [`burst_download.bash`](../minsar/scripts/burst_download.bash) drops dates that match the project **relative orbit** and whose download extent **latitude overlaps** `lat_sn` (via [`exclude_acquisitions.py`](../minsar/utils/exclude_acquisitions.py)). Matching dates are never fetched. This is separate from template `minsar.excludeDates` (post-download delete) and from MPC `remove_problem_data.py` / burst2safe `date_to_remove`.
 
