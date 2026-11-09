@@ -25,8 +25,8 @@ done
 
 ###########################################
 function set_template_assignment() {
-# Replace the value on the first uncommented "KEY = VALUE" line. Keeps spacing and any trailing comment.
-# Appends "KEY = VALUE" when the key is missing.
+# Replace the value on the last uncommented "KEY = VALUE" line. Keeps spacing and any trailing comment.
+# Appends "KEY = VALUE" when the key is missing. Later template lines override earlier ones.
     local file="$1"
     local key="$2"
     local value="$3"
@@ -38,16 +38,15 @@ path, key, value = sys.argv[1:]
 with open(path, encoding="utf-8") as handle:
     text = handle.read()
 pattern = re.compile(rf"^(\s*{re.escape(key)}\s*=\s*)(\S+)", re.M)
+matches = list(pattern.finditer(text))
 
-def _replace(match):
-    return match.group(1) + value
-
-if pattern.search(text) is None:
+if not matches:
     if text and not text.endswith("\n"):
         text += "\n"
     updated = text + f"{key} = {value}\n"
 else:
-    updated = pattern.sub(_replace, text, count=1)
+    last = matches[-1]
+    updated = text[:last.start()] + last.group(1) + value + text[last.end():]
 with open(path, "w", encoding="utf-8") as handle:
     handle.write(updated)
 PY
