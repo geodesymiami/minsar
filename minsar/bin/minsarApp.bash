@@ -43,7 +43,7 @@ helptext="                                                                      
    --start STEP          start processing at the named step [default: download]. \n\
    --end STEP, --stop STEP                                                       \n\
    --dostep STEP         run processing at the named step only                   \n\
-   --download-method {slc, burst2safe, burst2stack, ssara-slc, ssara-bash, ssara-python} (default: burst2stack) \n\
+   --download-method {slc|SLC, burst|BURST, burst2safe, burst2stack, ssara-slc, ssara-bash, ssara-python} (default: burst2stack; burst downloads into BURST, full SLCs into SLC) \n\
    --delta-lat [DEG]     download larger error (default 0; bare --delta-lat: 0.2) \n\
    --minsar.excludeDates DATES  exclude YYYYMMDD scenes (comma-separated; merges with template) \n\
    --exclude-dates DATES        alias for --minsar.excludeDates \n\
@@ -409,6 +409,16 @@ esac
 done
 set -- "${POSITIONAL[@]}" # restore positional parameters
 
+# slc/SLC: full SLC products in SLC/. burst/BURST: burst2stack products in BURST/.
+case "$(printf '%s' "$download_method" | tr '[:upper:]' '[:lower:]')" in
+    slc)
+        download_method="slc"
+        ;;
+    burst)
+        download_method="burst2stack"
+        ;;
+esac
+
 if [[ -n "$cli_exclude_dates" ]]; then
     exclude_dates_py="${SCRIPT_DIR}/../utils/template_exclude_dates.py"
     run_command "python3 ${exclude_dates_py} ${template_file} ${cli_exclude_dates} --merge"
@@ -638,9 +648,17 @@ if [[ $platform_str =~ COSMO-SKYMED|TERRASAR-X|ENVISAT ]]; then
     [[ $download_method == *burst2safe* ]] && download_method="ssara-bash"   # FA July 2026   Not sure why this was there. 
     download_method="ssara-bash"
 else
-    # Sentinel-1
-    download_dir="$WORK_DIR/SLC"
+    # Sentinel-1: bursts in BURST, full SLCs (slc, ssara, remote) in SLC
+    case "$download_method" in
+        burst2safe|burst2stack)
+            download_dir="$WORK_DIR/BURST"
+            ;;
+        *)
+            download_dir="$WORK_DIR/SLC"
+            ;;
+    esac
 fi
+export MINSAR_DOWNLOAD_DIR="$download_dir"
 
 # set preprocess_flag for Sentinel-1
 if [[ $preprocess_flag == "1" && $platform_str == *"SENTINEL-1"*  ]]; then
@@ -678,7 +696,7 @@ if [[ -v template[ssaraopt.endDate] && "${template[ssaraopt.endDate]}" != "auto"
     orbit_download_flag=0
 fi
 
-echo "Switches: download_method: <$download_method> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
+echo "Switches: download_method: <$download_method> download_dir: <$download_dir> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
 echo "Flags for processing steps:"
 echo "download preprocess dem jobfiles ifgram mintpy miaplpy upload insarmaps opposite_orbit horzvert"
 echo "    $download_flag        $preprocess_flag       $dem_flag      $jobfiles_flag       $ifgram_flag       $mintpy_flag      $miaplpy_flag      $upload_flag       $insarmaps_flag        $opposite_orbit_flag        $horzvert_flag"
@@ -753,7 +771,7 @@ fi
 if [[ $preprocess_flag == "1" ]]; then
     if [[ $platform_str == *"SENTINEL-1"*  ]]; then
         if [[ $download_method == "burst2safe" ]]; then
-            run_command "./pack_bursts.sh SLC"
+            run_command "./pack_bursts.sh BURST"
         fi
     else
         run_command "unpack_SLCs.py $download_dir --queue $QUEUENAME"

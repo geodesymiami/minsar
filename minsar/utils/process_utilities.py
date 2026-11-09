@@ -301,6 +301,24 @@ def create_or_update_template(inps_dict):
 #########################################################################
 
 
+def _point_default_slc_dir_at_burst_download(inps):
+    """Use BURST as the ISCE SLC directory when bursts were downloaded there and slcDir is still the SLC default."""
+    download_dir = os.environ.get("MINSAR_DOWNLOAD_DIR", "").strip()
+    if not download_dir or os.path.basename(os.path.normpath(download_dir)) != "BURST":
+        return
+    slc_key = inps.prefix + "Stack.slcDir"
+    current = str(inps.template.get(slc_key, "")).strip().strip("'\"")
+    work_slc = os.path.normpath(os.path.join(inps.work_dir, "SLC"))
+    current_exp = os.path.expanduser(os.path.expandvars(current)) if current else ""
+    current_norm = os.path.normpath(current_exp) if current_exp else ""
+    default_values = {"", "auto", "None", "./SLC", "SLC", work_slc, os.path.normpath("./SLC"), os.path.normpath("SLC")}
+    if current in default_values or current_norm in default_values:
+        inps.template[slc_key] = download_dir
+
+
+#########################################################################
+
+
 def create_default_template(temp_inps):
     """
     :param temp_inps: input parsed arguments
@@ -347,6 +365,8 @@ def create_default_template(temp_inps):
     for key, value in custom_tempObj.options.items():
         if value not in [None, 'auto']:
             inps.template.update({key: os.path.expandvars(value.strip("'"))})
+
+    _point_default_slc_dir_at_burst_download(inps)
 
     # # update template file if necessary
     # if not os.path.exists(inps.template_file):

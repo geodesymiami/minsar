@@ -162,22 +162,26 @@ def generate_download_command(template,inps):
         with open('download_ssara_python.cmd', 'w') as f:
             f.write(_join_cmd(ssara_slc_download_cmd_python) + '\n')
 
+    # Full SLCs go to SLC/; burst products (burst2safe, burst2stack) go to BURST/.
+    slc_dir = 'SLC'
+    burst_dir = 'BURST'
+
     # create download_slc.sh (slc method)
     asf_ssaraopt = _expand_platform_args(ssaraopt)
-    asf_slc_download_cmd = ['asf_search_args.py', '--processingLevel=SLC'] + asf_ssaraopt + ['--dir=SLC', '--print', '--download']
+    asf_slc_download_cmd = ['asf_search_args.py', '--processingLevel=SLC'] + asf_ssaraopt + [f'--dir={slc_dir}', '--print', '--download']
     if effective_exclude_season:
         asf_slc_download_cmd.append(f"--exclude-season={effective_exclude_season}")
     with open('download_slc.sh', 'w') as f:
         asf_slc_download_cmd = [arg for arg in asf_slc_download_cmd if arg != '--print']
         f.write(f"#!/usr/bin/env bash\n")
         f.write(_join_cmd(['asf_download.sh'] + asf_slc_download_cmd[1:]) + '\n')
-        f.write(f"check_download.py $PWD/SLC --delete\n")
+        f.write(f"check_download.py $PWD/{slc_dir} --delete\n")
         f.write(_join_cmd(['asf_download.sh'] + asf_slc_download_cmd[1:]) + '\n')
     #with open('download_slc.cmd', 'w') as f:
     #    f.write(' '.join(asf_slc_download_cmd) + '\n')
 
     # create download_burst2safe.sh (burst2safe method: download only, listing + two download runs)
-    asf_burst_download_opts = ['--processingLevel=BURST'] + asf_ssaraopt + ['--dir=SLC']
+    asf_burst_download_opts = ['--processingLevel=BURST'] + asf_ssaraopt + [f'--dir={burst_dir}']
     if effective_exclude_season:
         asf_burst_download_opts.append(f"--exclude-season={effective_exclude_season}")
     rel_orbit = dataset_template.options.get('ssaraopt.relativeOrbit', '')
@@ -186,9 +190,9 @@ def generate_download_command(template,inps):
     extent_args = ' '.join(str(x) for x in extent_list)  # W S E N (lon lat lon lat)
     with open('download_burst2safe.sh', 'w') as f:
         f.write(f"#!/usr/bin/env bash\n")
-        f.write(f"mkdir -p SLC\n")
+        f.write(f"mkdir -p {burst_dir}\n")
         f.write(f"set -e\n")
-        f.write(_join_cmd(['asf_download.sh'] + asf_burst_download_opts + ['--print', '>SLC/asf_burst_listing.txt']) + '\n')
+        f.write(_join_cmd(['asf_download.sh'] + asf_burst_download_opts + ['--print', f'>{burst_dir}/asf_burst_listing.txt']) + '\n')
         f.write(_join_cmd(['asf_download.sh'] + asf_burst_download_opts + ['--download', '2>burst2safe_download1.e']) + '\n')
         f.write(_join_cmd(['asf_download.sh'] + asf_burst_download_opts + ['--download', '2>burst2safe_download2.e']) + '\n')
 
@@ -196,20 +200,20 @@ def generate_download_command(template,inps):
     with open('pack_bursts.sh', 'w') as f:
         f.write("#!/usr/bin/env bash\n")
         f.write("set -e\n")
-        f.write(' '.join(['bursts_to_burst2safe_jobfile.py', 'SLC']) + '\n')
-        f.write(' '.join(['run_workflow.bash', '--jobfile', f'{inps.work_dir}/SLC/run_01_burst2safe', '--no-check-job-outputs']) + '\n')
-        f.write(' '.join(['check_burst2safe_job_outputs.py', 'SLC']) + '\n')
-        f.write("if [[ -s SLC/run_01_burst2safe_timeout_0 ]]; then\n")
-        f.write("    rerun_burst2safe.sh SLC/run_01_burst2safe_timeout_0.job\n")
+        f.write(' '.join(['bursts_to_burst2safe_jobfile.py', burst_dir]) + '\n')
+        f.write(' '.join(['run_workflow.bash', '--jobfile', f'{inps.work_dir}/{burst_dir}/run_01_burst2safe', '--no-check-job-outputs']) + '\n')
+        f.write(' '.join(['check_burst2safe_job_outputs.py', burst_dir]) + '\n')
+        f.write(f"if [[ -s {burst_dir}/run_01_burst2safe_timeout_0 ]]; then\n")
+        f.write(f"    rerun_burst2safe.sh {burst_dir}/run_01_burst2safe_timeout_0.job\n")
         f.write("fi\n")
-        f.write("# Need to convert to scripts/pack_bursts.bash SLC\n")
+        f.write(f"# Need to convert to scripts/pack_bursts.bash {burst_dir}\n")
 
     # create burst2stack_cmd.sh (burst2stack single-command; used by burst_download.bash)
     with open('burst2stack_cmd.sh', 'w') as f:
         f.write("#!/usr/bin/env bash\n")
         f.write("set -e\n")
-        f.write("mkdir -p SLC\n")
-        f.write("cd SLC\n")
+        f.write(f"mkdir -p {burst_dir}\n")
+        f.write(f"cd {burst_dir}\n")
         f.write("burst2stack --rel-orbit " + str(rel_orbit) + " --start-date " + start_date + " --end-date " + end_date + " --extent " + extent_args + "\n")
         f.write("cd -\n")
     os.chmod('burst2stack_cmd.sh', 0o755)
@@ -225,7 +229,7 @@ def generate_download_command(template,inps):
         f"burst_download.bash --relativeOrbit {rel_orbit} "
         f"--intersectsWith='{polygon_val}' "
         f"--start-date {start_date} --end-date {end_date} "
-        f"--dir SLC"
+        f"--dir {burst_dir}"
     )
     if effective_exclude_season:
         burst_download_cmd += f" --exclude-season {effective_exclude_season}"
