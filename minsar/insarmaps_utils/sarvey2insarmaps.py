@@ -8,7 +8,7 @@ import platform
 import pickle
 import h5py
 from pathlib import Path
-from datetime import date
+from datetime import date, datetime
 from mintpy.utils import readfile
 import minsar.utils.process_utilities as putils
 import pandas as pd
@@ -16,9 +16,6 @@ import webbrowser
 import sys
 import shlex
 import shutil
-
-sys.path.insert(0, os.getenv("SSARAHOME"))
-import password_config as password
 
 def _load_get_output_filename():
     """Prefer MinSAR additions/mintpy save_hdfeos5 over upstream MintPy."""
@@ -123,7 +120,8 @@ def merge_into_metadata_pickle(json_dir, attrs):
 
 def create_parser():
     parser = argparse.ArgumentParser(
-        description="End-to-end pipeline for: SARvey shapefiles -> CSV -> JSON -> MBTiles -> Insarmaps -> jetstream",
+        description="End-to-end pipeline for: SARvey shapefiles -> CSV -> JSON -> MBTiles -> Insarmaps -> jetstream\n"
+                    "Insarmaps upload rsyncs JSON/ to the host (under /data/scratch) and runs json_mbtiles2insarmaps.py there over ssh.",
         epilog="""\
     Examples:
 
@@ -144,8 +142,8 @@ def create_parser():
     parser.add_argument("input_file", nargs="?", help="Optional input .h5 or .shp file (uses config.json if omitted)")
     parser.add_argument("--config-json", help="Path to config.json (overrides default detection)")
     parser.add_argument("--insarmaps-host",
-        default=os.environ.get("INSARMAPSHOST", os.getenv("INSARMAPS_HOST")),
-        help="Insarmaps server host (default: environment variable INSARMAPSHOST)"
+        default=os.environ.get("INSARMAPSHOST_OLDDATA", "insarmaps.miami.edu"),
+        help="Insarmaps host, or comma-separated hosts (default: INSARMAPSHOST_OLDDATA or insarmaps.miami.edu)"
     )
     parser.add_argument("--upload", dest="upload_flag", action="store_true", help="Upload to jetstream (default: no upload)")
     parser.add_argument("--suffix", metavar="TAG", default=None, help="Tag appended to Insarmaps dataset filename before the extension (e.g. thermal → ..._thermal.csv)")
@@ -355,33 +353,20 @@ def build_ingest_csv_filename(dataset_name, output_suffix="", user_suffix=None, 
     stem = build_ingest_basename(dataset_name, output_suffix, user_suffix)
     return f"{stem}_geocorr.csv" if geocorr else f"{stem}.csv"
 
-def build_commands(shp_file_path, csv_file_path, geocorr_csv_path, json_dir, mbtiles_path, input_csv, inps):
+def build_commands(shp_file_path, csv_file_path, geocorr_csv_path, json_dir, input_csv):
     """
     Build the list of shell command sequences for the SARvey-to-Insarmaps pipeline.
 
-    Returns four commands:
+    Returns three commands:
         cmd1 - Convert SHP to CSV using ogr2ogr with WGS84 coordinates.
         cmd2 - Apply geolocation correction using correct_geolocation.py (if --geocorr).
         cmd3 - Convert CSV or HDF5 to JSON and MBTiles format using hdfeos5_or_csv_2json_mbtiles.py.
-        cmd4 - Upload MBTiles and JSON data to the Insarmaps server using json_mbtiles2insarmaps.py.
+    Insarmaps upload is ingest_step2_rsync_and_remote_ingest(), not a local json_mbtiles2insarmaps.py call.
     """
     cmd_ogr2ogr = ["ogr2ogr", "-f", "CSV", "-lco", "GEOMETRY=AS_XY", "-t_srs", "EPSG:4326", str(csv_file_path), str(shp_file_path)]
     cmd_correctgeo = ["correct_geolocation.py", str(csv_file_path), "--outfile", str(geocorr_csv_path)]
     cmd_hdfeos5 = ["hdfeos5_or_csv_2json_mbtiles.py", str(input_csv), str(json_dir)]
-
-    host = inps.insarmaps_host.split(",")[0]
-    cmd_jsonmbtiles = [
-        "json_mbtiles2insarmaps.py",
-         "--num-workers", "3",
-         "-u", password.docker_insaruser,
-         "-p", password.docker_insarpass,
-         "--host", host,
-         "-P", password.docker_databasepass,
-         "-U", password.docker_databaseuser,
-         "--json_folder", str(json_dir),
-         "--mbtiles_file", str(mbtiles_path),
-    ]
-    return cmd_ogr2ogr, cmd_correctgeo, cmd_hdfeos5, cmd_jsonmbtiles
+    return cmd_ogr2ogr, cmd_correctgeo, cmd_hdfeos5
 
 def get_sarvey_export_path():
     """
@@ -583,6 +568,168 @@ def run_command(command, shell=False, conda_env=None, cwd=None):
     )
 
 
+def insarmaps_host_list(host_arg):
+    """Split a comma-separated Insarmaps host list; drop empty tokens."""
+    if host_arg is None or not str(host_arg).strip():
+        raise RuntimeError("no InsarMaps host set (use --insarmaps-host or INSARMAPSHOST_OLDDATA)")
+    hosts = [host.strip() for host in str(host_arg).split(",") if host.strip()]
+    if not hosts:
+        raise RuntimeError("no InsarMaps host set (use --insarmaps-host or INSARMAPSHOST_OLDDATA)")
+    return hosts
+
+
+def ingest_step2_rsh():
+    """Remote shell for step-2 rsync/ssh. INSARMAPS_SSH_JUMP becomes `ssh <jump> ssh`."""
+    rsh = os.environ.get("INSARMAPS_RSH", "").strip()
+    if rsh:
+        return rsh
+    jump = os.environ.get("INSARMAPS_SSH_JUMP", "").strip()
+    if jump:
+        return f"ssh {jump} ssh"
+    return "ssh"
+
+
+def ingest_remote_paths_for_scratch(data_dir):
+    """Map a directory under $SCRATCHDIR to /data/scratch/<relpath> and /data/scratch/<project>."""
+    scratch = os.environ.get("SCRATCHDIR", "").strip()
+    if not scratch:
+        raise RuntimeError("SCRATCHDIR must be set for remote JSON upload (path under /data/scratch/)")
+    scratch_abs = Path(scratch).resolve()
+    data_abs = Path(data_dir).resolve()
+    try:
+        rel = data_abs.relative_to(scratch_abs)
+    except ValueError as exc:
+        raise RuntimeError(f"data dir is not under $SCRATCHDIR ({scratch_abs}): {data_abs}") from exc
+    rel_posix = rel.as_posix()
+    if not rel_posix or rel_posix == ".":
+        raise RuntimeError(f"cannot derive path under $SCRATCHDIR for: {data_abs}")
+    project_rel = rel_posix.split("/", 1)[0]
+    if project_rel in ("", ".", ".."):
+        raise RuntimeError(f"invalid project name under $SCRATCHDIR for: {data_abs}")
+    remote_data_dir = f"/data/scratch/{rel_posix}"
+    remote_project_dir = f"/data/scratch/{project_rel}"
+    if remote_project_dir == "/data/scratch" or not remote_project_dir.startswith("/data/scratch/"):
+        raise RuntimeError(f"refusing unsafe remote project path: {remote_project_dir}")
+    return remote_data_dir, remote_project_dir
+
+
+def _append_command_log(message):
+    """Append a timestamped command line to ./log (same record ingest_insarmaps.bash writes)."""
+    line = f"{datetime.now().strftime('%Y%m%d:%H-%M')} * {message}"
+    print(line)
+    with open("log", "a", encoding="utf-8") as handle:
+        handle.write(line + "\n")
+
+
+def ingest_step2_rsync_and_remote_ingest(insarmaps_host, local_json_dir, local_mbtiles, data_dir):
+    """Rsync JSON/ to the Insarmaps host, ingest via ssh against 127.0.0.1, then delete the remote scratch tree."""
+    insarmaps_host = str(insarmaps_host).strip()
+    local_json_dir = Path(local_json_dir)
+    local_mbtiles = Path(local_mbtiles)
+    if not local_json_dir.is_dir():
+        raise FileNotFoundError(f"JSON directory missing: {local_json_dir}")
+    if not local_mbtiles.is_file():
+        raise FileNotFoundError(f"mbtiles file missing: {local_mbtiles}")
+
+    remote_user = (os.environ.get("REMOTEUSER") or "exouser").strip() or "exouser"
+    remote_pass_file = "/data/insarmaps2/postgres_dir/.insaradmin_db_password"
+    remote_minsar_home = os.environ.get("INSARMAPS_REMOTE_MINSAR_HOME") or "/data/insarmaps2/code/minsar"
+    remote_mbtiles_dir = os.environ.get("INSARMAPS_REMOTE_MBTILES_DIR") or "/data/insarmaps2/mbtiles_dir"
+    workers = os.environ.get("MBTILES_NUM_WORKERS") or "6"
+    rsh = ingest_step2_rsh()
+    rsh_parts = shlex.split(rsh)
+    target = f"{remote_user}@{insarmaps_host}"
+
+    remote_data_dir, remote_project_dir = ingest_remote_paths_for_scratch(data_dir)
+    remote_json_dir = f"{remote_data_dir}/{local_json_dir.name}"
+    remote_mbtiles = f"{remote_json_dir}/{local_mbtiles.name}"
+
+    print("####################################")
+    print(f"Uploading JSON dir to {target}:{remote_json_dir}/ (rsh: {rsh})")
+    run_command(rsh_parts + [target, f"mkdir -p {shlex.quote(remote_json_dir)}"])
+    run_command([
+        "rsync", "-avzh", "--progress",
+        "-e", rsh,
+        f"{local_json_dir}/",
+        f"{target}:{remote_json_dir}/",
+    ])
+
+    print("####################################")
+    print(f"Reading DB password from {target}:{remote_pass_file}")
+    password_cmd = f"sudo -n cat {shlex.quote(remote_pass_file)} | tr -d '[:space:]'"
+    try:
+        pg_pass = subprocess.check_output(rsh_parts + [target, password_cmd], text=True).strip()
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            f"failed to read DB password from {target}:{remote_pass_file} (exit {exc.returncode})"
+        ) from exc
+    if not pg_pass:
+        raise RuntimeError(f"empty password from {target}:{remote_pass_file}")
+
+    ingest_cmd = (
+        f"json_mbtiles2insarmaps.py --num-workers {workers} -u insaradmin -p {pg_pass} "
+        f"--host 127.0.0.1 --json_folder {remote_json_dir}"
+    )
+    print("####################################")
+    print(f"Running.... {rsh} {target} {ingest_cmd}")
+    _append_command_log(f"{rsh} {target} {ingest_cmd}")
+
+    # Source remote minsar env so PROJ_LIB is set, then copy mbtiles into the HTTP tile dir.
+    remote_mbtiles_installed = f"{remote_mbtiles_dir}/{local_mbtiles.name}"
+    remote_body = (
+        "set -euo pipefail; "
+        f"export MINSAR_HOME={shlex.quote(remote_minsar_home)}; "
+        'source "$MINSAR_HOME/setup/environment.bash" >/dev/null; '
+        f"json_mbtiles2insarmaps.py --num-workers {shlex.quote(str(workers))} -u insaradmin "
+        f"-p {shlex.quote(pg_pass)} --host 127.0.0.1 --json_folder {shlex.quote(remote_json_dir)}; "
+        f"sudo -n mkdir -p {shlex.quote(remote_mbtiles_dir)}; "
+        f"sudo -n cp -f {shlex.quote(remote_mbtiles)} {shlex.quote(remote_mbtiles_dir)}/; "
+        f"sudo -n chown www-data:www-data {shlex.quote(remote_mbtiles_installed)}; "
+        f'echo "Installed mbtiles: {remote_mbtiles_installed}"'
+    )
+    remote_status = subprocess.run(rsh_parts + [target, "bash -lc " + shlex.quote(remote_body)]).returncode
+    if remote_status != 0:
+        print(
+            f"{rsh} {target} json_mbtiles2insarmaps.py exited with a non-zero exit code "
+            f"(exit code: {remote_status}). Exiting."
+        )
+        sys.exit(1)
+
+    print("####################################")
+    print(f"Removing remote project folder {target}:{remote_project_dir}")
+    run_command(rsh_parts + [target, f"rm -rf {shlex.quote(remote_project_dir)}"])
+
+
+def resolve_produced_mbtiles(json_dir, ingest_stem):
+    """Return the mbtiles file hdfeos5 wrote, renaming the p1_ts.mbtiles fallback when needed."""
+    json_dir = Path(json_dir)
+    final_mbtiles_path = json_dir / f"{ingest_stem}.mbtiles"
+    if final_mbtiles_path.is_file():
+        return final_mbtiles_path
+    default_mbtiles_path = json_dir / "p1_ts.mbtiles"
+    if default_mbtiles_path.is_file():
+        print(f"[INFO] Renaming fallback p1_ts.mbtiles → {final_mbtiles_path.name}")
+        shutil.move(str(default_mbtiles_path), str(final_mbtiles_path))
+        return final_mbtiles_path
+    raise FileNotFoundError(
+        f"Neither final nor fallback mbtiles found:\n  {final_mbtiles_path}\n  {default_mbtiles_path}"
+    )
+
+
+def remote_ingest_job_command(host, json_dir, mbtiles_path, data_dir):
+    """One jobfile line that runs ingest_step2_rsync_and_remote_ingest from this script."""
+    script = str(Path(__file__).resolve())
+    code = (
+        "import importlib.util\n"
+        f"spec = importlib.util.spec_from_file_location('sarvey2insarmaps', {script!r})\n"
+        "mod = importlib.util.module_from_spec(spec)\n"
+        "spec.loader.exec_module(mod)\n"
+        "mod.ingest_step2_rsync_and_remote_ingest("
+        f"{host!r}, {str(json_dir)!r}, {str(mbtiles_path)!r}, {str(data_dir)!r})\n"
+    )
+    return "python3 -c " + shlex.quote(code)
+
+
 def convert_to_relative_path(cmd_list, cwd=None):
     """
     Return a list where any element that lives under cwd is replaced by its relative path.
@@ -604,7 +751,7 @@ def create_jobfile(inps, data_path, cmds, json_dir, output_path, mbtiles_path, d
     Generate a SLURM-compatible jobfile with all processing steps and Insarmaps URL.
     """
 
-    cmd_sarvey_export, cmd_ogr2ogr, cmd_geocorr, cmd_hdfeos5, cmd_json_mbtiles = cmds
+    cmd_sarvey_export, cmd_ogr2ogr, cmd_geocorr, cmd_hdfeos5 = cmds
 
     jobfile_path = Path(output_path) / "sarvey2insarmaps.job"
     slurm_commands = []
@@ -620,15 +767,14 @@ def create_jobfile(inps, data_path, cmds, json_dir, output_path, mbtiles_path, d
     if inps.do_geocorr:
         slurm_commands.append(" ".join(cmd_geocorr))
 
-    host = inps.insarmaps_host.split(",")[0]
     slurm_commands.extend([
         f"rm -rf {json_dir}",
         # Step 4: hdfeos5_or_csv_2json_mbtiles.py
         " ".join(cmd_hdfeos5),
-         # Step 5: json_mbtiles2insarmaps.py
-        " ".join(cmd_json_mbtiles).replace(inps.insarmaps_host, "insarmaps.miami.edu") + " &",
-        " ".join(cmd_json_mbtiles).replace(inps.insarmaps_host, host) + " &"
     ])
+    # Step 5: rsync JSON/ to each host and ingest there (same as ingest_insarmaps.bash step 2)
+    for host in insarmaps_host_list(inps.insarmaps_host):
+        slurm_commands.append(remote_ingest_job_command(host, json_dir, mbtiles_path, output_path))
 
     with open(jobfile_path, 'w') as f:
         f.write("#!/bin/bash\n\n")
@@ -643,13 +789,10 @@ def create_jobfile(inps, data_path, cmds, json_dir, output_path, mbtiles_path, d
 
         f.write("wait\n\n")
 
-        #use generate_insarmaps_url to compute accurate footprint center URLs
-        url_1 = generate_insarmaps_url("insarmaps.miami.edu", dataset_name, metadata, geocorr=inps.do_geocorr)
-        url_2 = generate_insarmaps_url(inps.insarmaps_host.split(",")[0], dataset_name, metadata, geocorr=inps.do_geocorr)
-
         f.write("\n# Insarmaps URLs:\n")
-        f.write(f"cat >> insarmaps.log<<EOF\n{url_1}\nEOF\n\n")
-        f.write(f"cat >> insarmaps.log<<EOF\n{url_2}\nEOF\n\n")
+        for host in insarmaps_host_list(inps.insarmaps_host):
+            url = generate_insarmaps_url(host, dataset_name, metadata, geocorr=inps.do_geocorr)
+            f.write(f"cat >> insarmaps.log<<EOF\n{url}\nEOF\n\n")
 
     print(f"\nJobfile created: {jobfile_path}")
 
@@ -704,12 +847,14 @@ def main():
     #csv_path, geocorr_csv_path, json_dir, mbtiles_path, base_dir, dataset_name = set_output_paths(output_path, dataset_name, inps.do_geocorr)
     data_path = Path(inps.input_file).resolve()
     base_filename = data_path.stem
-    csv_file_path, geocorr_csv_path, json_dir, mbtiles_path, output_path = set_output_paths(output_path, base_filename, inps.do_geocorr)
+    csv_file_path, geocorr_csv_path, json_dir, mbtiles_path, output_path = set_output_paths(
+        output_path, base_filename, inps.do_geocorr
+    )
     input_csv = geocorr_csv_path if inps.do_geocorr else csv_file_path
 
 
-    cmd_ogr2ogr, cmd_correctgeo, cmd_hdfeos5, cmd_jsonmbtiles = build_commands(
-        shp_file_path, csv_file_path, geocorr_csv_path, json_dir, mbtiles_path, input_csv, inps
+    cmd_ogr2ogr, cmd_correctgeo, cmd_hdfeos5 = build_commands(
+        shp_file_path, csv_file_path, geocorr_csv_path, json_dir, input_csv
     )
 
     #assign python environment for insarmaps_scripts
@@ -721,7 +866,7 @@ def main():
 
     if inps.make_jobfile:
             print("[INFO] Creating jobfile only, skipping execution.")
-            create_jobfile(inps, data_path, (cmd_sarvey_export, cmd_ogr2ogr, cmd_correctgeo, cmd_hdfeos5, cmd_jsonmbtiles), json_dir, output_path, mbtiles_path, dataset_name, metadata)
+            create_jobfile(inps, data_path, (cmd_sarvey_export, cmd_ogr2ogr, cmd_correctgeo, cmd_hdfeos5), json_dir, output_path, mbtiles_path, dataset_name, metadata)
 
     else:
         # Step 1: run sarvey_export to  create *.shp file
@@ -741,9 +886,6 @@ def main():
         output_suffix = Path(output_path).name.partition("outputs_")[2]
         ingest_stem = build_ingest_basename(dataset_name, output_suffix, inps.suffix)
 
-        #replace mbtiles path to reflect final name
-        mbtiles_path = json_dir / f"{ingest_stem}.mbtiles"
-
         #rename csv to match desired output format
         final_csv_name = build_ingest_csv_filename(
             dataset_name, output_suffix, inps.suffix, geocorr=inps.do_geocorr
@@ -760,9 +902,9 @@ def main():
         else:
             csv_file_path = input_csv
 
-        #rebuild cmd_hdfeos5 and cmd_jsonmbtiles using updated csv name
-        _, _, cmd_hdfeos5, cmd_jsonmbtiles = build_commands(
-            shp_file_path, csv_file_path, geocorr_csv_path, json_dir, mbtiles_path, input_csv, inps
+        #rebuild cmd_hdfeos5 using the renamed csv
+        _, _, cmd_hdfeos5 = build_commands(
+            shp_file_path, csv_file_path, geocorr_csv_path, json_dir, input_csv
         )
 
         # Step 4: run hdfeos5_2_mbtiles.pt to convert csv-file into mbptile.
@@ -771,39 +913,27 @@ def main():
         merge_into_metadata_pickle(json_dir, metadata)
         metadata = update_and_save_final_metadata(json_dir, output_path, ingest_stem, metadata)
 
-        # Step 5: run json_mbtiles2insarmaps to ingest data into insarmaps
+        # Mbtiles must be in JSON/ before rsync; remote ingest copies that filename into mbtiles_dir.
+        mbtiles_path = resolve_produced_mbtiles(json_dir, ingest_stem)
+
+        # Step 5: rsync JSON/ to each Insarmaps host and ingest there
         if not inps.skip_upload:
-            run_command(cmd_jsonmbtiles, conda_env=None if platform.system() == "Darwin" else None)
-
-        #rename MBTiles to match dataset name
-        final_mbtiles_path = json_dir / f"{ingest_stem}.mbtiles"
-
-        #update mbtiles_path only if the file exists
-        if final_mbtiles_path.exists():
-            mbtiles_path = final_mbtiles_path
-        else:
-            #in case tippecanoe output is still p1_ts.mbtiles — fallback check
-            default_mbtiles_path = json_dir / "p1_ts.mbtiles"
-            if default_mbtiles_path.exists():
-                print(f"[INFO] Renaming fallback p1_ts.mbtiles → {final_mbtiles_path.name}")
-                shutil.move(default_mbtiles_path, final_mbtiles_path)
-                mbtiles_path = final_mbtiles_path
-            else:
-                raise FileNotFoundError(f"[ERROR] Neither final nor fallback mbtiles found:\n  {final_mbtiles_path}\n  {default_mbtiles_path}")
-
-        #rebuild cmd_jsonmbtiles with updated mbtiles filename
-        _, _, _, cmd_jsonmbtiles = build_commands(
-            shp_file_path, csv_file_path, geocorr_csv_path, json_dir, mbtiles_path, input_csv, inps
-        )
+            for host in insarmaps_host_list(inps.insarmaps_host):
+                ingest_step2_rsync_and_remote_ingest(host, json_dir, mbtiles_path, output_path)
 
         # Step 6: create insarmaps.log with URL
-        host = inps.insarmaps_host.split(",")[0]
-        url = generate_insarmaps_url(host, ingest_stem, metadata, geocorr=inps.do_geocorr)
+        urls = [
+            generate_insarmaps_url(host, ingest_stem, metadata, geocorr=inps.do_geocorr)
+            for host in insarmaps_host_list(inps.insarmaps_host)
+        ]
 
-        with open('insarmaps.log', 'a') as f:
-            f.write(url + "\n")
+        with open("insarmaps.log", "a", encoding="utf-8") as handle:
+            for url in urls:
+                handle.write(url + "\n")
         if os.path.isdir(f"{output_path}/pic"):
-            open(f"{output_path}/pic/insarmaps.log", 'a').write(url + "\n")
+            with open(f"{output_path}/pic/insarmaps.log", "a", encoding="utf-8") as handle:
+                for url in urls:
+                    handle.write(url + "\n")
 
         # Step 7: create pic/index.html
         run_command(["create_html.py", f"{output_path}/pic"])
@@ -814,7 +944,9 @@ def main():
             run_command(["upload_data_products.py",f"{os.path.dirname(inps.input_file)}"])
 
         #print the Insarmaps URL and open it in a web browser
-        print(f"\nView on Insarmaps:\n{url}")
+        print("\nView on Insarmaps:")
+        for url in urls:
+            print(url)
         if platform.system() == "Darwin":
            webbrowser.open(f"{output_path}/pic/index.html")
         #  webbrowser.open(url)
