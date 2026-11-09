@@ -34,6 +34,7 @@ import argparse
 import calendar
 import os
 import re
+import shlex
 import subprocess
 import sys
 from datetime import date, datetime
@@ -206,9 +207,10 @@ def _run_get_sar_coverage(aoi: str, platform: str = "S1") -> dict[str, str | int
     if not get_sar.exists():
         raise FileNotFoundError(f"get_sar_coverage.py not found: {get_sar}")
 
-    argv = [str(get_sar), aoi, "--platform", platform, "--select"]
+    argv = [sys.executable, str(get_sar), aoi, "--platform", platform, "--select"]
+    print(f"Running {shlex.join(argv)}", file=sys.stderr)
     proc = subprocess.run(
-        [sys.executable] + argv,
+        argv,
         capture_output=True,
         text=True,
         cwd=Path.cwd(),
@@ -685,7 +687,6 @@ def main(
         )
         return 1, None, None, ""
 
-    print("Running get_sar_coverage.py --select ...", file=sys.stderr)
     try:
         coverage = _run_get_sar_coverage(aoi, platform_for_coverage)
     except RuntimeError as exc:
