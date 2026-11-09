@@ -69,6 +69,33 @@ def extract_temporalCoherence(file_path, coords, out_dir=""):
 
     return out_file
 
+
+def extract_quality_layer(file_path, coords, dataset_name, out_dir=""):
+    """Extract one HDFEOS quality dataset if present (OPERA / dolphin2he5 layers)."""
+    dset_path = f"HDFEOS/GRIDS/timeseries/quality/{dataset_name}"
+    try:
+        data, attr = readfile.read(file_path, datasetName=dset_path)
+    except Exception as e:
+        print(f"Warning: Skipping quality/{dataset_name}: {e}", file=sys.stderr)
+        return None
+    attr["FILE_TYPE"] = dataset_name
+    prefix = "geo_" if coords == "GEO" else ""
+    out_file = os.path.join(out_dir, f"{prefix}{dataset_name}.h5")
+    writefile.write(data, out_file=out_file, metadata=attr)
+    print(f"Extracted {dataset_name} -> {out_file}")
+    return out_file
+
+
+# Optional in HE5; extracted when present (dolphin2he5 / OPERA DISP-S1).
+OPTIONAL_QUALITY_LAYERS = (
+    "phaseSimilarity",
+    "recommendedDensity",
+    "persistentScattererDensity",
+    "waterMask",
+    "conncomp",
+    "demErr",
+)
+
 def extract_shadowMask(file_path, coords, out_dir=""):
     data, attr = readfile.read(file_path, datasetName='HDFEOS/GRIDS/timeseries/geometry/shadowMask')
     attr['FILE_TYPE'] = 'shadowMask'
@@ -173,7 +200,9 @@ def extract_velocity(file_path, coords, out_dir="", start_date=None, end_date=No
 def main():
     parser = argparse.ArgumentParser(
         description="Extract slices from a MintPy HDFEOS file (reverse of save_hdfeos5.py).  "
-                    "By default extracts mask, avgSpatialCoherence, temporalCoherence, and geometry. "
+                    "By default extracts mask, avgSpatialCoherence, temporalCoherence, geometry, "
+                    "shadowMask, and OPERA quality layers when present (phaseSimilarity, "
+                    "recommendedDensity, persistentScattererDensity, waterMask, conncomp, demErr). "
                     "Use --all to also extract the displacement (timeseries) datasets.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="Examples:\n"
@@ -221,6 +250,8 @@ def main():
     extract_temporalCoherence(file_path, coords, out_dir)
     extract_geometry(file_path, coords, out_dir)
     extract_shadowMask(file_path, coords, out_dir)
+    for layer in OPTIONAL_QUALITY_LAYERS:
+        extract_quality_layer(file_path, coords, layer, out_dir)
 
     if args.all:
         extract_timeseries(file_path, coords, out_dir)
