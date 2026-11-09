@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Build a MintPy geo mask (1 inside KMZ/KML polygons, 0 outside) on a geocoded grid."""
+"""Build a MintPy polygon mask on the grid of each reference file."""
 
 from __future__ import annotations
 
 import argparse
+import csv
 import glob
 import os
 import sys
@@ -19,20 +20,21 @@ from shapely.ops import unary_union
 from shapely.vectorized import contains
 
 from minsar.objects import message_rsmas
-from minsar.utils.subset_hdfeos5 import get_hdfeos_geometry_atr
+
+# VLM CSV has no pixel grid; this step (~11 m) covers the points for point lookup.
+CSV_STEP_DEG = 0.0001
 
 DESCRIPTION = """\
-Create a MintPy mask HDF5 on the grid of a geocoded reference file (.he5 or geo *.h5).
-Pixels inside any polygon from the KMZ/KML inputs are 1; all others are 0.
-A regular lat/lon grid is sampled at pixel centers. A projected HE5 uses its
-per-pixel latitude/longitude. Default output geo_polygon_mask.h5 is written in CWD.
+Create a MintPy mask HDF5 on the grid of each reference file.
+Geocoded inputs (Y_FIRST) are sampled at pixel centers.
+Radar inputs use per-pixel latitude/longitude.
+One mask is written next to each reference file.
 """
 
 EXAMPLE = """Examples:
-polygon_2_mask.py Runway_*.kmz geo_velocity.h5
-polygon_2_mask.py aoi.kmz geo_S1_*.he5
-polygon_2_mask.py Runway_*.kmz --inverse geo_velocity.h5
-polygon_2_mask.py aoi.kmz -o custom_mask.h5 geo_velocity.h5
+polygon_2_mask.py Run*.kmz geo_velocity.h5
+polygon_2_mask.py Run* ../ShirzaeiComment/MIA_VLM.csv miaplpy_201509_202609/network_delaunay_4/velocity.h5 miaplpy_201509_202101/network_delaunay_4/velocity.h5 ../MiamiMIADISPS1SenA48/geo_velocity.h5 mintpy_2015-2026/geo_velocity.h5
+polygon_2_mask.py aoi.kmz geo_velocity.h5 --inverse
 """
 
 
@@ -43,22 +45,17 @@ def create_parser() -> argparse.ArgumentParser:
         epilog=EXAMPLE,
     )
     parser.add_argument(
-        "kmz",
+        "inputs",
         nargs="+",
-        metavar="KMZ",
-        help="One or more KMZ/KML polygon files (shell globs OK)",
-    )
-    parser.add_argument(
-        "geocode_file",
-        metavar="GEOCODE",
-        help="Geocoded MintPy .h5 or HDF-EOS5 .he5 defining the output grid",
+        metavar="FILE",
+        help="KMZ/KML polygons and reference files (.h5, .he5, or VLM .csv)",
     )
     parser.add_argument(
         "-o",
         "--output",
         dest="outfile",
-        default="geo_polygon_mask.h5",
-        help="Output mask HDF5 in CWD unless path is given [default: geo_polygon_mask.h5]",
+        default=None,
+        help="output path when there is a single reference file",
     )
     parser.add_argument(
         "--inverse",
@@ -130,20 +127,30 @@ def load_polygons(kmz_paths: list[Path]) -> Polygon:
     return unary_union(all_polys)
 
 
-def expand_kmz_arguments(raw_paths: list[str]) -> list[Path]:
-    expanded: list[Path] = []
+def expand_inputs(raw_paths: list[str]) -> tuple[list[Path], list[Path]]:
+    """Split KMZ/KML polygons from reference grids. Globs are expanded."""
+    kmz_paths: list[Path] = []
+    ref_paths: list[Path] = []
     for raw in raw_paths:
         if any(ch in raw for ch in "*?[]"):
             matches = sorted(glob.glob(raw))
             if not matches:
-                raise FileNotFoundError(f"no files match KMZ glob: {raw}")
-            expanded.extend(Path(p).resolve() for p in matches)
+                raise FileNotFoundError(f"no files match: {raw}")
+            paths = [Path(p).resolve() for p in matches]
         else:
             path = Path(raw).expanduser().resolve()
             if not path.is_file():
-                raise FileNotFoundError(f"KMZ/KML not found: {path}")
-            expanded.append(path)
-    return expanded
+                raise FileNotFoundError(f"file not found: {path}")
+            paths = [path]
+        for path in paths:
+            suffix = path.suffix.lower()
+            if suffix in {".kmz", ".kml"}:
+                kmz_paths.append(path)
+            elif suffix in {".h5", ".he5", ".csv"}:
+                ref_paths.append(path)
+            else:
+                raise ValueError(f"expected .kmz, .kml, .h5, .he5, or .csv, got: {path}")
+    return kmz_paths, ref_paths
 
 
 def _regular_lat_lon_grid(shape: tuple[int, ...], atr: dict) -> tuple[np.ndarray, np.ndarray]:
@@ -158,25 +165,6 @@ def _regular_lat_lon_grid(shape: tuple[int, ...], atr: dict) -> tuple[np.ndarray
     lat = np.broadcast_to((y0 + rows * y_step)[:, None], (length, width)).copy()
     lon = np.broadcast_to(x0 + cols * x_step, (length, width)).copy()
     return lat, lon
-
-
-def _axis_aligned_latlon(lat: np.ndarray, lon: np.ndarray, tol_deg: float = 1e-5) -> bool:
-    """True when each row is one latitude and each column is one longitude."""
-    lat = np.asarray(lat, dtype=np.float64)
-    lon = np.asarray(lon, dtype=np.float64)
-    if lat.ndim != 2 or lon.ndim != 2 or lat.shape != lon.shape:
-        return False
-    if not (np.isfinite(lat).any() and np.isfinite(lon).any()):
-        return False
-    if lat.shape[1] > 1:
-        row_span = np.nanmax(lat, axis=1) - np.nanmin(lat, axis=1)
-        if float(np.nanmax(row_span)) > tol_deg:
-            return False
-    if lon.shape[0] > 1:
-        col_span = np.nanmax(lon, axis=0) - np.nanmin(lon, axis=0)
-        if float(np.nanmax(col_span)) > tol_deg:
-            return False
-    return True
 
 
 def _he5_geometry_latlon(path: Path) -> tuple[np.ndarray, np.ndarray] | None:
@@ -197,11 +185,8 @@ def _he5_geometry_latlon(path: Path) -> tuple[np.ndarray, np.ndarray] | None:
 
 
 def _lat_lon_from_geometry_h5(geom_path: Path, shape: tuple[int, ...]) -> tuple[np.ndarray, np.ndarray]:
-    geom_data, _ = readfile.read(str(geom_path))
-    if not isinstance(geom_data, dict):
-        raise ValueError(f"geometry file has no lat/lon datasets: {geom_path}")
-    lat = np.asarray(geom_data["latitude"], dtype=np.float64)
-    lon = np.asarray(geom_data["longitude"], dtype=np.float64)
+    lat = np.asarray(readfile.read(str(geom_path), datasetName="latitude")[0], dtype=np.float64)
+    lon = np.asarray(readfile.read(str(geom_path), datasetName="longitude")[0], dtype=np.float64)
     if lat.shape != shape or lon.shape != shape:
         raise ValueError(
             f"geometry grid {lat.shape} does not match reference grid {shape}: {geom_path}"
@@ -209,56 +194,104 @@ def _lat_lon_from_geometry_h5(geom_path: Path, shape: tuple[int, ...]) -> tuple[
     return lat, lon
 
 
-def read_reference_grid(geocode_path: Path) -> tuple[tuple[int, int], dict]:
-    geocode_path = geocode_path.expanduser().resolve()
-    if not geocode_path.is_file():
-        raise FileNotFoundError(f"geocode file not found: {geocode_path}")
-
-    if geocode_path.suffix.lower() == ".he5":
-        atr = get_hdfeos_geometry_atr(str(geocode_path))
-        data, ds_atr = readfile.read(
-            str(geocode_path),
-            datasetName="HDFEOS/GRIDS/timeseries/quality/mask",
-        )
-        merged = dict(ds_atr)
-        merged.update(atr)
-        shape = (int(data.shape[0]), int(data.shape[1]))
-        return shape, merged
-
-    data, atr = readfile.read(str(geocode_path))
-    if data.ndim != 2:
-        raise ValueError(f"reference dataset must be 2-D, got shape {data.shape}: {geocode_path}")
-    shape = (int(data.shape[0]), int(data.shape[1]))
-    return shape, dict(atr)
+def _is_geocoded(atr: dict) -> bool:
+    return "Y_FIRST" in atr
 
 
-def lat_lon_grids(geocode_path: Path, shape: tuple[int, int], atr: dict) -> tuple[np.ndarray, np.ndarray]:
-    he5_ll = _he5_geometry_latlon(geocode_path)
-    if he5_ll is not None and he5_ll[0].shape == shape and not _axis_aligned_latlon(*he5_ll):
-        print("Grid:       per-pixel lat/lon (projected raster)")
-        print(
-            "Warning:    view.py places this mask with Y_FIRST, which is only exact "
-            "near the northwest corner. Regenerate the HE5 on a regular lat/lon grid "
-            "for the mask to sit on the basemap."
-        )
-        return he5_ll
+def read_reference_grid(ref_path: Path) -> tuple[tuple[int, int], dict]:
+    """Shape and original attributes. Radar HE5 metadata is not given a fake Y_FIRST."""
+    ref_path = ref_path.expanduser().resolve()
+    if not ref_path.is_file():
+        raise FileNotFoundError(f"reference file not found: {ref_path}")
 
-    keys = ("Y_FIRST", "X_FIRST", "Y_STEP", "X_STEP")
-    if all(k in atr for k in keys):
-        print("Grid:       regular lat/lon, pixel centers")
+    if ref_path.suffix.lower() == ".he5":
+        atr = dict(readfile.read_attribute(str(ref_path)))
+        with h5py.File(ref_path) as handle:
+            lat_name = "HDFEOS/GRIDS/timeseries/geometry/latitude"
+            if lat_name not in handle:
+                raise ValueError(f"HE5 has no latitude grid: {ref_path}")
+            shape = tuple(int(n) for n in handle[lat_name].shape)
+        return shape, atr
+
+    if ref_path.suffix.lower() == ".csv":
+        return _csv_grid(ref_path)
+
+    atr = dict(readfile.read_attribute(str(ref_path)))
+    if "LENGTH" not in atr or "WIDTH" not in atr:
+        raise ValueError(f"reference file has no LENGTH/WIDTH: {ref_path}")
+    shape = (int(atr["LENGTH"]), int(atr["WIDTH"]))
+    return shape, atr
+
+
+def _csv_lon_lat(path: Path) -> tuple[np.ndarray, np.ndarray]:
+    with path.open(newline="") as handle:
+        reader = csv.DictReader(handle)
+        if reader.fieldnames is None:
+            raise ValueError(f"CSV has no header: {path}")
+        fields = {name.strip().lower(): name for name in reader.fieldnames}
+        if "longitude" not in fields or "latitude" not in fields:
+            raise ValueError(f"CSV needs Longitude and Latitude columns: {path}")
+        lon_key, lat_key = fields["longitude"], fields["latitude"]
+        lon_vals: list[float] = []
+        lat_vals: list[float] = []
+        for row in reader:
+            lon_vals.append(float(row[lon_key]))
+            lat_vals.append(float(row[lat_key]))
+    if not lon_vals:
+        raise ValueError(f"CSV has no points: {path}")
+    return np.asarray(lon_vals, dtype=np.float64), np.asarray(lat_vals, dtype=np.float64)
+
+
+def _csv_grid(path: Path) -> tuple[tuple[int, int], dict]:
+    """Regular lat/lon grid covering the CSV points. Y_FIRST is the north pixel corner."""
+    lon, lat = _csv_lon_lat(path)
+    step = CSV_STEP_DEG
+    lat_s = float(np.min(lat)) - step
+    lat_n = float(np.max(lat)) + step
+    lon_w = float(np.min(lon)) - step
+    lon_e = float(np.max(lon)) + step
+    length = int(np.ceil((lat_n - lat_s) / step)) + 1
+    width = int(np.ceil((lon_e - lon_w) / step)) + 1
+    atr = {
+        "LENGTH": str(length),
+        "WIDTH": str(width),
+        "Y_FIRST": str(lat_n + 0.5 * step),
+        "X_FIRST": str(lon_w - 0.5 * step),
+        "Y_STEP": str(-step),
+        "X_STEP": str(step),
+        "Y_UNIT": "degrees",
+        "X_UNIT": "degrees",
+    }
+    return (length, width), atr
+
+
+def _radar_geometry_latlon(ref_path: Path, shape: tuple[int, int]) -> tuple[np.ndarray, np.ndarray]:
+    candidates = [
+        ref_path.parent / "geometryRadar.h5",
+        ref_path.parent / "inputs" / "geometryRadar.h5",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            print(f"Grid:       radar lat/lon from {candidate.name}")
+            return _lat_lon_from_geometry_h5(candidate, shape)
+    raise ValueError(
+        f"radar file {ref_path.name} needs geometryRadar.h5 in the same directory or inputs/"
+    )
+
+
+def lat_lon_grids(ref_path: Path, shape: tuple[int, int], atr: dict) -> tuple[np.ndarray, np.ndarray]:
+    if _is_geocoded(atr):
+        print("Grid:       geocoded lat/lon, pixel centers")
         return _regular_lat_lon_grid(shape, atr)
 
-    geom_candidates = [
-        geocode_path.parent / "geo_geometryRadar.h5",
-        geocode_path.parent / "inputs" / "geometryGeo.h5",
-    ]
-    for candidate in geom_candidates:
-        if candidate.is_file():
-            return _lat_lon_from_geometry_h5(candidate, shape)
+    if ref_path.suffix.lower() == ".he5":
+        he5_ll = _he5_geometry_latlon(ref_path)
+        if he5_ll is None or he5_ll[0].shape != shape:
+            raise ValueError(f"HE5 latitude/longitude does not match the grid: {ref_path}")
+        print("Grid:       radar lat/lon from HE5")
+        return he5_ll
 
-    raise ValueError(
-        "reference file has no Y_FIRST/X_FIRST/Y_STEP/X_STEP and no geo_geometryRadar.h5 nearby"
-    )
+    return _radar_geometry_latlon(ref_path, shape)
 
 
 def polygon_mask_on_grid(geom, lat: np.ndarray, lon: np.ndarray) -> np.ndarray:
@@ -272,19 +305,29 @@ def mask_metadata(reference_atr: dict) -> dict:
     return meta
 
 
+def output_path(ref_path: Path, geocoded: bool, outfile: str | None) -> Path:
+    if outfile:
+        out = Path(outfile).expanduser()
+        if not out.is_absolute():
+            out = Path.cwd() / out
+        return out
+    name = "geo_polygon_2_mask.h5" if geocoded else "polygon_2_mask.h5"
+    return ref_path.parent / name
+
+
 def build_mask(
-    kmz_paths: list[Path],
-    geocode_path: Path,
+    geom,
+    ref_path: Path,
     *,
     inverse: bool = False,
-) -> tuple[np.ndarray, dict]:
-    shape, atr = read_reference_grid(geocode_path)
-    lat, lon = lat_lon_grids(geocode_path, shape, atr)
-    geom = load_polygons(kmz_paths)
+) -> tuple[np.ndarray, dict, bool]:
+    shape, atr = read_reference_grid(ref_path)
+    geocoded = _is_geocoded(atr)
+    lat, lon = lat_lon_grids(ref_path, shape, atr)
     mask = polygon_mask_on_grid(geom, lat, lon)
     if inverse:
         mask = 1.0 - mask
-    return mask, mask_metadata(atr)
+    return mask, mask_metadata(atr), geocoded
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -294,17 +337,26 @@ def main(argv: list[str] | None = None) -> int:
     parser = create_parser()
     args = parser.parse_args(argv)
 
-    kmz_paths = expand_kmz_arguments(args.kmz)
-    geocode_path = Path(args.geocode_file).expanduser().resolve()
-    out_path = Path(args.outfile).expanduser()
-    if not out_path.is_absolute():
-        out_path = Path.cwd() / out_path
+    try:
+        kmz_paths, ref_paths = expand_inputs(args.inputs)
+    except (FileNotFoundError, ValueError) as exc:
+        parser.error(str(exc))
+    if not kmz_paths:
+        parser.error("need at least one KMZ/KML polygon file")
+    if not ref_paths:
+        parser.error("need at least one reference file (.h5, .he5, or .csv)")
+    if args.outfile and len(ref_paths) != 1:
+        parser.error("--output applies to a single reference file")
 
-    mask, meta = build_mask(kmz_paths, geocode_path, inverse=args.inverse)
-    writefile.write(mask, out_file=str(out_path), metadata=meta)
-
-    n_one = int(np.sum(mask))
-    print(f"wrote {out_path}  shape={mask.shape}  ones={n_one}  zeros={mask.size - n_one}")
+    geom = load_polygons(kmz_paths)
+    for ref_path in ref_paths:
+        print(f"reference:  {ref_path}")
+        mask, meta, geocoded = build_mask(geom, ref_path, inverse=args.inverse)
+        out_path = output_path(ref_path, geocoded, args.outfile)
+        writefile.write(mask, out_file=str(out_path), metadata=meta)
+        n_one = int(np.sum(mask))
+        kind = "geocoded" if geocoded else "radar-coded"
+        print(f"wrote {out_path}  {kind}  shape={mask.shape}  ones={n_one}  zeros={mask.size - n_one}")
     return 0
 
 
