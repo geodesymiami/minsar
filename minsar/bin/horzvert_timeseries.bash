@@ -3,7 +3,9 @@
 # Resolves paths, writes script-style run_horzvert2timeseries, optionally executes it.
 #
 # Flow:
-#   Step 0: Parse options and resolve file paths (files as-is; dirs -> radar S1*.he5)
+#   Step 0: Parse options and resolve file paths (files as-is; a miaplpy dir
+#           that does not end in network_* gets the youngest network_* dir;
+#           dirs -> radar S1*.he5)
 #   Step 0b: Cache check (skip compute steps in run file when fresh)
 #   Write: <site>/<mintpy|miaplpy[_YYYYMM_YYYYMM]>/run_horzvert2timeseries
 #          (longer of the two input periods; ref & wait; geocode & wait;
@@ -237,6 +239,10 @@ Usage: $SCRIPT_NAME <file_or_dir1> <file_or_dir2> --ref-lalo LAT LON [options]
 
 Write run_horzvert2timeseries (and on SLURM login, horzvert_timeseries.job). With --submit, run or submit.
 
+A miaplpy directory that does not already end in network_* uses the youngest
+network_* subdirectory (newest modification time). A path that already ends
+in network_* is used as given.
+
 Options:
       --dataset TYPE                  Select .he5 type in a directory: PS, DS, filtDS, filt*DS, geo
       -g, --geom-file FILE1 FILE2     Geometry files for horzvert_timeseries.py
@@ -274,6 +280,7 @@ $SCRIPT_NAME ChilesSenD142/mintpy ChilesSenA120/mintpy --ref-lalo 0.649 -77.878
 $SCRIPT_NAME hvGalapagosSenD128/mintpy hvGalapagosSenA106/mintpy --ref-lalo -0.81 -91.190 --no-insarmaps
 $SCRIPT_NAME hvGalapagosSenD128/miaplpy/network_single_reference hvGalapagosSenA106/miaplpy/network_single_reference --ref-lalo -0.81 -91.190 --no-ingest-los
 $SCRIPT_NAME FernandinaSenD128/miaplpy/network_delaunay_4 FernandinaSenA106/miaplpy/network_delaunay_4 --ref-lalo -0.415 -91.543 --submit
+$SCRIPT_NAME LengaiSenA130/miaplpy_202504_202610 LengaiSenD152/miaplpy_202504_202610 --ref-lalo -2.72185 35.94679 --save_qgis --lat-step 0.0002 --dataset DS --submit
 $SCRIPT_NAME LaPalmaSenA60/miaplpy/network_delaunay_4 LaPalmaSenD169/miaplpy/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --save-qgis --submit
 $SCRIPT_NAME LaPalmaSenA60/miaplpy/network_delaunay_4 LaPalmaSenD169/miaplpy/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --save-qgis-all --submit
 $SCRIPT_NAME LaPalmaRecentSenA60/miaplpy/network_delaunay_4 LaPalmaRecentSenD169/miaplpy/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --submit --sleep 30
@@ -615,6 +622,24 @@ fi
 
 DIR_OR_FILE1="${positional[0]}"
 DIR_OR_FILE2="${positional[1]}"
+
+# miaplpy_YYYYMM_YYYYMM (no network_* at the end) -> youngest network_* child.
+_hv_resolve_input_dir() {
+    local original="$1"
+    local stripped
+    stripped=$(hv_strip_trailing_slashes "$original")
+    if ! REPLY=$(hv_append_youngest_network_dir "$original"); then
+        exit 1
+    fi
+    if [[ "$REPLY" != "$stripped" ]]; then
+        echo "Using network dir: $REPLY"
+    fi
+}
+_hv_resolve_input_dir "$DIR_OR_FILE1"
+DIR_OR_FILE1="$REPLY"
+_hv_resolve_input_dir "$DIR_OR_FILE2"
+DIR_OR_FILE2="$REPLY"
+unset -f _hv_resolve_input_dir
 
 ORIGINAL_DIR="$PWD"
 PROJECT_DIR=$(get_base_projectname "$DIR_OR_FILE1")

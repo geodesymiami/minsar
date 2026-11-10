@@ -5,6 +5,45 @@
 # Horzvert must re-reference and geocode from radar LOS; geo-only inputs without
 # a sibling are rejected.
 
+# If path is a directory that does not already end in network_*, and it
+# contains network_* subdirectories, return the youngest one (newest mtime).
+# Files, paths that already end in network_*, and directories with no
+# network_* child (mintpy, etc.) are returned unchanged.
+# A miaplpy* directory with no network_* child is an error.
+hv_append_youngest_network_dir() {
+    local path base youngest d nd_saved
+    path=$(hv_strip_trailing_slashes "$1")
+    if [[ -z "$path" || -f "$path" || ! -d "$path" ]]; then
+        printf '%s' "$path"
+        return 0
+    fi
+    base=$(basename "$path")
+    if [[ "$base" == network_* ]]; then
+        printf '%s' "$path"
+        return 0
+    fi
+    nd_saved=$(shopt -p nullglob || true)
+    shopt -s nullglob
+    youngest=""
+    for d in "$path"/network_*/; do
+        [[ -d "$d" ]] || continue
+        d="${d%/}"
+        if [[ -z "$youngest" || "$d" -nt "$youngest" ]]; then
+            youngest="$d"
+        fi
+    done
+    eval "$nd_saved"
+    if [[ -n "$youngest" ]]; then
+        printf '%s' "$youngest"
+        return 0
+    fi
+    if [[ "$base" == miaplpy || "$base" == miaplpy_* ]]; then
+        echo "Error: no network_* directory under $path" >&2
+        return 1
+    fi
+    printf '%s' "$path"
+}
+
 # Strip trailing slashes so a file path like foo.he5/ is treated as a file.
 # Bash [[ -f foo.he5/ ]] is false even when foo.he5 exists, which would send
 # the path into directory HE5 selection and fail.
