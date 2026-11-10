@@ -36,24 +36,19 @@ helptext="                                                                      
    --upload    [--no-upload]    upload data products to jetstream (default)      \n\
    --insarmaps [--no-insarmaps] ingest into insarmaps (default is yes for mintpy no for miaplpy)  \n\
                                                                                  \n\
-   In order to use either --start or --dostep, it is necessary that a            \n\
-   previous run was done using one of the steps options to process at least      \n\
-   through the step immediately preceding the starting step of the current run.  \n\
+   --start or --dostep requires a previous run through the preceding step.     \n\
                                                                                  \n\
    --start STEP          start processing at the named step [default: download]. \n\
    --end STEP, --stop STEP                                                       \n\
    --dostep STEP         run processing at the named step only                   \n\
    --download-method {slc|SLC, burst|BURST, burst2safe, burst2stack, ssara-slc, ssara-bash, ssara-python} (default: burst2stack; burst downloads into BURST, full SLCs into SLC) \n\
    --delta-lat [DEG]     download larger error (default 0; bare --delta-lat: 0.2) \n\
-   --minsar.excludeDates DATES  exclude YYYYMMDD scenes (comma-separated; merges with template) \n\
-   --exclude-dates DATES        alias for --minsar.excludeDates \n\
-   --miaplpy.load.startDate DATE  set miaplpy.load.startDate (YYYYMMDD); the other load date becomes auto \n\
-   --miaplpy.load.endDate DATE    set miaplpy.load.endDate (YYYYMMDD); the other load date becomes auto \n\
+   --minsar.excludeDates|--exclude-dates DATES  exclude YYYYMMDD scenes (comma-separated; merges with template) \n\
+   --miaplpy.load.startDate|endDate DATE  YYYYMMDD; the other load date becomes auto \n\
    --suffix [TAG|auto]   pass --suffix to ingest_insarmaps (bare --suffix: auto from minTempCoh) \n\
                                                                                  \n\
    --mintpy              use smallbaselineApp.py for time series [default]       \n\
-   --miaplpy             use miaplpyApp.py                                       \n\
-   --mintpy --miaplpy    use smallbaselineApp.py and miaplpyApp.py               \n\
+   --miaplpy             use miaplpyApp.py; --mintpy --miaplpy runs both          \n\
    --no-mintpy --miaplpy use only miaplpyApp.py                                  \n\
                                                                                  \n\
    --no-orbit-download   don't download orbits prior to jobfile creation         \n\
