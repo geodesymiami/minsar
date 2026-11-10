@@ -70,17 +70,9 @@ def build_job_commands(template_file, processing_dir):
     command = []
     command.append(f"check_timeseries_file.bash --dir {processing_dir}")
     command.append(f"smallbaselineApp.py {template_file} --dir {processing_dir}")
-    # Summary PNGs only when MintPy full plotting is OFF (runtime check of smallbaselineApp.cfg)
-    command.append('# Summary PNGs only when MintPy full plotting is OFF')
+    # Script reads mintpy.plot from smallbaselineApp.cfg and skips when full plotting is on.
     command.append(
-        f"plot_val=$(awk -F= '/^[[:space:]]*mintpy\\.plot[[:space:]]*=/ {{"
-        f" gsub(/[[:space:]]/, \"\", $2); print tolower($2); exit"
-        f" }}' {processing_dir}/smallbaselineApp.cfg)"
-    )
-    command.append(
-        'if [[ "$plot_val" == "no" || "$plot_val" == "false" || "$plot_val" == "0" ]]; then\n'
-        f'  plot_mintpy_summary_pngs.py --dir {processing_dir} -t smallbaselineApp.cfg\n'
-        'fi'
+        f"plot_mintpy_summary_pngs.py --dir {processing_dir} -t smallbaselineApp.cfg"
     )
     command.append(f"create_html.py {processing_dir}/pic")
     return command

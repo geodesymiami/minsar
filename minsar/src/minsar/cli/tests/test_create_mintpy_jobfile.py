@@ -23,9 +23,12 @@ class TestBuildJobCommands(unittest.TestCase):
         cmds = MOD.build_job_commands("/te/Proj.template", "mintpy_2024")
         body = "\n".join(cmds)
         self.assertIn("smallbaselineApp.py /te/Proj.template --dir mintpy_2024", body)
-        self.assertIn("mintpy_2024/smallbaselineApp.cfg", body)
-        self.assertIn("plot_mintpy_summary_pngs.py --dir mintpy_2024", body)
-        self.assertIn('"$plot_val" == "no"', body)
+        self.assertIn(
+            "plot_mintpy_summary_pngs.py --dir mintpy_2024 -t smallbaselineApp.cfg",
+            body,
+        )
+        self.assertNotIn("plot_val", body)
+        self.assertNotIn("awk", body)
         self.assertIn("create_html.py mintpy_2024/pic", body)
 
 

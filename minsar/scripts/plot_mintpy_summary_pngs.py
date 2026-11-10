@@ -7,6 +7,10 @@ and geo_velocity.png. Skips per-interferogram plots (unwrapPhase_N.png,
 coherence_N.png, connectComponent_N.png, etc.) that make mintpy.plot slow on
 large networks.
 
+When -t is given, summary PNGs are written only if mintpy.plot is no, false,
+or 0. yes/true/1/auto (and a missing key) exit without plotting, because
+smallbaselineApp already produced the full set. --force plots anyway.
+
 Example:
     plot_mintpy_summary_pngs.py --dir miaplpy_201411_202606/network_delaunay_4
     plot_mintpy_summary_pngs.py --dir /scratch/05861/tg851601/MyvatnSenD9/miaplpy_201411_202606/network_delaunay_4 -t smallbaselineApp.cfg --dpi 100
@@ -34,7 +38,11 @@ EXAMPLES = """Examples:
 plot_mintpy_summary_pngs.py --dir miaplpy_201411_202606/network_delaunay_4
 plot_mintpy_summary_pngs.py --dir /scratch/05861/tg851601/MyvatnSenD9/miaplpy_201411_202606/network_delaunay_4 -t smallbaselineApp.cfg --dpi 100 --memory 0.2
 plot_mintpy_summary_pngs.py --dir mintpy --no-network --outdir pic
+plot_mintpy_summary_pngs.py --dir mintpy -t smallbaselineApp.cfg --force
 """
+
+# mintpy.plot values for which smallbaselineApp skips its own PNG step
+PLOT_OFF_VALUES = frozenset({'no', 'false', '0'})
 
 # ifgramStack dataset prefixes that expand to one PNG per interferogram
 PER_IFGRAM_DATASETS = frozenset({
@@ -58,8 +66,18 @@ def create_parser() -> argparse.ArgumentParser:
         help='MintPy/MiaplPy processing directory (default: current directory)',
     )
     parser.add_argument(
-        '-t', '--template', dest='template_file', metavar='FILE', default='smallbaselineApp.cfg',
-        help='MintPy template for plot options and tropo model (default: smallbaselineApp.cfg)',
+        '-t', '--template', dest='template_file', metavar='FILE', default=None,
+        help=(
+            'MintPy template for plot options and the mintpy.plot gate.\n'
+            'When given, summary PNGs are written only if mintpy.plot is no/false/0\n'
+            '(yes/true/1/auto, or a missing key, skips).\n'
+            'When omitted, smallbaselineApp.cfg in the work dir is used for plot\n'
+            'options only and summary PNGs are always written.'
+        ),
+    )
+    parser.add_argument(
+        '--force', dest='force', action='store_true',
+        help='Plot summary PNGs even when -t sets mintpy.plot to yes/auto',
     )
     parser.add_argument(
         '--dpi', dest='dpi', metavar='INT', type=int, default=None,
@@ -87,6 +105,40 @@ def create_parser() -> argparse.ArgumentParser:
     )
     parser.set_defaults(plot_network=True, move_pngs=True)
     return parser
+
+
+def read_mintpy_plot_value(template_file: str) -> str | None:
+    """Return the mintpy.plot value, lowercased, or None if the key is absent.
+
+    Inline comments are dropped by MintPy's template reader (``no  #[yes / no]``
+    is ``no``).
+    """
+    template = readfile.read_template(template_file)
+    raw = template.get('mintpy.plot')
+    if raw is None:
+        return None
+    return str(raw).strip().lower()
+
+
+def mintpy_plot_is_off(value: str | None) -> bool:
+    """True when summary PNGs should be generated (full MintPy plotting is off)."""
+    return value in PLOT_OFF_VALUES
+
+
+def _resolve_template(work_dir: str, template_arg: str | None) -> tuple[str | None, bool]:
+    """Return ``(template_path or None, explicit)``.
+
+    An omitted ``-t`` still picks up ``smallbaselineApp.cfg`` in the work dir
+    for dpi/memory/tropo, but that implicit file does not turn on the plot gate.
+    """
+    explicit = template_arg is not None
+    name = template_arg if explicit else 'smallbaselineApp.cfg'
+    path = name if os.path.isabs(name) else os.path.join(work_dir, name)
+    if not os.path.isfile(path):
+        if explicit:
+            print(f'Warning: template not found: {path}; using defaults')
+        return None, explicit
+    return path, explicit
 
 
 def _read_plot_settings(template_file: str | None) -> dict:
@@ -302,12 +354,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f'Error: directory not found: {work_dir}', file=sys.stderr)
         return 1
 
-    template_file = args.template_file
-    if template_file and not os.path.isabs(template_file):
-        template_file = os.path.join(work_dir, template_file)
-    if template_file and not os.path.isfile(template_file):
-        print(f'Warning: template not found: {template_file}; using defaults')
-        template_file = None
+    template_file, explicit_template = _resolve_template(work_dir, args.template_file)
+    if explicit_template and template_file and not args.force:
+        plot_value = read_mintpy_plot_value(template_file)
+        if not mintpy_plot_is_off(plot_value):
+            shown = plot_value if plot_value is not None else 'unset'
+            print(f'mintpy.plot is on ({shown}); skip summary PNGs')
+            return 0
 
     settings = _read_plot_settings(template_file)
     dpi = args.dpi if args.dpi is not None else settings['dpi']

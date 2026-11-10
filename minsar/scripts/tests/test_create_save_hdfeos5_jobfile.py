@@ -46,8 +46,9 @@ class TestBuildJobCommands(unittest.TestCase):
         self.assertIn('--prefix Del4', body)
         self.assertIn('--filter 0.7', body)
         self.assertIn('--mask-thresh 0.75', body)
-        self.assertIn('mintpy\\.plot', body)
-        self.assertIn('plot_mintpy_summary_pngs.py', body)
+        self.assertIn('plot_mintpy_summary_pngs.py --dir . -t smallbaselineApp.cfg', body)
+        self.assertNotIn('plot_val', body)
+        self.assertNotIn('awk', body)
         self.assertNotIn('view.py', body)
         self.assertNotIn('save_hdfeos5.py', body)
 
@@ -56,12 +57,6 @@ class TestBuildJobCommands(unittest.TestCase):
         body = '\n'.join(cmds)
         self.assertIn('--no-filter', body)
         self.assertNotIn('--filter ', body)
-
-    def test_plot_gate_checks_no_false_zero(self):
-        body = '\n'.join(MOD.build_job_commands('/tmp/n', 'Sing', 0.7, 0.7))
-        self.assertIn('"$plot_val" == "no"', body)
-        self.assertIn('"$plot_val" == "false"', body)
-        self.assertIn('"$plot_val" == "0"', body)
 
     def test_extra_suffix_flag(self):
         cmds = MOD.build_job_commands('/tmp/n', 'Del4', 0.7, 0.65, extra_suffix='065')

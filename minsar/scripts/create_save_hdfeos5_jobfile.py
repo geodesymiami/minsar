@@ -92,18 +92,8 @@ def build_job_commands(processing_dir, prefix, filter_par, mask_thresh, extra_su
         save_cmd += f' --filter {filter_par}'
     command.append(save_cmd)
 
-    # Summary PNGs only when MintPy full plotting is OFF (runtime check of smallbaselineApp.cfg)
-    command.append('# Summary PNGs only when MintPy full plotting is OFF')
-    command.append(
-        "plot_val=$(awk -F= '/^[[:space:]]*mintpy\\.plot[[:space:]]*=/ {"
-        " gsub(/[[:space:]]/, \"\", $2); print tolower($2); exit"
-        " }' smallbaselineApp.cfg)"
-    )
-    command.append(
-        'if [[ "$plot_val" == "no" || "$plot_val" == "false" || "$plot_val" == "0" ]]; then\n'
-        '  plot_mintpy_summary_pngs.py --dir . -t smallbaselineApp.cfg\n'
-        'fi'
-    )
+    # Script reads mintpy.plot from smallbaselineApp.cfg and skips when full plotting is on.
+    command.append('plot_mintpy_summary_pngs.py --dir . -t smallbaselineApp.cfg')
     return command
 
 
