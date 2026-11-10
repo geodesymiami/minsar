@@ -13,7 +13,7 @@
 #   --submit: execute run file. Backend (auto|local|slurm) chooses how:
 #             local → bash run file; slurm → run_workflow.bash --jobfile.
 #             auto → slurm on HPC login, else local.
-#             Upload (upload_horzvert.py) runs after successful execution, not inside the job.
+#             Upload (upload_data_products.py) runs after successful execution, not inside the job.
 #
 # Run file may contain & / wait — not for LAUNCHER (script-style, like smallbaseline_wrapper.job).
 
@@ -30,7 +30,7 @@ source ${SCRIPT_DIR}/../lib/horzvert_timeseries_utils.sh
 # Dependencies: utils.sh, horzvert_timeseries_utils.sh, reference_point_hdfeos5.bash,
 #   geocode.py, horzvert_timeseries.py, ingest_insarmaps.bash, create_horzvert_runfile_job.py,
 #   run_workflow.bash, write_insarmaps_framepage_urls.py, create_data_download_commands.py,
-#   upload_horzvert.py.
+#   upload_data_products.py.
 
 # Resolve a path to a specific .he5 file.
 # If path is a file (trailing slashes ignored), return it. If a directory, use

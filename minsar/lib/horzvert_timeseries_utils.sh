@@ -583,7 +583,7 @@ hv_maybe_upload_horzvert_dir() {
     echo ""
     echo "##############################################"
     echo "Uploading $product_dir to Jetstream"
-    upload_horzvert.py "$product_dir"
+    upload_data_products.py "$product_dir"
 }
 
 # Locate insarmaps.log near an HE5 (same dir, pic/, parent, parent/pic/).
@@ -1254,7 +1254,7 @@ hv_print_horzvert_overlay_url() {
 
 # Execute script-style run file: bash locally, or JOB_SUBMIT .job + run_workflow --jobfile.
 # Optional: $3=queue, $4=walltime, $5=product_dir, $6=do_upload, $7=backend (local|slurm).
-# Jetstream upload (upload_horzvert.py) runs here after success, not inside the SLURM job body.
+# Jetstream upload (upload_data_products.py) runs here after success, not inside the SLURM job body.
 hv_run_or_submit_script() {
     local run_file="$1"
     local job_name="${2:-horzvert_timeseries}"
