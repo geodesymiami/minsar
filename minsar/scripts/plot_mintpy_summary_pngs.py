@@ -2,10 +2,11 @@
 """
 plot_mintpy_summary_pngs.py — Generate MintPy/MiaplPy summary PNGs (no per-ifgram plots).
 
-Creates overview figures such as velocity.png, temporalCoherence.png, network.png,
-and geo_velocity.png. Skips per-interferogram plots (unwrapPhase_N.png,
-coherence_N.png, connectComponent_N.png, etc.) that make mintpy.plot slow on
-large networks.
+Creates overview figures such as velocity.png, temporalCoherence.png, and
+geo_velocity.png, and moves plot_network.py / timeseries_rms.py PDFs (network.pdf
+and similar) into pic/ so create_html.py can write network.png. Skips
+per-interferogram plots (unwrapPhase_N.png, coherence_N.png, connectComponent_N.png,
+etc.) that make mintpy.plot slow on large networks.
 
 When -t is given, summary PNGs are written only if mintpy.plot is no, false,
 or 0. yes/true/1/auto (and a missing key) exit without plotting, because
@@ -30,8 +31,9 @@ from mintpy.utils import readfile, utils as ut
 
 
 DESCRIPTION = (
-    "Generate MintPy/MiaplPy summary PNG figures only (no per-ifgram/date plots). "
-    "Output PNGs are moved to pic/ by default."
+    "Generate MintPy/MiaplPy summary figures only (no per-ifgram/date plots). "
+    "view.py PNGs and plot_network.py / timeseries_rms.py PDFs are moved to pic/ "
+    "by default so create_html.py can turn the PDFs into PNG."
 )
 
 EXAMPLES = """Examples:
@@ -93,7 +95,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         '--outdir', dest='out_dir', metavar='DIR', default='pic',
-        help='Directory for PNG output (default: pic)',
+        help='Directory for PNG and PDF output (default: pic)',
     )
     parser.add_argument(
         '--no-network', dest='plot_network', action='store_false',
@@ -101,7 +103,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         '--no-move', dest='move_pngs', action='store_false',
-        help='Leave PNG files in the processing directory instead of moving to --outdir',
+        help='Leave PNG and PDF files in the processing directory instead of moving to --outdir',
     )
     parser.set_defaults(plot_network=True, move_pngs=True)
     return parser
@@ -326,21 +328,27 @@ def _run_view_jobs(
             mintpy.cli.view.main(iargs)
 
 
-def _collect_pngs(work_dir: str, out_dir: str) -> list[str]:
+def _collect_figures(work_dir: str, out_dir: str) -> list[str]:
+    """Move summary PNGs and PDFs into out_dir.
+
+    plot_network.py and timeseries_rms.py write PDF only (network.pdf,
+    coherenceMatrix.pdf, rms_timeseriesResidual_ramp.pdf, and similar).
+    create_html.py converts those PDFs to PNG when they sit in pic/.
+    """
     out_path = Path(work_dir) / out_dir
     out_path.mkdir(parents=True, exist_ok=True)
 
-    png_files: list[str] = []
-    for pattern in ('*.png', 'geo/*.png'):
-        png_files.extend(glob.glob(os.path.join(work_dir, pattern)))
+    figures: list[str] = []
+    for pattern in ('*.png', 'geo/*.png', '*.pdf', 'geo/*.pdf'):
+        figures.extend(glob.glob(os.path.join(work_dir, pattern)))
 
     moved: list[str] = []
-    for png in sorted(set(png_files)):
-        dest = out_path / os.path.basename(png)
-        if os.path.abspath(png) == os.path.abspath(dest):
+    for src in sorted(set(figures)):
+        dest = out_path / os.path.basename(src)
+        if os.path.abspath(src) == os.path.abspath(dest):
             moved.append(str(dest))
             continue
-        shutil.move(png, dest)
+        shutil.move(src, dest)
         moved.append(str(dest))
     return moved
 
@@ -382,10 +390,10 @@ def main(argv: list[str] | None = None) -> int:
         _run_timeseries_rms(template_file)
 
         if args.move_pngs:
-            moved = _collect_pngs(work_dir, args.out_dir)
-            print(f'moved {len(moved)} PNG file(s) to {args.out_dir}/')
+            moved = _collect_figures(work_dir, args.out_dir)
+            print(f'moved {len(moved)} PNG/PDF file(s) to {args.out_dir}/')
         else:
-            print('PNG files left in processing directory (--no-move).')
+            print('PNG/PDF files left in processing directory (--no-move).')
     finally:
         os.chdir(cwd)
 
