@@ -178,6 +178,8 @@ CREATE_TEMPLATE_ARGV_KW = {
         "--flight-dir",
         "--platform",
         "--coregistration",
+        "--topsstack.coregistration",
+        "--topsStack.coregistration",
         "--tropo",
         "--mintpy.troposphericDelay.method",
         "--insarmaps-dataset",

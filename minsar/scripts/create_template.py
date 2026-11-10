@@ -20,7 +20,7 @@ or other formats accepted by convert_bbox.py (e.g. GoogleEarth points).
 
 ISCE topsStack coregistration defaults to NESD. When get_sar_coverage.py --select
 reports one burst on that orbit, the template uses geometry.
-``--coregistration`` or ``--geometry`` overrides that burst rule.
+``--coregistration`` (or ``--topsstack.coregistration``) or ``--geometry`` overrides that burst rule.
 
 Optional MintPy / MinSAR template overrides:
 
@@ -568,6 +568,7 @@ Examples:
   create_template.py 36.331:36.486,25.318:25.492 Santorini --platform S1
   create_template.py 36.331:36.486,25.318:25.492 Santorini --geometry
   create_template.py 36.331:36.486,25.318:25.492 Santorini --coregistration NESD
+  create_template.py 36.331:36.486,25.318:25.492 Santorini --topsstack.coregistration geometry
   create_template.py 36.331:36.486,25.318:25.492 Santorini --quick-run 2026 --mintpy-no-plot
   create_template.py 36.331:36.486,25.318:25.492 Santorini --period 20210101:20221231 --mintpy-plot
   create_template.py 36.331:36.486,25.318:25.492 Santorini --mintpy.troposphericDelay.method no --minsar.insarmaps_dataset DS
@@ -594,7 +595,8 @@ Examples:
     parser.add_argument("--flight-dir", dest="flight_dir", default="asc,desc", type=normalize_flight_dir, metavar="DIR", help="asc, desc, asc,desc, desc,asc, both (Default: asc,desc)")
     parser.add_argument("--platform", default="S1", metavar="NAME", help="get_sar_coverage sensor (default S1); use S1 (NISAR/ALOS2 unsupported here)")
     parser.add_argument(
-        "--coregistration", dest="tops_coregistration", default=None, choices=["geometry", "NESD"], metavar="MODE",
+        "--coregistration", "--topsstack.coregistration", "--topsStack.coregistration",
+        dest="tops_coregistration", default=None, choices=["geometry", "NESD"], metavar="MODE",
         help="topsStack.coregistration; Default: NESD, or geometry if one burst",
     )
     parser.add_argument("--geometry", dest="geometry_mode", action="store_true", help="Same as --coregistration geometry")
