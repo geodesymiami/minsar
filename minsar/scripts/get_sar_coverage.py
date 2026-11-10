@@ -17,7 +17,8 @@ Strategy:
       the AOI (Shapely); summary warns only when whole acquisition *dates* are lost (all intersecting
       granules for that date fail full cover). --show-removed lists *granules* dropped (partial overlap,
       etc.); orbits with count 0 are omitted from the table. --select (S1) picks best orbit using
-      full-AOI date fraction, edge margin, then incidence (not incidence alone).
+      full-AOI date fraction, edge margin, then incidence (not incidence alone), then prints
+      asc_nbursts and desc_nbursts from count_bursts_on_orbit.
     - Others: ?output=count HTTP request.
     - Count requests run in parallel (default max_workers=8) to reduce time.
 
@@ -62,7 +63,7 @@ Examples:
   get_sar_coverage.py AOI --platform S1 --show-removed   # list SLC granules dropped (partial footprint vs AOI)
   get_sar_coverage.py -23.393:-23.097,-68.356:-68.175 --platform S1   # negative lat (or use -- before AOI)
 
-Select (--select): requires exactly one platform (--platform S1 or NISAR or ALOS2). Prints asc_relorbit, asc_label, desc_relorbit, desc_label to stdout (progress to stderr). In bash: eval $(get_sar_coverage.py AOI --platform S1 --select); then use $asc_relorbit, $desc_relorbit, $asc_label, $desc_label. For Sentinel-1, each direction picks the orbit with the best full-AOI coverage across intersecting dates (then margin, then incidence); NISAR/ALOS-2 still use max incidence.
+Select (--select): requires exactly one platform (--platform S1 or NISAR or ALOS2). Prints asc_relorbit, asc_label, desc_relorbit, desc_label to stdout (progress to stderr). Sentinel-1 also prints asc_nbursts and desc_nbursts (distinct bursts on that orbit). In bash: eval $(get_sar_coverage.py AOI --platform S1 --select); then use $asc_relorbit, $desc_relorbit, $asc_label, $desc_label, $asc_nbursts, $desc_nbursts. For Sentinel-1, each direction picks the orbit with the best full-AOI coverage across intersecting dates (then margin, then incidence); NISAR/ALOS-2 still use max incidence.
 
 Notes:
   NISAR RSLC data availability depends on mission phase.
@@ -1187,6 +1188,44 @@ def _best_orbit_for_direction(
     return {'orbit': orbit, 'label': label}
 
 
+def _best_orbits_by_direction(
+    all_rows: List[Tuple[str, List[Dict]]],
+    s1_metrics: Optional[Dict[Tuple[int, str], Dict[str, Any]]] = None,
+) -> Tuple[str, Dict[str, Dict]]:
+    """Return (platform display name, direction -> best orbit dict)."""
+    if not all_rows:
+        return '', {}
+    platform_display_name, rows = all_rows[0]
+    best_by_dir: Dict[str, Dict] = {}
+    for row in rows:
+        if not row['orbits']:
+            continue
+        direction = row['direction']
+        best = _best_orbit_for_direction(row['orbits'], direction, platform_display_name, s1_metrics)
+        if best is not None:
+            best_by_dir[direction] = best
+    return platform_display_name, best_by_dir
+
+
+def _s1_select_burst_counts(
+    aoi: str,
+    best_by_dir: Dict[str, Dict],
+    *,
+    verbose: bool = False,
+) -> Dict[str, int]:
+    """Distinct Sentinel-1 burst counts for the chosen Asc/Desc orbits."""
+    counts: Dict[str, int] = {}
+    for direction, prefix, flight in (
+        ('Ascending', 'asc', 'asc'),
+        ('Descending', 'desc', 'desc'),
+    ):
+        if direction not in best_by_dir:
+            continue
+        orbit = int(best_by_dir[direction]['orbit'])
+        counts[prefix] = count_bursts_on_orbit(aoi, orbit, flight, verbose=verbose)
+    return counts
+
+
 def print_best_only(
     all_rows: List[Tuple[str, List[Dict]]],
     stream,
@@ -1196,6 +1235,7 @@ def print_best_only(
 
     Call only when exactly one platform is in all_rows (enforced by --select validation).
     Format: asc_relorbit=29, asc_label="SenA29", desc_relorbit=36, desc_label="SenD36".
+    Sentinel-1 burst counts are printed by main() as asc_nbursts and desc_nbursts.
     Suitable for: eval $(get_sar_coverage.py AOI --platform S1 --select) in bash.
 
     For Sentinel-1, the best orbit is chosen using full-AOI coverage statistics when
@@ -1203,15 +1243,7 @@ def print_best_only(
     """
     if not all_rows:
         return
-    platform_display_name, rows = all_rows[0]
-    best_by_dir = {}
-    for row in rows:
-        if not row['orbits']:
-            continue
-        direction = row['direction']
-        best = _best_orbit_for_direction(row['orbits'], direction, platform_display_name, s1_metrics)
-        if best is not None:
-            best_by_dir[direction] = best
+    _platform_display_name, best_by_dir = _best_orbits_by_direction(all_rows, s1_metrics)
     # Print relorbits first, then labels (expected by shell callers).
     for direction, key_prefix in [('Ascending', 'asc'), ('Descending', 'desc')]:
         if direction in best_by_dir:
@@ -1376,6 +1408,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument('--select', action='store_true', default=False,
                         help='Print parseable key=value lines for best Asc/Desc orbit. Requires exactly one --platform (e.g. S1). '
                              'Sentinel-1: prefer full-AOI coverage over intersecting dates, then edge margin, then incidence. '
+                             'Sentinel-1 also prints asc_nbursts and desc_nbursts. '
                              'NISAR/ALOS-2: max incidence. '
                              'Bash: eval $(get_sar_coverage.py AOI --platform S1 --select); then use $asc_relorbit, $desc_relorbit, $asc_label, $desc_label.')
     return parser
@@ -1618,11 +1651,28 @@ def main(iargs=None):
             rows = _aggregate(alos_sample, None, counts, verbose=inps.verbose)
             all_rows.append((pol_label, rows))
 
+    select_nbursts: Dict[str, int] = {}
+    if inps.select and 'S1' in platforms and all_rows:
+        platform_name, best_by_dir = _best_orbits_by_direction(
+            all_rows, s1_select_metrics if s1_select_metrics else None
+        )
+        if platform_name == 'Sentinel-1' and best_by_dir:
+            try:
+                select_nbursts = _s1_select_burst_counts(
+                    inps.aoi, best_by_dir, verbose=inps.verbose
+                )
+            except RuntimeError as exc:
+                print(f"Error: {exc}", file=sys.stderr)
+                sys.exit(1)
+
     if inps.select:
         if hasattr(inps, '_select_stdout'):
             sys.stdout = inps._select_stdout
         print(f"processing_subset=\"{_subset_str_from_wkt(wkt)}\"", file=sys.stdout)
         print_best_only(all_rows, sys.stdout, s1_select_metrics if s1_select_metrics else None)
+        for prefix in ('asc', 'desc'):
+            if prefix in select_nbursts:
+                print(f"{prefix}_nbursts={select_nbursts[prefix]}", file=sys.stdout)
     else:
         print()
         print_table(all_rows, do_count=True)

@@ -85,6 +85,7 @@ Using AOI and name as postional arguments (for options run: create_template.py -
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --flight-dir asc --miaplpy --platform S1 is optional (default platform is Sentinel-1)    \n\
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --coregistration geometry [--platform S1] --miaplpy   \n\
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --geometry [--platform S1] --miaplpy   \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --no-single-burst-geometry [--platform S1] --miaplpy   \n\
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --tropo no --insarmaps-dataset DS --no-mintpy --miaplpy   \n\
       minsarApp.bash  $TE/GalapagosSenDT128.template --exclude-dates 20260619 --start jobfiles   \n\
       minsarApp.bash  $TE/GalapagosSenDT128.template --miaplpy.load.startDate 20211201 --miaplpy   \n\

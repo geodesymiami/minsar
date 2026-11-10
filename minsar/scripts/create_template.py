@@ -18,8 +18,10 @@ pass (equivalent to ``--flight-dir asc`` or ``desc``). With explicit single-pass
 AOI may be lat_min:lat_max,lon_min:lon_max (S:N,W:E), WKT POLYGON((lon lat,...)),
 or other formats accepted by convert_bbox.py (e.g. GoogleEarth points).
 
-ISCE topsStack coregistration defaults to NESD in the written template; pass
-``--coregistration geometry`` or ``--geometry`` for geometry-only coregistration.
+ISCE topsStack coregistration defaults to NESD. When get_sar_coverage.py --select
+reports one burst on that orbit, the template uses geometry.
+``--no-single-burst-geometry`` keeps NESD. ``--coregistration`` or ``--geometry``
+overrides that burst rule.
 
 Optional MintPy / MinSAR template overrides:
 
@@ -237,6 +239,13 @@ def _run_get_sar_coverage(aoi: str, platform: str = "S1") -> dict[str, str | int
             result["desc_label"] = val
         elif key == "processing_subset":
             result["processing_subset"] = val
+        elif key in ("asc_nbursts", "desc_nbursts"):
+            try:
+                result[key] = int(val)
+            except ValueError as exc:
+                raise RuntimeError(
+                    f"get_sar_coverage.py set {key}={val!r}; expected an integer"
+                ) from exc
 
     _validate_coverage_pairs(result, proc.stdout)
     if not _coverage_has_asc(result) and not _coverage_has_desc(result):
@@ -405,6 +414,45 @@ def _resolve_coregistration(
     return coregistration, None
 
 
+def coregistration_for_burst_count(
+    *,
+    explicit_mode: str | None,
+    burst_count: int | None,
+    single_burst_geometry: bool,
+) -> str:
+    """Return topsStack.coregistration for one orbit.
+
+    An explicit mode wins. Otherwise one burst writes geometry when
+    ``single_burst_geometry`` is true. A missing count stays NESD.
+    """
+    if explicit_mode is not None:
+        return explicit_mode
+    if single_burst_geometry and burst_count == 1:
+        return "geometry"
+    return "NESD"
+
+
+def _coverage_burst_count(coverage: dict[str, str | int], prefix: str) -> int | None:
+    """Return ``asc_nbursts`` or ``desc_nbursts`` when ``--select`` reported it."""
+    key = f"{prefix}_nbursts"
+    if key not in coverage:
+        return None
+    return int(coverage[key])
+
+
+def _with_tops_stack_coregistration(content: str, mode: str) -> str:
+    """Set ``topsStack.coregistration`` on an existing template text."""
+    lines = []
+    for line in content.splitlines():
+        if re.match(r"^\s*topsStack\.coregistration\s*=", line):
+            line = re.sub(r"=\s*[^\s#]+", f"= {mode}", line)
+        lines.append(line)
+    text = "\n".join(lines)
+    if content.endswith("\n") or content == "":
+        text += "\n"
+    return text
+
+
 def _substitute_template(
     content: str,
     *,
@@ -522,6 +570,7 @@ Examples:
   create_template.py 36.331:36.486,25.318:25.492 Santorini --platform S1
   create_template.py 36.331:36.486,25.318:25.492 Santorini --geometry
   create_template.py 36.331:36.486,25.318:25.492 Santorini --coregistration NESD
+  create_template.py 36.331:36.486,25.318:25.492 Santorini --no-single-burst-geometry
   create_template.py 36.331:36.486,25.318:25.492 Santorini --quick-run 2026 --mintpy-no-plot
   create_template.py 36.331:36.486,25.318:25.492 Santorini --period 20210101:20221231 --mintpy-plot
   create_template.py 36.331:36.486,25.318:25.492 Santorini --mintpy.troposphericDelay.method no --minsar.insarmaps_dataset DS
@@ -547,8 +596,12 @@ Examples:
     )
     parser.add_argument("--flight-dir", dest="flight_dir", default="asc,desc", type=normalize_flight_dir, metavar="DIR", help="asc, desc, asc,desc, desc,asc, both (Default: asc,desc)")
     parser.add_argument("--platform", default="S1", metavar="NAME", help="get_sar_coverage sensor (default S1); use S1 (NISAR/ALOS2 unsupported here)")
-    parser.add_argument("--coregistration", dest="tops_coregistration", default=None, choices=["geometry", "NESD"], metavar="MODE", help="topsStack.coregistration; Default: NESD")
+    parser.add_argument(
+        "--coregistration", dest="tops_coregistration", default=None, choices=["geometry", "NESD"], metavar="MODE",
+        help="topsStack.coregistration; Default: NESD, or geometry if one burst",
+    )
     parser.add_argument("--geometry", dest="geometry_mode", action="store_true", help="Same as --coregistration geometry")
+    parser.add_argument("--no-single-burst-geometry", action="store_true", help="Keep NESD when one burst covers the AOI")
     plot_grp = parser.add_mutually_exclusive_group()
     plot_grp.add_argument("--mintpy-plot", dest="mintpy_plot_cli", action="store_const", const="yes", default=None, help="Force mintpy.plot = yes (overrides date-span rule)")
     plot_grp.add_argument("--mintpy-no-plot", dest="mintpy_plot_cli", action="store_const", const="no", help="Force mintpy.plot = no (overrides date-span rule)")
@@ -707,11 +760,27 @@ def main(
     _log_coverage_for_effective_mode(coverage, flight_dir_eff)
 
     if flight_dir_eff in ("desc", "desc,asc"):
+        primary_prefix = "desc"
         primary_relorbit = int(coverage["desc_relorbit"])
         primary_label = str(coverage["desc_label"])
     else:
+        primary_prefix = "asc"
         primary_relorbit = int(coverage["asc_relorbit"])
         primary_label = str(coverage["asc_label"])
+
+    explicit_mode = tops_co if (inps.geometry_mode or inps.tops_coregistration is not None) else None
+    single_burst_geometry = not inps.no_single_burst_geometry
+    primary_n = _coverage_burst_count(coverage, primary_prefix)
+    primary_mode = coregistration_for_burst_count(
+        explicit_mode=explicit_mode,
+        burst_count=primary_n,
+        single_burst_geometry=single_burst_geometry,
+    )
+    if explicit_mode is None and primary_mode == "geometry":
+        print(
+            f"Single burst on orbit {primary_relorbit} ({primary_prefix}); topsStack.coregistration = geometry",
+            file=sys.stderr,
+        )
 
     dummy_path = _get_dummy_template_path()
     if not dummy_path.exists():
@@ -738,7 +807,7 @@ def main(
         start_date=start_date,
         end_date=end_date,
         exclude_season=exclude_season,
-        tops_stack_coregistration=tops_co,
+        tops_stack_coregistration=primary_mode,
         mintpy_plot=mintpy_plot,
         mintpy_tropospheric_delay_method=mintpy_tropospheric_delay_method,
         minsar_insarmaps_dataset=minsar_insarmaps_dataset,
@@ -771,10 +840,38 @@ def main(
         _run_create_opposite_orbit(out_path, same_dir)
         # Complementary-pass basename: same convention as create_opposite_orbit_template.bash (name + other label).
         if flight_dir_eff in ("desc", "desc,asc"):
+            opposite_prefix = "asc"
+            opposite_relorbit = int(coverage["asc_relorbit"])
             opposite_label = str(coverage["asc_label"])
         else:
+            opposite_prefix = "desc"
+            opposite_relorbit = int(coverage["desc_relorbit"])
             opposite_label = str(coverage["desc_label"])
+        opposite_n = _coverage_burst_count(coverage, opposite_prefix)
+        opposite_mode = coregistration_for_burst_count(
+            explicit_mode=explicit_mode,
+            burst_count=opposite_n,
+            single_burst_geometry=single_burst_geometry,
+        )
         opposite_path = (out_path.parent / f"{name}{opposite_label}.template").resolve()
+        if opposite_mode != primary_mode:
+            if not opposite_path.is_file():
+                print(f"Error: opposite-orbit template not found: {opposite_path}", file=sys.stderr)
+                return 1, None, None, ""
+            opposite_path.write_text(
+                _with_tops_stack_coregistration(opposite_path.read_text(), opposite_mode)
+            )
+        if explicit_mode is None and opposite_mode == "geometry":
+            print(
+                f"Single burst on orbit {opposite_relorbit} ({opposite_prefix}); topsStack.coregistration = geometry",
+                file=sys.stderr,
+            )
+        elif explicit_mode is None and primary_mode == "geometry" and opposite_mode == "NESD":
+            n_show = opposite_n if opposite_n is not None else "unknown"
+            print(
+                f"Orbit {opposite_relorbit} ({opposite_prefix}) has {n_show} bursts; topsStack.coregistration = NESD",
+                file=sys.stderr,
+            )
         return 0, out_path.resolve(), opposite_path, flight_dir_eff
 
     return 0, out_path.resolve(), None, flight_dir_eff
