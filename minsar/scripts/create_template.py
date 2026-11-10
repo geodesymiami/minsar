@@ -41,8 +41,8 @@ from datetime import date, datetime
 from pathlib import Path
 
 from minsar.utils.bbox_cli_argv import (
-    CREATE_TEMPLATE_ARGV_KW,
     fix_argv_for_negative_bbox_sn_we,
+    get_create_template_argv_kw,
 )
 from minsar.utils.convert_bbox import _input_to_bounds
 from minsar.utils.exclude_season import parse_exclude_season
@@ -614,7 +614,7 @@ def main(
     argv = sys.argv[1:] if iargs is None else list(iargs)
     argv = fix_argv_for_negative_bbox_sn_we(
         argv,
-        **CREATE_TEMPLATE_ARGV_KW,
+        **get_create_template_argv_kw(),
         multiple_initial_positionals=True,
     )
     parser = create_parser()

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """AOI bridge for `minsarApp.bash`: run `create_template`, then re-exec minsar on the primary template.
 
-User-facing: ``minsarApp.bash <AOI> <NAME> [ create_template options ... ] [ minsar options ... ]``
+User-facing: ``minsarApp.bash <AOI> <NAME> [ create_template and minsarApp options in any order ]``
 
 When ``create_template`` ends in dual-pass mode (``asc,desc`` default; also ``desc,asc``,
 legacy ``both``, or comma-separated values with spaces), the re-exec appends ``--opposite-orbit``
@@ -15,10 +15,9 @@ the minsarApp tail, template creation is expanded to ``asc,desc`` or ``desc,asc`
 both templates exist before the nested run (equivalent to listing both directions in
 ``--flight-dir``).
 
-Because argv is split with ``create_parser().parse_known_args()``, any *minsarApp-only*
-option (e.g. ``--start``) and everything *after* the first such token is forwarded to
-``minsarApp.bash`` unchanged. For predictable splitting, list all ``create_template`` options
-before the first ``minsarApp`` option.
+``create_template`` and ``minsarApp`` options may be mixed after ``NAME``. Each option is
+sent to the command that accepts it. ``--exclude-dates`` and ``--minsar.excludeDates`` are
+copied to both. ``create_template.py --help`` lists the template options.
 
 ``MINSAR_APP_BASH`` must be set to the path of ``minsarApp.bash`` (set by the shell before
 ``exec``). ``TEMPLATES`` (or ``TE``) is the output directory (same as for template-first runs).
@@ -27,6 +26,7 @@ before the first ``minsarApp`` option.
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import sys
 from datetime import datetime
@@ -104,18 +104,201 @@ def minsarapp_args_after_primary(
     return out
 
 
+_NUMERIC_TOKEN = re.compile(r"^-?[0-9]+(\.[0-9]+)?$")
+
+
+def _option_name(token: str) -> str:
+    if token.startswith("--") and "=" in token:
+        return token.split("=", 1)[0]
+    return token
+
+
+def _option_kind(name: str, kw: dict[str, tuple[str, ...]]) -> str | None:
+    if name in kw.get("flags", ()):
+        return "flag"
+    if name in kw.get("optional_numeric", ()):
+        return "num"
+    if name in kw.get("optional_unless_dash", ()):
+        return "opt"
+    if name in kw.get("consume_two", ()):
+        return "two"
+    if name in kw.get("consume_one", ()):
+        return "one"
+    return None
+
+
+def _take_option_cluster(tokens: list[str], i: int, kind: str) -> tuple[list[str], int]:
+    tok = tokens[i]
+    if tok.startswith("--") and "=" in tok:
+        return [tok], i + 1
+    if kind == "flag":
+        return [tok], i + 1
+    if kind == "one":
+        if i + 1 >= len(tokens):
+            print(f"minsarapp_aoi_entry: {tok} requires a value", file=sys.stderr)
+            sys.exit(1)
+        return tokens[i : i + 2], i + 2
+    if kind == "two":
+        if i + 2 >= len(tokens):
+            print(f"minsarapp_aoi_entry: {tok} requires two values", file=sys.stderr)
+            sys.exit(1)
+        return tokens[i : i + 3], i + 3
+    if kind == "opt":
+        if i + 1 < len(tokens) and not tokens[i + 1].startswith("-"):
+            return tokens[i : i + 2], i + 2
+        return [tok], i + 1
+    if kind == "num":
+        if i + 1 < len(tokens) and _NUMERIC_TOKEN.match(tokens[i + 1]):
+            return tokens[i : i + 2], i + 2
+        return [tok], i + 1
+    print(f"minsarapp_aoi_entry: cannot read option {tok}", file=sys.stderr)
+    sys.exit(1)
+
+
+def _positionals_and_options(fixed: list[str]) -> tuple[list[str], list[str]]:
+    """Return (positionals, option tokens) after negative-bbox argv fixing.
+
+    A leading negative AOI is moved behind ``--`` and still counts as the first positional.
+    """
+    if "--" not in fixed:
+        pos: list[str] = []
+        k = 0
+        while k < len(fixed) and not str(fixed[k]).startswith("-"):
+            pos.append(fixed[k])
+            k += 1
+        return pos, fixed[k:]
+    sep = fixed.index("--")
+    before, after = fixed[:sep], fixed[sep + 1 :]
+    leading: list[str] = []
+    b = 0
+    while b < len(before) and not str(before[b]).startswith("-"):
+        leading.append(before[b])
+        b += 1
+    options = before[b:]
+    if leading:
+        return leading, options + after
+    if not after:
+        return [], options
+    pos = [after[0]]
+    k = 1
+    while k < len(after) and not str(after[k]).startswith("-"):
+        pos.append(after[k])
+        k += 1
+    return pos, options + after[k:]
+
+
+def partition_aoi_bridge_argv(
+    fixed: list[str],
+) -> tuple[list[str], list[str], object]:
+    """Split fixed AOI argv into create_template args, minsarApp args, and the template namespace.
+
+    *fixed* is argv after ``fix_argv_for_negative_bbox_sn_we`` with the union of both CLIs.
+    """
+    from minsar.scripts.create_template import create_parser
+    from minsar.utils.bbox_cli_argv import (
+        MINSAR_APP_ARGV_KW,
+        SHARED_AOI_BRIDGE_OPTIONS,
+        fix_argv_for_negative_bbox_sn_we,
+        get_create_template_argv_kw,
+    )
+
+    pos, options = _positionals_and_options(fixed)
+    if len(pos) < 2:
+        print(
+            "minsarapp_aoi_entry: need at least AOI and project name as the first two "
+            "arguments.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if len(pos) > 2:
+        print(
+            f"minsarapp_aoi_entry: unexpected argument {pos[2]!r} in AOI mode",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    ct_kw = get_create_template_argv_kw()
+    ct_list = list(pos)
+    minsar_list: list[str] = []
+    i, n = 0, len(options)
+    while i < n:
+        tok = options[i]
+        if tok == "--":
+            print(
+                "minsarapp_aoi_entry: unexpected '--' in AOI mode",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if not tok.startswith("-"):
+            print(
+                f"minsarapp_aoi_entry: unexpected argument {tok!r} in AOI mode",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        name = _option_name(tok)
+        ct_kind = _option_kind(name, ct_kw)
+        ma_kind = _option_kind(name, MINSAR_APP_ARGV_KW)
+        shared = name in SHARED_AOI_BRIDGE_OPTIONS
+        if ct_kind and ma_kind and not shared:
+            print(
+                f"minsarapp_aoi_entry: {name} is both a create_template and minsarApp option",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if shared:
+            kind = ct_kind or ma_kind
+        elif ct_kind:
+            kind = ct_kind
+        elif ma_kind:
+            kind = ma_kind
+        else:
+            print(
+                f"minsarapp_aoi_entry: {name} is not a create_template or minsarApp "
+                "option in AOI mode",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if kind is None:
+            print(f"minsarapp_aoi_entry: {name} requires a value", file=sys.stderr)
+            sys.exit(1)
+        cluster, i = _take_option_cluster(options, i, kind)
+        if shared or ct_kind:
+            ct_list.extend(cluster)
+        if shared or ma_kind:
+            minsar_list.extend(cluster)
+
+    parser = create_parser(add_help=False)
+    safe = fix_argv_for_negative_bbox_sn_we(
+        ct_list,
+        **ct_kw,
+        multiple_initial_positionals=True,
+    )
+    try:
+        ns = parser.parse_args(safe)
+    except SystemExit as e:
+        code = e.code
+        if code is None:
+            code = 0
+        if isinstance(code, int):
+            sys.exit(code)
+        sys.exit(1)
+    return ct_list, minsar_list, ns
+
+
 def run() -> None:
     _ensure_path()
     from minsar.utils.bbox_cli_argv import (
-        CREATE_TEMPLATE_ARGV_KW,
+        MINSAR_APP_ARGV_KW,
         fix_argv_for_negative_bbox_sn_we,
+        get_create_template_argv_kw,
+        union_argv_kw,
     )
-    from minsar.scripts.create_template import create_parser, main
+    from minsar.scripts.create_template import main
 
     argv = sys.argv[1:]
     fixed = fix_argv_for_negative_bbox_sn_we(
         list(argv),
-        **CREATE_TEMPLATE_ARGV_KW,
+        **union_argv_kw(get_create_template_argv_kw(), MINSAR_APP_ARGV_KW),
         multiple_initial_positionals=True,
     )
     if len(fixed) < 2:
@@ -143,21 +326,7 @@ def run() -> None:
         )
         sys.exit(1)
     mapp = str(Path(mapp).resolve())
-    try:
-        parser = create_parser(add_help=False)
-        _ns, rest = parser.parse_known_args(fixed)
-    except SystemExit as e:
-        code = e.code
-        if code is None:
-            code = 0
-        if isinstance(code, int):
-            sys.exit(code)
-        sys.exit(1)
-    n_rest = len(rest)
-    if n_rest:
-        ct_list = fixed[: len(fixed) - n_rest]
-    else:
-        ct_list = list(fixed)
+    ct_list, rest, _ns = partition_aoi_bridge_argv(fixed)
     try:
         os.chdir(tdir)
     except OSError as exc:

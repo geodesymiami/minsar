@@ -75,7 +75,8 @@ Debug options:                                                                  
    --skip-miaplpy    skip miaplpy processing (but runs everything else)          \n\
    --start miaplpy --miaplpy-step 5
                                                                                  \n\
-Using AOI and name as postional arguments (for options run: create_template.py --help):\n\
+Using AOI and name as the first two arguments. create_template and minsarApp options may follow in any order.\n\
+create_template.py --help lists the template options.\n\
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --no-mintpy --miaplpy  \n\
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --quick-run 2026 --no-mintpy --miaplpy  \n\
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --last-year --no-mintpy --miaplpy  \n\
@@ -91,16 +92,14 @@ Using AOI and name as postional arguments (for options run: create_template.py -
       minsarApp.bash  $TE/GalapagosSenDT128.template --miaplpy.load.startDate 20211201 --miaplpy   \n\
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --exclude-dates 20260619 --quick-run 2026   \n\
 To test:  \n\
-      minsarApp.bash -0.86:-0.81,-91.19:-91.13 qtestGalapagos --flight-dir asc,desc --start-date 20181001 --end-date 20181231 --no-mintpy --miaplpy  \n\
-                                                                                 \n\
-   Coding To Do:                                                                 \n\
-       - create .minsarrc for defaults                                           \n
+      minsarApp.bash -0.86:-0.81,-91.19:-91.13 qtestGalapagos --flight-dir asc,desc --start-date 20181001 --end-date 20181231 --no-mintpy --miaplpy  \n
      "
     printf "$helptext"
     exit 0
 fi
 
 # AOI + project name: first create templates under TEMPLATES, then continue as template mode.
+# Mixed create_template and minsarApp flags are split in minsarapp_aoi_entry.py.
 # Accept AOI as first positional even when it starts with '-' (negative latitude).
 # Exclude long-option invocations and template-file mode.
 if [[ -n "${1-}" && -n "${2-}" && "$1" != --* && "$1" != *".template" && "$2" != -* ]]; then

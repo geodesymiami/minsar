@@ -12,13 +12,19 @@ from typing import Iterable, Sequence
 __all__ = [
     "looks_like_sn_we_bbox",
     "fix_argv_for_negative_bbox_sn_we",
+    "argv_kw_from_parser",
+    "get_create_template_argv_kw",
+    "union_argv_kw",
     "CONVERT_BBOX_ARGV_KW",
-    "CREATE_TEMPLATE_ARGV_KW",
+    "MINSAR_APP_ARGV_KW",
+    "SHARED_AOI_BRIDGE_OPTIONS",
     "GET_SAR_COVERAGE_ARGV_KW",
     "DISPLAY_BBOX_ARGV_KW",
     "EGMS_DOWNLOAD_ARGV_KW",
     "CALCULATE_MIAPLPY_SUBSET_ARGV_KW",
 ]
+
+_NUMERIC_TOKEN = re.compile(r"^-?[0-9]+(\.[0-9]+)?$")
 
 
 def looks_like_sn_we_bbox(s: str) -> bool:
@@ -44,6 +50,8 @@ def _drain_known_options(
     one: frozenset[str],
     two: frozenset[str],
     flagset: frozenset[str],
+    optional_unless_dash: frozenset[str] = frozenset(),
+    optional_numeric: frozenset[str] = frozenset(),
 ) -> tuple[list[str], list[str]]:
     """Split tail into (known_option_tokens, remainder). Stops at first unknown token."""
     opt_prefix: list[str] = []
@@ -57,6 +65,22 @@ def _drain_known_options(
             opt_prefix.append(t)
             k += 1
             continue
+        if t in optional_numeric:
+            if k + 1 < n and _NUMERIC_TOKEN.match(tail[k + 1]):
+                opt_prefix.extend(tail[k : k + 2])
+                k += 2
+            else:
+                opt_prefix.append(t)
+                k += 1
+            continue
+        if t in optional_unless_dash or (t == "--quick-run" and t in one):
+            if k + 1 < n and not tail[k + 1].startswith("-"):
+                opt_prefix.extend(tail[k : k + 2])
+                k += 2
+            else:
+                opt_prefix.append(t)
+                k += 1
+            continue
         if t in two:
             if k + 2 >= n:
                 opt_prefix.extend(tail[k:])
@@ -65,11 +89,7 @@ def _drain_known_options(
             k += 3
             continue
         if t in one:
-            # Match argparse.Optional: --quick-run may appear without a following YEAR.
-            if t == "--quick-run" and (k + 1 >= n or tail[k + 1].startswith("-")):
-                opt_prefix.append(t)
-                k += 1
-            elif k + 1 < n:
+            if k + 1 < n:
                 opt_prefix.extend(tail[k : k + 2])
                 k += 2
             else:
@@ -90,6 +110,8 @@ def fix_argv_for_negative_bbox_sn_we(
     consume_one: Iterable[str] = (),
     consume_two: Iterable[str] = (),
     flags: Iterable[str] = (),
+    optional_unless_dash: Iterable[str] = (),
+    optional_numeric: Iterable[str] = (),
     multiple_initial_positionals: bool = False,
 ) -> list[str]:
     """
@@ -114,6 +136,8 @@ def fix_argv_for_negative_bbox_sn_we(
     one = frozenset(consume_one)
     two = frozenset(consume_two)
     flagset = frozenset(flags)
+    opt_dash = frozenset(optional_unless_dash)
+    opt_num = frozenset(optional_numeric)
 
     i, n = 0, len(argv)
     while i < n:
@@ -124,6 +148,18 @@ def fix_argv_for_negative_bbox_sn_we(
             return argv
         if a in flagset:
             i += 1
+            continue
+        if a in opt_num:
+            if i + 1 < n and _NUMERIC_TOKEN.match(argv[i + 1]):
+                i += 2
+            else:
+                i += 1
+            continue
+        if a in opt_dash or (a == "--quick-run" and a in one):
+            if i + 1 < n and not str(argv[i + 1]).startswith("-"):
+                i += 2
+            else:
+                i += 1
             continue
         if a in two:
             if i + 2 >= n:
@@ -150,7 +186,12 @@ def fix_argv_for_negative_bbox_sn_we(
                     j += 1
                 tail = argv[j:]
                 opt_first, rest = _drain_known_options(
-                    tail, one=one, two=two, flagset=flagset
+                    tail,
+                    one=one,
+                    two=two,
+                    flagset=flagset,
+                    optional_unless_dash=opt_dash,
+                    optional_numeric=opt_num,
                 )
                 return argv[:i] + opt_first + ["--"] + pos + rest
             # Put all tokens AFTER the bbox first, then '--' + bbox, so trailing
@@ -168,29 +209,132 @@ CONVERT_BBOX_ARGV_KW = {
     "flags": ("--asf",),
 }
 
-CREATE_TEMPLATE_ARGV_KW = {
+def argv_kw_from_parser(parser) -> dict[str, tuple[str, ...]]:
+    """Map a parser's long options to the token classes used by argv fixing."""
+    import argparse
+
+    consume_one: list[str] = []
+    consume_two: list[str] = []
+    flags: list[str] = []
+    optional_unless_dash: list[str] = []
+    for action in parser._actions:
+        strings = [s for s in action.option_strings if s.startswith("--")]
+        if not strings or getattr(action, "dest", None) == "help":
+            continue
+        if isinstance(
+            action,
+            (
+                argparse._StoreTrueAction,
+                argparse._StoreFalseAction,
+                argparse._StoreConstAction,
+                argparse._HelpAction,
+                argparse._CountAction,
+            ),
+        ):
+            flags.extend(strings)
+            continue
+        nargs = getattr(action, "nargs", None)
+        if nargs == "?":
+            optional_unless_dash.extend(strings)
+        elif nargs == 2:
+            consume_two.extend(strings)
+        else:
+            consume_one.extend(strings)
+    return {
+        "consume_one": tuple(consume_one),
+        "consume_two": tuple(consume_two),
+        "flags": tuple(flags),
+        "optional_unless_dash": tuple(optional_unless_dash),
+        "optional_numeric": (),
+    }
+
+
+_CREATE_TEMPLATE_ARGV_KW: dict[str, tuple[str, ...]] | None = None
+
+
+def get_create_template_argv_kw() -> dict[str, tuple[str, ...]]:
+    """Token classes for create_template.py, taken from its parser."""
+    global _CREATE_TEMPLATE_ARGV_KW
+    if _CREATE_TEMPLATE_ARGV_KW is None:
+        from minsar.scripts.create_template import create_parser
+
+        _CREATE_TEMPLATE_ARGV_KW = argv_kw_from_parser(create_parser(add_help=False))
+    return _CREATE_TEMPLATE_ARGV_KW
+
+
+def union_argv_kw(*parts: dict[str, tuple[str, ...]]) -> dict[str, tuple[str, ...]]:
+    """Merge argv keyword dicts. Earlier entries win when a name is repeated."""
+    keys = (
+        "consume_one",
+        "consume_two",
+        "flags",
+        "optional_unless_dash",
+        "optional_numeric",
+    )
+    merged: dict[str, tuple[str, ...]] = {}
+    for key in keys:
+        seen: list[str] = []
+        for part in parts:
+            for item in part.get(key, ()):
+                if item not in seen:
+                    seen.append(item)
+        merged[key] = tuple(seen)
+    return merged
+
+
+# minsarApp.bash template-mode options. create_template options come from its parser.
+# --delta-lat takes a following number when one is present; a bare flag does not.
+# --suffix takes a following token when it is not another flag.
+MINSAR_APP_ARGV_KW: dict[str, tuple[str, ...]] = {
     "consume_one": (
-        "--start-date",
-        "--end-date",
-        "--period",
-        "--type",
-        "--quick-run",
-        "--flight-dir",
-        "--platform",
-        "--coregistration",
-        "--topsstack.coregistration",
-        "--topsStack.coregistration",
-        "--tropo",
-        "--mintpy.troposphericDelay.method",
-        "--insarmaps-dataset",
-        "--insarmaps_dataset",
-        "--minsar.insarmaps_dataset",
+        "--start",
+        "--stop",
+        "--dostep",
+        "--isce-start",
+        "--isce-stop",
+        "--isce-step",
+        "--queue",
+        "--miaplpy-start",
+        "--miaplpy-stop",
+        "--miaplpy-step",
+        "--sleep",
+        "--download-method",
+        "--minsar.excludeDates",
+        "--exclude-dates",
         "--miaplpy.load.startDate",
         "--miaplpy.load.endDate",
     ),
     "consume_two": (),
-    "flags": ("--last-year", "--geometry", "--mintpy-plot", "--mintpy-no-plot"),
+    "flags": (
+        "--mintpy",
+        "--no-mintpy",
+        "--miaplpy",
+        "--insarmaps",
+        "--no-insarmaps",
+        "--upload",
+        "--no-upload",
+        "--opposite-orbit",
+        "--no-opposite-orbit",
+        "--horzvert",
+        "--no-horzvert",
+        "--no-orbit-download",
+        "--chunks",
+        "--clean-start",
+        "--debug",
+        "--skip-mintpy",
+        "--skip-miaplpy",
+    ),
+    "optional_unless_dash": ("--suffix",),
+    "optional_numeric": ("--delta-lat",),
 }
+
+# One occurrence is copied onto both the create_template argv and the minsarApp re-exec.
+SHARED_AOI_BRIDGE_OPTIONS = frozenset(
+    {
+        "--exclude-dates",
+        "--minsar.excludeDates",
+    }
+)
 
 GET_SAR_COVERAGE_ARGV_KW = {
     "consume_one": (
