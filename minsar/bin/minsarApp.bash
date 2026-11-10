@@ -56,7 +56,6 @@ helptext="                                                                      
    --horzvert [--no-horzvert]       run horzvert post-step after MiaplPy (default: off) \n\
                                                                                  \n\
    --sleep SECS           sleep seconds before running                           \n\
-   --chunks               process in form of multiple chunks.                    \n\
    --clean-start          rm -rf \$SCRATCHDIR/<project> then recreate work dir   \n\
    --queue NAME           SLURM queue (sets QUEUENAME. Default:  QUEUENAME from env)\n\
                                                                                  \n\
