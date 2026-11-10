@@ -233,9 +233,52 @@ append_hv_to_project_logs() {
     fi
 }
 
+# One product directory per --dataset token. DS,filt*DS runs DS, then filt*DS.
+hv_dispatch_dataset_list() {
+    local ds_list="$1"
+    shift
+    local -a orig=("$@")
+    local t status=0 any=0
+    local -a tokens=()
+    IFS=',' read -ra tokens <<< "$ds_list"
+    for t in "${tokens[@]}"; do
+        t=$(echo "$t" | xargs)
+        [[ -z "$t" ]] && continue
+        any=1
+        local -a args=()
+        local skip=0
+        local a
+        for a in "${orig[@]}"; do
+            if [[ "$skip" == 1 ]]; then
+                skip=0
+                continue
+            fi
+            if [[ "$a" == "--dataset" ]]; then
+                args+=(--dataset "$t")
+                skip=1
+                continue
+            fi
+            args+=("$a")
+        done
+        echo ""
+        echo "##############################################"
+        echo "Dataset: $t"
+        if ! ( horzvert_timeseries_main "${args[@]}" ); then
+            echo "Error: dataset $t failed" >&2
+            status=1
+        fi
+    done
+    if [[ "$any" != 1 ]]; then
+        echo "Error: --dataset list is empty" >&2
+        return 1
+    fi
+    return "$status"
+}
+
 # Parse this body before running it. --submit blocks until the job finishes,
 # and a save of this file during that wait must not be read as the next command.
 horzvert_timeseries_main() {
+local -a hv_cmdline=("$@")
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     helptext="
 Usage: $SCRIPT_NAME <file_or_dir1> <file_or_dir2> --ref-lalo LAT LON [options]
@@ -248,7 +291,7 @@ network_* subdirectory (newest modification time). A path that already ends
 in network_* is used as given.
 
 Options:
-      --dataset TYPE                  Select .he5 type in a directory: PS, DS, filtDS, filt*DS, geo
+      --dataset TYPE                  .he5 type: PS, DS, filtDS, filt*DS, geo. Comma-separated runs each type.
       -g, --geom-file FILE1 FILE2     Geometry files for horzvert_timeseries.py
       --mask-thresh FLOAT             Coherence mask threshold (default: 0.55)
       --ref-lalo LAT LON              Reference point (required); also LAT,LON or --ref-lalo=LAT,LON
@@ -285,6 +328,7 @@ $SCRIPT_NAME hvGalapagosSenD128/mintpy hvGalapagosSenA106/mintpy --ref-lalo -0.8
 $SCRIPT_NAME hvGalapagosSenD128/miaplpy/network_single_reference hvGalapagosSenA106/miaplpy/network_single_reference --ref-lalo -0.81 -91.190 --no-ingest-los
 $SCRIPT_NAME FernandinaSenD128/miaplpy/network_delaunay_4 FernandinaSenA106/miaplpy/network_delaunay_4 --ref-lalo -0.415 -91.543 --submit
 $SCRIPT_NAME LengaiSenA130/miaplpy_202504_202610 LengaiSenD152/miaplpy_202504_202610 --ref-lalo -2.72185 35.94679 --save_qgis --lat-step 0.0002 --dataset DS --submit
+$SCRIPT_NAME LengaiSenA130/miaplpy_202504_202610 LengaiSenD152/miaplpy_202504_202610 --ref-lalo -2.72185 35.94679 --dataset DS,filt*DS --submit
 $SCRIPT_NAME LaPalmaSenA60/miaplpy/network_delaunay_4 LaPalmaSenD169/miaplpy/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --save-qgis --submit
 $SCRIPT_NAME LaPalmaSenA60/miaplpy/network_delaunay_4 LaPalmaSenD169/miaplpy/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --save-qgis-all --submit
 $SCRIPT_NAME LaPalmaRecentSenA60/miaplpy/network_delaunay_4 LaPalmaRecentSenD169/miaplpy/network_delaunay_4 --ref-lalo 28.60562 -17.90023 --submit --sleep 30
@@ -524,6 +568,12 @@ do
             ;;
     esac
 done
+
+# DS,filt*DS is two runs. Each single-token call below keeps today's path.
+if [[ "$dataset" == *,* ]]; then
+    hv_dispatch_dataset_list "$dataset" "${hv_cmdline[@]}" || exit 1
+    exit 0
+fi
 
 set -- "${positional[@]}"
 
