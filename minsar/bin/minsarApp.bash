@@ -12,21 +12,21 @@ source ${SCRIPT_DIR}/../lib/utils.sh
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
 helptext="                                                                       \n\
   Examples:                                                                      \n\
-      minsarApp.bash  $TE/GalapagosSenDT128.template                             \n\
-      minsarApp.bash  $TE/GalapagosSenDT128.template --dostep dem                \n\
-      minsarApp.bash  $TE/GalapagosSenDT128.template --start  ifgram            \n\
-      minsarApp.bash  $TE/GalapagosSenDT128.template --start jobfiles --mintpy --miaplpy\n\
-      minsarApp.bash  $TE/GalapagosSenDT128.template --no-insarmaps              \n\
-      minsarApp.bash  $TE/GalapagosSenDT128.template --start ifgram --isce-start 5  \n\
-      minsarApp.bash  $TE/GalapagosSenDT128.template --start ifgram --isce-start 5 --isce-stop 6  \n\
-      minsarApp.bash  $TE/GalapagosSenDT128.template --start ifgram --isce-step 5 \n\
-      minsarApp.bash  $TE/GalapagosSenDT128.template --start miaplpy --miaplpy-start 6         \n\
-      minsarApp.bash  $TE/GalapagosSenDT128.template --start miaplpy --miaplpy-start 6 --miaplpy-stop 6 \n\
-      minsarApp.bash  $TE/GalapagosSenDT128.template --start miaplpy --miaplpy-step 6     \n\
-      minsarApp.bash  $TE/GalapagosSenDT128.template --miaplpy-stop 1     \n\
-      minsarApp.bash  $TE/GalapagosSenDT128.template --delta-lat 0.1       \n\
-      minsarApp.bash  $TE/GalapagosSenDT128.template --miaplpy --suffix    \n\
-      minsarApp.bash  $TE/GalapagosSenDT128.template --clean-start       \n\
+      minsarApp.bash  \$TE/GalapagosSenDT128.template                             \n\
+      minsarApp.bash  \$TE/GalapagosSenDT128.template --dostep dem                \n\
+      minsarApp.bash  \$TE/GalapagosSenDT128.template --start  ifgram            \n\
+      minsarApp.bash  \$TE/GalapagosSenDT128.template --start jobfiles --mintpy --miaplpy\n\
+      minsarApp.bash  \$TE/GalapagosSenDT128.template --no-insarmaps              \n\
+      minsarApp.bash  \$TE/GalapagosSenDT128.template --start ifgram --isce-start 5  \n\
+      minsarApp.bash  \$TE/GalapagosSenDT128.template --start ifgram --isce-start 5 --isce-stop 6  \n\
+      minsarApp.bash  \$TE/GalapagosSenDT128.template --start ifgram --isce-step 5 \n\
+      minsarApp.bash  \$TE/GalapagosSenDT128.template --start miaplpy --miaplpy-start 6         \n\
+      minsarApp.bash  \$TE/GalapagosSenDT128.template --start miaplpy --miaplpy-start 6 --miaplpy-stop 6 \n\
+      minsarApp.bash  \$TE/GalapagosSenDT128.template --start miaplpy --miaplpy-step 6     \n\
+      minsarApp.bash  \$TE/GalapagosSenDT128.template --miaplpy-stop 1     \n\
+      minsarApp.bash  \$TE/GalapagosSenDT128.template --delta-lat 0.1       \n\
+      minsarApp.bash  \$TE/GalapagosSenDT128.template --miaplpy --suffix    \n\
+      minsarApp.bash  \$TE/GalapagosSenDT128.template --clean-start       \n\
                                                                                  \n\
   Processing steps (start/end/dostep): \n\
    Command line options for steps processing with names are chosen from the following list: \n\
@@ -36,16 +36,14 @@ helptext="                                                                      
    --upload    [--no-upload]    upload data products to jetstream (default)      \n\
    --insarmaps [--no-insarmaps] ingest into insarmaps (default is yes for mintpy no for miaplpy)  \n\
                                                                                  \n\
-   --start or --dostep requires a previous run through the preceding step.     \n\
-                                                                                 \n\
    --start STEP          start processing at the named step [default: download]. \n\
    --end STEP, --stop STEP                                                       \n\
    --dostep STEP         run processing at the named step only                   \n\
-   --download-method {slc|SLC, burst|BURST, burst2safe, burst2stack, ssara-slc, ssara-bash, ssara-python} (default: burst2stack; burst downloads into BURST, full SLCs into SLC) \n\
+   --download-method {slc | SLC, burst | BURST, burst2safe, burst2stack, ssara-slc, ssara-bash, ssara-python} (default: burst2stack; burst downloads into BURST, full SLCs into SLC) \n\
    --delta-lat [DEG]     download larger error (default 0; bare --delta-lat: 0.2) \n\
-   --minsar.excludeDates|--exclude-dates DATES  exclude YYYYMMDD scenes (comma-separated; merges with template) \n\
-   --miaplpy.load.startDate|endDate DATE  YYYYMMDD; the other load date becomes auto \n\
-   --suffix [TAG|auto]   pass --suffix to ingest_insarmaps (bare --suffix: auto from minTempCoh) \n\
+   --minsar.excludeDates | --exclude-dates DATES  exclude YYYYMMDD scenes (comma-separated; merges with template) \n\
+   --miaplpy.load.startDate | endDate DATE  YYYYMMDD; the other load date becomes auto \n\
+   --suffix [TAG | auto]   pass --suffix to ingest_insarmaps (bare --suffix: auto from minTempCoh) \n\
                                                                                  \n\
    --mintpy              use smallbaselineApp.py for time series [default]       \n\
    --miaplpy             use miaplpyApp.py; --mintpy --miaplpy runs both          \n\
@@ -71,21 +69,9 @@ Debug options:                                                                  
                                                                                  \n\
 Using AOI and name as the first two arguments. create_template and minsarApp options may follow in any order.\n\
 create_template.py --help lists the template options.\n\
-      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --no-mintpy --miaplpy  \n\
-      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --quick-run 2026 --no-mintpy --miaplpy  \n\
-      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --last-year --no-mintpy --miaplpy  \n\
-      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --start-date 2020-01-01 --end-date 2024-12-31 --no-mintpy --miaplpy  \n\
-      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --period 20210101:20221231 --miaplpy  \n\
-      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --exclude-season 1101-0430 --no-mintpy --miaplpy  \n\
-      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini [--platform S1] --flight-dir asc --miaplpy --platform S1 is optional (default platform is Sentinel-1)    \n\
-      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --coregistration geometry [--platform S1] --miaplpy   \n\
-      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --topsstack.coregistration geometry [--platform S1] --miaplpy   \n\
-      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --geometry [--platform S1] --miaplpy   \n\
-      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --tropo no --insarmaps-dataset DS --no-mintpy --miaplpy   \n\
-      minsarApp.bash  $TE/GalapagosSenDT128.template --exclude-dates 20260619 --start jobfiles   \n\
-      minsarApp.bash  $TE/GalapagosSenDT128.template --miaplpy.load.startDate 20211201 --miaplpy   \n\
-      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --exclude-dates 20260619 --quick-run 2026   \n\
-To test:  \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --platform S1 --flight-dir asc --quick-run 2026 --no-mintpy --miaplpy  \n\
+      minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --period 20210101:20221231 --exclude-season 1101-0430 --exclude-dates 20260619 --coregistration geometry --tropo no --insarmaps-dataset DS  \n\
+      minsarApp.bash \$TE/GalapagosSenDT128.template --exclude-dates 20260619 --miaplpy.load.startDate 20211201 --start jobfiles --miaplpy  \n\
       minsarApp.bash -0.86:-0.81,-91.19:-91.13 qtestGalapagos --flight-dir asc,desc --start-date 20181001 --end-date 20181231 --no-mintpy --miaplpy  \n
      "
     printf "$helptext"
