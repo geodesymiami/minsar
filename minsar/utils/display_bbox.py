@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import datetime
 import os
 import sys
 import subprocess
@@ -98,10 +99,10 @@ try:
     )
 except ImportError:
     ASF_VERTEX_BASE = "https://search.asf.alaska.edu/#/"
-    ASF_DEFAULT_START = "2020-01-01"
-    ASF_DEFAULT_END = "2020-02-01"
+    ASF_DEFAULT_START = "2016-01-01"
+    ASF_DEFAULT_END = "2026-12-31"
     ASF_NISAR_DEFAULT_START = "2026-01-01"
-    ASF_NISAR_DEFAULT_END = "2026-02-28"
+    ASF_NISAR_DEFAULT_END = datetime.date.today().isoformat()
     _asf_vertex_url = None
 
 

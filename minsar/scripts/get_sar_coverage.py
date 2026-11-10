@@ -8,8 +8,8 @@ acquisition counts.
 
 Strategy:
   Discovery:
-    - S1/BURST: default period 2020-01-01 to 2020-02-01 (--start-date/--end-date). SLC maxResults=20, BURST maxResults=200.
-    - NISAR: fixed period 2026-01-01 to 2026-02-28 for discovery.
+    - S1/BURST: default period 2016-01-01 to 2026-12-31 (--start-date/--end-date). SLC maxResults=5000, BURST maxResults=200.
+    - NISAR: 2026-01-01 to today for discovery.
     - ALOS-2: asf.search(maxResults=10000) over --start-date/--end-date.
     Counting (always):
     - Date range: full period (2014-10-01 to today) unless --startDate/--endDate are set.
@@ -79,17 +79,17 @@ _ASF_API_URL = "https://api.daac.asf.alaska.edu/services/search/param"
 # Number of results fetched for orbit discovery
 _DISCOVERY_MAX_RESULTS = 10000
 # S1 discovery: default max granules for orbit discovery (override with --max-discovery)
-_DISCOVERY_MAX_RESULTS_S1_DEFAULT = 20
+_DISCOVERY_MAX_RESULTS_S1_DEFAULT = 5000
 
 # Default date range for acquisition counts when --count (full catalog period unless --startDate/--endDate)
 _COUNT_START_DEFAULT = datetime.date(2014, 10, 1)  # S1 operational
 _COUNT_MAX_WORKERS = 8  # parallel count requests
 
-# Default discovery end (short window for faster S1/BURST queries)
-_DISCOVERY_END_DEFAULT = '2020-02-01'
-# NISAR discovery period (mission data in this window)
+# Default S1/BURST discovery window (--start-date/--end-date)
+_DISCOVERY_START_DEFAULT = '2016-01-01'
+_DISCOVERY_END_DEFAULT = '2026-12-31'
+# NISAR discovery: mission start through today (end is set when the query runs)
 _NISAR_DISCOVERY_START = datetime.date(2026, 1, 1)
-_NISAR_DISCOVERY_END = datetime.date(2026, 2, 28)
 
 # ALOS-2 discovery: 3-year period, HH only (HH+HV section commented out)
 _ALOS2_DISCOVERY_START = datetime.date(2020, 1, 1)
@@ -668,7 +668,7 @@ def query_sentinel1(
     """Fetch S1 SLC products (orbit/direction discovery) plus a 30-day BURST query
     for subswath and incidence angle detection across all active orbits.
 
-    max_results_s1: max SLC granules to fetch for discovery (default 20). Use --max-discovery to increase.
+    max_results_s1: max SLC granules to fetch for discovery (default 5000). Use --max-discovery to increase.
     Returns (slc_sample, burst_results).
     """
     _vprint(verbose, f"  query 1 (SLC, maxResults={max_results_s1}): "
@@ -1354,10 +1354,10 @@ def create_parser() -> argparse.ArgumentParser:
                             'ALOS2 / ALOS-2 for ALOS-2. '
                             'Example: --platform S1,ALOS2'
                         ))
-    parser.add_argument('--start-date', default='2020-01-01', metavar='YYYY-MM-DD',
-                        help='Start date for discovery queries (default: 2020-01-01)')
+    parser.add_argument('--start-date', default=_DISCOVERY_START_DEFAULT, metavar='YYYY-MM-DD',
+                        help='Start date for discovery queries (default: 2016-01-01)')
     parser.add_argument('--end-date', default=_DISCOVERY_END_DEFAULT, metavar='YYYY-MM-DD',
-                        help='End date for discovery queries (default: 2020-02-01). S1 and BURST use this; NISAR uses 2026-01-01 to 2026-02-28.')
+                        help='End date for S1 and BURST discovery (default: 2026-12-31). NISAR uses 2026-01-01 to today.')
     parser.add_argument('--startDate', default=None, metavar='YYYY-MM-DD',
                         help='Start date for acquisition count range (default: 2014-10-01).')
     parser.add_argument('--endDate', default=None, metavar='YYYY-MM-DD',
@@ -1545,7 +1545,7 @@ def main(iargs=None):
         print("\nQuerying NISAR...")
         _vprint(inps.verbose, "  [NISAR]")
         nisar_sample = query_nisar(
-            wkt, _NISAR_DISCOVERY_START, _NISAR_DISCOVERY_END, verbose=inps.verbose
+            wkt, _NISAR_DISCOVERY_START, datetime.date.today(), verbose=inps.verbose
         )
 
         counts = None

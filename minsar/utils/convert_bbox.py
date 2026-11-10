@@ -5,6 +5,7 @@
 # Created: 8/2023; renamed and extended for bbox + --asf
 #######################################
 
+import datetime
 import sys
 import argparse
 
@@ -23,11 +24,11 @@ inps = None
 
 # ASF Vertex URL format (same as burst2stack2vertex.bash: search.asf.alaska.edu)
 ASF_VERTEX_BASE = "https://search.asf.alaska.edu/#/"
-# Default discovery periods (get_sar_coverage.py)
-ASF_DEFAULT_START = "2020-01-01"
-ASF_DEFAULT_END = "2020-02-01"
+# Default discovery periods (get_sar_coverage.py). NISAR end is today at import.
+ASF_DEFAULT_START = "2016-01-01"
+ASF_DEFAULT_END = "2026-12-31"
 ASF_NISAR_DEFAULT_START = "2026-01-01"
-ASF_NISAR_DEFAULT_END = "2026-02-28"
+ASF_NISAR_DEFAULT_END = datetime.date.today().isoformat()
 
 EXAMPLE = """examples:
   convert_bbox.py   "POLYGON((-86.581 12.3995,-86.4958 12.3995,-86.4958 12.454,-86.581 12.454,-86.581 12.3995))"
