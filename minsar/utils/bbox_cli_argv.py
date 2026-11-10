@@ -187,7 +187,7 @@ CREATE_TEMPLATE_ARGV_KW = {
         "--miaplpy.load.endDate",
     ),
     "consume_two": (),
-    "flags": ("--last-year", "--geometry", "--mintpy-plot", "--mintpy-no-plot", "--no-single-burst-geometry"),
+    "flags": ("--last-year", "--geometry", "--mintpy-plot", "--mintpy-no-plot"),
 }
 
 GET_SAR_COVERAGE_ARGV_KW = {

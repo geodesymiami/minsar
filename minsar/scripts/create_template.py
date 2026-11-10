@@ -20,8 +20,7 @@ or other formats accepted by convert_bbox.py (e.g. GoogleEarth points).
 
 ISCE topsStack coregistration defaults to NESD. When get_sar_coverage.py --select
 reports one burst on that orbit, the template uses geometry.
-``--no-single-burst-geometry`` keeps NESD. ``--coregistration`` or ``--geometry``
-overrides that burst rule.
+``--coregistration`` or ``--geometry`` overrides that burst rule.
 
 Optional MintPy / MinSAR template overrides:
 
@@ -418,16 +417,15 @@ def coregistration_for_burst_count(
     *,
     explicit_mode: str | None,
     burst_count: int | None,
-    single_burst_geometry: bool,
 ) -> str:
     """Return topsStack.coregistration for one orbit.
 
-    An explicit mode wins. Otherwise one burst writes geometry when
-    ``single_burst_geometry`` is true. A missing count stays NESD.
+    An explicit mode wins. Otherwise one burst writes geometry.
+    A missing count stays NESD.
     """
     if explicit_mode is not None:
         return explicit_mode
-    if single_burst_geometry and burst_count == 1:
+    if burst_count == 1:
         return "geometry"
     return "NESD"
 
@@ -570,7 +568,6 @@ Examples:
   create_template.py 36.331:36.486,25.318:25.492 Santorini --platform S1
   create_template.py 36.331:36.486,25.318:25.492 Santorini --geometry
   create_template.py 36.331:36.486,25.318:25.492 Santorini --coregistration NESD
-  create_template.py 36.331:36.486,25.318:25.492 Santorini --no-single-burst-geometry
   create_template.py 36.331:36.486,25.318:25.492 Santorini --quick-run 2026 --mintpy-no-plot
   create_template.py 36.331:36.486,25.318:25.492 Santorini --period 20210101:20221231 --mintpy-plot
   create_template.py 36.331:36.486,25.318:25.492 Santorini --mintpy.troposphericDelay.method no --minsar.insarmaps_dataset DS
@@ -601,7 +598,6 @@ Examples:
         help="topsStack.coregistration; Default: NESD, or geometry if one burst",
     )
     parser.add_argument("--geometry", dest="geometry_mode", action="store_true", help="Same as --coregistration geometry")
-    parser.add_argument("--no-single-burst-geometry", action="store_true", help="Keep NESD when one burst covers the AOI")
     plot_grp = parser.add_mutually_exclusive_group()
     plot_grp.add_argument("--mintpy-plot", dest="mintpy_plot_cli", action="store_const", const="yes", default=None, help="Force mintpy.plot = yes (overrides date-span rule)")
     plot_grp.add_argument("--mintpy-no-plot", dest="mintpy_plot_cli", action="store_const", const="no", help="Force mintpy.plot = no (overrides date-span rule)")
@@ -769,12 +765,10 @@ def main(
         primary_label = str(coverage["asc_label"])
 
     explicit_mode = tops_co if (inps.geometry_mode or inps.tops_coregistration is not None) else None
-    single_burst_geometry = not inps.no_single_burst_geometry
     primary_n = _coverage_burst_count(coverage, primary_prefix)
     primary_mode = coregistration_for_burst_count(
         explicit_mode=explicit_mode,
         burst_count=primary_n,
-        single_burst_geometry=single_burst_geometry,
     )
     if explicit_mode is None and primary_mode == "geometry":
         print(
@@ -851,7 +845,6 @@ def main(
         opposite_mode = coregistration_for_burst_count(
             explicit_mode=explicit_mode,
             burst_count=opposite_n,
-            single_burst_geometry=single_burst_geometry,
         )
         opposite_path = (out_path.parent / f"{name}{opposite_label}.template").resolve()
         if opposite_mode != primary_mode:
