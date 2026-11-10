@@ -320,20 +320,176 @@ hv_is_on_data_server() {
     return 1
 }
 
+# filtDS, PS, DS, or empty from an HE5, gpkg, or sidecar basename.
+# filt*DS is tested before DS so ..._filtDS is not treated as DS.
+hv_dataset_token_from_name() {
+    local base="$1"
+    base=$(basename "$base")
+    base="${base%.he5}"
+    base="${base%.hvparams}"
+    base="${base%.gpkg}"
+    base="${base%.h5}"
+    base="${base%.txt}"
+    if [[ "$base" == *filt* && "$base" == *DS* ]]; then
+        printf '%s' filtDS
+        return 0
+    fi
+    if [[ "$base" == *PS* ]]; then
+        printf '%s' PS
+        return 0
+    fi
+    if [[ "$base" == *DS* ]]; then
+        printf '%s' DS
+        return 0
+    fi
+    printf '%s' ''
+}
+
+# Shared token of two inputs. Errors when one is DS and the other is filtDS.
+hv_dataset_token_for_inputs() {
+    local t1 t2
+    t1=$(hv_dataset_token_from_name "$1")
+    t2=$(hv_dataset_token_from_name "$2")
+    if [[ "$t1" != "$t2" ]]; then
+        echo "Error: dataset tokens differ: $(basename "$1") (${t1:-none}) vs $(basename "$2") (${t2:-none})" >&2
+        return 1
+    fi
+    printf '%s' "$t1"
+}
+
+# True when an insarmaps URL's startDataset belongs to this token.
+hv_url_matches_dataset_token() {
+    local line="$1"
+    local token="$2"
+    local dataset
+    [[ "$line" =~ startDataset=([^&[:space:]]+) ]] || return 1
+    dataset=$(hv_dataset_token_from_name "${BASH_REMATCH[1]}")
+    [[ "$dataset" == "$token" ]]
+}
+
+# Drop this dataset's URLs from insarmaps.log and keep every other dataset.
+hv_prune_insarmaps_log() {
+    local log_file="$1"
+    local token="$2"
+    local line tmp
+    [[ -f "$log_file" ]] || return 0
+    tmp=$(mktemp)
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if hv_url_matches_dataset_token "$line" "$token"; then
+            continue
+        fi
+        printf '%s\n' "$line"
+    done < "$log_file" > "$tmp"
+    mv "$tmp" "$log_file"
+}
+
+# Newest vert or horz HE5 whose basename token matches. kind is vert or horz.
+hv_newest_product_he5() {
+    local outdir="$1"
+    local kind="$2"
+    local token="${3-}"
+    local f newest="" nd_saved
+    [[ -d "$outdir" ]] || return 0
+    nd_saved=$(shopt -p nullglob || true)
+    shopt -s nullglob
+    for f in "$outdir"/*${kind}*.he5; do
+        [[ -f "$f" ]] || continue
+        [[ "$(hv_dataset_token_from_name "$f")" == "$token" ]] || continue
+        if [[ -z "$newest" || "$f" -nt "$newest" ]]; then
+            newest="$f"
+        fi
+    done
+    eval "$nd_saved"
+    printf '%s' "$newest"
+}
+
+# Remove only this dataset's vert/horz HE5 and .hvparams. Other tokens stay.
+hv_remove_dataset_products() {
+    local outdir="$1"
+    local token="$2"
+    local f nd_saved
+    [[ -d "$outdir" ]] || return 0
+    nd_saved=$(shopt -p nullglob || true)
+    shopt -s nullglob
+    for f in "$outdir"/*vert*.he5 "$outdir"/*horz*.he5 "$outdir"/*.hvparams; do
+        [[ -e "$f" ]] || continue
+        [[ "$(hv_dataset_token_from_name "$f")" == "$token" ]] || continue
+        rm -f "$f"
+    done
+    eval "$nd_saved"
+}
+
+# Rewrite data_files.txt: drop this token's previous paths, keep the other dataset.
+# header is the comment line. Remaining args are this run's paths.
+hv_merge_data_files() {
+    local data_files="$1"
+    local token="$2"
+    local header="$3"
+    shift 3
+    local -a fresh=("$@")
+    local -a kept=()
+    local line
+    if [[ -f "$data_files" ]]; then
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            [[ -z "$line" || "$line" == \#* ]] && continue
+            [[ "$(hv_dataset_token_from_name "$line")" == "$token" ]] && continue
+            kept+=("$line")
+        done < "$data_files"
+    fi
+    {
+        printf '%s\n' "$header"
+        if [[ ${#kept[@]} -gt 0 ]]; then
+            printf '%s\n' "${kept[@]}"
+        fi
+        if [[ ${#fresh[@]} -gt 0 ]]; then
+            printf '%s\n' "${fresh[@]}"
+        fi
+    } > "$data_files"
+}
+
 # Rewrite insarmaps.log start lat/lon to the vert product and disable flyToDatasetCenter.
+# When HV_DATASET_TOKEN is set, only that dataset's URLs are rewritten.
 hv_normalize_insarmaps_coordinates() {
     local log_file="$1"
-    local vert_lat vert_lon
+    local vert_lat vert_lon line tmp
 
     [[ -f "$log_file" ]] || return 0
     echo "Normalizing coordinates in insarmaps.log to use vert coordinates..."
-    vert_lat=$(grep "vert" "$log_file" | head -n 1 | cut -d/ -f5)
-    vert_lon=$(grep "vert" "$log_file" | head -n 1 | cut -d/ -f6)
+    if [[ ! -v HV_DATASET_TOKEN ]]; then
+        vert_lat=$(grep "vert" "$log_file" | head -n 1 | cut -d/ -f5)
+        vert_lon=$(grep "vert" "$log_file" | head -n 1 | cut -d/ -f6)
+        echo "Using vert coordinates: $vert_lat, $vert_lon"
+        sed -i.bak -E "s|(/start/)[^/]+/[^/]+/|\1${vert_lat}/${vert_lon}/|" "$log_file"
+        sed -i.bak -E "s|flyToDatasetCenter=true|flyToDatasetCenter=false|g" "$log_file"
+        rm -f "${log_file}.bak"
+        echo "Updated all coordinates in insarmaps.log and disabled flyToDatasetCenter"
+        return 0
+    fi
+
+    vert_lat=""
+    vert_lon=""
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        hv_url_matches_dataset_token "$line" "$HV_DATASET_TOKEN" || continue
+        [[ "$line" == *vert* ]] || continue
+        vert_lat=$(printf '%s' "$line" | cut -d/ -f5)
+        vert_lon=$(printf '%s' "$line" | cut -d/ -f6)
+        break
+    done < "$log_file"
+    if [[ -z "$vert_lat" || -z "$vert_lon" ]]; then
+        echo "No vert URL for dataset token '${HV_DATASET_TOKEN}' in $log_file"
+        return 0
+    fi
     echo "Using vert coordinates: $vert_lat, $vert_lon"
-    sed -i.bak -E "s|(/start/)[^/]+/[^/]+/|\1${vert_lat}/${vert_lon}/|" "$log_file"
-    sed -i.bak -E "s|flyToDatasetCenter=true|flyToDatasetCenter=false|g" "$log_file"
-    rm -f "${log_file}.bak"
-    echo "Updated all coordinates in insarmaps.log and disabled flyToDatasetCenter"
+    tmp=$(mktemp)
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if hv_url_matches_dataset_token "$line" "$HV_DATASET_TOKEN"; then
+            line=$(printf '%s' "$line" | sed -E "s|(/start/)[^/]+/[^/]+/|\\1${vert_lat}/${vert_lon}/|")
+            line=${line//flyToDatasetCenter=true/flyToDatasetCenter=false}
+        fi
+        printf '%s\n' "$line"
+    done < "$log_file" > "$tmp"
+    mv "$tmp" "$log_file"
+    echo "Updated coordinates for dataset token '${HV_DATASET_TOKEN}' in insarmaps.log"
 }
 
 hv_data_files_contains() {
@@ -544,10 +700,18 @@ hv_finish_horzvert_run() {
     vert="${VERT:-}"
     horz="${HORZ:-}"
     if [[ -z "$vert" || ! -f "$vert" ]]; then
-        vert=$(ls -t "$outdir"/*vert*.he5 2>/dev/null | head -1 || true)
+        if [[ -v HV_DATASET_TOKEN ]]; then
+            vert=$(hv_newest_product_he5 "$outdir" vert "$HV_DATASET_TOKEN")
+        else
+            vert=$(ls -t "$outdir"/*vert*.he5 2>/dev/null | head -1 || true)
+        fi
     fi
     if [[ -z "$horz" || ! -f "$horz" ]]; then
-        horz=$(ls -t "$outdir"/*horz*.he5 2>/dev/null | head -1 || true)
+        if [[ -v HV_DATASET_TOKEN ]]; then
+            horz=$(hv_newest_product_he5 "$outdir" horz "$HV_DATASET_TOKEN")
+        else
+            horz=$(ls -t "$outdir"/*horz*.he5 2>/dev/null | head -1 || true)
+        fi
     fi
     if [[ -z "$vert" || -z "$horz" || ! -f "$vert" || ! -f "$horz" ]]; then
         echo "Error: missing *vert*/*horz*.he5 under $outdir" >&2
@@ -572,21 +736,26 @@ hv_finish_horzvert_run() {
     r_geo2=$(hv_data_files_relpath "$geo2")
 
     data_files="$outdir/data_files.txt"
-    {
-        echo "# geocode-lalo-step $lat_step $lon_step"
-        echo "$r_vert"
-        echo "$r_horz"
-        echo "$r_radar1"
-        if [[ "$radar1" != "$radar2" ]]; then
-            echo "$r_radar2"
-        fi
-        if [[ "$geo1" != "$radar1" && -f "$geo1" ]]; then
-            echo "$r_geo1"
-        fi
-        if [[ "$geo2" != "$radar2" && "$geo2" != "$geo1" && -f "$geo2" ]]; then
-            echo "$r_geo2"
-        fi
-    } > "$data_files"
+    local -a fresh_paths=()
+    fresh_paths+=("$r_vert" "$r_horz" "$r_radar1")
+    if [[ "$radar1" != "$radar2" ]]; then
+        fresh_paths+=("$r_radar2")
+    fi
+    if [[ "$geo1" != "$radar1" && -f "$geo1" ]]; then
+        fresh_paths+=("$r_geo1")
+    fi
+    if [[ "$geo2" != "$radar2" && "$geo2" != "$geo1" && -f "$geo2" ]]; then
+        fresh_paths+=("$r_geo2")
+    fi
+    if [[ -v HV_DATASET_TOKEN ]]; then
+        hv_merge_data_files "$data_files" "$HV_DATASET_TOKEN" \
+            "# geocode-lalo-step $lat_step $lon_step" "${fresh_paths[@]}"
+    else
+        {
+            echo "# geocode-lalo-step $lat_step $lon_step"
+            printf '%s\n' "${fresh_paths[@]}"
+        } > "$data_files"
+    fi
     if [[ "$save_qgis" != "off" && -n "$save_qgis" ]]; then
         hv_append_gpkg_for_he5 "$data_files" "$vert" || return 1
         hv_append_gpkg_for_he5 "$data_files" "$horz" || return 1
@@ -836,7 +1005,8 @@ hv_ingest_insarmaps_logged() {
 #           HV_INGEST_WORKERS_OPTS (string), HV_GEOM_FILE_ARGS, HV_DATASET_OPT1, HV_DATASET_OPT2,
 #           HV_SAVE_QGIS=off|geo|all  (geo: vert/horz + geo asc/desc; all: + radar asc/desc),
 #           HV_UPLOAD=0 (upload deferred to login node after job; do not set 1),
-#           HV_GEOCODE_LAT_STEP, HV_GEOCODE_LON_STEP, HV_FORCE=0|1
+#           HV_GEOCODE_LAT_STEP, HV_GEOCODE_LON_STEP, HV_FORCE=0|1,
+#           HV_DATASET_TOKEN (DS, filtDS, PS, or empty for MintPy)
 hv_write_run_horzvert2timeseries() {
     local run_file="${HV_RUN_FILE:?}"
     local radar1="${HV_RADAR1:?}"
@@ -860,6 +1030,7 @@ hv_write_run_horzvert2timeseries() {
     local geom_args="${HV_GEOM_FILE_ARGS:-}"
     local ds1="${HV_DATASET_OPT1:-}"
     local ds2="${HV_DATASET_OPT2:-}"
+    local dataset_token="${HV_DATASET_TOKEN-}"
     local geo1 geo2 r_radar1 r_radar2 r_geo1 r_geo2 r_outdir
     local q_radar1 q_radar2 q_geo1 q_geo2 q_outdir amp=""
     local utils_sh abs_outdir abs_radar1 abs_radar2 abs_geo1 abs_geo2 abs_scratch_log
@@ -904,6 +1075,7 @@ hv_write_run_horzvert2timeseries() {
         echo '#!/usr/bin/env bash'
         echo 'set -euo pipefail'
         echo "source $(printf '%q' "$utils_sh")"
+        echo "HV_DATASET_TOKEN=$(printf '%q' "$dataset_token")"
         if [[ -n "${SCRATCHDIR:-}" ]]; then
             echo "cd $(printf '%q' "$(realpath "$SCRATCHDIR" 2>/dev/null || echo "$SCRATCHDIR")")"
         fi
@@ -965,8 +1137,8 @@ hv_write_run_horzvert2timeseries() {
         fi
 
         if [[ "$save_qgis" != "off" || "$ingest_insarmaps" == "1" ]]; then
-            echo "VERT=\$(ls -t ${q_outdir}/*vert*.he5 2>/dev/null | head -1)"
-            echo "HORZ=\$(ls -t ${q_outdir}/*horz*.he5 2>/dev/null | head -1)"
+            echo "VERT=\$(hv_newest_product_he5 ${q_outdir} vert \"\$HV_DATASET_TOKEN\")"
+            echo "HORZ=\$(hv_newest_product_he5 ${q_outdir} horz \"\$HV_DATASET_TOKEN\")"
             echo "if [[ -z \"\$VERT\" || -z \"\$HORZ\" || ! -f \"\$VERT\" || ! -f \"\$HORZ\" ]]; then"
             echo "  echo \"Error: missing *vert*/*horz*.he5 under ${q_outdir}\" >&2"
             echo "  exit 1"
@@ -989,10 +1161,10 @@ hv_write_run_horzvert2timeseries() {
 
         if [[ "$ingest_insarmaps" == "1" ]]; then
             # Cd into product dir so ingest writes insarmaps.log next to overlay.html.
-            # Truncate first so this run's four URLs are the only entries.
+            # Drop only this dataset's previous URLs; keep the other dataset.
             # Also append command lines to SCRATCHDIR/log via hv_ingest_insarmaps_logged.
             echo "cd ${q_abs_outdir}"
-            echo "rm -f insarmaps.log"
+            echo "hv_prune_insarmaps_log insarmaps.log \"\$HV_DATASET_TOKEN\""
             echo "hv_ingest_insarmaps_logged ${q_scratch_log} \"\$VERT\" ${workers_opts}${amp}"
             echo "hv_ingest_insarmaps_logged ${q_scratch_log} \"\$HORZ\" ${workers_opts}${amp}"
             if [[ "$ingest_los" == "1" ]]; then

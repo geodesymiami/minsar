@@ -97,11 +97,64 @@ test_directory_selects_by_dataset() {
     rm -rf "$tmp"
 }
 
+test_dataset_token_and_product_cleanup() {
+    print_test_start "hv_dataset_token_from_name" \
+        "DS and filtDS tokens stay distinct, and --clean removes only the current token."
+    assert_equals "DS" "$(hv_dataset_token_from_name 'S1_asc_106_miaplpy_Del4DS.he5')" \
+        "Del4DS is DS"
+    assert_equals "filtDS" "$(hv_dataset_token_from_name 'S1_asc_106_miaplpy_filtDel4DS.he5')" \
+        "filtDel4DS is filtDS"
+    assert_equals "DS" "$(hv_dataset_token_from_name 'S1_vert_106_128_miaplpy_N_DS.he5')" \
+        "vert product suffix _DS"
+    assert_equals "filtDS" "$(hv_dataset_token_from_name 'S1_vert_106_128_miaplpy_N_filtDS.he5')" \
+        "vert product suffix _filtDS is not DS"
+    assert_equals "PS" "$(hv_dataset_token_from_name 'S1_asc_106_miaplpy_Del4PS.he5')" \
+        "Del4PS is PS"
+    assert_equals "" "$(hv_dataset_token_from_name 'S1_desc_124_mintpy_20141031_20151231.he5')" \
+        "mintpy name has no token"
+    local disagree
+    disagree=$(hv_dataset_token_for_inputs a_Del4DS.he5 b_filtDel4DS.he5 2>/dev/null || true)
+    assert_equals "" "$disagree" "mismatched inputs are an error"
+
+    local tmp data log
+    tmp=$(mktemp -d)
+    touch "$tmp/S1_vert_106_128_miaplpy_DS.he5" \
+        "$tmp/S1_horz_106_128_miaplpy_DS.he5" \
+        "$tmp/S1_vert_106_128_miaplpy_DS.hvparams" \
+        "$tmp/S1_vert_106_128_miaplpy_filtDS.he5" \
+        "$tmp/S1_horz_106_128_miaplpy_filtDS.he5" \
+        "$tmp/S1_vert_106_128_miaplpy_filtDS.hvparams"
+    hv_remove_dataset_products "$tmp" DS
+    assert_file_exists "$tmp/S1_vert_106_128_miaplpy_filtDS.he5" "filtDS vert survives DS clean"
+    assert_file_exists "$tmp/S1_vert_106_128_miaplpy_filtDS.hvparams" "filtDS sidecar survives DS clean"
+    [[ ! -e "$tmp/S1_vert_106_128_miaplpy_DS.he5" ]]
+    assert_equals "0" "$?" "DS vert is removed"
+
+    data="$tmp/data_files.txt"
+    printf '%s\n' '# geocode-lalo-step 0.0002 0.0002' \
+        'qq/S1_vert_a_DS.he5' 'qq/S1_horz_a_DS.he5' 'qq/S1_vert_a_filtDS.he5' > "$data"
+    hv_merge_data_files "$data" DS '# geocode-lalo-step 0.0008 0.0009' \
+        'qq/S1_vert_b_DS.he5' 'qq/S1_horz_b_DS.he5'
+    assert_contains "$(cat "$data")" 'qq/S1_vert_a_filtDS.he5' "other dataset path is kept"
+    assert_contains "$(cat "$data")" 'qq/S1_vert_b_DS.he5' "new DS path is written"
+    assert_not_contains "$(cat "$data")" 'qq/S1_vert_a_DS.he5' "old DS path is replaced"
+
+    log="$tmp/insarmaps.log"
+    printf '%s\n' \
+        'http://h/start/1/2/3?flyToDatasetCenter=false&startDataset=S1_vert_a_DS' \
+        'http://h/start/4/5/6?flyToDatasetCenter=false&startDataset=S1_vert_a_filtDS' > "$log"
+    hv_prune_insarmaps_log "$log" DS
+    assert_contains "$(cat "$log")" 'startDataset=S1_vert_a_filtDS' "filtDS URL is kept"
+    assert_not_contains "$(cat "$log")" 'startDataset=S1_vert_a_DS' "DS URL is removed"
+    rm -rf "$tmp"
+}
+
 print_header "HORZVERT RESOLVE HE5 TESTS"
 
 test_strip_trailing_slashes
 test_file_with_trailing_slash_is_used
 test_append_youngest_network_dir
+test_dataset_token_and_product_cleanup
 test_directory_selects_by_dataset
 
 print_summary

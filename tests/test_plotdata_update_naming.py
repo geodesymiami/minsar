@@ -50,6 +50,15 @@ class TestPlotDataUpdatePlaceholderNaming(unittest.TestCase):
         out = get_output_filename(metadata, template=None, direction="horz", today=date(2026, 4, 26))
         self.assertIn("_XXXXXXXX_", out)
 
+    def test_dataset_suffix_is_after_corners(self):
+        ds = get_output_filename(BASE_METADATA, template=None, direction="vert", suffix="DS")
+        filt = get_output_filename(BASE_METADATA, template=None, direction="vert", suffix="filtDS")
+        self.assertTrue(ds.endswith("_DS.he5"))
+        self.assertTrue(filt.endswith("_filtDS.he5"))
+        self.assertNotEqual(ds, filt)
+        plain = get_output_filename(BASE_METADATA, template=None, direction="vert")
+        self.assertFalse(plain.endswith("_DS.he5"))
+
 
 if __name__ == "__main__":
     unittest.main()

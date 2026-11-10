@@ -7,7 +7,7 @@
 #           that does not end in network_* gets the youngest network_* dir;
 #           dirs -> radar S1*.he5)
 #   Step 0b: Cache check (skip compute steps in run file when fresh)
-#   Write: <site>/<mintpy|miaplpy[_YYYYMM_YYYYMM]>/run_horzvert2timeseries
+#   Write: <site>/<mintpy|miaplpy[_YYYYMM_YYYYMM][_DS|_filtDS|_PS]>/run_horzvert2timeseries
 #          (longer of the two input periods; ref & wait; geocode & wait;
 #          horzvert_timeseries.py; wait; ingest). Default stops here.
 #   --submit: execute run file. Backend (auto|local|slurm) chooses how:
@@ -233,11 +233,15 @@ append_hv_to_project_logs() {
     fi
 }
 
+# Parse this body before running it. --submit blocks until the job finishes,
+# and a save of this file during that wait must not be read as the next command.
+horzvert_timeseries_main() {
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     helptext="
 Usage: $SCRIPT_NAME <file_or_dir1> <file_or_dir2> --ref-lalo LAT LON [options]
 
 Write run_horzvert2timeseries (and on SLURM login, horzvert_timeseries.job). With --submit, run or submit.
+Products go to <site>/<period> or <site>/<period>_<token> (DS, filtDS, PS).
 
 A miaplpy directory that does not already end in network_* uses the youngest
 network_* subdirectory (newest modification time). A path that already ends
@@ -257,7 +261,7 @@ Options:
       --end-date YYYYMMDD             End date
       --period YYYYMMDD:YYYYMMDD      Date period
       --force                         Recompute even if cached horz/vert are up to date
-      --clean                         Remove cached *vert*/*horz*.he5 and horzvert.hvparams
+      --clean                         Remove this dataset's cached *vert*/*horz*.he5 and .hvparams
       --no-ingest-los                 Skip ingesting radar LOS .he5 files
       --no-insarmaps                  Skip ingest_insarmaps.bash
       --no-parallel                   Run ref-point and geocode sequentially (lower memory)
@@ -705,12 +709,27 @@ else
     echo "FILE2 is radar-coded; geocode.py will write geo_$(basename "$FILE2") if needed"
 fi
 
+if ! HV_DATASET_TOKEN=$(hv_dataset_token_for_inputs "$FILE1" "$FILE2"); then
+    exit 1
+fi
+if [[ -n "$HV_DATASET_TOKEN" ]]; then
+    echo "Dataset token: $HV_DATASET_TOKEN"
+else
+    echo "Dataset token: (none)"
+fi
+
 # Output directory (used for --clean, cache check, and finish).
 # Longer mintpy/miaplpy period among the two inputs (must match horzvert_timeseries.py).
+# A dataset token is appended so DS and filtDS do not share this directory.
 #   EtnaSenA44/.../miaplpy_Big1_201504_202608 + EtnaSenD124/.../miaplpy_Big1_201504_202607
 #   → Etna/miaplpy_Big1_201504_202608
+#   qqCerroAzulSenA106/.../miaplpy_202501_202610 + token DS
+#   → qqCerroAzul/miaplpy_202501_202610_DS
 processing_method_dir=$(hv_longest_processing_method_dir "$DIR_OR_FILE1" "$DIR_OR_FILE2")
 [[ -z "$processing_method_dir" ]] && processing_method_dir="mintpy"
+if [[ -n "$HV_DATASET_TOKEN" ]]; then
+    processing_method_dir="${processing_method_dir}_${HV_DATASET_TOKEN}"
+fi
 HORZVERT_DIR="${PROJECT_DIR}/${processing_method_dir}"
 echo "Product dir: $HORZVERT_DIR"
 mkdir -p "$ORIGINAL_DIR/$HORZVERT_DIR"
@@ -722,8 +741,8 @@ mkdir -p "$ORIGINAL_DIR/$HORZVERT_DIR"
 hv_clean_cached_products() {
     local outdir="$1"
     [[ -d "$outdir" ]] || return 0
-    echo "Removing cached horz/vert products in: $outdir"
-    rm -f "$outdir"/*vert*.he5 "$outdir"/*horz*.he5 "$outdir"/*.hvparams 2>/dev/null || true
+    echo "Removing cached horz/vert products for dataset ${HV_DATASET_TOKEN:-<none>} in: $outdir"
+    hv_remove_dataset_products "$outdir" "$HV_DATASET_TOKEN"
 }
 
 hv_python_option_suffix() {
@@ -847,6 +866,7 @@ HV_INGEST_WORKERS_OPTS="${ingest_workers_opts[*]}" \
 HV_GEOM_FILE_ARGS="$GEOM_FILE_ARGS" \
 HV_DATASET_OPT1="$(get_ingest_dataset_opt "$FILE1")" \
 HV_DATASET_OPT2="$(get_ingest_dataset_opt "$FILE2")" \
+HV_DATASET_TOKEN="$HV_DATASET_TOKEN" \
 hv_write_run_horzvert2timeseries
 
 # Materialize .job envelope when using SLURM backend (even without --submit).
@@ -872,6 +892,10 @@ fi
 
 echo ""
 echo "##############################################"
-echo "Executing run_horzvert2timeseries (--submit, backend=$backend)"
+echo "Executing run_horzvert2timeseries --submit backend=$backend"
 append_hv_to_project_logs "$(date +'%Y%m%d:%H-%M') + bash/run_workflow run_horzvert2timeseries"
 hv_run_or_submit_script "$HV_RUN_FILE" "horzvert_timeseries" "$queue" "$walltime" "$HORZVERT_DIR" "$upload_flag" "$backend"
+exit 0
+}
+
+horzvert_timeseries_main "$@"
