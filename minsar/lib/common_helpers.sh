@@ -806,3 +806,151 @@ for m in "${maskps[@]}"; do
 done
 }
 
+###########################################
+# Move DIR to DIR_sav. Exit if DIR_sav already exists.
+# usage: mvsav unittestGalapagosSenD128
+function mvsav() {
+    if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || -z "${1:-}" ]]; then
+        echo "usage: mvsav DIR"
+        echo ""
+        echo "Move DIR to DIR_sav. Exit if DIR_sav already exists."
+        echo ""
+        echo "Examples:"
+        echo "mvsav unittestGalapagosSenD128"
+        [[ -z "${1:-}" ]] && return 1
+        return 0
+    fi
+    if [[ "$1" == -?* ]]; then
+        echo "Error: unknown option: $1" >&2
+        return 1
+    fi
+    if [[ $# -ne 1 ]]; then
+        echo "Error: mvsav takes one directory" >&2
+        return 1
+    fi
+    local src="${1%/}"
+    local dst="${src}_sav"
+    if [[ ! -e "$src" && ! -L "$src" ]]; then
+        echo "Error: $src does not exist" >&2
+        return 1
+    fi
+    if [[ -e "$dst" || -L "$dst" ]]; then
+        echo "Error: $dst exists already" >&2
+        return 1
+    fi
+    command mv "$src" "$dst"
+}
+
+###########################################
+# Move DIR_sav back to DIR. Exit if DIR already exists.
+# usage: mvbacksav unittestGalapagosSenD128_sav
+function mvbacksav() {
+    if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || -z "${1:-}" ]]; then
+        echo "usage: mvbacksav DIR_sav"
+        echo ""
+        echo "Move DIR_sav back to DIR. Exit if DIR already exists."
+        echo ""
+        echo "Examples:"
+        echo "mvbacksav unittestGalapagosSenD128_sav"
+        [[ -z "${1:-}" ]] && return 1
+        return 0
+    fi
+    if [[ "$1" == -?* ]]; then
+        echo "Error: unknown option: $1" >&2
+        return 1
+    fi
+    if [[ $# -ne 1 ]]; then
+        echo "Error: mvbacksav takes one directory" >&2
+        return 1
+    fi
+    local src="${1%/}"
+    if [[ "$src" != *_sav ]]; then
+        echo "Error: $src does not end with _sav" >&2
+        return 1
+    fi
+    local dst="${src%_sav}"
+    if [[ ! -e "$src" && ! -L "$src" ]]; then
+        echo "Error: $src does not exist" >&2
+        return 1
+    fi
+    if [[ -e "$dst" || -L "$dst" ]]; then
+        echo "Error: $dst exists already" >&2
+        return 1
+    fi
+    command mv "$src" "$dst"
+}
+
+###########################################
+# Move DIR to DIR_good. Exit if DIR_good already exists.
+# usage: mvgood unittestGalapagosSenD128
+function mvgood() {
+    if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || -z "${1:-}" ]]; then
+        echo "usage: mvgood DIR"
+        echo ""
+        echo "Move DIR to DIR_good. Exit if DIR_good already exists."
+        echo ""
+        echo "Examples:"
+        echo "mvgood unittestGalapagosSenD128"
+        [[ -z "${1:-}" ]] && return 1
+        return 0
+    fi
+    if [[ "$1" == -?* ]]; then
+        echo "Error: unknown option: $1" >&2
+        return 1
+    fi
+    if [[ $# -ne 1 ]]; then
+        echo "Error: mvgood takes one directory" >&2
+        return 1
+    fi
+    local src="${1%/}"
+    local dst="${src}_good"
+    if [[ ! -e "$src" && ! -L "$src" ]]; then
+        echo "Error: $src does not exist" >&2
+        return 1
+    fi
+    if [[ -e "$dst" || -L "$dst" ]]; then
+        echo "Error: $dst exists already" >&2
+        return 1
+    fi
+    command mv "$src" "$dst"
+}
+
+###########################################
+# Move DIR_good back to DIR. Exit if DIR already exists.
+# usage: mvbackgood unittestGalapagosSenD128_good
+function mvbackgood() {
+    if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || -z "${1:-}" ]]; then
+        echo "usage: mvbackgood DIR_good"
+        echo ""
+        echo "Move DIR_good back to DIR. Exit if DIR already exists."
+        echo ""
+        echo "Examples:"
+        echo "mvbackgood unittestGalapagosSenD128_good"
+        [[ -z "${1:-}" ]] && return 1
+        return 0
+    fi
+    if [[ "$1" == -?* ]]; then
+        echo "Error: unknown option: $1" >&2
+        return 1
+    fi
+    if [[ $# -ne 1 ]]; then
+        echo "Error: mvbackgood takes one directory" >&2
+        return 1
+    fi
+    local src="${1%/}"
+    if [[ "$src" != *_good ]]; then
+        echo "Error: $src does not end with _good" >&2
+        return 1
+    fi
+    local dst="${src%_good}"
+    if [[ ! -e "$src" && ! -L "$src" ]]; then
+        echo "Error: $src does not exist" >&2
+        return 1
+    fi
+    if [[ -e "$dst" || -L "$dst" ]]; then
+        echo "Error: $dst exists already" >&2
+        return 1
+    fi
+    command mv "$src" "$dst"
+}
+
