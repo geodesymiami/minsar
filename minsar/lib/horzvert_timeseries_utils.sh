@@ -87,6 +87,27 @@ hv_append_dir_log() {
     [[ -d "$abs_dir" ]] && echo "$line" >> "${abs_dir}/log"
 }
 
+# Overwrite commands.bash with this horzvert_timeseries.bash invocation.
+hv_write_commands_bash() {
+    local dest="$1"
+    shift
+    local ts cmd_line arg
+
+    [[ -n "$dest" ]] || return 0
+    mkdir -p "$(dirname "$dest")"
+    ts=$(date +"%Y%m%d:%H-%M")
+    cmd_line="horzvert_timeseries.bash"
+    for arg in "$@"; do
+        cmd_line+=" $(printf '%q' "$arg")"
+    done
+    {
+        echo '#!/usr/bin/env bash'
+        echo "# ${ts}"
+        echo "$cmd_line"
+    } > "$dest"
+    chmod +x "$dest"
+}
+
 # Print "In $SCRATCHDIR/..." then "Running: ..." and log to that directory's log.
 hv_announce_command() {
     local work_dir="$1"

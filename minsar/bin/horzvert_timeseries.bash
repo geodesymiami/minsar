@@ -8,6 +8,7 @@
 #           dirs -> radar S1*.he5)
 #   Step 0b: Cache check (skip compute steps in run file when fresh)
 #   Write: <site>/<mintpy|miaplpy[_YYYYMM_YYYYMM][_DS|_filtDS|_PS]>/run_horzvert2timeseries
+#          and commands.bash (this invocation).
 #          (longer of the two input periods; ref & wait; geocode & wait;
 #          horzvert_timeseries.py; wait; ingest). Default stops here.
 #   --submit: execute run file. Backend (auto|local|slurm) chooses how:
@@ -283,7 +284,7 @@ if [[ "$1" == "--help" || "$1" == "-h" ]]; then
     helptext="
 Usage: $SCRIPT_NAME <file_or_dir1> <file_or_dir2> --ref-lalo LAT LON [options]
 
-Write run_horzvert2timeseries (and on SLURM login, horzvert_timeseries.job). With --submit, run or submit.
+Write run_horzvert2timeseries, commands.bash (and on SLURM login, horzvert_timeseries.job). With --submit, run or submit.
 Products go to <site>/<period> or <site>/<period>_<token> (DS, filtDS, PS).
 
 A miaplpy directory that does not already end in network_* uses the youngest
@@ -787,6 +788,8 @@ mkdir -p "$ORIGINAL_DIR/$HORZVERT_DIR"
     echo "##############################################"
     echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME ${HV_INVOCATION_CMDLINE}"
 } >> "${ORIGINAL_DIR}/${HORZVERT_DIR}/log"
+hv_write_commands_bash "${ORIGINAL_DIR}/${HORZVERT_DIR}/commands.bash" "${hv_cmdline[@]}"
+echo "Wrote ${HORZVERT_DIR}/commands.bash"
 
 hv_clean_cached_products() {
     local outdir="$1"

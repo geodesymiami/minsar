@@ -230,6 +230,7 @@ VOLCDEF_WEB_FILES = (
     "data_files.txt",
     "download_commands.txt",
     "urls.log",
+    "commands.bash",
 )
 
 
