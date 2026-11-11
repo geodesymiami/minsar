@@ -343,6 +343,77 @@
             color: #666;
             font-size: 14px;
         }
+        body.matrix-view .container {
+            display: grid;
+            gap: 10px;
+            max-height: none;
+        }
+        body.matrix-view .container.matrix-one {
+            grid-template-columns: minmax(0, 1fr);
+        }
+        body.matrix-view .container.matrix-two {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        body.matrix-view .container.matrix-many {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-rows: repeat(var(--matrix-rows), minmax(0, 1fr));
+        }
+        body.matrix-view .panel[id^="panel"] {
+            position: relative;
+            top: auto;
+            left: auto;
+            width: auto;
+            height: auto;
+            visibility: visible !important;
+            z-index: 1 !important;
+            pointer-events: auto !important;
+        }
+        body.matrix-view .panel[id^="panel"] iframe {
+            height: calc(100% - 32px);
+        }
+        .matrix-panel-header {
+            display: none;
+        }
+        body.matrix-view .matrix-panel-header {
+            display: flex;
+            height: 32px;
+            align-items: center;
+            justify-content: center;
+            border: 0;
+            width: 100%;
+            color: white;
+            background: #607d8b;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        body.matrix-view .panel.active .matrix-panel-header {
+            background: #4a90e2;
+        }
+        .matrix-activate-overlay {
+            display: none;
+        }
+        body.matrix-view .panel:not(.active) .matrix-activate-overlay {
+            display: block;
+            position: absolute;
+            top: 32px;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            z-index: 2;
+            cursor: pointer;
+            background: transparent;
+        }
+        @media (max-width: 800px) {
+            body.matrix-view .container.matrix-two,
+            body.matrix-view .container.matrix-many {
+                grid-template-columns: minmax(0, 1fr);
+                grid-template-rows: none;
+                height: auto;
+            }
+            body.matrix-view .panel[id^="panel"] {
+                min-height: 420px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -402,6 +473,12 @@
         // To switch: comment out one line and uncomment the other
         //const USE_FULL_DATASET_IN_URL = false;  // Use short codes: view=desc/asc/vert/horz
         const USE_FULL_DATASET_IN_URL = true;   // Use full dataset names: startDataset=S1_desc_142_mintpy_...
+        // matrix.html loads this file into its own document, so both pages execute this same code.
+        const IS_MATRIX_VIEW = /(?:^|\/)matrix\.html$/i.test(window.location.pathname);
+        if (IS_MATRIX_VIEW) {
+            document.body.classList.add('matrix-view');
+            document.title = 'Insarmaps - Matrix View';
+        }
         
         // ===== URL STATE MANAGEMENT =====
         // Map view labels to short codes for URL
@@ -3844,6 +3921,12 @@
                 
                 // Create panels for each URL
                 const container = document.getElementById('container');
+                if (IS_MATRIX_VIEW) {
+                    container.classList.add(
+                        urls.length === 1 ? 'matrix-one' : (urls.length === 2 ? 'matrix-two' : 'matrix-many')
+                    );
+                    container.style.setProperty('--matrix-rows', Math.ceil(urls.length / 2));
+                }
                 
                 // Determine initial active panel based on URL view param
                 let initialActiveIndex = 0;
@@ -3897,6 +3980,18 @@
                     const panel = document.createElement('div');
                     panel.className = 'panel';
                     panel.id = `panel${index}`;
+
+                    if (IS_MATRIX_VIEW) {
+                        const header = document.createElement('button');
+                        header.type = 'button';
+                        header.className = 'matrix-panel-header';
+                        header.textContent = iframeLabels.get(index);
+                        header.title = `Activate ${iframeLabels.get(index)}`;
+                        header.addEventListener('click', () => {
+                            if (selectDatasetFn) selectDatasetFn(index);
+                        });
+                        panel.appendChild(header);
+                    }
                     
                     // Only the active panel is on top; backgrounds are occluded-visible
                     // (visibility:visible + z-index:-1) so their iframes keep rendering —
@@ -3955,6 +4050,15 @@
                     iframe.setAttribute('allowfullscreen', '');
                     
                     panel.appendChild(iframe);
+                    if (IS_MATRIX_VIEW) {
+                        const activateOverlay = document.createElement('div');
+                        activateOverlay.className = 'matrix-activate-overlay';
+                        activateOverlay.title = `Click to activate ${iframeLabels.get(index)}`;
+                        activateOverlay.addEventListener('click', () => {
+                            if (selectDatasetFn) selectDatasetFn(index);
+                        });
+                        panel.appendChild(activateOverlay);
+                    }
                     container.appendChild(panel);
                 });
 

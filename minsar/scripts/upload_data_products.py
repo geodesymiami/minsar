@@ -226,6 +226,7 @@ RUN_HORZVERT_NAME = "run_horzvert2timeseries"
 VOLCDEF_WEB_FILES = (
     "insarmaps.log",
     "overlay.html",
+    "matrix.html",
     "index.html",
     "data_files.txt",
     "download_commands.txt",

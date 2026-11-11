@@ -4,11 +4,13 @@ This directory contains HTML templates for displaying insarmaps data in various 
 
 ## Templates
 
-- **overlay.html** - Overlay view with dropdown selector (supports any number of frames)
-- **matrix.html** - Matrix view with 2-column (2 frames) or 2x2 grid (4 frames) layout
+- **overlay.html** - Shared viewer implementation; overlay view uses a dropdown selector
+- **matrix.html** - Loads `overlay.html` from the same directory and enables its matrix layout
 - **column.html** - Column view with vertical stacking (2 or 4 frames)
 
-These templates read `insarmaps.log` and `download_commands.txt` when the page loads. 
+The viewers read `insarmaps.log` and `download_commands.txt` when the page loads. Deploy
+`matrix.html` with `overlay.html`; both URLs run the same viewer features and differ only
+in dataset layout.
 
 ## Usage
 

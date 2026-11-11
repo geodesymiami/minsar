@@ -644,7 +644,7 @@ hv_data_files_relpath() {
     hv_runfile_path "$abs"
 }
 
-# Copy overlay.html / index.html into product dir and write urls.log.
+# Copy the shared overlay/matrix viewer into product dir and write urls.log.
 hv_write_overlay_and_urls() {
     local outdir="$1"
     local horzvert_rel="$2"
@@ -654,6 +654,7 @@ hv_write_overlay_and_urls() {
     lib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     html_source="${lib_dir}/../html"
     cp "$html_source/overlay.html" "$outdir/"
+    cp "$html_source/matrix.html" "$outdir/"
     cp "$outdir/overlay.html" "$outdir/index.html"
     urls_log="${outdir}/urls.log"
     if write_insarmaps_framepage_urls.py "${horzvert_rel:-$outdir}" --outdir "${horzvert_rel:-$outdir}"; then
