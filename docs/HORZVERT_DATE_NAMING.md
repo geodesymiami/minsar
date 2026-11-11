@@ -1,10 +1,59 @@
-# Horizontal/vertical date and directory naming
+# MintPy, MiaplPy, and horizontal/vertical date naming
 
-`horzvert_timeseries.bash` uses several date ranges for different purposes. A
-processing directory date, an input HE5 date, a requested date window, and the
-dates in a horizontal/vertical filename do not necessarily match.
+MintPy and MiaplPy processing directories are named before their final time
+series products exist. `horzvert_timeseries.bash` then uses those directories
+and the dates actually stored in their HE5 products. These date ranges do not
+necessarily match.
 
-## Date sources
+## MintPy and MiaplPy processing directories
+
+Both processing-directory functions first calculate:
+
+```text
+date_str = YYYYMM_of_first_loaded_SLC_YYYYMM_of_last_loaded_SLC
+```
+
+The source is the sorted `merged/SLC/YYYYMMDD` directory list after applying
+`miaplpy.load.startDate` and `miaplpy.load.endDate`. Non-date directories are
+ignored. The calculation does not inspect the final MintPy or MiaplPy time
+series, interferogram network, HE5, or dates rejected later in processing.
+`ssaraopt.startDate` and `ssaraopt.endDate` affect the label only indirectly by
+controlling which SLC directories are available.
+
+An important current detail is that both `get_miaplpy_dir_name()` and
+`get_mintpy_dir_name()` use the `miaplpy.load.*` bounds. MintPy-specific load
+or network date limits do not change either directory's `date_str`.
+
+| Template addition | MiaplPy directory | MintPy directory | Date behavior |
+|---|---|---|---|
+| Empty or `auto` | `miaplpy` | `mintpy` | No date text, although `date_str` is still calculated internally. |
+| `date` | `miaplpy_202005_202610` | `mintpy_202005_202610` | Appends the first/last eligible SLC months. |
+| `lalo` | `miaplpy_<S>_<N>_<W>_<E>_202005_202610` | `mintpy_<S>_<N>_<W>_<E>_202005_202610` | Appends subset bounds rounded to two decimals, then the SLC months. Each pipeline prefers its own `subset.lalo` and falls back to the other pipeline's value. |
+| Custom value, such as `Big1` | `miaplpy_Big1_202005_202610` | `mintpy_Big1_202005_202610` | Appends the literal custom token and the SLC months. |
+
+The controlling keys are `minsar.miaplpyDir.addition` and
+`minsar.mintpyDir.addition`. Two optional suffixes are then appended in this
+order:
+
+1. `_exMMDD-MMDD` from `ssaraopt.excludeSeason`, based on the template value
+   rather than a scan of quarantined SLCs.
+2. A product suffix from `minsar.product.suffix`. A literal token becomes
+   `_TOKEN`; `coherenceThreshold` becomes the three-digit coherence percentage,
+   such as `_065`.
+
+For example:
+
+```text
+miaplpy_Big1_202005_202610_ex0101-0630_065
+mintpy_202005_202610_ex0101-0630
+```
+
+MiaplPy adds a nested network directory such as `network_delaunay_4`,
+`network_sequential_3`, or `network_single_reference`. Its number describes a
+network parameter, not a date. Processing-directory date labels remain fixed
+when later acquisitions are rejected or when the HE5 export becomes stale.
+
+## Horizontal/vertical date sources
 
 | Date text | Example | Inferred from | Meaning |
 |---|---|---|---|
