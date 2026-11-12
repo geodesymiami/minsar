@@ -483,6 +483,9 @@ function run_command() {
     if [[ -n "$TE" ]]; then
         log_cmd="${log_cmd//$TE/\$TE}"
     fi
+    if [[ -n "${ATE:-}" ]]; then
+        log_cmd="${log_cmd//$ATE/\$ATE}"
+    fi
     if [[ -n "$SAMPLESDIR" ]]; then
         log_cmd="${log_cmd//$SAMPLESDIR/\$SAMPLESDIR}"
     fi

@@ -3,7 +3,7 @@
 Create a MinSAR template file for an AOI and project name.
 
 Runs get_sar_coverage.py --select to determine ascending/descending orbit labels,
-reads a dummy template, fills in ssaraopt.relativeOrbit, miaplpy.subset.lalo,
+reads minsar/defaults/processing.template, fills in ssaraopt.relativeOrbit, miaplpy.subset.lalo,
 and date range (optional: --quick-run, --period, --start-date/--end-date, or
 --last-year for the full previous calendar year), writes the template to CWD.
 Sets ``mintpy.plot`` to yes when the ssaraopt span is ``<= 365`` days (else no);
@@ -61,16 +61,8 @@ def _get_minsar_home() -> Path:
 
 
 def _get_dummy_template_path() -> Path:
-    """Return path to dummy_miaplpy_1.template."""
-    base = _get_minsar_home()
-    candidates = [
-        base / "docs" / "dummy_miaplpy_1.template",
-        base / "minsar" / "docs" / "dummy_miaplpy_1.template",
-    ]
-    for p in candidates:
-        if p.exists():
-            return p
-    return candidates[0]
+    """Return path to minsar/defaults/processing.template."""
+    return _get_minsar_home() / "minsar" / "defaults" / "processing.template"
 
 
 def _aoi_to_subset_lalo(aoi_raw: str) -> str:

@@ -1,8 +1,8 @@
 # Custom template options
 
-Shared processing defaults live in [`minsar/defaults/minsar_defaults.template`](../minsar/defaults/minsar_defaults.template). That file is the control file for a normal minsarApp run: looks, network, coherence, upload flags, and the other lines `create_template.py` copies. Phase 1 puts today's [`docs/dummy_miaplpy_1.template`](dummy_miaplpy_1.template) there and points `create_template.py` at the new path. Per-dataset choices live in one sectioned text file owned by the user, outside the minsar git checkout. Known-bad bursts stay in [`minsar/exclusions/exclude_acquisitions.csv`](../minsar/exclusions/exclude_acquisitions.csv).
+Shared processing defaults live in [`minsar/defaults/processing.template`](../minsar/defaults/processing.template). That file is the control file for a normal minsarApp run: looks, network, coherence, upload flags, and the other lines `create_template.py` copies. The name does not use the `minsar_template` or `insar_template` prefix, so it stays distinct from `minsar_template.cfg` and `minsar_template_defaults.cfg`, which remain the `auto` key list and the older INI fallbacks. `create_template.py` copies that file. It replaces the old `docs/dummy_miaplpy_1.template`. `job_defaults.cfg` and `queues.cfg` stay as they are. Per-dataset choices live in one sectioned text file owned by the user, outside the minsar git checkout. Known-bad bursts stay in [`minsar/exclusions/exclude_acquisitions.csv`](../minsar/exclusions/exclude_acquisitions.csv).
 
-Work is four phases. Phase 1 is the first implementation. Later phases use the same file and are implemented after phase 1 is in use.
+minsarApp, run_minsar.bash, and save_custom_options.py share one custom file.
 
 Two ways to start a run stay available:
 
@@ -79,9 +79,26 @@ minsarApp.bash -8.326:-8.194,117.942:118.069 Tambora --flight-dir desc --templat
 minsarApp.bash -8.326:-8.194,117.942:118.069 Tambora --flight-dir desc
 ```
 
-[`minsar/scripts/create_template.py`](../minsar/scripts/create_template.py) copies [`minsar/defaults/minsar_defaults.template`](../minsar/defaults/minsar_defaults.template) and replaces `ssaraopt.relativeOrbit`, `miaplpy.subset.lalo`, dates, and `topsStack.coregistration` from the AOI and coverage. Looks, network, coherence defaults, upload flags, and the other lines in the defaults file are kept. Orbit and subset values that are only examples in that file are not left on Tambora.
+[`minsar/scripts/create_template.py`](../minsar/scripts/create_template.py) copies [`minsar/defaults/processing.template`](../minsar/defaults/processing.template) and replaces `ssaraopt.relativeOrbit`, `miaplpy.subset.lalo`, dates, and `topsStack.coregistration` from the AOI and coverage. Looks, network, coherence defaults, upload flags, and the other lines in the defaults file are kept. Orbit and subset values that are only examples in that file are not left on Tambora.
 
-A change in `minsar_defaults.template` applies to the next run that copies that file. An AOI command that writes a template, and every `run_minsar.bash` run, copy the file as it is now, then the custom section overrides any key it lists. `minsarApp.bash $TE/GalapagosSenA106.template` does not read the defaults file, so an existing `$TE` template keeps its own lines. A value already saved in the custom file keeps winning after the defaults file changes, including when that saved value was the old default.
+A change in `processing.template` applies to the next run that copies that file. An AOI command that writes a template, and every `run_minsar.bash` run, copy the file as it is now, then the custom section overrides any key it lists. `minsarApp.bash $TE/GalapagosSenA106.template` does not read the defaults file, so an existing `$TE` template keeps its own lines. A value already saved in the custom file keeps winning after the defaults file changes, including when that saved value was the old default.
+
+## Optional later — dated copies of the defaults file
+
+Not part of phases 1–4. Those phases always copy `minsar/defaults/processing.template`. That active name stays free of a date or a version number.
+
+When this option is added, an edit of the active file first copies the current contents to `minsar/defaults/archive/processing_YYYYMMDD.template`. A second edit on the same day uses `processing_YYYYMMDD_HHMM.template`. The archive name is the retired copy. New runs still read the undated active file.
+
+The custom section can record which copy was current when the section was saved. `defaults` is a launcher key. It is not written into the processing template.
+
+```text
+[GalapagosSenA106]
+defaults = 20261112
+aoi = -1.6:1.7,-92.0:-89.0
+mintpy.unwrapError.method = bridging+phase_closure
+```
+
+`save_custom_options.py` would set `defaults` to the archive date of the file it compared against. `run_minsar.bash` would keep using the active file unless that dataset's `defaults` value, or a `--defaults YYYYMMDD` flag, names an archive. The archive is then the file that gets copied for that run, and the custom section still overrides keys it lists.
 
 Phase 1 adds the custom-file overlay on that written template before ISCE2, MintPy, and MiaplPy run.
 
@@ -122,7 +139,7 @@ Applied keys are printed into the project log. `smallbaselineApp.py`, MiaplPy jo
 ```mermaid
 flowchart TD
   aoi["minsarApp.bash AOI Tambora"]
-  dummy["minsar_defaults.template"]
+  dummy["processing.template"]
   tmpl["template file"]
   custom["custom file"]
   cli["CLI exclude-dates and miaplpy load dates"]
@@ -205,9 +222,9 @@ Then [`minsar/scripts/save_custom_options.py`](../minsar/scripts/save_custom_opt
 save_custom_options.py $TE/TamboraSenD134.template
 ```
 
-Both files are read as assignments. A `#` line is ignored. Text after `#` on an assignment is ignored. Extra spaces around `=` do not matter. The last uncommented assignment for a key wins. Key order in `$TE` does not have to match `minsar_defaults.template`.
+Both files are read as assignments. A `#` line is ignored. Text after `#` on an assignment is ignored. Extra spaces around `=` do not matter. The last uncommented assignment for a key wins. Key order in `$TE` does not have to match `processing.template`.
 
-The section name is the template stem. The script replaces that section if it is already present. It writes `aoi` from `miaplpy.subset.lalo` and every template key whose value differs from [`minsar/defaults/minsar_defaults.template`](../minsar/defaults/minsar_defaults.template). Orbit, dates, and subset lines that `create_template` fills on every AOI run are not copied when they match that generated result. The custom-file path is the same lookup as phase 1 (`MINSAR_CUSTOM_OPTIONS`, then `$HOME/.minsar/config.cfg`).
+The section name is the template stem. The script replaces that section if it is already present. It writes `aoi` from `miaplpy.subset.lalo` and every template key whose value differs from [`minsar/defaults/processing.template`](../minsar/defaults/processing.template). Orbit, dates, and subset lines that `create_template` fills on every AOI run are not copied when they match that generated result. The custom-file path is the same lookup as phase 1 (`MINSAR_CUSTOM_OPTIONS`, then `$HOME/.minsar/config.cfg`).
 
 `minsarApp` flags such as `--no-mintpy` are not stored in the template. Pass them to the save script to set the `options` line:
 
@@ -216,6 +233,15 @@ save_custom_options.py $TE/CerroAzulSenA106.template -- --no-mintpy --miaplpy
 ```
 
 After that, `run_minsar.bash TamboraSenD134` uses `$ATE` and the saved section. `$TE/TamboraSenD134.template` stays where it is.
+
+## Phase 1 also removes the old template generators
+
+`minsarApp.bash` does not call `create_insar_template.py`. An AOI command uses `create_template.py` and `processing.template`. Nothing in the tests imports `create_insar_template`. Phase 1 deletes these files so the old skeletons are not mistaken for `processing.template`:
+
+- `minsar/defaults/insar_template.template`
+- `minsar/utils/create_insar_template.py`
+- `minsar/src/minsar/cli/create_insar_template.py`
+- `minsar/docs/template.txt` — the `***marker***` skeleton that CLI looks for (`docs/template.txt` under the repo, `MakeTemplate/docs/template.txt`, or `minsar/docs/template.txt`)
 
 ## Acquisition exclusions stay in the CSV
 

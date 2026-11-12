@@ -69,10 +69,13 @@ Debug options:                                                                  
                                                                                  \n\
 Using AOI and name as the first two arguments. create_template and minsarApp options may follow in any order.\n\
 create_template.py --help lists the template options.\n\
+--template-dir DIR    AOI mode: write the template in DIR instead of \$TE (run_minsar.bash uses \$ATE).\n\
+Per-dataset keys come from MINSAR_CUSTOM_OPTIONS or custom_template_options in \$HOME/.minsar/config.cfg.\n\
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --platform S1 --flight-dir asc --quick-run 2026 --no-mintpy --miaplpy  \n\
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --period 20210101:20221231 --exclude-season 1101-0430 --exclude-dates 20260619 --coregistration geometry --tropo no --insarmaps-dataset DS  \n\
       minsarApp.bash \$TE/GalapagosSenDT128.template --exclude-dates 20260619 --miaplpy.load.startDate 20211201 --start jobfiles --miaplpy  \n\
-      minsarApp.bash -0.86:-0.81,-91.19:-91.13 qtestGalapagos --flight-dir asc,desc --start-date 20181001 --end-date 20181231 --no-mintpy --miaplpy  \n
+      minsarApp.bash -0.86:-0.81,-91.19:-91.13 qtestGalapagos --flight-dir asc,desc --start-date 20181001 --end-date 20181231 --no-mintpy --miaplpy  \n\
+      minsarApp.bash -8.326:-8.194,117.942:118.069 Tambora --flight-dir desc --template-dir \$ATE  \n
      "
     printf "$helptext"
     exit 0
@@ -130,6 +133,8 @@ if   [[ $template_file_dir == $TEMPLATES ]]; then
     template_print_name="\$TE/$(basename $template_file)"
 elif [[ $template_file_dir == $SAMPLESDIR ]]; then
     template_print_name="\$SAMPLESDIR/$(basename $template_file)"
+elif [[ -n "${ATE:-}" && $template_file_dir == $ATE ]]; then
+    template_print_name="\$ATE/$(basename $template_file)"
 else
     template_print_name="$template_file"
 fi
@@ -380,6 +385,10 @@ do
                 shift
             fi
             ;;
+        --template-dir|--template-dir=*)
+            echo "Error: --template-dir is only for AOI mode (minsarApp.bash AOI NAME --template-dir DIR)." >&2
+            exit 1
+            ;;
 
         *)
             POSITIONAL+=("$1") # save it in an array for later
@@ -398,6 +407,13 @@ case "$(printf '%s' "$download_method" | tr '[:upper:]' '[:lower:]')" in
         download_method="burst2stack"
         ;;
 esac
+
+custom_py="${SCRIPT_DIR}/../utils/custom_template_options.py"
+custom_out="$(python3 "$custom_py" apply "$template_file")" || exit 1
+if [[ -n "$custom_out" ]]; then
+    echo "$(date +"%Y%m%d:%H-%M") * python3 custom_template_options.py apply $template_print_name" | tee -a log
+    printf '%s\n' "$custom_out" | tee -a log
+fi
 
 if [[ -n "$cli_exclude_dates" ]]; then
     exclude_dates_py="${SCRIPT_DIR}/../utils/template_exclude_dates.py"

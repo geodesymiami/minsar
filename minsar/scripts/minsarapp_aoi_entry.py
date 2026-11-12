@@ -21,6 +21,8 @@ copied to both. ``create_template.py --help`` lists the template options.
 
 ``MINSAR_APP_BASH`` must be set to the path of ``minsarApp.bash`` (set by the shell before
 ``exec``). ``TEMPLATES`` (or ``TE``) is the output directory (same as for template-first runs).
+``--template-dir DIR`` writes the template and the AOI log in DIR instead, and is removed
+before ``create_template`` and the minsarApp re-exec.
 """
 
 from __future__ import annotations
@@ -44,6 +46,39 @@ def _ensure_path() -> None:
     r = str(_repo_root())
     if r not in sys.path:
         sys.path.insert(0, r)
+
+
+def pop_template_dir(argv: list[str]) -> tuple[list[str], Path | None]:
+    """Remove ``--template-dir DIR`` from *argv*. Return the remaining argv and the directory."""
+    out: list[str] = []
+    dest: Path | None = None
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        if tok == "--template-dir":
+            if i + 1 >= len(argv) or str(argv[i + 1]).startswith("-"):
+                print(
+                    "minsarapp_aoi_entry: --template-dir requires a directory",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            dest = Path(argv[i + 1]).expanduser()
+            i += 2
+            continue
+        if tok.startswith("--template-dir="):
+            val = tok.split("=", 1)[1]
+            if not val:
+                print(
+                    "minsarapp_aoi_entry: --template-dir requires a directory",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            dest = Path(val).expanduser()
+            i += 1
+            continue
+        out.append(tok)
+        i += 1
+    return out, dest
 
 
 def _templates_dir() -> Path:
@@ -295,7 +330,8 @@ def run() -> None:
     )
     from minsar.scripts.create_template import main
 
-    argv = sys.argv[1:]
+    raw = sys.argv[1:]
+    argv, template_dir = pop_template_dir(raw)
     fixed = fix_argv_for_negative_bbox_sn_we(
         list(argv),
         **union_argv_kw(get_create_template_argv_kw(), MINSAR_APP_ARGV_KW),
@@ -309,14 +345,24 @@ def run() -> None:
         )
         sys.exit(1)
 
-    # Log original AOI invocation into $TEMPLATES/log using minsarApp-style format.
-    # Keep the exact user-entered argv tokens (AOI + NAME form), only changing log location.
-    tdir = _templates_dir()
+    # Log the original AOI invocation. --template-dir keeps this log out of $TE.
+    if template_dir is not None:
+        try:
+            template_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            print(
+                f"minsarapp_aoi_entry: cannot create {template_dir}: {exc}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        tdir = template_dir.resolve()
+    else:
+        tdir = _templates_dir()
     log_path = tdir / "log"
     timestamp = datetime.now().strftime("%Y%m%d:%H-%M")
     with open(log_path, "a", encoding="utf-8") as f:
         f.write("#############################################################################################\n")
-        f.write(f"{timestamp} * minsarApp.bash {' '.join(argv)}\n")
+        f.write(f"{timestamp} * minsarApp.bash {' '.join(raw)}\n")
 
     mapp = os.environ.get("MINSAR_APP_BASH")
     if not mapp or not Path(mapp).is_file():
