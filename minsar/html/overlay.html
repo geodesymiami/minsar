@@ -346,6 +346,8 @@
         body.matrix-view .container {
             display: grid;
             gap: 10px;
+            height: auto;
+            min-height: calc(100vh - 145px);
             max-height: none;
         }
         body.matrix-view .container.matrix-one {
@@ -473,8 +475,17 @@
         // To switch: comment out one line and uncomment the other
         //const USE_FULL_DATASET_IN_URL = false;  // Use short codes: view=desc/asc/vert/horz
         const USE_FULL_DATASET_IN_URL = true;   // Use full dataset names: startDataset=S1_desc_142_mintpy_...
-        // matrix.html loads this file into its own document, so both pages execute this same code.
-        const IS_MATRIX_VIEW = /(?:^|\/)matrix\.html$/i.test(window.location.pathname);
+        // matrix.html injects INSARMAPS_LAYOUT before this script runs; pathname is a fallback.
+        function detectMatrixView() {
+            if (window.INSARMAPS_LAYOUT === 'matrix') return true;
+            try {
+                if (new URLSearchParams(window.location.search).get('layout') === 'matrix') {
+                    return true;
+                }
+            } catch (e) { /* ignore */ }
+            return /(?:^|\/)matrix\.html$/i.test(window.location.pathname);
+        }
+        const IS_MATRIX_VIEW = detectMatrixView();
         if (IS_MATRIX_VIEW) {
             document.body.classList.add('matrix-view');
             document.title = 'Insarmaps - Matrix View';
@@ -4012,8 +4023,9 @@
                     const dataset = iframeDatasets.get(index);
                     const hasCoords = currentMapParams.lat && currentMapParams.lon && currentMapParams.zoom && dataset;
                     const isActive = index === initialActiveIndex;
+                    const loadNow = isActive || IS_MATRIX_VIEW;
                     let iframeSrc = null;
-                    if (isActive) {
+                    if (loadNow) {
                         if (hasCoords) {
                             iframeSrc = buildInsarmapsUrl(
                                 baseUrl,
@@ -4040,10 +4052,13 @@
                             reason: 'initial-active'
                         });
                         iframe.onload = () => {
-                            console.log(`[overlay] iframe LOADED ${iframeLabelForLog(index)}  reason=initial-active`);
-                            // Active dataset is on screen; start preloading all backgrounds right away.
-                            if (urls.length > 1) {
-                                scheduleBackgroundSync('after-initial-active', { immediate: true });
+                            const reason = isActive ? 'initial-active' : 'matrix-initial';
+                            console.log(`[overlay] iframe LOADED ${iframeLabelForLog(index)}  reason=${reason}`);
+                            if (urls.length > 1 && (isActive || index === urls.length - 1)) {
+                                scheduleBackgroundSync(
+                                    isActive ? 'after-initial-active' : 'after-matrix-initial',
+                                    { immediate: true }
+                                );
                             }
                         };
                     }

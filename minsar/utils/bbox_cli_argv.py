@@ -344,6 +344,7 @@ GET_SAR_COVERAGE_ARGV_KW = {
         "--startDate",
         "--endDate",
         "--max-discovery",
+        "--flight-dir",
     ),
     "consume_two": (),
     "flags": ("--all", "--verbose", "--show-removed", "--select", "-v"),

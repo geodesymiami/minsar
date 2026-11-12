@@ -35,8 +35,11 @@
                 return response.text();
             })
             .then((html) => {
+                const boot =
+                    '<script>window.INSARMAPS_LAYOUT="matrix";</' + 'script>';
+                const injected = html.replace(/<body(\s[^>]*)?>/i, (match) => match + boot);
                 document.open();
-                document.write(html);
+                document.write(injected);
                 document.close();
             })
             .catch((error) => {

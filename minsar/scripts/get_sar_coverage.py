@@ -47,7 +47,7 @@ import asf_search as asf
 from shapely import wkt as _shapely_wkt
 from shapely.geometry import shape as _shapely_shape
 from asf_search.constants import INTERNAL
-from minsar.utils.convert_bbox import _input_to_bounds
+from minsar.utils.convert_bbox import _asf_vertex_url, _input_to_bounds
 from minsar.utils.sar_platform import normalize_sar_platform_token
 
 INTERNAL.CMR_TIMEOUT = 90
@@ -62,6 +62,7 @@ Examples:
   get_sar_coverage.py 36.322:36.502,25.306:25.502 --platform S1 --select   # parseable vars for bash
   get_sar_coverage.py AOI --platform S1 --show-removed   # list SLC granules dropped (partial footprint vs AOI)
   get_sar_coverage.py -23.393:-23.097,-68.356:-68.175 --platform S1   # negative lat (or use -- before AOI)
+  get_sar_coverage.py 36.322:36.502,25.306:25.502 --platform S1 --flight-dir asc --start-date 20230101 --end-date 20241231
 
 Select (--select): requires exactly one platform (--platform S1 or NISAR or ALOS2). Prints asc_relorbit, asc_label, desc_relorbit, desc_label to stdout (progress to stderr). Sentinel-1 also prints asc_nbursts and desc_nbursts (distinct bursts on that orbit). In bash: eval $(get_sar_coverage.py AOI --platform S1 --select); then use $asc_relorbit, $desc_relorbit, $asc_label, $desc_label, $asc_nbursts, $desc_nbursts. For Sentinel-1, each direction picks the orbit with the best full-AOI coverage across intersecting dates (then margin, then incidence); NISAR/ALOS-2 still use max incidence.
 
@@ -664,7 +665,12 @@ def _last_date_from_results(results: List) -> Optional[datetime.date]:
 
 
 def query_sentinel1(
-    wkt: str, start, end, verbose: bool = False, max_results_s1: int = _DISCOVERY_MAX_RESULTS_S1_DEFAULT
+    wkt: str,
+    start,
+    end,
+    verbose: bool = False,
+    max_results_s1: int = _DISCOVERY_MAX_RESULTS_S1_DEFAULT,
+    flight_direction: Optional[str] = None,
 ) -> Tuple[List, List]:
     """Fetch S1 SLC products (orbit/direction discovery) plus a 30-day BURST query
     for subswath and incidence angle detection across all active orbits.
@@ -685,6 +691,8 @@ def query_sentinel1(
         dataset=[asf.DATASET.SENTINEL1],
         maxResults=max_results_s1,
     )
+    if flight_direction:
+        _s1_slc_kwargs['flightDirection'] = flight_direction
     _print_asf_code(verbose, _s1_slc_kwargs)
     slc_sample = []
     try:
@@ -708,6 +716,8 @@ def query_sentinel1(
             dataset=[asf.DATASET.SLC_BURST],
             maxResults=200,
         )
+        if flight_direction:
+            _s1_burst_kwargs['flightDirection'] = flight_direction
         _print_asf_code(verbose, _s1_burst_kwargs)
         try:
             burst_results = list(asf.search(**_s1_burst_kwargs))
@@ -720,7 +730,7 @@ def query_sentinel1(
     return slc_sample, burst_results
 
 
-def query_nisar(wkt: str, start, end, verbose: bool = False) -> List:
+def query_nisar(wkt: str, start, end, verbose: bool = False, flight_direction: Optional[str] = None) -> List:
     """Fetch up to 250 NISAR RSLC products for orbit/direction discovery."""
     _vprint(verbose, f"  query (RSLC, maxResults={_DISCOVERY_MAX_RESULTS}): "
                      f"dataset=NISAR  processingLevel=RSLC")
@@ -733,6 +743,8 @@ def query_nisar(wkt: str, start, end, verbose: bool = False) -> List:
         processingLevel=['RSLC'],
         maxResults=_DISCOVERY_MAX_RESULTS,
     )
+    if flight_direction:
+        _nisar_kwargs['flightDirection'] = flight_direction
     _print_asf_code(verbose, _nisar_kwargs)
     try:
         results = list(asf.search(**_nisar_kwargs))
@@ -744,7 +756,13 @@ def query_nisar(wkt: str, start, end, verbose: bool = False) -> List:
 
 
 def query_alos2(
-    wkt: str, start, end, polarization: str, max_results: int = _ALOS2_DISCOVERY_MAX_RESULTS, verbose: bool = False
+    wkt: str,
+    start,
+    end,
+    polarization: str,
+    max_results: int = _ALOS2_DISCOVERY_MAX_RESULTS,
+    verbose: bool = False,
+    flight_direction: Optional[str] = None,
 ) -> List:
     """Fetch ALOS-2 L1.1 products for one polarization (HH or HH+HV) for orbit/direction discovery."""
     pol_list = [p.strip() for p in polarization.split('+')] if '+' in polarization else [polarization]
@@ -760,6 +778,8 @@ def query_alos2(
         polarization=pol_list,
         maxResults=max_results,
     )
+    if flight_direction:
+        _alos2_kwargs['flightDirection'] = flight_direction
     _print_asf_code(verbose, _alos2_kwargs)
     try:
         results = list(asf.search(**_alos2_kwargs))
@@ -1033,6 +1053,7 @@ def _aggregate(
     orbit_subswath_map: Optional[Dict],
     counts: Optional[Dict[Tuple[int, str], int]],
     verbose: bool = False,
+    directions: Optional[List[str]] = None,
 ) -> List[Dict]:
     """Aggregate results into per-(direction, orbit) rows.
 
@@ -1064,8 +1085,10 @@ def _aggregate(
     if verbose and n_no_dir:
         print(f"  [Note] {n_no_dir} results skipped (flight direction unavailable)")
 
+    if directions is None:
+        directions = ['Ascending', 'Descending']
     rows = []
-    for direction in ['Ascending', 'Descending']:
+    for direction in directions:
         orbits = data.get(direction, {})
         orbit_records = []
         for orbit, info in orbits.items():
@@ -1363,9 +1386,115 @@ def print_bbox_info(wkt: str) -> None:
 # CLI
 # ---------------------------------------------------------------------------
 
+def parse_cli_date(value: str, option: str) -> datetime.date:
+    """Parse YYYY-MM-DD or YYYYMMDD. Exit with an error message on failure."""
+    text = value.strip()
+    if re.fullmatch(r'\d{4}-\d{2}-\d{2}', text):
+        fmt = '%Y-%m-%d'
+    elif re.fullmatch(r'\d{8}', text):
+        fmt = '%Y%m%d'
+    else:
+        print(f"Error: {option} must be YYYY-MM-DD or YYYYMMDD", file=sys.stderr)
+        sys.exit(1)
+    try:
+        return datetime.datetime.strptime(text, fmt).date()
+    except ValueError:
+        print(f"Error: {option} must be YYYY-MM-DD or YYYYMMDD", file=sys.stderr)
+        sys.exit(1)
+
+
+def _normalize_flight_dir(value: str) -> str:
+    """Normalize --flight-dir: asc, desc, both, asc,desc, or desc,asc."""
+    raw = value.strip().lower()
+    if raw == 'both':
+        return 'both'
+    if raw in ('asc', 'desc'):
+        return raw
+    if ',' not in raw:
+        raise argparse.ArgumentTypeError(
+            f"Invalid --flight-dir {value!r}; use asc, desc, both, asc,desc, or desc,asc"
+        )
+    parts = [p.strip().lower() for p in raw.split(',') if p.strip()]
+    if len(parts) != 2:
+        raise argparse.ArgumentTypeError(
+            f"Invalid --flight-dir {value!r}; expected two comma-separated directions"
+        )
+    a, b = parts
+    for part in (a, b):
+        if part not in ('asc', 'desc'):
+            raise argparse.ArgumentTypeError(
+                f"Invalid --flight-dir {value!r}; each part must be asc or desc"
+            )
+    return f'{a},{b}'
+
+
+def _asf_flight_direction(flight_dir: Optional[str]) -> Optional[str]:
+    """ASF flightDirection for a single pass, or None when both passes are requested."""
+    if flight_dir == 'asc':
+        return 'ASCENDING'
+    if flight_dir == 'desc':
+        return 'DESCENDING'
+    return None
+
+
+def _display_directions(flight_dir: Optional[str]) -> List[str]:
+    """Directions to show. None, both, and asc,desc keep Ascending then Descending."""
+    if flight_dir == 'asc':
+        return ['Ascending']
+    if flight_dir == 'desc':
+        return ['Descending']
+    return ['Ascending', 'Descending']
+
+
+def _vertex_flight_dirs(flight_dir: Optional[str]) -> Optional[str]:
+    """Vertex flightDirs value, or None so the search includes both directions."""
+    if flight_dir == 'asc':
+        return 'Ascending'
+    if flight_dir == 'desc':
+        return 'Descending'
+    return None
+
+
+def print_asf_vertex_urls(wkt: str, start, end, platforms: set, flight_dir: Optional[str]) -> None:
+    """Print an ASF Vertex search URL for each requested platform."""
+    lon_min, lat_min, lon_max, lat_max = parse_bbox(wkt)
+    lat_min = round(lat_min, 3)
+    lat_max = round(lat_max, 3)
+    lon_min = round(lon_min, 3)
+    lon_max = round(lon_max, 3)
+    polygon = (
+        f"POLYGON(({lon_min} {lat_min},{lon_max} {lat_min},"
+        f"{lon_max} {lat_max},{lon_min} {lat_max},{lon_min} {lat_min}))"
+    )
+    start_s = start.isoformat()
+    end_s = end.isoformat()
+    extra: List[str] = []
+    fd = _vertex_flight_dirs(flight_dir)
+    if fd:
+        extra.append(f'flightDirs={fd}')
+    specs: List[Tuple[str, str, List[str]]] = []
+    if 'S1' in platforms:
+        specs.append(('Sentinel-1 SLC', 'SENTINEL-1', ['productTypes=SLC', 'beamModes=IW', *extra]))
+    if 'NISAR' in platforms:
+        specs.append(('NISAR RSLC', 'NISAR', ['processingLevel=RSLC', *extra]))
+    if 'ALOS2' in platforms:
+        specs.append(('ALOS-2 L1.1', 'ALOS-2', ['processingLevel=L1.1', *extra]))
+    if not specs:
+        return
+    print()
+    print('ASF Vertex')
+    for label, dataset, params in specs:
+        url = _asf_vertex_url(
+            polygon, lat_min, lat_max, lon_min, lon_max, start_s, end_s, dataset, extra_params=params,
+        )
+        print(label)
+        print(url)
+    print()
+
+
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description='Show SAR sensor coverage (orbits, incidence, subswath, count) for an AOI.',
+        description='Show SAR sensor coverage (orbits, incidence, subswath, count) for an AOI. Prints an ASF Vertex URL.',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=EPILOG,
     )
@@ -1386,14 +1515,16 @@ def create_parser() -> argparse.ArgumentParser:
                             'ALOS2 / ALOS-2 for ALOS-2. '
                             'Example: --platform S1,ALOS2'
                         ))
-    parser.add_argument('--start-date', default=_DISCOVERY_START_DEFAULT, metavar='YYYY-MM-DD',
-                        help='Start date for discovery queries (default: 2016-01-01)')
-    parser.add_argument('--end-date', default=_DISCOVERY_END_DEFAULT, metavar='YYYY-MM-DD',
-                        help='End date for S1 and BURST discovery (default: 2026-12-31). NISAR uses 2026-01-01 to today.')
-    parser.add_argument('--startDate', default=None, metavar='YYYY-MM-DD',
-                        help='Start date for acquisition count range (default: 2014-10-01).')
-    parser.add_argument('--endDate', default=None, metavar='YYYY-MM-DD',
-                        help='End date for acquisition count range (default: today).')
+    parser.add_argument('--start-date', default=_DISCOVERY_START_DEFAULT, metavar='DATE',
+                        help='Discovery start date, YYYY-MM-DD or YYYYMMDD (default: 2016-01-01)')
+    parser.add_argument('--end-date', default=_DISCOVERY_END_DEFAULT, metavar='DATE',
+                        help='Discovery end date, YYYY-MM-DD or YYYYMMDD (default: 2026-12-31). NISAR uses 2026-01-01 to today.')
+    parser.add_argument('--startDate', default=None, metavar='DATE',
+                        help='Acquisition-count start, YYYY-MM-DD or YYYYMMDD (default: 2014-10-01). Sets the Vertex URL start when given.')
+    parser.add_argument('--endDate', default=None, metavar='DATE',
+                        help='Acquisition-count end, YYYY-MM-DD or YYYYMMDD (default: today). Sets the Vertex URL end when given.')
+    parser.add_argument('--flight-dir', default=None, dest='flight_dir', metavar='DIR', type=_normalize_flight_dir,
+                        help='asc, desc, asc,desc, desc,asc, or both (default: both)')
     parser.add_argument('--max-discovery', type=int, default=_DISCOVERY_MAX_RESULTS_S1_DEFAULT,
                         metavar='N',
                         help='Max S1 SLC granules fetched for orbit discovery (default: %(default)s). Increase if orbits are missing.')
@@ -1426,33 +1557,18 @@ def main(iargs=None):
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    try:
-        start = datetime.datetime.strptime(inps.start_date, '%Y-%m-%d').date()
-    except ValueError:
-        print(f"Error: --start-date must be YYYY-MM-DD", file=sys.stderr)
-        sys.exit(1)
-
-    try:
-        end = datetime.datetime.strptime(inps.end_date, '%Y-%m-%d').date()
-    except ValueError:
-        print(f"Error: --end-date must be YYYY-MM-DD", file=sys.stderr)
-        sys.exit(1)
+    start = parse_cli_date(inps.start_date, '--start-date')
+    end = parse_cli_date(inps.end_date, '--end-date')
 
     # Count date range: full period (2014-10-01 to today) unless --startDate/--endDate
     count_start = _COUNT_START_DEFAULT
     count_end = datetime.date.today()
     if inps.startDate is not None:
-        try:
-            count_start = datetime.datetime.strptime(inps.startDate, '%Y-%m-%d').date()
-        except ValueError:
-            print(f"Error: --startDate must be YYYY-MM-DD", file=sys.stderr)
-            sys.exit(1)
+        count_start = parse_cli_date(inps.startDate, '--startDate')
     if inps.endDate is not None:
-        try:
-            count_end = datetime.datetime.strptime(inps.endDate, '%Y-%m-%d').date()
-        except ValueError:
-            print(f"Error: --endDate must be YYYY-MM-DD", file=sys.stderr)
-            sys.exit(1)
+        count_end = parse_cli_date(inps.endDate, '--endDate')
+    asf_dir = _asf_flight_direction(inps.flight_dir)
+    display_dirs = _display_directions(inps.flight_dir)
 
     platforms = {normalize_sar_platform_token(p) for p in inps.platforms.split(',')}
     if 'ALL' in platforms:
@@ -1476,9 +1592,15 @@ def main(iargs=None):
     _vprint(inps.verbose, f"AOI (WKT) : {wkt}")
     _vprint(inps.verbose, f"Discovery date range: {start} to {end}")
     _vprint(inps.verbose, f"Count date range: {count_start} to {count_end} (use --startDate/--endDate to override)")
-    _vprint(inps.verbose, f"Platforms : {', '.join(sorted(platforms))}\n")
+    _vprint(inps.verbose, f"Platforms : {', '.join(sorted(platforms))}")
+    if asf_dir:
+        _vprint(inps.verbose, f"Flight direction: {asf_dir}")
+    _vprint(inps.verbose, "")
     if _aoi_input_is_polygon_wkt(inps.aoi):
         print_bbox_info(wkt)
+    url_start = count_start if inps.startDate is not None else start
+    url_end = count_end if inps.endDate is not None else end
+    print_asf_vertex_urls(wkt, url_start, url_end, platforms, inps.flight_dir)
 
     aoi_geom = None
     try:
@@ -1495,7 +1617,8 @@ def main(iargs=None):
         print("\nQuerying Sentinel-1...")
         _vprint(inps.verbose, "  [Sentinel-1]")
         slc_sample, burst_results = query_sentinel1(
-            wkt, start, end, verbose=inps.verbose, max_results_s1=inps.max_discovery
+            wkt, start, end, verbose=inps.verbose, max_results_s1=inps.max_discovery,
+            flight_direction=asf_dir,
         )
         orbit_sw_map = _build_orbit_metadata_map(burst_results)
 
@@ -1505,6 +1628,7 @@ def main(iargs=None):
             for orb in [_get_orbit(p)]
             if orb is not None and _get_direction(p)
         ]))
+        orbit_dirs = [od for od in orbit_dirs if od[1] in display_dirs]
         _vprint(inps.verbose, "  [Sentinel-1 counts: footprint covers AOI]")
         s1_max = _S1_FULL_COVERAGE_MAX_RESULTS_ALL if inps.all else _S1_FULL_COVERAGE_MAX_RESULTS
         (
@@ -1571,14 +1695,17 @@ def main(iargs=None):
                     reason = row.get('reason', '')
                     print(f"      {g}  {d}  [{reason}]")
 
-        rows = _aggregate(slc_sample, orbit_sw_map, counts, verbose=inps.verbose)
+        rows = _aggregate(
+            slc_sample, orbit_sw_map, counts, verbose=inps.verbose, directions=display_dirs,
+        )
         all_rows.append(('Sentinel-1', rows))
 
     if 'NISAR' in platforms:
         print("\nQuerying NISAR...")
         _vprint(inps.verbose, "  [NISAR]")
         nisar_sample = query_nisar(
-            wkt, _NISAR_DISCOVERY_START, datetime.date.today(), verbose=inps.verbose
+            wkt, _NISAR_DISCOVERY_START, datetime.date.today(), verbose=inps.verbose,
+            flight_direction=asf_dir,
         )
 
         counts = None
@@ -1589,6 +1716,7 @@ def main(iargs=None):
                 for orb in [_get_orbit(p)]
                 if orb is not None and _get_direction(p)
             ]))
+            orbit_dirs = [od for od in orbit_dirs if od[1] in display_dirs]
             _vprint(inps.verbose, "  [NISAR counts via API]")
             counts, _, _, _, _, _ = fetch_orbit_counts(
                 'NISAR', orbit_dirs, wkt, count_start, count_end,
@@ -1608,7 +1736,7 @@ def main(iargs=None):
                         print(f"    {_orbit_label('NISAR', orbit, direction)}: min distance to footprint edge = {int(round(dist_m))} m{warn}")
                 if inps.select:
                     print()
-        rows = _aggregate(nisar_sample, None, counts, verbose=inps.verbose)
+        rows = _aggregate(nisar_sample, None, counts, verbose=inps.verbose, directions=display_dirs)
         all_rows.append(('NISAR', rows))
 
     if 'ALOS2' in platforms:
@@ -1618,6 +1746,7 @@ def main(iargs=None):
             alos_sample = query_alos2(
                 wkt, _ALOS2_DISCOVERY_START, _ALOS2_DISCOVERY_END,
                 polarization=polarization, max_results=_ALOS2_DISCOVERY_MAX_RESULTS, verbose=inps.verbose,
+                flight_direction=asf_dir,
             )
 
             counts = None
@@ -1628,6 +1757,7 @@ def main(iargs=None):
                     for orb in [_get_orbit(p)]
                     if orb is not None and _get_direction(p)
                 ]))
+                orbit_dirs = [od for od in orbit_dirs if od[1] in display_dirs]
                 _vprint(inps.verbose, f"  [{pol_label} counts via API]")
                 counts, _, _, _, _, _ = fetch_orbit_counts(
                     pol_label, orbit_dirs, wkt, count_start, count_end,
@@ -1648,7 +1778,7 @@ def main(iargs=None):
                     if inps.select:
                         print()
 
-            rows = _aggregate(alos_sample, None, counts, verbose=inps.verbose)
+            rows = _aggregate(alos_sample, None, counts, verbose=inps.verbose, directions=display_dirs)
             all_rows.append((pol_label, rows))
 
     select_nbursts: Dict[str, int] = {}

@@ -33,6 +33,7 @@ EXAMPLE = """Examples:
     upload_data_products.py miaplpy/inputs
     upload_data_products.py S1_desc_115_20160803_20260612.he5
     upload_data_products.py qqCerroAzul/miaplpy_202501_202610_filtDS
+    upload_data_products.py miaplpy_202501_202610_filtDS
     upload_data_products.py qqCerroAzul
 """
 
@@ -420,6 +421,11 @@ def iter_upload_product_dirs(work_dir, data_dir):
     parts = [p for p in data_dir.split("/") if p]
     if not parts:
         return
+    if len(parts) == 1 and _is_hv_product_dir(parts[0]):
+        product_dir = os.path.join(work_dir, parts[0])
+        if os.path.isdir(product_dir):
+            yield product_dir
+        return
     site_dir = os.path.join(work_dir, parts[0])
     if len(parts) >= 2 and _is_hv_product_dir(parts[1]):
         product_dir = os.path.join(work_dir, parts[0], parts[1])
@@ -450,11 +456,13 @@ def _is_horzvert_request(inps):
 
 
 def horzvert_replace_target(work_dir, data_dir):
-    """('product', site/product) or ('site', site)."""
+    """('product', site/product) or ('product', product) or ('site', site)."""
     rel = normalize_data_dir(data_dir, work_dir)
     parts = [p for p in rel.split("/") if p]
     if len(parts) >= 2 and _is_hv_product_dir(parts[1]):
         return "product", "/".join(parts[:2])
+    if len(parts) == 1 and _is_hv_product_dir(parts[0]):
+        return "product", parts[0]
     if parts:
         return "site", parts[0]
     return "site", ""

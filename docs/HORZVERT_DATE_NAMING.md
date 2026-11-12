@@ -24,11 +24,13 @@ An important current detail is that both `get_miaplpy_dir_name()` and
 `get_mintpy_dir_name()` use the `miaplpy.load.*` bounds. MintPy-specific load
 or network date limits do not change either directory's `date_str`.
 
-| Template addition | MiaplPy directory | MintPy directory | Date behavior |
-|---|---|---|---|
-| Empty or `auto` | `miaplpy` | `mintpy` | No date text, although `date_str` is still calculated internally. |
-| `date` | `miaplpy_202005_202610` | `mintpy_202005_202610` | Appends the first/last eligible SLC months. |
-| Custom value, such as `Big1` | `miaplpy_Big1_202005_202610` | `mintpy_Big1_202005_202610` | The date portion remains the first/last eligible SLC months. |
+
+| Template addition            | MiaplPy directory            | MintPy directory            | Date behavior                                                     |
+| ---------------------------- | ---------------------------- | --------------------------- | ----------------------------------------------------------------- |
+| Empty or `auto`              | `miaplpy`                    | `mintpy`                    | No date text, although `date_str` is still calculated internally. |
+| `date`                       | `miaplpy_202005_202610`      | `mintpy_202005_202610`      | Appends the first/last eligible SLC months.                       |
+| Custom value, such as `Big1` | `miaplpy_Big1_202005_202610` | `mintpy_Big1_202005_202610` | The date portion remains the first/last eligible SLC months.      |
+
 
 The controlling keys are `minsar.miaplpyDir.addition` and
 `minsar.mintpyDir.addition`. This document omits unrelated directory-name
@@ -41,13 +43,15 @@ when later acquisitions are rejected or when the HE5 export becomes stale.
 
 ## Horizontal/vertical date sources
 
-| Date text | Example | Inferred from | Meaning |
-|---|---|---|---|
-| Input MiaplPy directory | `miaplpy_202005_202610` | First and last `merged/SLC/YYYYMMDD` directories that pass `miaplpy.load.startDate` / `miaplpy.load.endDate`, reduced to `YYYYMM` | Source-stack label. It is not recalculated from the final MiaplPy time series or interferogram network. |
-| Input LOS HE5 date portion | `miaplpy_20200515_XXXXXXXX` | First and last dates in that HE5; recent last dates may become `XXXXXXXX` when update mode is enabled | Actual range stored in one selected LOS product. Read the internal date dataset to recover an `XXXXXXXX` date. |
-| Requested window | `--start-date 20200601 --end-date 20240720` | Command line | Inclusive bounds applied separately to both LOS date lists before ascending/descending pairing. The bounds need not be acquisition dates. |
-| Actual decomposition range | `20200617_20240714` | Minimum and maximum dates from the first member of the matched ascending/descending pairs | Dates encoded in horizontal/vertical HE5 filenames and stored in their date datasets. These are actual acquisitions, not requested bounds. |
-| Horz/vert product directory date | `202005_202610` | The input `mintpy*` / `miaplpy*` directory having the longer date-label span; ties use the first input | Source-product label. `--start-date`, `--end-date`, and actual matched dates do not currently affect its date portion. |
+
+| Date text                        | Example                                     | Inferred from                                                                                                                     | Meaning                                                                                                                                    |
+| -------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Input MiaplPy directory          | `miaplpy_202005_202610`                     | First and last `merged/SLC/YYYYMMDD` directories that pass `miaplpy.load.startDate` / `miaplpy.load.endDate`, reduced to `YYYYMM` | Source-stack label. It is not recalculated from the final MiaplPy time series or interferogram network.                                    |
+| Input LOS HE5 date portion       | `miaplpy_20200515_XXXXXXXX`                 | First and last dates in that HE5; recent last dates may become `XXXXXXXX` when update mode is enabled                             | Actual range stored in one selected LOS product. Read the internal date dataset to recover an `XXXXXXXX` date.                             |
+| Requested window                 | `--start-date 20200601 --end-date 20240720` | Command line                                                                                                                      | Inclusive bounds applied separately to both LOS date lists before ascending/descending pairing. The bounds need not be acquisition dates.  |
+| Actual decomposition range       | `20200617_20240714`                         | Minimum and maximum dates from the first member of the matched ascending/descending pairs                                         | Dates encoded in horizontal/vertical HE5 filenames and stored in their date datasets. These are actual acquisitions, not requested bounds. |
+| Horz/vert product directory date | `202005_202610`                             | The input `mintpy*` / `miaplpy*` directory having the longer date-label span; ties use the first input                            | Source-product label. `--start-date`, `--end-date`, and actual matched dates do not currently affect its date portion.                     |
+
 
 `--period START:END` is another way to supply a window. Multiple periods are
 combined as a union. If both period and start/end options are supplied, all
@@ -62,12 +66,14 @@ The script selects the newest `network_*` directory by modification time when
 the supplied MiaplPy path does not end in `network_*`. For these inputs, it
 selects `network_delaunay_4` and an HE5 in each network directory.
 
-| Stage | A83 | D134 |
-|---|---|---|
-| Input directory label | `202005_202605` | `202005_202610` |
-| Selected HE5 internal range | `20200512–20250215` | `20200515–20261030` |
+
+| Stage                         | A83                 | D134                |
+| ----------------------------- | ------------------- | ------------------- |
+| Input directory label         | `202005_202605`     | `202005_202610`     |
+| Selected HE5 internal range   | `20200512–20250215` | `20200515–20261030` |
 | Dates inside requested bounds | `20200605–20240714` | `20200620–20240717` |
-| First/last matched pair | `20200617–20240714` | `20200620–20240717` |
+| First/last matched pair       | `20200617–20240714` | `20200620–20240717` |
+
 
 With the current files and default `--intervals 2`, 85 pairs are found. They
 have a three-day A83-to-D134 shift. The product directory date portion remains
@@ -88,16 +94,16 @@ days.
 The differences are expected under the current naming rules:
 
 1. A MiaplPy directory label describes SLCs eligible for loading, not dates
-   surviving into a final HE5.
+  surviving into a final HE5.
 2. MiaplPy network construction, failed or excluded interferograms, network
-   inversion, and an HE5 that was not regenerated after new SLCs arrived can
+  inversion, and an HE5 that was not regenerated after new SLCs arrived can
    all shorten the actual LOS time series.
 3. The horizontal/vertical window removes dates outside the requested bounds.
 4. Pairing keeps only dates having a counterpart within the shift blocks
-   selected by `--intervals`. With the default value `2` for Sentinel-1, the
+  selected by `--intervals`. With the default value `2` for Sentinel-1, the
    searched shifts are `0..+6` and `-1..-6` days.
 5. Requested bounds are usually not acquisition dates, so filenames use the
-   nearest surviving matched acquisitions rather than the literal bounds.
+  nearest surviving matched acquisitions rather than the literal bounds.
 
 `--intervals` belongs to the ascending/descending pairing step. It is
 independent of MiaplPy's Delaunay temporal and perpendicular baseline
@@ -114,15 +120,15 @@ Recommended logic:
 
 1. Keep HE5 filename dates as the exact first/last matched acquisition dates.
 2. Add a deterministic requested-window suffix to the product directory, for
-   example `miaplpy_202005_202610_win20200601_20240720`.
+  example `x`.
 3. Put `image_pairs.txt` in that product directory instead of the shared
-   site directory, where another window currently overwrites it.
+  site directory, where another window currently overwrites it.
 4. Write a small provenance file in the product directory containing the two
-   selected input HE5 paths, their internal date ranges, requested bounds,
+  selected input HE5 paths, their internal date ranges, requested bounds,
    actual matched range, pair count, pairing shifts, and whether inputs were
    swapped.
 5. Print the requested and actual ranges together before submission and after
-   pairing.
+  pairing.
 6. Validate date syntax and reject a start date later than the end date.
 
 The requested-window suffix is preferable to deriving the directory from
