@@ -1,7 +1,7 @@
 #set -eo pipefail
 ###################################################################################
 function create_template_array() {
-mapfile -t array < <(grep -e ^ssaraopt -e ^minsar -e ^mintpy -e ^miaplpy -e ^topsStack $1)
+mapfile -t array < <(grep -e ^ssaraopt -e ^minsar -e ^mintpy -e ^miaplpy -e ^topsStack -e ^stripmapStack -e ^alos2Stack -e ^acquisition_mode -e ^raw_image_dir "$1")
 declare -gA template
 for item in "${array[@]}"; do
   #echo "item: <$item>"
