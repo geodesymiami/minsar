@@ -9,7 +9,7 @@ ssaraopt.intersectsWith = POINT( -155.6 19.45 )
 #ssaraopt.collectionName = "Supersites CSK Hawaii"
 ssaraopt.collectionName = Supersites CSK Hawaii
 ssaraopt.startDate      = 20201001
-ssaraopt.endDate        = 20210328
+ssaraopt.endDate        = 20210515
 ##################### ISCE OPTIONS ####################
 stripmapStack.boundingBox    = 19.1 19.7 -155.5 -154.9                           # '-1 0.15 -91.6 -90.9'                           
 stripmapStack.azimuthLooks         = 16
