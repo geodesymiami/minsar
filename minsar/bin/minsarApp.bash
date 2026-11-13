@@ -639,7 +639,7 @@ if [[ -z $platform_str ]]; then
    platform_str="TERRASAR-X"
 fi
 
-if [[ $platform_str =~ COSMO-SKYMED|TERRASAR-X|ENVISAT ]]; then
+if [[ $platform_str =~ COSMO-SKYMED|TERRASAR-X|ENVISAT|ALOS2|ALOS-2 ]]; then
     download_dir="$WORK_DIR/SLC_ORIG"
     [[ $download_method == *burst2safe* ]] && download_method="ssara-bash"   # FA July 2026   Not sure why this was there. 
     download_method="ssara-bash"
@@ -770,7 +770,11 @@ if [[ $preprocess_flag == "1" ]]; then
             run_command "./pack_bursts.sh BURST"
         fi
     else
-        run_command "unpack_SLCs.py $download_dir --queue $QUEUENAME"
+        if [[ $platform_str =~ ALOS2|ALOS-2 ]]; then
+            run_command "unpack_SLCs.py $download_dir --alos-stack --queue $QUEUENAME"
+        else
+            run_command "unpack_SLCs.py $download_dir --queue $QUEUENAME"
+        fi
     fi
 fi
 
