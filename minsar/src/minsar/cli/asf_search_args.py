@@ -125,7 +125,6 @@ def create_parser(iargs=None, namespace=None):
         inps.platform = asf.PLATFORM.ALOS
         inps.processing_level=asf.PRODUCT_TYPE.L1_1
         inps.dataset = [asf.DATASET.ALOS_2]
-        inps.polarization=['HH', 'HV']
 
     elif 'NISAR' in inps.platform:
         inps.platform = asf.PLATFORM.NISAR
@@ -142,6 +141,8 @@ def create_parser(iargs=None, namespace=None):
         inps.dataset = [asf.DATASET.SLC_BURST]
     elif inps.platform==asf.PLATFORM.NISAR:
         inps.polarization = None
+    elif inps.platform==asf.PLATFORM.ALOS:
+        inps.polarization = ['HH', 'HV']
     else:
         inps.polarization = ['VV', 'VV+VH']
 
