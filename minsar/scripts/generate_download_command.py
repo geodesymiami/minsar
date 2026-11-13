@@ -123,11 +123,16 @@ def generate_download_command(template,inps):
             return f"{s[:4]}-{s[4:6]}-{s[6:8]}"
         return s
 
+    platform = ssaraopt_dict.get('platform', '').upper().replace('-', '')
+    is_alos2 = 'ALOS2' in platform
+
     # create download_ssara_bash.cmd (one line per collection when multiple collections)
     raw_collections = dataset_template.options.get('ssaraopt.collectionName', '').strip("'\"")
     collection_names = [c.strip() for c in raw_collections.split(',') if c.strip()]
 
-    if len(collection_names) > 1:
+    if is_alos2:
+        pass
+    elif len(collection_names) > 1:
         # Build base options from ssaraopt_dict to avoid shlex.split corrupting
         # comma-containing collectionName (e.g. "TSX A, TSX B" -> stray token in output)
         def _v(k, default=''):
@@ -166,17 +171,28 @@ def generate_download_command(template,inps):
     slc_dir = 'SLC'
     burst_dir = 'BURST'
 
-    # create download_slc.sh (slc method)
+    # create download_slc.sh (slc method; ALOS-2 uses L1.1 archives in SLC_ORIG)
     asf_ssaraopt = _expand_platform_args(ssaraopt)
-    asf_slc_download_cmd = ['asf_search_args.py', '--processingLevel=SLC'] + asf_ssaraopt + [f'--dir={slc_dir}', '--print', '--download']
+    if is_alos2:
+        asf_ssaraopt = [arg for arg in asf_ssaraopt if not arg.startswith('--frame=')]
+        product_level = '1.1'
+        asf_download_dir = 'SLC_ORIG'
+    else:
+        product_level = 'SLC'
+        asf_download_dir = slc_dir
+    asf_slc_download_cmd = ['asf_search_args.py', f'--processingLevel={product_level}'] + asf_ssaraopt + [f'--dir={asf_download_dir}', '--print', '--download']
     if effective_exclude_season:
         asf_slc_download_cmd.append(f"--exclude-season={effective_exclude_season}")
     with open('download_slc.sh', 'w') as f:
-        asf_slc_download_cmd = [arg for arg in asf_slc_download_cmd if arg != '--print']
-        f.write(f"#!/usr/bin/env bash\n")
-        f.write(_join_cmd(['asf_download.sh'] + asf_slc_download_cmd[1:]) + '\n')
-        f.write(f"check_download.py $PWD/{slc_dir} --delete\n")
-        f.write(_join_cmd(['asf_download.sh'] + asf_slc_download_cmd[1:]) + '\n')
+        download_args = [arg for arg in asf_slc_download_cmd if arg != '--print']
+        if is_alos2:
+            download_line = _join_cmd(download_args)
+        else:
+            download_line = _join_cmd(['asf_download.sh'] + download_args[1:])
+        f.write("#!/usr/bin/env bash\n")
+        f.write(download_line + '\n')
+        f.write(f"check_download.py $PWD/{asf_download_dir} --delete\n")
+        f.write(download_line + '\n')
     #with open('download_slc.cmd', 'w') as f:
     #    f.write(' '.join(asf_slc_download_cmd) + '\n')
 

@@ -136,6 +136,9 @@ class Template:
             if 'ssaraopt.beamMode' in self.options.keys():
                 beamMode = self.options['ssaraopt.beamMode']
                 ssaraopt += ' --beamMode={}'.format(beamMode)
+            if 'ssaraopt.flightDirection' in self.options.keys():
+                flightDirection = self.options['ssaraopt.flightDirection']
+                ssaraopt += ' --flightDirection={}'.format(flightDirection)
             if 'ssaraopt.beamSwath' in self.options.keys():
                 beamSwath = self.options['ssaraopt.beamSwath']
                 ssaraopt += ' --beamSwath={}'.format(beamSwath)

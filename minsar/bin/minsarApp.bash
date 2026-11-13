@@ -639,7 +639,10 @@ if [[ -z $platform_str ]]; then
    platform_str="TERRASAR-X"
 fi
 
-if [[ $platform_str =~ COSMO-SKYMED|TERRASAR-X|ENVISAT|ALOS2|ALOS-2 ]]; then
+if [[ $platform_str =~ ALOS2|ALOS-2 ]]; then
+    download_dir="$WORK_DIR/SLC_ORIG"
+    download_method="slc"
+elif [[ $platform_str =~ COSMO-SKYMED|TERRASAR-X|ENVISAT ]]; then
     download_dir="$WORK_DIR/SLC_ORIG"
     [[ $download_method == *burst2safe* ]] && download_method="ssara-bash"   # FA July 2026   Not sure why this was there. 
     download_method="ssara-bash"
