@@ -99,6 +99,13 @@ class CreateRun:
             raise RuntimeError(f'No alosStack YYMMDD acquisition directories found in {slc_dir}')
 
         dem_file = os.path.abspath(self.inps.template['stripmapStack.demDir'])
+        if os.path.isdir(dem_file):
+            dem_matches = sorted(glob.glob(os.path.join(dem_file, '*.wgs84')))
+            if not dem_matches:
+                dem_matches = sorted(glob.glob(os.path.join(dem_file, '*.dem')))
+            if not dem_matches:
+                raise RuntimeError(f'No DEM file found in {dem_file}')
+            dem_file = dem_matches[0]
         water_body = self.inps.template.get('alos2Stack.waterBody', 'auto')
         if water_body in (None, 'None', 'auto'):
             matches = sorted(glob.glob(os.path.join(os.path.dirname(dem_file), '*.wbd')))
