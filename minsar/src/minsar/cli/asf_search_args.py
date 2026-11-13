@@ -200,6 +200,27 @@ def _filter_results_by_exclude_season(results, season_bounds):
         filtered.append(product)
     return filtered, excluded_count
 
+
+def _dedupe_products_by_file_id(products):
+    """Drop repeat catalog hits that share one file id.
+
+    ALOS-2 dual-pol L1.1 granules match both HH and HV, so ASF returns the same zip twice.
+    """
+    seen = set()
+    unique = []
+    removed = 0
+    for product in products:
+        props = getattr(product, "properties", None) or {}
+        file_id = props.get("fileID") or props.get("fileName") or props.get("sceneName")
+        if file_id:
+            key = str(file_id)
+            if key in seen:
+                removed += 1
+                continue
+            seen.add(key)
+        unique.append(product)
+    return unique, removed
+
 def main(iargs=None, namespace=None):
     """Main function to execute the search and download."""
     inps = create_parser(iargs, namespace)
@@ -224,23 +245,26 @@ def main(iargs=None, namespace=None):
     print(f"Found {len(results)} results.")
     if inps.exclude_season_bounds:
         print(f"After --exclude-season={inps.exclude_season}: {len(result_list)} results (excluded {excluded_count}).")
+    result_list, duplicate_count = _dedupe_products_by_file_id(result_list)
+    if duplicate_count:
+        print(f"After removing duplicate file ids: {len(result_list)} results (removed {duplicate_count}).")
     if inps.print and len(result_list) > 0:
             print(', '.join(k for k in result_list[0].properties.keys() if k not in ['centerLat', 'centerLon']))
 
     ######### Check full coverage if requested #########
     if inps.fullcover:
-        print(f"Checking full coverage of the search area for {len(results)} results...")
+        print(f"Checking full coverage of the search area for {len(result_list)} results...")
         region = parse_polygon(inps.intersectsWith)
         bbox = box(region[0], region[2], region[1], region[3])
-        for r in results:
+        kept = []
+        for r in result_list:
             shape_coords = r.geometry['coordinates'][0]
             polygon = Polygon(shape_coords)
+            if polygon.contains(bbox):
+                kept.append(r)
+        result_list = kept
 
-            # Check if the polygon contains the bounding box
-            if not polygon.contains(bbox):
-                results.remove(r)
-
-    for r in results:
+    for r in result_list:
         if inps.print:
             print(', '.join(str(v) for k, v in r.properties.items() if k not in ['centerLat', 'centerLon']))
 
