@@ -877,6 +877,9 @@ if [[ $ifgram_flag == "1" ]]; then
         run_command "run_workflow.bash --dostep ifgram"
         PATH="$OLD_PATH"
     else
+       if [[ $platform_str =~ ALOS2|ALOS-2 && "$isce_stop_cli_flag" != "1" && -f "$WORK_DIR/run_files_list" ]]; then
+           isce_stop=$(wc -l < "$WORK_DIR/run_files_list" | tr -d ' ')
+       fi
        run_command "run_workflow.bash --start $isce_start --stop $isce_stop"
     fi
 
