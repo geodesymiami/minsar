@@ -39,6 +39,7 @@ SKIP_SAVE_KEYS = frozenset(
 )
 SUBSET_LALO_KEYS = ("miaplpy.subset.lalo", "mintpy.subset.lalo")
 _STEM_RE = re.compile(r"^(?P<project>.+?)Sen(?P<letter>[AD])T?(?P<orbit>\d+)$")
+_TEMPLATE_SUFFIX = ".template"
 _BLOCK_RE = re.compile(
     r"\n?# BEGIN custom_template_options\n.*?\n# END custom_template_options\n?",
     re.S,
@@ -49,6 +50,7 @@ _HEADER_RE = re.compile(r"^\[([^\]]+)\]$")
 _EXAMPLES = """Examples:
   custom_template_options.py apply $TE/GalapagosSenA106.template
   custom_template_options.py plan --template-dir $ATE GalapagosSenA106 --start-date 20260101
+  custom_template_options.py plan --template-dir $ATE GalapagosSenA106.template --start-date 20260101
   custom_template_options.py plan --template-dir $ATE GalapagosSenA106 --start-date 20260101 CerroAzulSenA106 -- --queue pvc
 """
 
@@ -248,6 +250,14 @@ def apply_to_template(template_path: Path, custom_path: Path | None = None) -> l
     return applied + lines
 
 
+def _dataset_stem(tok: str) -> str | None:
+    """Stem from a dataset name. A trailing .template is optional."""
+    stem = tok[: -len(_TEMPLATE_SUFFIX)] if tok.endswith(_TEMPLATE_SUFFIX) else tok
+    if _STEM_RE.match(stem):
+        return stem
+    return None
+
+
 def _split_run_args(argv: list[str]) -> tuple[list[tuple[str, list[str]]], list[str]]:
     """Dataset names with their flags, plus flags after a bare --."""
     if "--" in argv:
@@ -257,8 +267,9 @@ def _split_run_args(argv: list[str]) -> tuple[list[tuple[str, list[str]]], list[
         body, global_flags = argv, []
     groups: list[tuple[str, list[str]]] = []
     for tok in body:
-        if _STEM_RE.match(tok):
-            groups.append((tok, []))
+        stem = _dataset_stem(tok)
+        if stem is not None:
+            groups.append((stem, []))
             continue
         if not groups:
             raise ValueError(f"expected a dataset name, got {tok}")
@@ -321,7 +332,7 @@ def _parser() -> argparse.ArgumentParser:
     apply_p.add_argument("template", type=Path, help="template to update")
     plan_p = sub.add_parser("plan", help="print one minsarApp command per dataset", epilog=_EXAMPLES, formatter_class=argparse.RawDescriptionHelpFormatter)
     plan_p.add_argument("--template-dir", required=True, type=Path, metavar="DIR", help="directory for the generated template")
-    plan_p.add_argument("datasets", nargs=argparse.REMAINDER, help="STEM [flags] [STEM [flags] ...] [-- flags]")
+    plan_p.add_argument("datasets", nargs=argparse.REMAINDER, help="STEM[.template] [flags] [STEM[.template] [flags] ...] [-- flags]")
     return parser
 
 
