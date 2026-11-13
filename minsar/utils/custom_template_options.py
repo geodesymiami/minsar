@@ -51,7 +51,8 @@ _EXAMPLES = """Examples:
   custom_template_options.py apply $TE/GalapagosSenA106.template
   custom_template_options.py plan --template-dir $ATE GalapagosSenA106 --start-date 20260101
   custom_template_options.py plan --template-dir $ATE GalapagosSenA106.template --start-date 20260101
-  custom_template_options.py plan --template-dir $ATE GalapagosSenA106 --start-date 20260101 CerroAzulSenA106 -- --queue pvc
+  custom_template_options.py plan --template-dir $ATE $TE/GalapagosSenA106 --start-date 20260101
+  custom_template_options.py plan --template-dir $ATE GalapagosSenA106.template --start-date 20260101 CerroAzulSenA106 -- --queue pvc
 """
 
 
@@ -251,10 +252,12 @@ def apply_to_template(template_path: Path, custom_path: Path | None = None) -> l
 
 
 def _dataset_stem(tok: str) -> str | None:
-    """Stem from a dataset name. A trailing .template is optional."""
-    stem = tok[: -len(_TEMPLATE_SUFFIX)] if tok.endswith(_TEMPLATE_SUFFIX) else tok
-    if _STEM_RE.match(stem):
-        return stem
+    """Stem from a dataset argument. A path and a trailing .template are optional."""
+    name = Path(tok).name
+    if name.endswith(_TEMPLATE_SUFFIX):
+        name = name[: -len(_TEMPLATE_SUFFIX)]
+    if _STEM_RE.match(name):
+        return name
     return None
 
 
