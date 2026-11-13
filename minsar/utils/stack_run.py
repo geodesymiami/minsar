@@ -10,6 +10,7 @@ from argparse import Namespace
 import shutil
 import glob
 import shlex
+import math
 from minsar.utils.process_utilities import make_run_list
 from minsar.objects.auto_defaults import PathFind
 import contextlib
@@ -110,9 +111,23 @@ class CreateRun:
         if water_body in (None, 'None', 'auto'):
             matches = sorted(glob.glob(os.path.join(os.path.dirname(dem_file), '*.wbd')))
             if not matches:
-                raise RuntimeError('No water-body file found. Set alos2Stack.waterBody or run wbd.py for the DEM bounds.')
+                south, north, west, east = map(float, self.inps.template['stripmapStack.boundingBox'].split())
+                command = [
+                    'wbd.py',
+                    str(math.floor(south)),
+                    str(math.ceil(north)),
+                    str(math.floor(west)),
+                    str(math.ceil(east)),
+                    '-u',
+                    'https://e4ftl01.cr.usgs.gov/DP133/SRTM/SRTMSWBD.003/2000.02.11',
+                ]
+                subprocess.run(command, cwd=os.path.dirname(dem_file), check=True)
+                matches = sorted(glob.glob(os.path.join(os.path.dirname(dem_file), '*.wbd')))
+            if not matches:
+                raise RuntimeError('No water-body file found. Set alos2Stack.waterBody explicitly.')
             water_body = matches[0]
         water_body = os.path.abspath(water_body)
+        subprocess.run(['fixImageXml.py', '-i', water_body, '-f'], check=True)
 
         reference_date = self.inps.template.get('stripmapStack.referenceDate')
         if reference_date in (None, 'None', 'auto'):
