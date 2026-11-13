@@ -13,6 +13,7 @@ topsStack.filtStrength               = 0.2  # comment
 topsStack.unwMethod                  = snaphu  # comment
 topsStack.coregistration             = NESD  # [NESD geometry], auto for NESD
 ######################################################
+mintpy.load.autoPath                 = yes   # [yes / no], auto for no, use pre-defined auto path
 minsar.mintpyDir.addition            = date  #[name / lalo / no] auto for no (miaply_$name_startDate_endDate))
 mintpy.compute.cluster               = local #[local / slurm / pbs / lsf / none], auto for none, cluster type
 mintpy.compute.numWorker             = 48 #[int > 1 / all], auto for 4 (local) or 40 (non-local), num of workers
@@ -27,6 +28,7 @@ mintpy.reference.minCoherence        = 0.7      #[0.0-1.0], auto for 0.85, minim
 mintpy.troposphericDelay.method      = auto   # pyaps  #[pyaps / height_correlation / base_trop_cor / no], auto for pyaps
 mintpy.networkInversion.minTempCoh   = 0.6 #[0.0-1.0], auto for 0.7, min temporal coherence for mask
 ######################################################
+miaplpy.load.autoPath                 = yes   # [yes / no], auto for no, use pre-defined auto path
 miaplpy.load.processor               = isce
 miaplpy.multiprocessing.numProcessor = 40
 miaplpy.inversion.rangeWindow        = 24   # range window size for searching SHPs, auto for 15
