@@ -678,7 +678,7 @@ else
 fi
 
 # switch off mintpy for slc workflow, or when user explicitly limits ISCE range via --isce-stop
-if [[ ${template[topsStack.workflow]} == "slc" || "$isce_stop_cli_flag" == "1" ]]; then
+if [[ ${template[topsStack.workflow]} == "slc" || ${template[stripmapStack.workflow]} == "slc" || "$isce_stop_cli_flag" == "1" ]]; then
    mintpy_flag=0
 fi
 
@@ -883,7 +883,12 @@ if [[ $ifgram_flag == "1" ]]; then
        run_command "run_workflow.bash --start $isce_start --stop $isce_stop"
     fi
 
-    reference_date=$(get_reference_date)
+    if [[ $platform_str =~ ALOS2|ALOS-2 ]]; then
+        reference_date="${template[stripmapStack.referenceDate]}"
+        [[ "$reference_date" == "auto" || "$reference_date" == "None" ]] && reference_date=$(basename "$(ls -d "$WORK_DIR"/SLC/[0-9][0-9][0-9][0-9][0-9][0-9] 2>/dev/null | sort | head -1)")
+    else
+        reference_date=$(get_reference_date)
+    fi
     echo "Reference date: $reference_date" | tee reference_date_isce.txt
 
 fi
