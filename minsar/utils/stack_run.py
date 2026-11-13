@@ -168,6 +168,7 @@ class CreateRun:
         os.makedirs(command_dir, exist_ok=True)
         labels = ('prepare', 'interferograms', 'ionosphere', 'finalize')
         run_dir = os.path.join(self.work_dir, 'run_files')
+        os.makedirs(run_dir, exist_ok=True)
         for index, label in enumerate(labels, start=1):
             source = os.path.join(self.work_dir, f'cmd_{index}.sh')
             destination = os.path.join(command_dir, f'cmd_{index}.sh')
