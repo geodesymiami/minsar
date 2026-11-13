@@ -169,11 +169,17 @@ class CreateRun:
         labels = ('prepare', 'interferograms', 'ionosphere', 'finalize')
         run_dir = os.path.join(self.work_dir, 'run_files')
         os.makedirs(run_dir, exist_ok=True)
+        run_index = 0
         for index, label in enumerate(labels, start=1):
             source = os.path.join(self.work_dir, f'cmd_{index}.sh')
             destination = os.path.join(command_dir, f'cmd_{index}.sh')
             shutil.move(source, destination)
-            run_file = os.path.join(run_dir, f'run_{index:02d}_alos2_{label}')
+            with open(destination) as file:
+                substantive_lines = [line for line in file if line.strip() and not line.lstrip().startswith('#')]
+            if not substantive_lines:
+                continue
+            run_index += 1
+            run_file = os.path.join(run_dir, f'run_{run_index:02d}_alos2_{label}')
             with open(run_file, 'w') as file:
                 file.write(f'bash {shlex.quote(destination)}\n')
 
