@@ -23,11 +23,11 @@ from minsar.job_submission import JOB_SUBMIT
 
 ##############################################################################
 EXAMPLE = """
-
 Examples:
     unpack_SLCs.py RAW_data
     unpack_SLCs.py SLC_ORIG
     unpack_SLCs.py SLC_ORIG --queue skx --unpack-walltime 1:30 --uncompress-walltime 0:45
+    unpack_SLCs.py SLC_ORIG --alos-stack --queue skx
 """
 
 DESCRIPTION = (
@@ -42,6 +42,7 @@ def create_parser():
     parser.add_argument('--jobfiles', dest='write_jobs', action='store_true', help='writes the jobs corresponding to run files')
     parser.add_argument('--uncompress-walltime', dest='uncompress_wall_time', metavar="WALLTIME (HH:MM)", default='0:30', help='walltime for data uncompress stage (default=0:30)')
     parser.add_argument('--unpack-walltime', dest='unpack_wall_time', metavar="WALLTIME (HH:MM)", default='1:00', help='walltime for unpackFrame stage (default=1:00)')
+    parser.add_argument('--alos-stack', action='store_true', help='Prepare ALOS-2 L1.1 archives for ISCE2 alosStack')
     return parser
 
 def cmd_line_parse(iargs=None):
@@ -61,8 +62,11 @@ def main(iargs=None):
 
     # Create Sensors object
     slc_dir = os.path.join(inps.work_dir, 'SLC')
-    shutil.rmtree(slc_dir, ignore_errors=True)
-    sensorsObj = Sensors(inps.slc_orig_dir, slc_dir, remove_file='False')
+    if inps.alos_stack:
+        os.makedirs(slc_dir, exist_ok=True)
+    else:
+        shutil.rmtree(slc_dir, ignore_errors=True)
+    sensorsObj = Sensors(inps.slc_orig_dir, slc_dir, remove_file='False', alos_stack=inps.alos_stack)
     
     # Stage 1: Create and submit the uncompress_rename run_file
     print("\n" + "#"*60)
@@ -87,6 +91,10 @@ def main(iargs=None):
         raise Exception('ERROR: uncompress_rename job failed')
     
     print("uncompress_rename job completed successfully!")
+    if inps.alos_stack:
+        sensorsObj.close()
+        print("ALOS-2 data are ready in YYMMDD directories; alosStack does not use unpackFrame.")
+        return
     
     # Stage 2: Create and submit the unpackFrame run file
     print("\n" + "#"*60)

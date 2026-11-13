@@ -15,6 +15,7 @@ import glob
 import shutil
 import argparse
 import xml.etree.ElementTree as etree
+from pathlib import Path
 
 
 ############################################################
@@ -23,6 +24,7 @@ EXAMPLE = """Examples:
     uncompress_and_rename_data.py CSKS2_RAW_B_HI_06_HH_RA_SF_20201009161233_20201009161240.tar.gz
     uncompress_and_rename_data.py ASA_IMS_1PNUPA20100906_175446_000000172089_00084_44354_0000.N1
     uncompress_and_rename_data.py TSX1_SM_036_strip_014_20171004111805.tar.gz --remove
+    uncompress_and_rename_data.py ALOS2195073550-180102-WBDR1.1__D.zip --output-dir SLC --alos-stack
 """
 
 
@@ -35,6 +37,8 @@ def create_parser():
                         help='Remove data file after successful extraction (default: move to ARCHIVED_FILES directory)')
     parser.add_argument('--data-type', default='slc', choices=['slc', 'raw'], 
                         help='Data type (default: %(default)s). Note: raw option not yet implemented')
+    parser.add_argument('--output-dir', type=Path, help='Directory for organized acquisitions (default: archive directory)')
+    parser.add_argument('--alos-stack', action='store_true', help='Use alosStack YYMMDD data directories for ALOS-2')
     return parser
 
 
@@ -53,7 +57,7 @@ def detect_sensor_type(data_file):
         return 'TSX/TDX'
     elif basename.startswith('ALPSRP'):
         return 'ALOS1'
-    elif basename.startswith('00') and 'ALOS2' in basename:
+    elif basename.startswith('ALOS2') or (basename.startswith('00') and 'ALOS2' in basename):
         return 'ALOS2'
     elif basename.startswith('RS2'):
         return 'RSAT2'
@@ -161,6 +165,7 @@ def main():
     
     data_file = os.path.abspath(args.data_file)
     workdir = os.path.dirname(data_file)
+    output_dir = args.output_dir.expanduser().resolve() if args.output_dir else Path(workdir)
     
     print(f"Processing: {data_file}")
     
@@ -170,6 +175,8 @@ def main():
     
     sensor_type = detect_sensor_type(data_file)
     print(f"  Sensor: {sensor_type}")
+    if args.alos_stack and sensor_type != 'ALOS2':
+        parser.error('--alos-stack requires an ALOS-2 archive')
     
     # Check if file needs uncompression based on extension
     file_ext = os.path.splitext(data_file)[1].lower()
@@ -211,27 +218,33 @@ def main():
     
     # Create date directory and move contents
     print(f"  Date: {imgDate}")
-    date_dir = os.path.join(workdir, imgDate)
-    os.makedirs(date_dir, exist_ok=True)
+    if args.alos_stack:
+        imgDate = imgDate[2:]
+    date_dir = output_dir / imgDate
+    date_dir.mkdir(parents=True, exist_ok=True)
     
     if needs_uncompress:
         # Handle extracted folder from compressed archive
         # Check if folder already exists in date directory
-        image_folder_out = os.path.join(date_dir, os.path.basename(out_folder))
+        image_folder_out = date_dir / os.path.basename(out_folder)
         if os.path.isdir(image_folder_out):
             shutil.rmtree(image_folder_out)
         
         # Move the extracted folder contents into the date folder
         if os.path.isfile(out_folder):
             # For Envisat (file, not directory) - though this shouldn't happen for compressed files
-            cmd = f'mv {out_folder} {date_dir}/.'
-            os.system(cmd)
+            shutil.move(out_folder, date_dir)
         else:
             # For other sensors (directory)
-            cmd = f'mv {out_folder}/* {date_dir}/.'
-            os.system(cmd)
-            cmd = f'rmdir {out_folder}'
-            os.system(cmd)
+            for item in Path(out_folder).iterdir():
+                destination = date_dir / item.name
+                if destination.exists():
+                    if destination.is_dir():
+                        shutil.rmtree(destination)
+                    else:
+                        destination.unlink()
+                shutil.move(str(item), destination)
+            Path(out_folder).rmdir()
         
         # Handle the compressed data file
         if args.remove:
@@ -239,17 +252,15 @@ def main():
         else:
             archive_dir = os.path.join(workdir, 'ARCHIVED_FILES')
             os.makedirs(archive_dir, exist_ok=True)
-            cmd = f'mv {data_file} {archive_dir}/.'
-            os.system(cmd)
+            shutil.move(data_file, archive_dir)
     else:
         # Handle uncompressed file (e.g., Envisat .N1)
         # Move the file directly into the date directory
-        dest_file = os.path.join(date_dir, os.path.basename(data_file))
+        dest_file = date_dir / os.path.basename(data_file)
         if os.path.exists(dest_file):
             os.remove(dest_file)
         
-        cmd = f'mv {data_file} {date_dir}/.'
-        os.system(cmd)
+        shutil.move(data_file, date_dir)
         print(f"  Moved to: {date_dir}/")
     
     return 0

@@ -7,10 +7,11 @@ import glob
 import argparse
 import xml.etree.ElementTree as etree
 import shutil
+import shlex
 
 
 class Sensors:
-    def __init__(self, input_dir, output_dir, remove_file='False', multiple_raw_frame='False'):
+    def __init__(self, input_dir, output_dir, remove_file='False', multiple_raw_frame='False', alos_stack=False):
         self.system_path = os.getenv('PATH')
         sys.path.append(os.path.join(os.getenv('ISCE_STACK'), 'stripmapStack'))
         from uncompressFile import uncompressfile
@@ -21,6 +22,7 @@ class Sensors:
         self.rmfile = remove_file
         self.sensor = None
         self.sensor_str = None
+        self.alos_stack = alos_stack
 
         if multiple_raw_frame == 'True':
             self.data_type = 'raw'
@@ -58,7 +60,7 @@ class Sensors:
         ERS_CEOS_str = 'ER*CEOS*'   # ERS in CEOS format
         ERS_ENV_str = 'ER*ESA*'     # ERS in Envisat format
         ALOS1_str = 'ALPSRP*'       # ALOS-1 Palsar, zip files and extracted files
-        ALOS2_str = '00*ALOS2*'       # ALOS-2, zip files and extracted files
+        ALOS2_str = '*ALOS2*'         # ALOS-2, including ASF ALOS2*.zip names
         CSK_str = 'EL*'             # CSK, zip files
         CSK_str2 = 'CSK*'           # CSK, zip files
         TSX_TDX_DLR_str = 'dims_op*' # TSX zip files
@@ -337,7 +339,9 @@ class Sensors:
         
         with open(run_uncompress_rename, 'w') as f:
             for archive_file in self.file_list:
-                cmd = f'{uncompress_script} {os.path.abspath(archive_file)} {remove_flag}'
+                cmd = f'{shlex.quote(uncompress_script)} {shlex.quote(os.path.abspath(archive_file))} {remove_flag}'
+                if self.alos_stack:
+                    cmd += f' --output-dir {shlex.quote(os.path.abspath(self.output_dir))} --alos-stack'
                 cmd = cmd.strip()  # Remove trailing space if no remove_flag
                 print(cmd)
                 f.write(cmd + '\n')
