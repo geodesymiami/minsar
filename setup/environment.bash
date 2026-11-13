@@ -26,6 +26,12 @@ export NOTIFICATIONEMAIL="${NOTIFICATIONEMAIL:-${USER_PREFERRED}@rsmas.miami.edu
 export JOBSCHEDULER_PROJECTNAME="${JOBSCHEDULER_PROJECTNAME:-${JOBSHEDULER_PROJECTNAME:-insarlab}}"
 export INSARMAPSHOST_RECENTDATA="${INSARMAPSHOST_RECENTDATA:-insarmaps.miami.edu}"
 export INSARMAPSHOST_OLDDATA="${INSARMAPSHOST_OLDDATA:-insarmaps.miami.edu}"
+export MINSAR_CUSTOM_OPTIONS="${MINSAR_CUSTOM_OPTIONS:-${MINSAR_HOME}/minsar/defaults/sample_custom_template_options.txt}"
+
+# Personal overrides. Sourced before TE/ATE so USER_PREFERRED is the value those paths use.
+if [[ -f "${HOME}/.minsar/user_env.bash" ]]; then
+    source "${HOME}/.minsar/user_env.bash"
+fi
 
 export SENTINEL_ORBITS="${SENTINEL_ORBITS:-$WORKDIR/S1orbits}"
 export SENTINEL_AUX="${SENTINEL_AUX:-$WORKDIR/S1aux}"

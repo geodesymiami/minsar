@@ -33,24 +33,9 @@ When several headers are contained in the stem, the longest header wins. Two mat
 
 ## Where the custom file lives
 
-The filled custom file is not committed. Thresholds, AOIs, and date lists differ by user and by machine, and a copy inside the checkout conflicts when the same repo is updated on more than one server.
+`setup/environment.bash` sets `MINSAR_CUSTOM_OPTIONS` to [`minsar/defaults/sample_custom_template_options.txt`](../minsar/defaults/sample_custom_template_options.txt). Every line in that sample is commented until a section is written into it. `environment.bash` then sources `~/.minsar/user_env.bash` when that file exists. An export there replaces `MINSAR_CUSTOM_OPTIONS`, `USER_PREFERRED`, and the other user settings.
 
-The repo holds only an example, [`minsar/defaults/custom_template_options.example.txt`](../minsar/defaults/custom_template_options.example.txt). Every line in that example is commented. Each user copies it to a path outside the checkout and fills in real values.
-
-Lookup order:
-
-1. `MINSAR_CUSTOM_OPTIONS` when it is set (a full path). This overrides the config so one job can point at a different file.
-2. `custom_template_options` in `$HOME/.minsar/config.cfg`.
-3. Neither set: leave the template unchanged.
-
-`$HOME/.minsar/config.cfg` is the long-term user config. It uses the same `key = value` lines and `#` comments as a template. It is per account, so it is not part of the minsar commit. Phase 1 reads this one key. Further user settings can be added there later.
-
-```text
-# $HOME/.minsar/config.cfg
-custom_template_options = /home1/05861/tg851601/minsar/custom_template_options.txt
-```
-
-A path that is set but missing is an error. An empty `MINSAR_CUSTOM_OPTIONS` is treated as unset.
+When `MINSAR_CUSTOM_OPTIONS` is unset or empty, the loader reads `custom_template_options` in `$HOME/.minsar/config.cfg`. A path that is set but missing is an error. With neither set, the template is left unchanged.
 
 ## Where template files live
 
@@ -120,7 +105,7 @@ Allowed template prefixes: `mintpy.`, `miaplpy.`, `minsar.`, `topsStack.`, `ssar
 
 [`minsar/bin/minsarApp.bash`](../minsar/bin/minsarApp.bash) calls [`minsar/utils/custom_template_options.py`](../minsar/utils/custom_template_options.py) after argument parsing and before the existing CLI patches (`--exclude-dates`, `--miaplpy.load.startDate`, `--miaplpy.load.endDate`). The loader uses the lookup order above. CLI flags still win for that run. The loader is executable and has `--help`.
 
-The loader selects the longest section header contained in the template stem. It rewrites a marked block at the end of the template on every run:
+The loader selects the longest section header contained in the template stem. It rewrites a marked block at the beginning of the template on every run:
 
 ```text
 # BEGIN custom_template_options
@@ -128,7 +113,7 @@ mintpy.unwrapError.method = bridging+phase_closure
 # END custom_template_options
 ```
 
-Later lines override earlier ones in `create_template_array` and in MintPy, so the block wins over the same key higher in the template. Replacing the whole block each run updates a threshold and drops a key removed from the custom file, which then falls back to the original template line.
+The same key later in the file is commented with a `# custom_template_options:` prefix, because `create_template_array` and MintPy keep the last active line. Replacing the whole block each run updates a threshold. A key removed from the custom file is restored from that commented line.
 
 `minsar.excludeDates` or `topsStack.excludeDates` in that section is written with `apply_exclude_dates_to_template` (`merge=False`) so both keys become that date list. Dates that exist only in the template are not kept.
 
@@ -224,7 +209,7 @@ save_custom_options.py $TE/TamboraSenD134.template
 
 Both files are read as assignments. A `#` line is ignored. Text after `#` on an assignment is ignored. Extra spaces around `=` do not matter. The last uncommented assignment for a key wins. Key order in `$TE` does not have to match `processing.template`.
 
-The section name is the template stem. The script replaces that section if it is already present. It writes `aoi` from `miaplpy.subset.lalo` and every template key whose value differs from [`minsar/defaults/processing.template`](../minsar/defaults/processing.template). Orbit, dates, and subset lines that `create_template` fills on every AOI run are not copied when they match that generated result. The custom-file path is the same lookup as phase 1 (`MINSAR_CUSTOM_OPTIONS`, then `$HOME/.minsar/config.cfg`).
+The section name is the template stem. The script replaces that section if it is already present. It writes `aoi` from `miaplpy.subset.lalo` and every template key whose value differs from [`minsar/defaults/processing.template`](../minsar/defaults/processing.template). Orbit, dates, and subset lines that `create_template` fills on every AOI run are not copied when they match that generated result. The custom-file path is `MINSAR_CUSTOM_OPTIONS` (the sample file unless `~/.minsar/user_env.bash` sets another path).
 
 `minsarApp` flags such as `--no-mintpy` are not stored in the template. Pass them to the save script to set the `options` line:
 

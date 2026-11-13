@@ -26,3 +26,14 @@ if [[ ! -f ~/.cdsapirc ]]; then
 else
   echo "File  ~/.cdsapirc exists already - kept unchanged"
 fi
+
+# personal MinSAR settings sourced by environment.bash
+mkdir -p ~/.minsar
+if [[ -f ~/.minsar/user_env.bash ]]; then
+    echo "File ~/.minsar/user_env.bash exists already - kept unchanged"
+elif [[ -f ~/accounts/user_env.bash ]]; then
+    echo "Copying ~/accounts/user_env.bash into ~/.minsar/"
+    cp ~/accounts/user_env.bash ~/.minsar/user_env.bash
+else
+    echo "No ~/accounts/user_env.bash -- ~/.minsar left without one"
+fi

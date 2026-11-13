@@ -38,6 +38,20 @@ set -eo pipefail
 ```
 To recreate the conda env, re-run `./setup/install_minsar_env.bash` (it removes `tools/miniforge3/envs/minsar` first). On Mac, as some packages are not available from conda-forge (isce2, pymaxflow) a `minsar_env_MacOS.yml` is created and used.
 
+`./setup/install_credential_files.bash` creates `~/.minsar` and copies `~/accounts/user_env.bash` to `~/.minsar/user_env.bash` when that home file is not already there. An existing `~/.minsar/user_env.bash` is kept. `setup/environment.bash` sources it after the defaults, so an `export` in that file replaces the default. `$MINSAR_HOME` stays in `.bashrc`. A line that starts with `#` is not set.
+
+Customize these in `~/.minsar/user_env.bash`:
+
+| Variable | Default when unset |
+|---|---|
+| `USER_PREFERRED` | `$USER` (directory name under `$WORKDIR/infiles`, so templates live in `$TE`) |
+| `NOTIFICATIONEMAIL` | `${USER_PREFERRED}@rsmas.miami.edu` |
+| `JOBSCHEDULER_PROJECTNAME` | `insarlab` |
+| `QUEUENAME` | queue selected for this host (`normal` when the host file did not set one) |
+| `INSARMAPSHOST_RECENTDATA` | `insarmaps.miami.edu` |
+| `INSARMAPSHOST_OLDDATA` | `insarmaps.miami.edu` |
+| `MINSAR_CUSTOM_OPTIONS` | `$MINSAR_HOME/minsar/defaults/sample_custom_template_options.txt` |
+
 ### Troubleshooting
 If you get errors try installation using the full install script which is more verbose:
 ```

@@ -1,31 +1,31 @@
 ######################################################
-ssaraopt.platform                  = SENTINEL-1  # [Sentinel-1 / ALOS2 / RADARSAT2 / TerraSAR-X / COSMO-Skymed]
-ssaraopt.relativeOrbit             = 109
-ssaraopt.startDate                 = 20141001  # YYYYMMDD
-ssaraopt.endDate                   = auto  # YYYYMMDD
-#ssaraopt.excludeSeason            = 1015-0615    # exclude data between Oct 15 and June 15
+ssaraopt.platform                    = SENTINEL-1  # [Sentinel-1 / ALOS2 / RADARSAT2 / TerraSAR-X / COSMO-Skymed]
+ssaraopt.relativeOrbit               = 109
+ssaraopt.startDate                   = 20141001  # YYYYMMDD
+ssaraopt.endDate                     = auto  # YYYYMMDD
+#ssaraopt.excludeSeason              = 1015-0615    # exclude data between Oct 15 and June 15
 ######################################################
-topsStack.subswath                 = 1 2 3 # '1 2'
-topsStack.numConnections           = 4    # comment
-topsStack.azimuthLooks             = 4    # comment
-topsStack.rangeLooks               = 16   # comment
-topsStack.filtStrength             = 0.2  # comment
-topsStack.unwMethod                = snaphu  # comment
-topsStack.coregistration           = NESD  # [NESD geometry], auto for NESD
+topsStack.subswath                   = 1 2 3 # '1 2'
+topsStack.numConnections             = 4    # comment
+topsStack.azimuthLooks               = 4    # comment
+topsStack.rangeLooks                 = 16   # comment
+topsStack.filtStrength               = 0.2  # comment
+topsStack.unwMethod                  = snaphu  # comment
+topsStack.coregistration             = NESD  # [NESD geometry], auto for NESD
 ######################################################
-mintpy.load.autoPath               = yes
-mintpy.compute.cluster             = local #[local / slurm / pbs / lsf / none], auto for none, cluster type
-mintpy.compute.numWorker           = 48 #[int > 1 / all], auto for 4 (local) or 40 (non-local), num of workers
-mintpy.plot.maxMemory              = 0.2  #[float], auto for 4, max memory used by one call of view.py for plotting.
-mintpy.plot                        = no  #[yes / no], auto for yes; create_template may set yes if ssaraopt span <= 365 days
-mintpy.networkInversion.parallel   = yes  #[yes / no], auto for no, parallel processing using dask
-mintpy.save.hdfEos5                = yes   #[yes / update / no], auto for no, save timeseries to UNAVCO InSAR Archive format
-mintpy.save.hdfEos5.update         = yes   #[yes / no], auto for no, XXXXXXXX end date if last date is within 31 days of today
-mintpy.save.hdfEos5.subset         = yes   #[yes / no], auto for no, put subset range info in output filename
-mintpy.save.kmz                    = yes   #[yes / no], auto for yes, save geocoded velocity to Google Earth KMZ file
-mintpy.reference.minCoherence      = 0.7      #[0.0-1.0], auto for 0.85, minimum coherence for auto method
-mintpy.troposphericDelay.method    = auto   # pyaps  #[pyaps / height_correlation / base_trop_cor / no], auto for pyaps
-mintpy.networkInversion.minTempCoh = 0.6 #[0.0-1.0], auto for 0.7, min temporal coherence for mask
+minsar.mintpyDir.addition            = date  #[name / lalo / no] auto for no (miaply_$name_startDate_endDate))
+mintpy.compute.cluster               = local #[local / slurm / pbs / lsf / none], auto for none, cluster type
+mintpy.compute.numWorker             = 48 #[int > 1 / all], auto for 4 (local) or 40 (non-local), num of workers
+mintpy.plot.maxMemory                = 0.2  #[float], auto for 4, max memory used by one call of view.py for plotting.
+mintpy.plot                          = no  #[yes / no], auto for yes; create_template may set yes if ssaraopt span <= 365 days
+mintpy.networkInversion.parallel     = yes  #[yes / no], auto for no, parallel processing using dask
+mintpy.save.hdfEos5                  = yes   #[yes / update / no], auto for no, save timeseries to UNAVCO InSAR Archive format
+mintpy.save.hdfEos5.update           = yes   #[yes / no], auto for no, XXXXXXXX end date if last date is within 31 days of today
+mintpy.save.hdfEos5.subset           = yes   #[yes / no], auto for no, put subset range info in output filename
+mintpy.save.kmz                      = yes   #[yes / no], auto for yes, save geocoded velocity to Google Earth KMZ file
+mintpy.reference.minCoherence        = 0.7      #[0.0-1.0], auto for 0.85, minimum coherence for auto method
+mintpy.troposphericDelay.method      = auto   # pyaps  #[pyaps / height_correlation / base_trop_cor / no], auto for pyaps
+mintpy.networkInversion.minTempCoh   = 0.6 #[0.0-1.0], auto for 0.7, min temporal coherence for mask
 ######################################################
 miaplpy.load.processor               = isce
 miaplpy.multiprocessing.numProcessor = 40
@@ -46,4 +46,5 @@ mintpy.networkInversion.minTempCoh   = 0.75
 ######################################################
 minsar.insarmaps_flag                = True
 minsar.upload_flag                   = True
-minsar.insarmaps_dataset             = filt*DS
+minsar.insarmaps_dataset             = DS,filt*DS
+minsar.product.suffix                = auto

@@ -27,18 +27,17 @@ ALLOWED_PREFIXES = ("mintpy.", "miaplpy.", "minsar.", "topsStack.", "ssaraopt.")
 LAUNCHER_KEYS = frozenset({"aoi", "options", "defaults"})
 FREEFORM_KEYS = frozenset({"aoi", "options"})
 EXCLUDE_KEYS = frozenset({"minsar.excludeDates", "topsStack.excludeDates"})
-# create_template rewrites these on every AOI run. aoi stores miaplpy.subset.lalo.
+# create_template rewrites these on every AOI run. aoi is also stored from subset.lalo.
 SKIP_SAVE_KEYS = frozenset(
     {
         "ssaraopt.relativeOrbit",
         "ssaraopt.startDate",
         "ssaraopt.endDate",
         "topsStack.coregistration",
-        "miaplpy.subset.lalo",
-        "mintpy.subset.lalo",
         "mintpy.plot",
     }
 )
+SUBSET_LALO_KEYS = ("miaplpy.subset.lalo", "mintpy.subset.lalo")
 _STEM_RE = re.compile(r"^(?P<project>.+?)Sen(?P<letter>[AD])T?(?P<orbit>\d+)$")
 _BLOCK_RE = re.compile(
     r"\n?# BEGIN custom_template_options\n.*?\n# END custom_template_options\n?",
@@ -149,18 +148,55 @@ def parse_dataset_name(stem: str) -> tuple[str, str]:
     return match.group("project"), flight
 
 
+_HELD_PREFIX = "# custom_template_options: "
+_ASSIGN_KEY_RE = re.compile(r"^\s*([A-Za-z][\w.]*)\s*=")
+
+
+def _strip_block(text: str) -> str:
+    if not _BLOCK_RE.search(text):
+        return text
+    return _BLOCK_RE.sub("\n", text, count=1)
+
+
+def _restore_held(text: str) -> str:
+    """Put back lines commented on a previous apply so a dropped key uses the template again."""
+    out: list[str] = []
+    for line in text.splitlines(keepends=True):
+        if line.startswith(_HELD_PREFIX):
+            out.append(line[len(_HELD_PREFIX) :])
+        else:
+            out.append(line)
+    return "".join(out)
+
+
+def _hold_active_keys(text: str, keys: set[str]) -> str:
+    """Comment active assignments that the top block replaces. Later lines would otherwise win."""
+    out: list[str] = []
+    for line in text.splitlines(keepends=True):
+        content = line[:-1] if line.endswith("\n") else line
+        nl = "\n" if line.endswith("\n") else ""
+        if content.lstrip().startswith("#"):
+            out.append(line)
+            continue
+        match = _ASSIGN_KEY_RE.match(content)
+        if match and match.group(1) in keys:
+            out.append(f"{_HELD_PREFIX}{content}{nl}")
+        else:
+            out.append(line)
+    return "".join(out)
+
+
 def _replace_block(text: str, assignments: list[str]) -> str:
-    block = ""
-    if assignments:
-        body = "\n".join(assignments)
-        block = f"\n{BEGIN}\n{body}\n{END}\n"
-    if _BLOCK_RE.search(text):
-        text = _BLOCK_RE.sub(block if block else "\n", text, count=1)
-    elif block:
-        if text and not text.endswith("\n"):
-            text += "\n"
-        text += block
-    return text
+    """Write the custom keys at the top. Comment the same keys in the rest of the file."""
+    text = _restore_held(_strip_block(text))
+    if text.startswith("\n"):
+        text = text[1:]
+    keys = {line.split("=", 1)[0].strip() for line in assignments}
+    text = _hold_active_keys(text, keys)
+    if not assignments:
+        return text
+    block = f"{BEGIN}\n" + "\n".join(assignments) + f"\n{END}\n"
+    return block + text
 
 
 def _template_lines(section: dict[str, str]) -> list[str]:
