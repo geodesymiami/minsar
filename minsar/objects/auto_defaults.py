@@ -66,6 +66,9 @@ class PathFind:
     @staticmethod
     def grab_cropbox(inps):
 
+        alos_box = inps.template.get('alos2Stack.boundingBox')
+        if alos_box not in (None, 'None', 'auto', ''):
+            return alos_box
         cropbox = inps.template[inps.prefix + 'Stack.boundingBox']
 
         return cropbox

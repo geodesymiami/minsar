@@ -12,7 +12,7 @@ import glob
 import shlex
 import math
 import re
-from minsar.utils.process_utilities import make_run_list
+from minsar.utils.process_utilities import is_alos2_template, make_run_list, stack_option
 from minsar.objects.auto_defaults import PathFind
 import contextlib
 from minsar.objects import message_rsmas
@@ -31,10 +31,7 @@ class CreateRun:
 
         self.work_dir = inps.work_dir
         self.prefix = inps.prefix
-        self.is_alos2_stack = (
-            inps.prefix == 'stripmap'
-            and str(inps.template.get('stripmapStack.sensor', '')).upper().replace('-', '') == 'ALOS2'
-        )
+        self.is_alos2_stack = inps.prefix == 'stripmap' and is_alos2_template(inps.template)
         if inps.prefix == 'tops':
             self.workflow = inps.template['topsStack.workflow']
         self.geo_reference_dir = os.path.join(self.work_dir, pathObj.georeferencedir)
@@ -91,7 +88,7 @@ class CreateRun:
 
     def _run_alos2_stack(self):
         """Create alosStack XML and script-style MinSAR run files."""
-        slc_dir = os.path.abspath(self.inps.template['stripmapStack.slcDir'])
+        slc_dir = os.path.abspath(stack_option(self.inps.template, 'slcDir') or os.path.join(self.work_dir, 'SLC'))
         date_dirs = sorted(
             os.path.basename(path)
             for path in glob.glob(os.path.join(slc_dir, '[0-9]' * 6))
@@ -100,7 +97,7 @@ class CreateRun:
         if not date_dirs:
             raise RuntimeError(f'No alosStack YYMMDD acquisition directories found in {slc_dir}')
 
-        dem_file = os.path.abspath(self.inps.template['stripmapStack.demDir'])
+        dem_file = os.path.abspath(stack_option(self.inps.template, 'demDir'))
         if os.path.isdir(dem_file):
             dem_matches = sorted(glob.glob(os.path.join(dem_file, '*.wgs84')))
             if not dem_matches:
@@ -112,7 +109,7 @@ class CreateRun:
         if water_body in (None, 'None', 'auto'):
             matches = sorted(glob.glob(os.path.join(os.path.dirname(dem_file), '*.wbd')))
             if not matches:
-                south, north, west, east = map(float, self.inps.template['stripmapStack.boundingBox'].split())
+                south, north, west, east = map(float, stack_option(self.inps.template, 'boundingBox').split())
                 command = [
                     'wbd.py',
                     str(math.floor(south)),
@@ -130,7 +127,7 @@ class CreateRun:
         water_body = os.path.abspath(water_body)
         subprocess.run(['fixImageXml.py', '-i', water_body, '-f'], check=True)
 
-        reference_date = self.inps.template.get('stripmapStack.referenceDate')
+        reference_date = stack_option(self.inps.template, 'referenceDate')
         if reference_date in (None, 'None', 'auto'):
             reference_date = date_dirs[0]
         if len(reference_date) == 8:
@@ -148,7 +145,7 @@ class CreateRun:
             'reference date of the stack': reference_date,
             'polarization': self.inps.template.get('alos2Stack.polarization', 'HH'),
             'number of subsequent dates': self.inps.template.get('alos2Stack.numberOfSubsequentDates', '4'),
-            'geocode bounding box': f"[{self.inps.template['stripmapStack.boundingBox'].replace(' ', ', ')}]",
+            'geocode bounding box': f"[{stack_option(self.inps.template, 'boundingBox').replace(' ', ', ')}]",
             'do ionospheric phase estimation': self.inps.template.get('alos2Stack.doIonosphere', 'False'),
             'apply ionospheric phase correction': self.inps.template.get('alos2Stack.applyIonosphere', 'False'),
         }

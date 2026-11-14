@@ -120,10 +120,15 @@ def main(iargs=None):
     os.chdir(inps.work_dir)
 
     # for further processing set inps.template['topsStack.demDir']
-    if inps.template[inps.prefix + 'Stack.demDir'] == 'None':
+    dem_key = inps.prefix + 'Stack.demDir'
+    dem_value = inps.template.get(dem_key)
+    if putils.is_alos2_template(inps.template):
+        dem_value = putils.stack_option(inps.template, 'demDir')
+        dem_key = 'alos2Stack.demDir'
+    if dem_value in (None, 'None', 'auto'):
        dem_dir = 'DEM'
     else:
-       dem_dir = inps.template[inps.prefix + 'Stack.demDir']
+       dem_dir = dem_value
 
     wgs84_list = glob.glob(os.path.join(dem_dir, '*.wgs84'))
     if wgs84_list:
@@ -135,7 +140,7 @@ def main(iargs=None):
          else:
              print(f"No DEM file found in {dem_dir}", file=sys.stderr)
              sys.exit(1)
-    inps.template[inps.prefix + 'Stack.demDir'] = dem_file
+    inps.template[dem_key] = dem_file
 
     # set inps.template['topsStack.boundingBox'] as needed (FA 1/2026: I don't understand what this does)
     if 'topsStack.boundingBox' in inps.template:

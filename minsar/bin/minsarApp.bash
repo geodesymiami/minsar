@@ -681,7 +681,7 @@ else
 fi
 
 # switch off mintpy for slc workflow, or when user explicitly limits ISCE range via --isce-stop
-if [[ ${template[topsStack.workflow]} == "slc" || ${template[stripmapStack.workflow]} == "slc" || "$isce_stop_cli_flag" == "1" ]]; then
+if [[ ${template[topsStack.workflow]} == "slc" || ${template[stripmapStack.workflow]} == "slc" || ${template[alos2Stack.workflow]} == "slc" || "$isce_stop_cli_flag" == "1" ]]; then
    mintpy_flag=0
 fi
 
@@ -783,9 +783,9 @@ fi
 
 
 if [[ $dem_flag == "1" ]]; then
-    if [[ ! -z $(grep -E "^stripmapStack.demDir|^topsStack.demDir" $template_file) ]];  then
+    if [[ ! -z $(grep -E "^alos2Stack.demDir|^stripmapStack.demDir|^topsStack.demDir" $template_file) ]];  then
        # copy DEM if given
-       demDir=$(grep -E "^stripmapStack.demDir|^topsStack.demDir" $template_file | awk -F = '{printf "%s\n",$2}' | sed 's/ //')
+       demDir=$(grep -E "^alos2Stack.demDir|^stripmapStack.demDir|^topsStack.demDir" $template_file | awk -F = '{printf "%s\n",$2}' | sed 's/ //')
        rm -rf DEM; eval "cp -r $demDir DEM"
     else
        # makeDEM
@@ -887,8 +887,9 @@ if [[ $ifgram_flag == "1" ]]; then
     fi
 
     if [[ $platform_str =~ ALOS2|ALOS-2 ]]; then
-        reference_date="${template[stripmapStack.referenceDate]}"
-        [[ "$reference_date" == "auto" || "$reference_date" == "None" ]] && reference_date=$(basename "$(ls -d "$WORK_DIR"/SLC/[0-9][0-9][0-9][0-9][0-9][0-9] 2>/dev/null | sort | head -1)")
+        reference_date="${template[alos2Stack.referenceDate]}"
+        [[ -z "$reference_date" || "$reference_date" == "auto" || "$reference_date" == "None" ]] && reference_date="${template[stripmapStack.referenceDate]}"
+        [[ -z "$reference_date" || "$reference_date" == "auto" || "$reference_date" == "None" ]] && reference_date=$(basename "$(ls -d "$WORK_DIR"/SLC/[0-9][0-9][0-9][0-9][0-9][0-9] 2>/dev/null | sort | head -1)")
     else
         reference_date=$(get_reference_date)
     fi
