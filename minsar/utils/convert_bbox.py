@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-# Convert bounding box or polygon to POLYGON WKT + MintPy/MiaplPy subset lines (and optionally ASF Vertex URL).
-# Accepts: POLYGON WKT, GoogleEarth-style points, or S:N,W:E bbox (lat_min:lat_max,lon_min:lon_max).
+# Convert bounding box or polygon to POLYGON WKT, subset flags, and MintPy/MiaplPy/alos2Stack lines.
+# Accepts: POLYGON WKT, GoogleEarth-style points, S:N,W:E, S N W E, or a template assignment of those.
 # Author: Falk Amelung
 # Created: 8/2023; renamed and extended for bbox + --asf
 #######################################
 
 import datetime
+import re
 import sys
 import argparse
 
@@ -33,6 +34,8 @@ ASF_NISAR_DEFAULT_END = datetime.date.today().isoformat()
 EXAMPLE = """examples:
   convert_bbox.py   "POLYGON((-86.581 12.3995,-86.4958 12.3995,-86.4958 12.454,-86.581 12.454,-86.581 12.3995))"
   convert_bbox.py   12.3995:12.454,-86.581:-86.4958
+  convert_bbox.py   -8.394 -8.082 117.859 118.176
+  convert_bbox.py   "alos2Stack.boundingBox = -8.394 -8.082 117.859 118.176"
   convert_bbox.py   "48.1153435942954,32.48224314182711,0 48.1460783620229,32.49847964019297,0 48.1153435942954,32.48224314182711,0"
   convert_bbox.py   12.399:12.454,-86.581:-86.496 --asf
   convert_bbox.py   -23.393:-23.097,-68.356:-68.175   # negative lat (see -- below if needed)
@@ -42,11 +45,11 @@ EXAMPLE = """examples:
 
 def create_parser():
     parser = argparse.ArgumentParser(
-        description="Convert POLYGON or bbox string (S:N,W:E) from ASF Vertex / GoogleEarth to WKT + MintPy, MiaplPy subset strings.",
+        description="Convert POLYGON, S:N,W:E, or S N W E to WKT, subset flags, and MintPy/MiaplPy/alos2Stack lines.",
         formatter_class=argparse.RawTextHelpFormatter,
         epilog=EXAMPLE,
     )
-    parser.add_argument("input_str", nargs="?", help="POLYGON WKT, or lat_min:lat_max,lon_min:lon_max (S:N,W:E), or GoogleEarth points")
+    parser.add_argument("input_str", nargs="*", help="POLYGON WKT, lat_min:lat_max,lon_min:lon_max (S:N,W:E), S N W E, or GoogleEarth points")
     parser.add_argument(
         "--lat_delta",
         type=float,
@@ -68,7 +71,102 @@ def create_parser():
 def cmd_line_parse(args):
     parser = create_parser()
     args = fix_argv_for_negative_bbox_sn_we(list(args), **CONVERT_BBOX_ARGV_KW)
+    args = _fix_argv_for_snwe_numbers(args)
     return parser.parse_args(args)
+
+
+_NUMBER_TOKEN = re.compile(r"^-?(?:\d+(?:\.\d*)?|\.\d+)$")
+
+
+def _is_number_token(token):
+    return bool(_NUMBER_TOKEN.match(token))
+
+
+def _parse_snwe_numbers(s):
+    """Parse S N W E (lat_min lat_max lon_min lon_max). Returns bounds or None."""
+    parts = s.split()
+    if len(parts) != 4:
+        return None
+    try:
+        lat_min, lat_max, lon_min, lon_max = (float(part) for part in parts)
+    except ValueError:
+        return None
+    return (min(lat_min, lat_max), max(lat_min, lat_max), min(lon_min, lon_max), max(lon_min, lon_max))
+
+
+def _assignment_rhs(s):
+    """Drop a template 'key = value' prefix and a trailing # comment."""
+    s = s.strip()
+    if "=" in s:
+        s = s.split("=", 1)[1].strip()
+    if "#" in s:
+        s = s.split("#", 1)[0].strip()
+    return s
+
+
+def _tail_is_known_options(tail):
+    """True when every token in tail is a convert_bbox option (and its value)."""
+    one = frozenset(CONVERT_BBOX_ARGV_KW["consume_one"])
+    flags = frozenset(CONVERT_BBOX_ARGV_KW["flags"])
+    k = 0
+    n = len(tail)
+    while k < n:
+        token = tail[k]
+        if token in flags:
+            k += 1
+            continue
+        if token in one and k + 1 < n:
+            k += 2
+            continue
+        if token.startswith("--") and "=" in token:
+            k += 1
+            continue
+        return False
+    return True
+
+
+def _fix_argv_for_snwe_numbers(argv):
+    """Insert '--' before S N W E numbers so a leading '-' is not an option."""
+    argv = list(argv)
+    if not argv or "--" in argv or argv[0] in ("-h", "--help"):
+        return argv
+
+    one = frozenset(CONVERT_BBOX_ARGV_KW["consume_one"])
+    flags = frozenset(CONVERT_BBOX_ARGV_KW["flags"])
+    i = 0
+    n = len(argv)
+    while i < n:
+        token = argv[i]
+        if token in ("-h", "--help"):
+            return argv
+        if token in flags:
+            i += 1
+            continue
+        if token in one:
+            if i + 1 >= n:
+                return argv
+            i += 2
+            continue
+        if token.startswith("--") and "=" in token:
+            i += 1
+            continue
+        break
+
+    rest = argv[i:]
+    if not rest:
+        return argv
+
+    nums = []
+    j = 0
+    while j < len(rest) and len(nums) < 4 and _is_number_token(rest[j]):
+        nums.append(rest[j])
+        j += 1
+    if len(nums) == 4 and any(num.startswith("-") for num in nums) and _tail_is_known_options(rest[j:]):
+        return argv[:i] + rest[j:] + ["--"] + nums
+
+    if rest[0].startswith("-") and _parse_snwe_numbers(rest[0]) is not None and _tail_is_known_options(rest[1:]):
+        return argv[:i] + rest[1:] + ["--", rest[0]]
+    return argv
 
 
 def _parse_bbox_string(s):
@@ -118,7 +216,7 @@ def _input_to_bounds(input_str):
     Detect input format and return (min_lat, max_lat, min_lon, max_lon).
     Raises ValueError if unparseable.
     """
-    s = input_str.strip()
+    s = _assignment_rhs(input_str)
     if not s:
         raise ValueError("Empty input")
 
@@ -141,7 +239,12 @@ def _input_to_bounds(input_str):
     if bbox is not None:
         return _normalize_bounds(*bbox)
 
-    # 3) GoogleEarth-style: "lon,lat,z lon,lat,z ..."
+    # 3) S N W E (alos2Stack.boundingBox / topsStack.boundingBox)
+    snwe = _parse_snwe_numbers(s)
+    if snwe is not None:
+        return _normalize_bounds(*snwe)
+
+    # 4) GoogleEarth-style: "lon,lat,z lon,lat,z ..."
     try:
         points = s.split()
         longs, lats = [], []
@@ -156,7 +259,7 @@ def _input_to_bounds(input_str):
         pass
 
     raise ValueError(
-        "Cannot parse input. Use POLYGON((...)), or lat_min:lat_max,lon_min:lon_max (S:N,W:E), or GoogleEarth points."
+        "Cannot parse input. Use POLYGON((...)), lat_min:lat_max,lon_min:lon_max (S:N,W:E), S N W E, or GoogleEarth points."
     )
 
 
@@ -181,7 +284,7 @@ def _asf_vertex_url(wkt, min_lat, max_lat, min_lon, max_lon, start, end, dataset
 
 
 def run_convert_bbox(input_str, lat_delta, lon_delta, asf_only=False, asf_start=None, asf_end=None):
-    """Convert input (POLYGON or S:N,W:E or GoogleEarth) to bounds; print WKT, blank line, MintPy/MiaplPy lines (optional ASF URL)."""
+    """Convert input to bounds; print WKT, subset flags, and MintPy/MiaplPy/alos2Stack lines (optional ASF URL)."""
     _ = (lat_delta, lon_delta)  # CLI backward compatibility; no longer affect output
     min_lat, max_lat, min_lon, max_lon = _input_to_bounds(input_str)
 
@@ -221,16 +324,18 @@ def run_convert_bbox(input_str, lat_delta, lon_delta, asf_only=False, asf_start=
     print("")
     print("mintpy.subset.lalo                   = " + subset_str + "    #[S:N,W:E / no], auto for no")
     print("miaplpy.subset.lalo                  = " + subset_str + "    #[S:N,W:E / no], auto for no")
+    print(f"alos2Stack.boundingBox                = {min_lat} {max_lat} {min_lon} {max_lon}")
     print("")
 
 
 def main(iargs=None):
     inps = cmd_line_parse(sys.argv[1:] if iargs is None else iargs)
-    if inps.input_str is None or inps.input_str.strip() == "":
+    input_str = " ".join(inps.input_str).strip()
+    if input_str == "":
         create_parser().print_help()
         sys.exit(1)
     run_convert_bbox(
-        inps.input_str,
+        input_str,
         inps.lat_delta,
         inps.lon_delta,
         asf_only=inps.asf,
