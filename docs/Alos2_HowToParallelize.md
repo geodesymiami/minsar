@@ -82,7 +82,7 @@ Dates are `YYMMDD`. Pairs are `YYMMDD-YYMMDD`. On the Cameroon stack the referen
 
 Unwrap is the long step. All 14 pairs ran together. The first finished at 12:34 (`180508-180717`); the last at 14:50 (`180213-180619`). Resample of all 6 dates together took 46 min. On the serial run that step was about 40 min per date.
 
-The loops were backgrounded with `make_alos2_cmds_parallel.py alos2_cmds` before this run. After the geocode failure, the empty box flag in `cmd_4.sh` was replaced with the template box:
+The loops were backgrounded with `make_alos2_bash_cmds_parallel.py alos2_cmds` before this run. After the geocode failure, the empty box flag in `cmd_4.sh` was replaced with the template box:
 
 ```bash
 sed -i 's|-bbox /|-bbox 4.19/4.25/9.158/9.221|g' alos2_cmds/cmd_4.sh alos2_cmds/sections/20_geocode.bash
