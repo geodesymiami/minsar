@@ -56,31 +56,29 @@ Dates are `YYMMDD`. Pairs are `YYMMDD-YYMMDD`. On the Cameroon stack the referen
 | `cmd_4.sh` | 3 h 4 min | 11:46:14–14:50:23 |
 | chain | 4 h 27 min | 10:23:49–14:50:23 |
 
-A leading `*` is a date or pair loop that can be split across jobs.
-
-| Step | Program | Runs on | Wall clock | Clock time |
+| Step | Program | Parallelizable | Runs on | Wall clock |
 |---|---|---|---|---|
-| 1 | `read_data.py` | all dates | 1 min 18 s | 10:23:49–10:25:07 |
-| 2 | `compute_baseline.py` | all secondary dates | 17 s | 10:25:07–10:25:24 |
-| 3 | `compute_burst_sync.py` | the stack | 1 s | 10:25:24–10:25:25 |
-| 4 | `estimate_slc_offset.py` | * each secondary date | 17 s | 10:25:25–10:25:42 |
-| 5 | `estimate_swath_offset.py` | reference date | 4 min 57 s | 10:25:42–10:30:39 |
-| 6 | `estimate_frame_offset.py` | reference date | — | one frame; no `frame_offset.txt` |
-| 7 | `resample_common_grid.py` | * each date | 45 min 50 s | 10:30:39–11:16:29 |
-| 8 | `mosaic_parameter.py` | all dates, then the reference date | 2 s | 11:16:29–11:16:31 |
-| 9 | `rdr2geo.py` | reference date | 12 min 31 s | 11:16:31–11:29:02 |
-| 10 | `geo2rdr.py` | * each secondary date | 8 min 32 s | 11:29:02–11:37:34 |
-| 11 | `pair_up.py` | all pairs | 3 s | 11:37:34–11:37:37 |
-| 12 | `form_interferogram.py` | * each pair | 5 min 36 s | 11:37:37–11:43:13 |
-| 13 | `mosaic_interferogram.py` | * each pair | 19 s | 11:42:54–11:43:13 |
-| 14 | `radar_dem_offset.py` | one reference pair (`180102-180213`) | 35 s | 11:43:13–11:43:48 |
-| 15 | `rect_range_offset.py` | * each secondary date | 21 s | 11:43:48–11:44:09 |
-| 16 | `diff_interferogram.py` | * each pair | 44 s | 11:44:09–11:44:53 |
-| 17 | `look_coherence.py` | * each pair | 55 s | 11:44:53–11:45:48 |
-| 18 | `look_geom.py` | reference date | 26 s | 11:45:48–11:46:14 |
-| 19 | `filt.py` | * each pair | 51 s | 11:46:14–11:47:05 |
-| 20 | `unwrap_snaphu.py` | * each pair | 3 h 3 min | 11:47:05–14:50:23 |
-| 21 | `geocode.py` | * each pair, then the reference date once | — | failed at 14:50:23 |
+| 1 | `read_data.py` | no | all dates | 1 min 18 s |
+| 2 | `compute_baseline.py` | no | all secondary dates | 17 s |
+| 3 | `compute_burst_sync.py` | no | the stack | 1 s |
+| 4 | `estimate_slc_offset.py` | yes | each secondary date | 17 s |
+| 5 | `estimate_swath_offset.py` | no | reference date | 4 min 57 s |
+| 6 | `estimate_frame_offset.py` | no | reference date | — |
+| 7 | `resample_common_grid.py` | yes | each date | 45 min 50 s |
+| 8 | `mosaic_parameter.py` | no | all dates, then the reference date | 2 s |
+| 9 | `rdr2geo.py` | no | reference date | 12 min 31 s |
+| 10 | `geo2rdr.py` | yes | each secondary date | 8 min 32 s |
+| 11 | `pair_up.py` | no | all pairs | 3 s |
+| 12 | `form_interferogram.py` | yes | each pair | 5 min 36 s |
+| 13 | `mosaic_interferogram.py` | yes | each pair | 19 s |
+| 14 | `radar_dem_offset.py` | no | one reference pair (`180102-180213`) | 35 s |
+| 15 | `rect_range_offset.py` | yes | each secondary date | 21 s |
+| 16 | `diff_interferogram.py` | yes | each pair | 44 s |
+| 17 | `look_coherence.py` | yes | each pair | 55 s |
+| 18 | `look_geom.py` | no | reference date | 26 s |
+| 19 | `filt.py` | yes | each pair | 51 s |
+| 20 | `unwrap_snaphu.py` | yes | each pair | 3 h 3 min |
+| 21 | `geocode.py` | yes | each pair, then the reference date once | — |
 
 Unwrap is the long step. All 14 pairs ran together. The first finished at 12:34 (`180508-180717`); the last at 14:50 (`180213-180619`). Resample of all 6 dates together took 46 min. On the serial run that step was about 40 min per date.
 
