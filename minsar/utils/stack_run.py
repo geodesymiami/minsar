@@ -9,9 +9,8 @@ import subprocess
 from argparse import Namespace
 import shutil
 import glob
-import shlex
 import math
-import re
+from minsar.utils.alos2_run_files import write_alos2_run_files
 from minsar.utils.process_utilities import is_alos2_template, make_run_list, stack_option
 from minsar.objects.auto_defaults import PathFind
 import contextlib
@@ -163,76 +162,11 @@ class CreateRun:
         subprocess.run(command, cwd=self.work_dir, check=True)
 
         command_dir = os.path.join(self.work_dir, 'alos2_cmds')
-        section_dir = os.path.join(command_dir, 'sections')
-        os.makedirs(section_dir, exist_ok=True)
-        run_dir = os.path.join(self.work_dir, 'run_files')
-        os.makedirs(run_dir, exist_ok=True)
-        run_index = 0
+        os.makedirs(command_dir, exist_ok=True)
         for index in range(1, 5):
             source = os.path.join(self.work_dir, f'cmd_{index}.sh')
             destination = os.path.join(command_dir, f'cmd_{index}.sh')
             shutil.move(source, destination)
-            for title, script_text, task_count in self._split_alos2_command_file(destination):
-                run_index += 1
-                slug = re.sub(r'[^a-z0-9]+', '_', title.lower()).strip('_')
-                section_script = os.path.join(section_dir, f'{run_index:02d}_{slug}.bash')
-                with open(section_script, 'w') as file:
-                    file.write('#!/usr/bin/env bash\n')
-                    file.write('set -eo pipefail\n')
-                    file.write(f'cd {shlex.quote(self.work_dir)}\n')
-                    file.write(script_text)
-                os.chmod(section_script, 0o755)
-
-                run_file = os.path.join(run_dir, f'run_{run_index:02d}_alos2_{slug}')
-                with open(run_file, 'w') as file:
-                    if task_count is None:
-                        file.write(f'bash {shlex.quote(section_script)}\n')
-                    else:
-                        for task_index in range(1, task_count + 1):
-                            file.write(
-                                f'parallel=1 group_i={task_index} group_n=1 '
-                                f'bash {shlex.quote(section_script)}\n'
-                            )
-
-    @staticmethod
-    def _split_alos2_command_file(command_file):
-        """Split an official alosStack cmd_N.sh into ordered serial/parallel sections."""
-        with open(command_file) as file:
-            lines = file.readlines()
-
-        headers = []
-        for index in range(len(lines) - 2):
-            if (
-                lines[index].strip() == '#' * 50
-                and lines[index + 1].lstrip().startswith('# ')
-                and lines[index + 2].strip() == '#' * 50
-            ):
-                headers.append((index, lines[index + 1].strip()[2:]))
-        if not headers:
-            return []
-
-        prefix = ''.join(lines[1:headers[0][0]])
-        sections = []
-        for position, (start, title) in enumerate(headers):
-            end = headers[position + 1][0] if position + 1 < len(headers) else len(lines)
-            section = ''.join(lines[start:end])
-            substantive = [
-                line for line in lines[start + 3:end]
-                if line.strip() and not line.lstrip().startswith('#')
-            ]
-            if not substantive:
-                continue
-
-            task_count = None
-            loop_match = re.search(r'for \(\(i=0;i<\$\{#([A-Za-z_][A-Za-z0-9_]*)\[@\]\};i\+\+\)\); do', section)
-            if loop_match:
-                array_name = loop_match.group(1)
-                array_match = re.search(rf'^{re.escape(array_name)}=\(([^)]*)\)', prefix, re.MULTILINE)
-                if not array_match:
-                    raise RuntimeError(f'Cannot find alosStack array {array_name} in {command_file}')
-                task_count = len(shlex.split(array_match.group(1)))
-                if task_count == 0:
-                    continue
-            sections.append((title, prefix + section, task_count))
-        return sections
+        run_dir = os.path.join(self.work_dir, 'run_files')
+        write_alos2_run_files(command_dir, run_dir, self.work_dir)
 
