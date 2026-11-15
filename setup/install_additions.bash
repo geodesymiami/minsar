@@ -99,6 +99,7 @@ ln -sf "$MINSAR_HOME/tools/isce2/contrib/stack/topsStack/fetchOrbit.py" "$MINSAR
 ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/stripmapStack/unpackFrame_ENV_raw.py $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/stripmapStack
 ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/stripmapStack/unpackFrame_ENV.py $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/stripmapStack
 ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/stripmapStack/referenceStackCopy.py $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/stripmapStack
+ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/alosStack/create_cmds.py $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/alosStack/create_cmds.py
 fi
 
 echo "Running of install_additions.bash DONE"
