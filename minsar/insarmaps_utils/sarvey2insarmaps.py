@@ -552,10 +552,12 @@ def run_command(command, shell=False, conda_env=None, cwd=None):
 
     #convert to relative paths for display
     cmd_for_display = convert_to_relative_path(display_cmd, cwd=cwd or os.getcwd())
+    command_line = " ".join(cmd_for_display)
+    _append_ingest_command_log(command_line)
     print(
         "##########################\n"
         "Running (displaying relative paths)....\n"
-        f"{' '.join(cmd_for_display)}\n"
+        f"{command_line}\n"
         "##########################\n"
     )
 
@@ -621,6 +623,17 @@ def _append_command_log(message):
         handle.write(line + "\n")
 
 
+def _reset_ingest_command_log():
+    """Start a fresh command list for this run (shown later in outputs/pic/index.html)."""
+    Path("ingest_commands.log").write_text("", encoding="utf-8")
+
+
+def _append_ingest_command_log(command_line):
+    """Append one displayed command to ./ingest_commands.log."""
+    with open("ingest_commands.log", "a", encoding="utf-8") as handle:
+        handle.write(command_line + "\n")
+
+
 def ingest_step2_rsync_and_remote_ingest(insarmaps_host, local_json_dir, local_mbtiles, data_dir):
     """Rsync JSON/ to the Insarmaps host, ingest via ssh against 127.0.0.1, then delete the remote scratch tree."""
     insarmaps_host = str(insarmaps_host).strip()
@@ -657,6 +670,10 @@ def ingest_step2_rsync_and_remote_ingest(insarmaps_host, local_json_dir, local_m
     print("####################################")
     print(f"Reading DB password from {target}:{remote_pass_file}")
     password_cmd = f"sudo -n cat {shlex.quote(remote_pass_file)} | tr -d '[:space:]'"
+    password_display = f"{rsh} {target} {password_cmd}"
+    print(f"Running.... {password_display}")
+    _append_ingest_command_log(password_display)
+    _append_command_log(password_display)
     try:
         pg_pass = subprocess.check_output(rsh_parts + [target, password_cmd], text=True).strip()
     except subprocess.CalledProcessError as exc:
@@ -672,6 +689,7 @@ def ingest_step2_rsync_and_remote_ingest(insarmaps_host, local_json_dir, local_m
     )
     print("####################################")
     print(f"Running.... {rsh} {target} {ingest_cmd}")
+    _append_ingest_command_log(f"{rsh} {target} {ingest_cmd}")
     _append_command_log(f"{rsh} {target} {ingest_cmd}")
 
     # Source remote minsar env so PROJ_LIB is set, then copy mbtiles into the HTTP tile dir.
@@ -744,6 +762,34 @@ def convert_to_relative_path(cmd_list, cwd=None):
         else:
             rel.append(token)
     return rel
+
+
+def rename_csv_coherence_column(csv_path):
+    """Rename the CSV column coherence to temporal_coherence.
+
+    The shapefile field stays coherence (10-character DBF limit). hdfeos5_or_csv_2json_mbtiles.py
+    already accepts temporal_coherence.
+    """
+    csv_path = Path(csv_path)
+    df = pd.read_csv(csv_path)
+    if "coherence" not in df.columns:
+        print(f"[WARN] no coherence column in {csv_path.name}; left unchanged")
+        return
+    rel = convert_to_relative_path([str(csv_path.resolve())])[0]
+    command_line = (
+        "python3 -c \"import pandas as pd; "
+        f"p={rel!r}; df=pd.read_csv(p); "
+        "df.rename(columns={'coherence': 'temporal_coherence'}).to_csv(p, index=False)\""
+    )
+    print(
+        "##########################\n"
+        "Running (displaying relative paths)....\n"
+        f"{command_line}\n"
+        "##########################\n"
+    )
+    _append_ingest_command_log(command_line)
+    df = df.rename(columns={"coherence": "temporal_coherence"})
+    df.to_csv(csv_path, index=False)
 
 
 def create_jobfile(inps, data_path, cmds, json_dir, output_path, mbtiles_path, dataset_name, metadata):
@@ -869,6 +915,7 @@ def main():
             create_jobfile(inps, data_path, (cmd_sarvey_export, cmd_ogr2ogr, cmd_correctgeo, cmd_hdfeos5), json_dir, output_path, mbtiles_path, dataset_name, metadata)
 
     else:
+        _reset_ingest_command_log()
         # Step 1: run sarvey_export to  create *.shp file
         if data_path.suffix == ".h5":
             run_command(cmd_sarvey_export, cwd=h5_path.parent.parent, conda_env=None)
@@ -895,6 +942,7 @@ def main():
         #to final format
         shutil.move(input_csv, final_csv_path)
         input_csv = final_csv_path
+        rename_csv_coherence_column(input_csv)
 
         #update paths used by downstream steps
         if inps.do_geocorr:
