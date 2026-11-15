@@ -62,6 +62,9 @@ def write_alos2_run_files(alos2_cmds, run_dir, work_dir):
         path = run_dir / name
         path.write_text("".join(f"{line}\n" for line in lines))
         written.append(path)
+    if run_dir.resolve() == (work_dir / "run_files").resolve():
+        list_path = work_dir / "run_files_list"
+        list_path.write_text("".join(f"{path.resolve()}\n" for path in written))
     return written
 
 
