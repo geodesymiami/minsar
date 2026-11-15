@@ -72,6 +72,7 @@ ln -sf $MINSAR_HOME/additions/mintpy/cli/save_qgis.py $MINSAR_HOME/tools/MintPy/
 ln -sf $MINSAR_HOME/additions/mintpy/view.py $MINSAR_HOME/tools/MintPy/src/mintpy/view.py
 ln -sf $MINSAR_HOME/additions/mintpy/cli/view.py $MINSAR_HOME/tools/MintPy/src/mintpy/cli/view.py
 ln -sf $MINSAR_HOME/additions/mintpy/utils/web_basemap.py $MINSAR_HOME/tools/MintPy/src/mintpy/utils/web_basemap.py
+ln -sf $MINSAR_HOME/additions/mintpy/utils/isce_utils.py $MINSAR_HOME/tools/MintPy/src/mintpy/utils/isce_utils.py
 
 ### Adding not-committed MiaplPy fixes
 ln -sf $MINSAR_HOME/additions/miaplpy/prep_slc_isce.py $MINSAR_HOME/tools/MiaplPy/src/miaplpy/prep_slc_isce.py

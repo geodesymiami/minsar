@@ -905,6 +905,9 @@ if [[ $mintpy_flag == "1" ]]; then
     mintpy_dir_name=$(get_mintpy_dir_name)
 
     if [[ $skip_mintpy_flag != "1" ]]; then
+        if [[ $platform_str =~ ALOS2|ALOS-2 ]]; then
+            run_command "add_alos2_track_number.py $template_file"
+        fi
         # regenerate jobfile with dated mintpy dir name, then run MintPy
         run_command "create_mintpy_jobfile.py $template_file $mintpy_dir_name"
         run_command "run_workflow.bash --dostep mintpy"
