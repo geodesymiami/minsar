@@ -88,54 +88,37 @@ The loops were backgrounded with `make_alos2_cmds_parallel.py alos2_cmds` before
 sed -i 's|-bbox /|-bbox 4.19/4.25/9.158/9.221|g' alos2_cmds/cmd_4.sh alos2_cmds/sections/20_geocode.bash
 ```
 
-## How to parallelize
+## Run files
 
-The `for` loops in the command files already have a group test. It is commented out. A loop task `i` runs only when
+Each run file is one job. The next run file starts after every line in the current file has finished. A line is one date or one pair. Programs that share that date or pair are one line, joined with `&&`. A task that changes directory more than once is a bash file, and the run-file line calls it:
 
-```text
-(group_i - 1) * group_n  <=  i  <=  group_n - 1 + (group_i - 1) * group_n
+```bash
+bash run_files/tasks/run_16_geocode_180102-180213.bash
 ```
 
-`group_i` starts at 1. `group_n` is how many dates or pairs that one job takes, as a contiguous slice of the array at the top of the script (`dates`, `dates2`, or `insarpair`).
+Most run files go to `skx-dev`: 2 hour limit, 15 nodes per job, 2 jobs per user. One job holds every line of the run file. Resample is one date per node. Unwrap requests more than 2 hours and runs on `pvc`. On this stack the slowest unwrap was 3 h 3 min (`180213-180619`); the fastest was about 47 min (`180508-180717`).
 
-Copy one loop into its own script. Set `parallel=1`, `group_n`, and a different `group_i` in each copy. Submit those scripts as separate jobs. Leave the steps that are not inside a loop in a single job.
+`look_geom.py` reads the 1-look reference geometry from step 9 and writes `180102_5rlks_28alks.lat`, `.lon`, `.hgt`, `.los`, and `.wbd`. Steps 16, 17, and 19 do not read those files. The Cameroon `filt.py` command has no `-wbd_msk`. `unwrap_snaphu.py` is called with `-wbd_msk` and reads `180102_5rlks_28alks.wbd`, so `run_13_look_geom` finishes before `run_15_unwrap`. The reference line-of-sight geocode reads `180102_5rlks_28alks.los`, so it also waits for `run_13_look_geom`. Pair geocodes use the track XML, the DEM, and the pair file, and wait for unwrap.
 
-Do not launch several copies of a whole `cmd_*.sh`. The steps outside the loops would run again in every job.
+Step 14 runs once, after `180102-180213` has been mosaicked. Step 15 is one line per secondary date, and every date finishes before any step 16.
 
-### Worth splitting
+| Run file | Steps | Lines | Wall clock | Queue |
+|---|---|---|---|---|
+| `run_01_read_baseline_burst` | 1 `&&` 2 `&&` 3 | 1 | 1.5 min | `skx-dev` |
+| `run_02_estimate_slc_offset` | 4 | each secondary date | 17 s | `skx-dev` |
+| `run_03_estimate_swath_frame_offset` | 5 `&&` 6 | 1 | 5 min | `skx-dev` |
+| `run_04_resample_common_grid` | 7 | each date | 40 min per date | `skx-dev` |
+| `run_05_mosaic_rdr2geo` | 8 `&&` 9 | 1 | 13 min | `skx-dev` |
+| `run_06_geo2rdr` | 10 | each secondary date | 9 min | `skx-dev` |
+| `run_07_pair_up` | 11 | 1 | 3 s | `skx-dev` |
+| `run_08_form_interferogram` | 12 | each pair | 6 min | `skx-dev` |
+| `run_09_mosaic_interferogram` | 13 | each pair | 19 s | `skx-dev` |
+| `run_10_radar_dem_offset` | 14 | 1 | 35 s | `skx-dev` |
+| `run_11_rect_range_offset` | 15 | each secondary date | 21 s | `skx-dev` |
+| `run_12_diff_look_filt` | 16 `&&` 17 `&&` 19 | each pair | under 3 min | `skx-dev` |
+| `run_13_look_geom` | 18 | 1 | 26 s | `skx-dev` |
+| `run_14_geocode_los` | 21, reference line-of-sight | 1 | — | `skx-dev` |
+| `run_15_unwrap` | 20 | each pair | 3 h 3 min | `pvc` |
+| `run_16_geocode` | 21, three commands `&&` | each pair | — | `skx-dev` |
 
-These loops dominate the Cameroon run (6 dates, 14 pairs, one `pvc` node, serial):
-
-| Loop | Cameroon time | Split |
-|---|---|---|
-| `resample_common_grid.py` | about 40 min per date, 4 h 24 min total | one job per date (`group_n=1`) |
-| `geo2rdr.py` | about 8.5 min per secondary date | one job per secondary date |
-| `form_interferogram.py` through `mosaic_interferogram.py` | about 4 min per pair to form | one job per pair, form then mosaic |
-| `diff_interferogram.py` through `geocode.py` | per pair | one job per pair for steps 16–17 and 19–21 |
-
-`estimate_slc_offset.py` is also per date, but on this stack it finished in about a minute. Leave it serial.
-
-### Keep serial
-
-These steps run once and the next parallel block needs their output:
-
-1. `read_data.py`, `compute_baseline.py`, `compute_burst_sync.py`
-2. `estimate_swath_offset.py` and `estimate_frame_offset.py` on the reference date, before any resample
-3. `mosaic_parameter.py`, after every date has been resampled
-4. `rdr2geo.py` on the reference date, before any `geo2rdr.py`
-5. `pair_up.py`, after every `geo2rdr.py`
-6. `radar_dem_offset.py`, after the reference pair has been mosaicked, before any `rect_range_offset.py`
-7. `look_geom.py` and the final line-of-sight `geocode.py` can run once beside the pair jobs. The pair geocodes need `look_geom.py` only for the shared geometry they do not rewrite.
-
-### Job sequence
-
-1. One job: steps 1–6.
-2. One job per date: step 7. Wait until all of them finish.
-3. One job: steps 8–9.
-4. One job per secondary date: step 10. Wait until all of them finish.
-5. One job: step 11.
-6. One job per pair: steps 12–13. Wait until the pair that includes the reference (`180102-180213`) has been mosaicked.
-7. One job: step 14, then one job per secondary date for step 15. Wait until those finish.
-8. One job per pair: steps 16–17 and 19–21. Step 18 can be that same wave or a single extra job.
-
-On a `pvc` node, one resample of these ScanSAR frames is the memory-heavy task. Put one resample in each job. Several pair jobs can share a node after the SLCs exist, because forming one interferogram is much smaller than resampling one date.
+Wall clock is from the measured run. For a loop, it is the slowest date or pair. `run_12_diff_look_filt` is the sum of the three loop times, which is longer than one pair. `run_14_geocode_los` and `run_16_geocode` wrote nothing.
