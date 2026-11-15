@@ -764,22 +764,30 @@ def convert_to_relative_path(cmd_list, cwd=None):
     return rel
 
 
-def rename_csv_coherence_column(csv_path):
-    """Rename the CSV column coherence to temporal_coherence.
+CSV_COLUMN_RENAMES = {
+    "coherence": "temporal_coherence",
+    "dem": "height",
+}
 
-    The shapefile field stays coherence (10-character DBF limit). hdfeos5_or_csv_2json_mbtiles.py
-    already accepts temporal_coherence.
+
+def rename_csv_columns_for_hdfeos5(csv_path):
+    """Rename sarvey CSV columns to the HDFEOS5 names.
+
+    Shapefile fields stay short (10-character DBF limit). This runs on the CSV after ogr2ogr.
+    coherence matches quality/temporalCoherence; dem matches geometry/height.
     """
     csv_path = Path(csv_path)
     df = pd.read_csv(csv_path)
-    if "coherence" not in df.columns:
-        print(f"[WARN] no coherence column in {csv_path.name}; left unchanged")
+    present = {src: dst for src, dst in CSV_COLUMN_RENAMES.items() if src in df.columns}
+    if not present:
+        print(f"[WARN] no coherence or dem column in {csv_path.name}; left unchanged")
         return
     rel = convert_to_relative_path([str(csv_path.resolve())])[0]
+    rename_literal = ", ".join(f"{src!r}: {dst!r}" for src, dst in present.items())
     command_line = (
         "python3 -c \"import pandas as pd; "
         f"p={rel!r}; df=pd.read_csv(p); "
-        "df.rename(columns={'coherence': 'temporal_coherence'}).to_csv(p, index=False)\""
+        f"df.rename(columns={{{rename_literal}}}).to_csv(p, index=False)\""
     )
     print(
         "##########################\n"
@@ -788,7 +796,7 @@ def rename_csv_coherence_column(csv_path):
         "##########################\n"
     )
     _append_ingest_command_log(command_line)
-    df = df.rename(columns={"coherence": "temporal_coherence"})
+    df = df.rename(columns=present)
     df.to_csv(csv_path, index=False)
 
 
@@ -942,7 +950,7 @@ def main():
         #to final format
         shutil.move(input_csv, final_csv_path)
         input_csv = final_csv_path
-        rename_csv_coherence_column(input_csv)
+        rename_csv_columns_for_hdfeos5(input_csv)
 
         #update paths used by downstream steps
         if inps.do_geocorr:

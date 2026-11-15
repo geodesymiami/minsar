@@ -142,7 +142,7 @@ def parse_args():
     p = argparse.ArgumentParser(
         description="Export InSAR CSV points to 3D KML (Google Earth) with TSX ascending/descending XY correction."
     )
-    p.add_argument("--input", required=True, help="Input CSV (must have X,Y,velocity,dem,dem_error).")
+    p.add_argument("--input", required=True, help="Input CSV (must have X,Y,velocity,height or dem,dem_error).")
     p.add_argument("--output", required=True, help="Output KML path.")
     p.add_argument("--kml-name", default="InSAR 3D points", help="KML document name.")
     p.add_argument("--vlim", type=float, default=1.5, help="Velocity limit in cm/yr; colors saturate at ±vlim.")
@@ -180,8 +180,9 @@ def main():
     # Velocity units:  mm/yr -> cm/yr
     df["vel_cm_yr"] = df["velocity"] / 10.0
 
-    # Elevation proxy:
-    df["elev_insarmaps"] = df["dem_error"] - df["dem"]
+    # Elevation proxy. Sarvey CSVs use height (HDFEOS5 geometry/height); older CSVs use dem.
+    height_col = "height" if "height" in df.columns else "dem"
+    df["elev_insarmaps"] = df["dem_error"] - df[height_col]
     df["h_m"] = df["dem_error"].astype(float).clip(lower=0.0)
 
     # ---- Auto-read from geometryRadar.h5 if provided ----
