@@ -102,23 +102,23 @@ Most run files go to `skx-dev`: 2 hour limit, 15 nodes per job, 2 jobs per user.
 
 Step 14 runs once, after `180102-180213` has been mosaicked. Step 15 is one line per secondary date, and every date finishes before any step 16.
 
-| Run file | Steps | Lines | Wall clock | Queue |
-|---|---|---|---|---|
-| `run_01_read_baseline_burst` | 1 `&&` 2 `&&` 3 | 1 | 1.5 min | `skx-dev` |
-| `run_02_estimate_slc_offset` | 4 | each secondary date | 17 s | `skx-dev` |
-| `run_03_estimate_swath_frame_offset` | 5 `&&` 6 | 1 | 5 min | `skx-dev` |
-| `run_04_resample_common_grid` | 7 | each date | 40 min per date | `skx-dev` |
-| `run_05_mosaic_rdr2geo` | 8 `&&` 9 | 1 | 13 min | `skx-dev` |
-| `run_06_geo2rdr` | 10 | each secondary date | 9 min | `skx-dev` |
-| `run_07_pair_up` | 11 | 1 | 3 s | `skx-dev` |
-| `run_08_form_interferogram` | 12 | each pair | 6 min | `skx-dev` |
-| `run_09_mosaic_interferogram` | 13 | each pair | 19 s | `skx-dev` |
-| `run_10_radar_dem_offset` | 14 | 1 | 35 s | `skx-dev` |
-| `run_11_rect_range_offset` | 15 | each secondary date | 21 s | `skx-dev` |
-| `run_12_diff_look_filt` | 16 `&&` 17 `&&` 19 | each pair | under 3 min | `skx-dev` |
-| `run_13_look_geom` | 18 | 1 | 26 s | `skx-dev` |
-| `run_14_geocode_los` | 21, reference line-of-sight | 1 | — | `skx-dev` |
-| `run_15_unwrap` | 20 | each pair | 3 h 3 min | `pvc` |
-| `run_16_geocode` | 21, three commands `&&` | each pair | — | `skx-dev` |
+| Run file | Steps | Lines | Wall clock |
+|---|---|---|---|
+| `run_01_read_baseline_burst` | 1 `&&` 2 `&&` 3 | 1 | 1.5 min |
+| `run_02_estimate_slc_offset` | 4 | each secondary date | 17 s |
+| `run_03_estimate_swath_frame_offset` | 5 `&&` 6 | 1 | 5 min |
+| `run_04_resample_common_grid` | 7 | each date | 40 min per date |
+| `run_05_mosaic_rdr2geo` | 8 `&&` 9 | 1 | 13 min |
+| `run_06_geo2rdr` | 10 | each secondary date | 9 min |
+| `run_07_pair_up` | 11 | 1 | 3 s |
+| `run_08_form_interferogram` | 12 | each pair | 6 min |
+| `run_09_mosaic_interferogram` | 13 | each pair | 19 s |
+| `run_10_radar_dem_offset` | 14 | 1 | 35 s |
+| `run_11_rect_range_offset` | 15 | each secondary date | 21 s |
+| `run_12_diff_look_filt` | 16 `&&` 17 `&&` 19 | each pair | under 3 min |
+| `run_13_look_geom` | 18 | 1 | 26 s |
+| `run_14_geocode_los` | 21, reference line-of-sight | 1 | — |
+| `run_15_unwrap` | 20 | each pair | 3 h 3 min |
+| `run_16_geocode` | 21, three commands `&&` | each pair | — |
 
 Wall clock is from the measured run. For a loop, it is the slowest date or pair. `run_12_diff_look_filt` is the sum of the three loop times, which is longer than one pair. `run_14_geocode_los` and `run_16_geocode` wrote nothing.
