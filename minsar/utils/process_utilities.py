@@ -32,9 +32,11 @@ pathObj = PathFind()
 
 def is_alos2_template(template):
     """True when the template selects ALOS-2 processing."""
-    platform = str(template.get('ssaraopt.platform', '')).upper().replace('-', '')
-    sensor = str(template.get('stripmapStack.sensor', '')).upper().replace('-', '')
-    return platform == 'ALOS2' or sensor == 'ALOS2'
+    platform = str(template.get('ssaraopt.platform', '')).upper().replace('-', '').strip()
+    if platform not in ('', 'NONE'):
+        return platform == 'ALOS2'
+    sensor = str(template.get('stripmapStack.sensor', '')).upper().replace('-', '').strip()
+    return sensor == 'ALOS2'
 
 
 def stack_option(template, name, prefix='stripmap'):

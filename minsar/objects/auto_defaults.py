@@ -66,9 +66,11 @@ class PathFind:
     @staticmethod
     def grab_cropbox(inps):
 
-        alos_box = inps.template.get('alos2Stack.boundingBox')
-        if alos_box not in (None, 'None', 'auto', ''):
-            return alos_box
+        from minsar.utils.process_utilities import is_alos2_template
+        if is_alos2_template(inps.template):
+            alos_box = inps.template.get('alos2Stack.boundingBox')
+            if alos_box not in (None, 'None', 'auto', ''):
+                return alos_box
         cropbox = inps.template[inps.prefix + 'Stack.boundingBox']
 
         return cropbox

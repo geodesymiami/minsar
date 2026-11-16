@@ -24,6 +24,19 @@ done
 }
 
 ###########################################
+# True only when the platform value itself is ALOS2 or ALOS-2.
+# A comment that mentions ALOS2 (the usual Sentinel-1 platform line) does not match.
+function platform_is_alos2() {
+    local raw="${1:-}"
+    raw="${raw%%#*}"
+    raw="${raw#"${raw%%[![:space:]]*}"}"
+    local token
+    read -r token _ <<< "$raw"
+    token=$(printf '%s' "$token" | tr '[:lower:]' '[:upper:]' | tr -d '-')
+    [[ "$token" == "ALOS2" ]]
+}
+
+###########################################
 function set_template_assignment() {
 # Replace the value on the last uncommented "KEY = VALUE" line. Keeps spacing and any trailing comment.
 # Appends "KEY = VALUE" when the key is missing. Later template lines override earlier ones.

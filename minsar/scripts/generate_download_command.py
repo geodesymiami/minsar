@@ -123,8 +123,7 @@ def generate_download_command(template,inps):
             return f"{s[:4]}-{s[4:6]}-{s[6:8]}"
         return s
 
-    platform = ssaraopt_dict.get('platform', '').upper().replace('-', '')
-    is_alos2 = 'ALOS2' in platform
+    is_alos2 = putils.is_alos2_template(dataset_template.get_options())
 
     # create download_ssara_bash.cmd (one line per collection when multiple collections)
     raw_collections = dataset_template.options.get('ssaraopt.collectionName', '').strip("'\"")

@@ -641,7 +641,7 @@ if [[ -z "$platform_str" ]]; then
    platform_str="TERRASAR-X"
 fi
 
-if [[ $platform_str =~ ALOS2|ALOS-2 ]]; then
+if platform_is_alos2 "$platform_str"; then
     download_dir="$WORK_DIR/SLC_ORIG"
     download_method="slc"
 elif [[ $platform_str =~ COSMO-SKYMED|TERRASAR-X|ENVISAT ]]; then
@@ -683,7 +683,9 @@ else
 fi
 
 # switch off mintpy for slc workflow, or when user explicitly limits ISCE range via --isce-stop
-if [[ ${template[topsStack.workflow]} == "slc" || ${template[stripmapStack.workflow]} == "slc" || ${template[alos2Stack.workflow]} == "slc" || "$isce_stop_cli_flag" == "1" ]]; then
+if [[ ${template[topsStack.workflow]} == "slc" || ${template[stripmapStack.workflow]} == "slc" || "$isce_stop_cli_flag" == "1" ]]; then
+   mintpy_flag=0
+elif platform_is_alos2 "$platform_str" && [[ ${template[alos2Stack.workflow]} == "slc" ]]; then
    mintpy_flag=0
 fi
 
@@ -775,7 +777,7 @@ if [[ $preprocess_flag == "1" ]]; then
             run_command "./pack_bursts.sh BURST"
         fi
     else
-        if [[ $platform_str =~ ALOS2|ALOS-2 ]]; then
+        if platform_is_alos2 "$platform_str"; then
             run_command "unpack_SLCs.py $download_dir --alos-stack --queue $QUEUENAME"
         else
             run_command "unpack_SLCs.py $download_dir --queue $QUEUENAME"
@@ -785,9 +787,13 @@ fi
 
 
 if [[ $dem_flag == "1" ]]; then
-    if [[ ! -z $(grep -E "^alos2Stack.demDir|^stripmapStack.demDir|^topsStack.demDir" $template_file) ]];  then
+    dem_key_re='^stripmapStack.demDir|^topsStack.demDir'
+    if platform_is_alos2 "$platform_str"; then
+        dem_key_re="^alos2Stack.demDir|$dem_key_re"
+    fi
+    if [[ ! -z $(grep -E "$dem_key_re" $template_file) ]];  then
        # copy DEM if given
-       demDir=$(grep -E "^alos2Stack.demDir|^stripmapStack.demDir|^topsStack.demDir" $template_file | awk -F = '{printf "%s\n",$2}' | sed 's/ //')
+       demDir=$(grep -E "$dem_key_re" $template_file | awk -F = '{printf "%s\n",$2}' | sed 's/ //')
        rm -rf DEM; eval "cp -r $demDir DEM"
     else
        # makeDEM
@@ -882,13 +888,13 @@ if [[ $ifgram_flag == "1" ]]; then
         run_command "run_workflow.bash --dostep ifgram"
         PATH="$OLD_PATH"
     else
-       if [[ $platform_str =~ ALOS2|ALOS-2 && "$isce_stop_cli_flag" != "1" && -f "$WORK_DIR/run_files_list" ]]; then
+       if platform_is_alos2 "$platform_str" && [[ "$isce_stop_cli_flag" != "1" && -f "$WORK_DIR/run_files_list" ]]; then
            isce_stop=$(wc -l < "$WORK_DIR/run_files_list" | tr -d ' ')
        fi
        run_command "run_workflow.bash --start $isce_start --stop $isce_stop"
     fi
 
-    if [[ $platform_str =~ ALOS2|ALOS-2 ]]; then
+    if platform_is_alos2 "$platform_str"; then
         reference_date="${template[alos2Stack.referenceDate]}"
         [[ -z "$reference_date" || "$reference_date" == "auto" || "$reference_date" == "None" ]] && reference_date="${template[stripmapStack.referenceDate]}"
         [[ -z "$reference_date" || "$reference_date" == "auto" || "$reference_date" == "None" ]] && reference_date=$(basename "$(ls -d "$WORK_DIR"/SLC/[0-9][0-9][0-9][0-9][0-9][0-9] 2>/dev/null | sort | head -1)")
@@ -907,7 +913,7 @@ if [[ $mintpy_flag == "1" ]]; then
     mintpy_dir_name=$(get_mintpy_dir_name)
 
     if [[ $skip_mintpy_flag != "1" ]]; then
-        if [[ $platform_str =~ ALOS2|ALOS-2 ]]; then
+        if platform_is_alos2 "$platform_str"; then
             run_command "add_alos2_track_number.py $template_file"
         fi
         # regenerate jobfile with dated mintpy dir name, then run MintPy
