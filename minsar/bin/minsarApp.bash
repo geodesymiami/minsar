@@ -631,8 +631,10 @@ else
 fi
 
 #############################################################
-platform_str=$( (grep platform "$template_file" || echo "") | cut -d'=' -f2 )
-if [[ -z $platform_str ]]; then
+# Parsed value only. A raw grep keeps the inline comment, and that comment lists
+# ALOS2, which would send Sentinel-1 downloads to SLC_ORIG.
+platform_str="${template[ssaraopt.platform]:-}"
+if [[ -z "$platform_str" ]]; then
    # assume TERRASAR-X if no platform is given (ssara_federated_query.py does not seem to work with --platform-TERRASAR-X)
    collectionName_str=$(grep collectionName $template_file || True | cut -d'=' -f2)
    echo "$collectionName_str"
