@@ -239,12 +239,13 @@ def count_bursts_on_orbit(
 ) -> int:
     """Count distinct Sentinel-1 bursts intersecting an AOI on one relative orbit.
 
-    Uses ASF BURST products (same source as orbit discovery in this script).
+    Uses ASF BURST products over the discovery period (default 2016-01-01 to 2026-12-31,
+    the same window as --start-date/--end-date). Pass start/end to override.
     """
     wkt = parse_aoi(aoi)
     direction = _flight_dir_to_asf_direction(flight_direction)
-    period_start = start or datetime.date(2020, 1, 1)
-    period_end = end or datetime.date(2020, 2, 1)
+    period_start = start or datetime.date.fromisoformat(_DISCOVERY_START_DEFAULT)
+    period_end = end or datetime.date.fromisoformat(_DISCOVERY_END_DEFAULT)
     kwargs = dict(
         platform=asf.PLATFORM.SENTINEL1,
         processingLevel=asf.PRODUCT_TYPE.BURST,
@@ -255,19 +256,24 @@ def count_bursts_on_orbit(
         flightDirection=direction,
         polarization=['VV'],
         dataset=[asf.DATASET.SLC_BURST],
-        maxResults=250,
     )
-    _vprint(verbose, f"  BURST count query: relativeOrbit={relative_orbit} flightDirection={direction}")
+    _vprint(
+        verbose,
+        f"  BURST count query: relativeOrbit={relative_orbit} flightDirection={direction} "
+        f"start={period_start} end={period_end}",
+    )
     try:
         results = list(asf.search(**kwargs))
     except Exception as exc:
         raise RuntimeError(
-            f"ASF BURST search failed for orbit {relative_orbit} over AOI {aoi!r}: {exc}"
+            f"ASF BURST search failed for orbit {relative_orbit} over AOI {aoi!r} "
+            f"between {period_start} and {period_end}: {exc}"
         ) from exc
     burst_keys = {_get_burst_key_s1(product) for product in results}
     if not burst_keys:
         raise RuntimeError(
-            f"No ASF BURST products found for orbit {relative_orbit} ({direction}) intersecting AOI {aoi!r}"
+            f"No ASF BURST products found for orbit {relative_orbit} ({direction}) "
+            f"intersecting AOI {aoi!r} between {period_start} and {period_end}"
         )
     return max(1, len(burst_keys))
 
@@ -1234,9 +1240,15 @@ def _s1_select_burst_counts(
     aoi: str,
     best_by_dir: Dict[str, Dict],
     *,
+    start: datetime.date | None = None,
+    end: datetime.date | None = None,
     verbose: bool = False,
 ) -> Dict[str, int]:
-    """Distinct Sentinel-1 burst counts for the chosen Asc/Desc orbits."""
+    """Distinct Sentinel-1 burst counts for the chosen Asc/Desc orbits.
+
+    start/end are the discovery window (--start-date/--end-date). Omitted dates use
+    that window's defaults inside count_bursts_on_orbit.
+    """
     counts: Dict[str, int] = {}
     for direction, prefix, flight in (
         ('Ascending', 'asc', 'asc'),
@@ -1245,7 +1257,9 @@ def _s1_select_burst_counts(
         if direction not in best_by_dir:
             continue
         orbit = int(best_by_dir[direction]['orbit'])
-        counts[prefix] = count_bursts_on_orbit(aoi, orbit, flight, verbose=verbose)
+        counts[prefix] = count_bursts_on_orbit(
+            aoi, orbit, flight, start=start, end=end, verbose=verbose
+        )
     return counts
 
 
@@ -1789,7 +1803,7 @@ def main(iargs=None):
         if platform_name == 'Sentinel-1' and best_by_dir:
             try:
                 select_nbursts = _s1_select_burst_counts(
-                    inps.aoi, best_by_dir, verbose=inps.verbose
+                    inps.aoi, best_by_dir, start=start, end=end, verbose=inps.verbose
                 )
             except RuntimeError as exc:
                 print(f"Error: {exc}", file=sys.stderr)
