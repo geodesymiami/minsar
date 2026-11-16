@@ -8,11 +8,11 @@ acquisition counts.
 
 Strategy:
   Discovery:
-    - S1/BURST: default period 2016-01-01 to 2026-12-31 (--start-date/--end-date). SLC maxResults=5000, BURST maxResults=200.
-    - NISAR: 2026-01-01 to today for discovery.
-    - ALOS-2: asf.search(maxResults=10000) over --start-date/--end-date.
+    - S1/BURST: 2016-01-01 to today unless --start-date/--end-date are set. Omitted --end-date is today. SLC maxResults=5000, BURST maxResults=200.
+    - NISAR: 2026-01-01 to today for discovery, or --start-date/--end-date when either is set.
+    - ALOS-2: 2020-01-01 to 2022-12-31, or --start-date/--end-date when either is set.
     Counting (always):
-    - Date range: full period (2014-10-01 to today) unless --startDate/--endDate are set.
+    - Date range: the same --start-date/--end-date period when either is set; otherwise 2014-10-01 to today (--startDate/--endDate override that default).
     - S1: search by intersection, then keep only dates where some granule footprint fully covers
       the AOI (Shapely); summary warns only when whole acquisition *dates* are lost (all intersecting
       granules for that date fail full cover). --show-removed lists *granules* dropped (partial overlap,
@@ -87,9 +87,8 @@ _DISCOVERY_MAX_RESULTS_S1_DEFAULT = 5000
 _COUNT_START_DEFAULT = datetime.date(2014, 10, 1)  # S1 operational
 _COUNT_MAX_WORKERS = 8  # parallel count requests
 
-# Default S1/BURST discovery window (--start-date/--end-date)
+# Default S1/BURST discovery start (--start-date). Omitted --end-date is today.
 _DISCOVERY_START_DEFAULT = '2016-01-01'
-_DISCOVERY_END_DEFAULT = '2026-12-31'
 # NISAR discovery: mission start through today (end is set when the query runs)
 _NISAR_DISCOVERY_START = datetime.date(2026, 1, 1)
 
@@ -239,13 +238,13 @@ def count_bursts_on_orbit(
 ) -> int:
     """Count distinct Sentinel-1 bursts intersecting an AOI on one relative orbit.
 
-    Uses ASF BURST products over the discovery period (default 2016-01-01 to 2026-12-31,
-    the same window as --start-date/--end-date). Pass start/end to override.
+    Uses ASF BURST products over the same period as --start-date/--end-date
+    (default 2016-01-01 through today). Pass start/end to override.
     """
     wkt = parse_aoi(aoi)
     direction = _flight_dir_to_asf_direction(flight_direction)
     period_start = start or datetime.date.fromisoformat(_DISCOVERY_START_DEFAULT)
-    period_end = end or datetime.date.fromisoformat(_DISCOVERY_END_DEFAULT)
+    period_end = end or datetime.date.today()
     kwargs = dict(
         platform=asf.PLATFORM.SENTINEL1,
         processingLevel=asf.PRODUCT_TYPE.BURST,
@@ -894,7 +893,7 @@ def fetch_orbit_counts(
 ]:
     """Fetch acquisition count for each (orbit, direction) pair.
 
-    Uses count_start/count_end for the date range (full period by default).
+    Uses count_start/count_end for the date range (catalog period, or --start-date/--end-date).
     For Sentinel-1: search by intersection then keep only dates where footprint covers AOI;
     returns (counts_dict, acquisitions_removed_per_key, total_granules_per_key, min_dist_per_key,
     s1_removed_detail, intersecting_dates_per_key).
@@ -1529,14 +1528,14 @@ def create_parser() -> argparse.ArgumentParser:
                             'ALOS2 / ALOS-2 for ALOS-2. '
                             'Example: --platform S1,ALOS2'
                         ))
-    parser.add_argument('--start-date', default=_DISCOVERY_START_DEFAULT, metavar='DATE',
-                        help='Discovery start date, YYYY-MM-DD or YYYYMMDD (default: 2016-01-01)')
-    parser.add_argument('--end-date', default=_DISCOVERY_END_DEFAULT, metavar='DATE',
-                        help='Discovery end date, YYYY-MM-DD or YYYYMMDD (default: 2026-12-31). NISAR uses 2026-01-01 to today.')
+    parser.add_argument('--start-date', default=None, metavar='DATE',
+                        help='Start date for discovery, counts, and the Vertex URL, YYYY-MM-DD or YYYYMMDD (default: 2016-01-01)')
+    parser.add_argument('--end-date', default=None, metavar='DATE',
+                        help='End date for discovery, counts, and the Vertex URL, YYYY-MM-DD or YYYYMMDD (default: today)')
     parser.add_argument('--startDate', default=None, metavar='DATE',
-                        help='Acquisition-count start, YYYY-MM-DD or YYYYMMDD (default: 2014-10-01). Sets the Vertex URL start when given.')
+                        help='Acquisition-count start when --start-date/--end-date are omitted, YYYY-MM-DD or YYYYMMDD (default: 2014-10-01)')
     parser.add_argument('--endDate', default=None, metavar='DATE',
-                        help='Acquisition-count end, YYYY-MM-DD or YYYYMMDD (default: today). Sets the Vertex URL end when given.')
+                        help='Acquisition-count end when --start-date/--end-date are omitted, YYYY-MM-DD or YYYYMMDD (default: today)')
     parser.add_argument('--flight-dir', default=None, dest='flight_dir', metavar='DIR', type=_normalize_flight_dir,
                         help='asc, desc, asc,desc, desc,asc, or both (default: both)')
     parser.add_argument('--max-discovery', type=int, default=_DISCOVERY_MAX_RESULTS_S1_DEFAULT,
@@ -1571,16 +1570,29 @@ def main(iargs=None):
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    start = parse_cli_date(inps.start_date, '--start-date')
-    end = parse_cli_date(inps.end_date, '--end-date')
+    today = datetime.date.today()
+    start_given = inps.start_date is not None
+    end_given = inps.end_date is not None
+    dates_given = start_given or end_given
+    start = (
+        parse_cli_date(inps.start_date, '--start-date')
+        if start_given
+        else datetime.date.fromisoformat(_DISCOVERY_START_DEFAULT)
+    )
+    end = parse_cli_date(inps.end_date, '--end-date') if end_given else today
 
-    # Count date range: full period (2014-10-01 to today) unless --startDate/--endDate
-    count_start = _COUNT_START_DEFAULT
-    count_end = datetime.date.today()
-    if inps.startDate is not None:
-        count_start = parse_cli_date(inps.startDate, '--startDate')
-    if inps.endDate is not None:
-        count_end = parse_cli_date(inps.endDate, '--endDate')
+    # One period for discovery, counts, and the Vertex URL when either date flag is set.
+    # With neither flag, counts stay on the catalog window (2014-10-01 to today).
+    if dates_given:
+        count_start = start
+        count_end = end
+    else:
+        count_start = _COUNT_START_DEFAULT
+        count_end = today
+        if inps.startDate is not None:
+            count_start = parse_cli_date(inps.startDate, '--startDate')
+        if inps.endDate is not None:
+            count_end = parse_cli_date(inps.endDate, '--endDate')
     asf_dir = _asf_flight_direction(inps.flight_dir)
     display_dirs = _display_directions(inps.flight_dir)
 
@@ -1605,15 +1617,18 @@ def main(iargs=None):
 
     _vprint(inps.verbose, f"AOI (WKT) : {wkt}")
     _vprint(inps.verbose, f"Discovery date range: {start} to {end}")
-    _vprint(inps.verbose, f"Count date range: {count_start} to {count_end} (use --startDate/--endDate to override)")
+    _vprint(inps.verbose, f"Count date range: {count_start} to {count_end}")
     _vprint(inps.verbose, f"Platforms : {', '.join(sorted(platforms))}")
     if asf_dir:
         _vprint(inps.verbose, f"Flight direction: {asf_dir}")
     _vprint(inps.verbose, "")
     if _aoi_input_is_polygon_wkt(inps.aoi):
         print_bbox_info(wkt)
-    url_start = count_start if inps.startDate is not None else start
-    url_end = count_end if inps.endDate is not None else end
+    if dates_given:
+        url_start, url_end = start, end
+    else:
+        url_start = count_start if inps.startDate is not None else start
+        url_end = count_end if inps.endDate is not None else end
     print_asf_vertex_urls(wkt, url_start, url_end, platforms, inps.flight_dir)
 
     aoi_geom = None
@@ -1717,8 +1732,12 @@ def main(iargs=None):
     if 'NISAR' in platforms:
         print("\nQuerying NISAR...")
         _vprint(inps.verbose, "  [NISAR]")
+        if dates_given:
+            nisar_start, nisar_end = start, end
+        else:
+            nisar_start, nisar_end = _NISAR_DISCOVERY_START, today
         nisar_sample = query_nisar(
-            wkt, _NISAR_DISCOVERY_START, datetime.date.today(), verbose=inps.verbose,
+            wkt, nisar_start, nisar_end, verbose=inps.verbose,
             flight_direction=asf_dir,
         )
 
@@ -1757,8 +1776,12 @@ def main(iargs=None):
         for pol_label, polarization in [('ALOS-2 HH', 'HH')]:  # ('ALOS-2 HH+HV', 'HH+HV') commented out
             print(f"\nQuerying {pol_label}...")
             _vprint(inps.verbose, f"  [{pol_label}]")
+            if dates_given:
+                alos_start, alos_end = start, end
+            else:
+                alos_start, alos_end = _ALOS2_DISCOVERY_START, _ALOS2_DISCOVERY_END
             alos_sample = query_alos2(
-                wkt, _ALOS2_DISCOVERY_START, _ALOS2_DISCOVERY_END,
+                wkt, alos_start, alos_end,
                 polarization=polarization, max_results=_ALOS2_DISCOVERY_MAX_RESULTS, verbose=inps.verbose,
                 flight_direction=asf_dir,
             )
