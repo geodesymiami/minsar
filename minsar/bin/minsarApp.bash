@@ -634,9 +634,11 @@ else
 fi
 
 #############################################################
-# Parsed value only. A raw grep keeps the inline comment, and that comment lists
-# ALOS2, which would send Sentinel-1 downloads to SLC_ORIG.
+# Value only. The usual Sentinel-1 line comments ALOS2, TerraSAR-X, and COSMO-Skymed.
 platform_str="${template[ssaraopt.platform]:-}"
+platform_str="${platform_str%%#*}"
+platform_str="${platform_str#"${platform_str%%[![:space:]]*}"}"
+platform_str="${platform_str%"${platform_str##*[![:space:]]}"}"
 if [[ -z "$platform_str" ]]; then
    # assume TERRASAR-X if no platform is given (ssara_federated_query.py does not seem to work with --platform-TERRASAR-X)
    collectionName_str=$(grep collectionName $template_file || True | cut -d'=' -f2)
@@ -702,7 +704,7 @@ if [[ -v template[ssaraopt.endDate] && "${template[ssaraopt.endDate]}" != "auto"
     orbit_download_flag=0
 fi
 
-echo "Switches: download_method: <$download_method> download_dir: <$download_dir> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
+echo "Switches: platform: <$platform_str> download_method: <$download_method> download_dir: <$download_dir> burst_download: <$burst_download_flag>  chunks: <$chunks_flag>"
 echo "Flags for processing steps:"
 echo "download preprocess dem jobfiles ifgram mintpy miaplpy upload insarmaps opposite_orbit horzvert"
 echo "    $download_flag        $preprocess_flag       $dem_flag      $jobfiles_flag       $ifgram_flag       $mintpy_flag      $miaplpy_flag      $upload_flag       $insarmaps_flag        $opposite_orbit_flag        $horzvert_flag"

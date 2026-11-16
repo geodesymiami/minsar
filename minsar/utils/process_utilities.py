@@ -30,13 +30,19 @@ import time, datetime
 pathObj = PathFind()
 
 
+def _platform_token(value):
+    """First platform token, with an inline comment removed."""
+    text = str(value or '').split('#', 1)[0].strip()
+    token = text.split()[0] if text else ''
+    return token.upper().replace('-', '')
+
+
 def is_alos2_template(template):
     """True when the template selects ALOS-2 processing."""
-    platform = str(template.get('ssaraopt.platform', '')).upper().replace('-', '').strip()
+    platform = _platform_token(template.get('ssaraopt.platform', ''))
     if platform not in ('', 'NONE'):
         return platform == 'ALOS2'
-    sensor = str(template.get('stripmapStack.sensor', '')).upper().replace('-', '').strip()
-    return sensor == 'ALOS2'
+    return _platform_token(template.get('stripmapStack.sensor', '')) == 'ALOS2'
 
 
 def stack_option(template, name, prefix='stripmap'):
@@ -361,8 +367,7 @@ def create_default_template(temp_inps):
         inps.prefix = custom_tempObj.options['acquisition_mode']
 
     # check for required options
-    platform = str(custom_tempObj.options.get('ssaraopt.platform', '')).upper().replace('-', '')
-    if platform == 'ALOS2':
+    if is_alos2_template(custom_tempObj.options):
         required_template_keys = []
         if 'alos2Stack.boundingBox' not in custom_tempObj.options and 'stripmapStack.boundingBox' not in custom_tempObj.options:
             raise Exception('ERROR: alos2Stack.boundingBox is required')
