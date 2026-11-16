@@ -152,7 +152,7 @@ def create_parser():
     parser.add_argument("--make-jobfile", action="store_true", help="Generate jobfile")
     parser.add_argument(
         "--geocorr", dest="do_geocorr", action="store_true",
-        help="Enable geolocation correction step (default: off)"
+        help="Accepted for existing command lines. CSV geolocation correction always runs."
     )
 
     parser.set_defaults(do_geocorr=False)
@@ -353,18 +353,33 @@ def build_ingest_csv_filename(dataset_name, output_suffix="", user_suffix=None, 
     stem = build_ingest_basename(dataset_name, output_suffix, user_suffix)
     return f"{stem}_geocorr.csv" if geocorr else f"{stem}.csv"
 
-def build_commands(shp_file_path, csv_file_path, geocorr_csv_path, json_dir, input_csv):
+def sarvey_points_h5(data_path):
+    """Return the SARvey points HDF5 that holds coord_xy and point_id."""
+    data_path = Path(data_path)
+    if data_path.suffix == ".h5":
+        return data_path
+    if data_path.parent.name == "shp":
+        return data_path.parent.parent / f"{data_path.stem}.h5"
+    return data_path.with_suffix(".h5")
+
+
+def build_commands(shp_file_path, csv_file_path, geocorr_csv_path, json_dir, input_csv, geometry_h5=None, points_h5=None):
     """
     Build the list of shell command sequences for the SARvey-to-Insarmaps pipeline.
 
     Returns three commands:
         cmd1 - Convert SHP to CSV using ogr2ogr with WGS84 coordinates.
-        cmd2 - Apply geolocation correction using correct_geolocation.py (if --geocorr).
+        cmd2 - Sample incidenceAngle/azimuthAngle and write longitude_corrected/latitude_corrected.
         cmd3 - Convert CSV or HDF5 to JSON and MBTiles format using hdfeos5_or_csv_2json_mbtiles.py.
     Insarmaps upload is ingest_step2_rsync_and_remote_ingest(), not a local json_mbtiles2insarmaps.py call.
     """
     cmd_ogr2ogr = ["ogr2ogr", "-f", "CSV", "-lco", "GEOMETRY=AS_XY", "-t_srs", "EPSG:4326", str(csv_file_path), str(shp_file_path)]
-    cmd_correctgeo = ["correct_geolocation.py", str(csv_file_path), "--outfile", str(geocorr_csv_path)]
+    correct_csv = geocorr_csv_path if geocorr_csv_path else csv_file_path
+    # The bare command name is MiaplPy's correct_geolocation.py, which does not take a CSV.
+    geocorr_script = Path(os.environ.get("MINSAR_HOME") or Path(__file__).resolve().parents[2]) / "minsar" / "insarmaps_utils" / "correct_geolocation.py"
+    cmd_correctgeo = [sys.executable, str(geocorr_script), str(correct_csv), "--outfile", str(correct_csv)]
+    if geometry_h5 is not None and points_h5 is not None:
+        cmd_correctgeo.extend(["--geometry", str(geometry_h5), "--points", str(points_h5)])
     cmd_hdfeos5 = ["hdfeos5_or_csv_2json_mbtiles.py", str(input_csv), str(json_dir)]
     return cmd_ogr2ogr, cmd_correctgeo, cmd_hdfeos5
 
@@ -765,22 +780,29 @@ def convert_to_relative_path(cmd_list, cwd=None):
 
 
 CSV_COLUMN_RENAMES = {
-    "coherence": "temporal_coherence",
+    "coherence": "temporalCoherence",
+    "temporal_coherence": "temporalCoherence",
     "dem": "height",
+    "dem_error": "demError",
+    "X": "longitude",
+    "Y": "latitude",
 }
 
 
 def rename_csv_columns_for_hdfeos5(csv_path):
     """Rename sarvey CSV columns to the HDFEOS5 names.
 
-    Shapefile fields stay short (10-character DBF limit). This runs on the CSV after ogr2ogr.
-    coherence matches quality/temporalCoherence; dem matches geometry/height.
+    Shapefile fields stay short (10-character DBF limit). This runs on the CSV after ogr2ogr
+    and before geolocation correction.
     """
     csv_path = Path(csv_path)
     df = pd.read_csv(csv_path)
-    present = {src: dst for src, dst in CSV_COLUMN_RENAMES.items() if src in df.columns}
+    present = {}
+    for src, dst in CSV_COLUMN_RENAMES.items():
+        if src in df.columns and dst not in df.columns and dst not in present.values():
+            present[src] = dst
     if not present:
-        print(f"[WARN] no coherence or dem column in {csv_path.name}; left unchanged")
+        print(f"[WARN] no sarvey columns to rename in {csv_path.name}; left unchanged")
         return
     rel = convert_to_relative_path([str(csv_path.resolve())])[0]
     rename_literal = ", ".join(f"{src!r}: {dst!r}" for src, dst in present.items())
@@ -817,9 +839,8 @@ def create_jobfile(inps, data_path, cmds, json_dir, output_path, mbtiles_path, d
     # Step 2: shp to csv
     slurm_commands.append(" ".join(cmd_ogr2ogr))
 
-    # Step 3: geolocation correction if enabled
-    if inps.do_geocorr:
-        slurm_commands.append(" ".join(cmd_geocorr))
+    # Step 3: geolocation correction (always)
+    slurm_commands.append(" ".join(cmd_geocorr))
 
     slurm_commands.extend([
         f"rm -rf {json_dir}",
@@ -845,7 +866,7 @@ def create_jobfile(inps, data_path, cmds, json_dir, output_path, mbtiles_path, d
 
         f.write("\n# Insarmaps URLs:\n")
         for host in insarmaps_host_list(inps.insarmaps_host):
-            url = generate_insarmaps_url(host, dataset_name, metadata, geocorr=inps.do_geocorr)
+            url = generate_insarmaps_url(host, dataset_name, metadata, geocorr=False)
             f.write(f"cat >> insarmaps.log<<EOF\n{url}\nEOF\n\n")
 
     print(f"\nJobfile created: {jobfile_path}")
@@ -853,7 +874,7 @@ def create_jobfile(inps, data_path, cmds, json_dir, output_path, mbtiles_path, d
 def main():
     parser = create_parser()
     inps = parser.parse_args()
-    print(f"Geolocation correction enabled: {inps.do_geocorr}")
+    print("Geolocation correction: always (longitude_corrected, latitude_corrected)")
 
     # FA inputs_path is a confusing name. You expect that it is the path to an input file. Maybe sarvey_inputs_dir_path. And beloe you have input_path
     sarvey_inputs_dir_path, output_path = load_config_and_input_path(inps)
@@ -896,6 +917,13 @@ def main():
         h5_path = shp_file_path.with_suffix(".h5")
         print(f"[INFO] Input is SHP. Inferred HDF5 path: {h5_path}")
 
+    geometry_h5 = sarvey_inputs_dir_path / "geometryRadar.h5"
+    points_h5 = sarvey_points_h5(data_path)
+    if not points_h5.is_file():
+        raise FileNotFoundError(f"Required file not found: {points_h5}")
+    if inps.sarvey_geocorr:
+        print("[WARN] --sarvey-geocorr moves the shapefile coordinates, and the CSV step shifts them again")
+
     # FA this section is important while the above is just dealing with filenames/options. This should be optically emphasized with comment signs and text
     # FA: unclear what geocorr_csv is. A file path? then sat it as you do for the others. Same for input_csv below. So it would be csv_file_path, shp_file_path ?
     #csv_path, geocorr_csv_path, json_dir, mbtiles_path, base_dir, dataset_name = set_output_paths(output_path, dataset_name, inps.do_geocorr)
@@ -904,11 +932,11 @@ def main():
     csv_file_path, geocorr_csv_path, json_dir, mbtiles_path, output_path = set_output_paths(
         output_path, base_filename, inps.do_geocorr
     )
-    input_csv = geocorr_csv_path if inps.do_geocorr else csv_file_path
+    input_csv = csv_file_path
 
 
     cmd_ogr2ogr, cmd_correctgeo, cmd_hdfeos5 = build_commands(
-        shp_file_path, csv_file_path, geocorr_csv_path, json_dir, input_csv
+        shp_file_path, csv_file_path, csv_file_path, json_dir, input_csv, geometry_h5, points_h5
     )
 
     #assign python environment for insarmaps_scripts
@@ -931,37 +959,28 @@ def main():
         # Step 2: run ogr2ogr to create csv file (FA: is this correct?)
         run_command(cmd_ogr2ogr, conda_env=None)
 
-        # Step 3: geolocation correction
-        if inps.do_geocorr:
-            run_command(cmd_correctgeo, conda_env = None)
-
-        #update dataset_name from csv bbox and dates
-        dataset_name = generate_dataset_name_from_csv(input_csv, sarvey_inputs_dir_path)
+        #update dataset_name from csv bbox and dates while X,Y are still the column names
+        dataset_name = generate_dataset_name_from_csv(csv_file_path, sarvey_inputs_dir_path)
 
         output_suffix = Path(output_path).name.partition("outputs_")[2]
         ingest_stem = build_ingest_basename(dataset_name, output_suffix, inps.suffix)
 
         #rename csv to match desired output format
         final_csv_name = build_ingest_csv_filename(
-            dataset_name, output_suffix, inps.suffix, geocorr=inps.do_geocorr
+            dataset_name, output_suffix, inps.suffix, geocorr=False
         )
         final_csv_path = output_path / final_csv_name
 
         #to final format
-        shutil.move(input_csv, final_csv_path)
+        shutil.move(csv_file_path, final_csv_path)
         input_csv = final_csv_path
         rename_csv_columns_for_hdfeos5(input_csv)
 
-        #update paths used by downstream steps
-        if inps.do_geocorr:
-            geocorr_csv_path = input_csv
-        else:
-            csv_file_path = input_csv
-
-        #rebuild cmd_hdfeos5 using the renamed csv
-        _, _, cmd_hdfeos5 = build_commands(
-            shp_file_path, csv_file_path, geocorr_csv_path, json_dir, input_csv
+        # Step 3: sample incidenceAngle/azimuthAngle and write corrected coordinates
+        _, cmd_correctgeo, cmd_hdfeos5 = build_commands(
+            shp_file_path, csv_file_path, input_csv, json_dir, input_csv, geometry_h5, points_h5
         )
+        run_command(cmd_correctgeo, conda_env=None)
 
         # Step 4: run hdfeos5_2_mbtiles.pt to convert csv-file into mbptile.
         run_command(cmd_hdfeos5, conda_env=None)
@@ -979,7 +998,7 @@ def main():
 
         # Step 6: create insarmaps.log with URL
         urls = [
-            generate_insarmaps_url(host, ingest_stem, metadata, geocorr=inps.do_geocorr)
+            generate_insarmaps_url(host, ingest_stem, metadata, geocorr=False)
             for host in insarmaps_host_list(inps.insarmaps_host)
         ]
 

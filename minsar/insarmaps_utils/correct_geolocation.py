@@ -15,8 +15,9 @@ Supports:
     - HDF5 input (default)
     - CSV input
 
-CSV mode creates 2 new columns: X_geocorr and Y_geocorr using DEM error,
-and saves to a new file (--outfile).
+CSV mode reads longitude/latitude (or X/Y or xcoord/ycoord) and demError
+(or dem_error). With --geometry and --points it samples incidenceAngle and
+azimuthAngle onto the CSV. It writes longitude_corrected and latitude_corrected.
 
 NOTE: --reverse only works for HDF5 files.
 
@@ -48,6 +49,7 @@ def cmd_line_parse(iargs=None):
     #arguments for csv
     parser.add_argument("input_file", type=str, help="Input CSV or HDF5 file")
     parser.add_argument("--outfile", type=str, help="Output file (for CSV mode only)")
+    parser.add_argument("--points", dest="points_file", type=str, default=None, help="Points HDF5 (coord_xy, point_id) sampled with --geometry")
 
     inps = parser.parse_args(args=iargs)
     return inps
@@ -70,7 +72,9 @@ def main(iargs=None):
     if inps.input_file.endswith(".csv"):
         correct_geolocation_csv(
             input_file=inps.input_file,
-            output_file=inps.outfile
+            output_file=inps.outfile,
+            geometry_file=inps.geometry_file,
+            points_file=inps.points_file,
         )
         return
 
@@ -168,42 +172,94 @@ def main(iargs=None):
 
     return
 
-def correct_geolocation_csv(input_file, output_file=None):
+def _sample_incidence_azimuth(df, geometry_file, points_file):
+    """Add per-point incidenceAngle and azimuthAngle from geometryRadar.h5."""
+    if geometry_file is None or points_file is None:
+        return df
+    if "point_id" not in df.columns:
+        raise ValueError("CSV must contain point_id to sample incidenceAngle and azimuthAngle")
+    with h5py.File(points_file, "r") as handle:
+        coord_xy = handle["coord_xy"][:]
+        point_id = handle["point_id"][:]
+    with h5py.File(geometry_file, "r") as handle:
+        incidence = handle["incidenceAngle"][:]
+        azimuth = handle["azimuthAngle"][:]
+    rows = coord_xy[:, 0].astype(int)
+    cols = coord_xy[:, 1].astype(int)
+    angles = pd.DataFrame({
+        "point_id": point_id.astype(np.int64),
+        "incidenceAngle": incidence[rows, cols],
+        "azimuthAngle": azimuth[rows, cols],
+    })
+    df = df.copy()
+    df["point_id"] = pd.to_numeric(df["point_id"], errors="coerce").astype(np.int64)
+    df = df.drop(columns=[name for name in ("incidenceAngle", "azimuthAngle") if name in df.columns])
+    df = df.merge(angles, on="point_id", how="left")
+    return _place_columns_after(df, ("height", "dem", "demError", "dem_error"), ("incidenceAngle", "azimuthAngle"))
+
+
+def _place_columns_after(df, after_names, new_names):
+    """Move new_names to sit just after the first existing column in after_names."""
+    new_names = [name for name in new_names if name in df.columns]
+    cols = [name for name in df.columns if name not in new_names]
+    insert_at = len(cols)
+    for name in after_names:
+        if name in cols:
+            insert_at = cols.index(name) + 1
+            break
+    for offset, name in enumerate(new_names):
+        cols.insert(insert_at + offset, name)
+    return df[cols]
+
+
+def correct_geolocation_csv(input_file, output_file=None, geometry_file=None, points_file=None):
     df = pd.read_csv(input_file)
+    if (geometry_file is None) ^ (points_file is None):
+        raise ValueError("Pass both --geometry and --points to sample incidenceAngle and azimuthAngle")
+    df = _sample_incidence_azimuth(df, geometry_file, points_file)
 
     if "xcoord" in df.columns and "ycoord" in df.columns:
         xcol, ycol = "xcoord", "ycoord"
+    elif "longitude" in df.columns and "latitude" in df.columns:
+        xcol, ycol = "longitude", "latitude"
     elif "X" in df.columns and "Y" in df.columns:
         xcol, ycol = "X", "Y"
     else:
-        raise ValueError("CSV must contain either ('xcoord', 'ycoord') or ('X', 'Y') columns")
+        raise ValueError("CSV must contain ('xcoord', 'ycoord'), ('longitude', 'latitude'), or ('X', 'Y')")
 
-    if "dem_error" not in df.columns:
-        raise ValueError("Missing required column: 'dem_error'")
+    if "demError" in df.columns:
+        dem_col = "demError"
+    elif "dem_error" in df.columns:
+        dem_col = "dem_error"
+    else:
+        raise ValueError("Missing required column: 'demError' or 'dem_error'")
 
-    #from the paper
-    inc_angle = np.radians(42.85)
-    az_angle = np.radians(350)
+    if "incidenceAngle" in df.columns and "azimuthAngle" in df.columns:
+        inc_angle = np.deg2rad(df["incidenceAngle"].to_numpy(dtype=float))
+        az_angle = np.deg2rad(df["azimuthAngle"].to_numpy(dtype=float))
+    else:
+        inc_angle = np.radians(42.85)
+        az_angle = np.radians(350)
 
     cot_theta = 1 / np.tan(inc_angle)
+    # East/north meters. Same signs as sarvey.geolocation.calculateGeolocationCorrection.
+    east_m = df[dem_col].to_numpy(dtype=float) * np.cos(az_angle) * cot_theta
+    north_m = -df[dem_col].to_numpy(dtype=float) * np.sin(az_angle) * cot_theta
 
-    dx_m = -df["dem_error"] * cot_theta * np.cos(az_angle)
-    dy_m =  df["dem_error"] * cot_theta * np.sin(az_angle)
-
-    #degree conversion (per meter)
     meter_to_deg_lat = 1 / 111320
-    meter_to_deg_lon = 1 / (111320 * np.cos(np.radians(df[ycol])))
+    meter_to_deg_lon = 1 / (111320 * np.cos(np.radians(df[ycol].to_numpy(dtype=float))))
 
-    df["X_geocorr"] = df[xcol] + dx_m * meter_to_deg_lon
-    df["Y_geocorr"] = df[ycol] + dy_m * meter_to_deg_lat
-
-    insert_before = "point_id" if "point_id" in df.columns else "velocity"
-    insert_idx = df.columns.get_loc(insert_before)
-    cols = df.columns.tolist()
-    for col in ["X_geocorr", "Y_geocorr"]:
-        cols.insert(insert_idx, cols.pop(cols.index(col)))
-    df = df[cols]
-    
+    df["longitude_corrected"] = df[xcol].to_numpy(dtype=float) + east_m * meter_to_deg_lon
+    df["latitude_corrected"] = df[ycol].to_numpy(dtype=float) + north_m * meter_to_deg_lat
+    cols = [name for name in df.columns if name not in ("longitude_corrected", "latitude_corrected")]
+    ordered = []
+    for name in cols:
+        ordered.append(name)
+        if name == xcol:
+            ordered.append("longitude_corrected")
+        if name == ycol:
+            ordered.append("latitude_corrected")
+    df = df[ordered]
 
     output_path = output_file or f"{os.path.splitext(input_file)[0]}_geocorr.csv"
     df.to_csv(output_path, index=False)

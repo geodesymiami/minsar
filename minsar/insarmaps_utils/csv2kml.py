@@ -94,13 +94,13 @@ def write_kml(
             f.write("    </Style>\n")
 
         for i, row in df.iterrows():
-            lon = float(row.get("X_corr", row["X"]))
-            lat = float(row.get("Y_corr", row["Y"]))
+            lon = float(row.get("X_corr", row.get("longitude", row["X"])))
+            lat = float(row.get("Y_corr", row.get("latitude", row["Y"])))
             z = float(row[z_col])
             vv = float(row[color_col])
             b = int(bin_ids[df.index.get_loc(i)])
 
-            coh = row.get("coherence", "")
+            coh = row.get("temporalCoherence", row.get("temporal_coherence", row.get("coherence", "")))
             f.write("    <Placemark>\n")
             f.write(f"      <styleUrl>#vbin_{b}</styleUrl>\n")
             if hide_labels:
@@ -142,7 +142,7 @@ def parse_args():
     p = argparse.ArgumentParser(
         description="Export InSAR CSV points to 3D KML (Google Earth) with TSX ascending/descending XY correction."
     )
-    p.add_argument("--input", required=True, help="Input CSV (must have X,Y,velocity,height or dem,dem_error).")
+    p.add_argument("--input", required=True, help="Input CSV (longitude/latitude or X/Y, velocity, height or dem, demError or dem_error).")
     p.add_argument("--output", required=True, help="Output KML path.")
     p.add_argument("--kml-name", default="InSAR 3D points", help="KML document name.")
     p.add_argument("--vlim", type=float, default=1.5, help="Velocity limit in cm/yr; colors saturate at ±vlim.")
@@ -180,10 +180,13 @@ def main():
     # Velocity units:  mm/yr -> cm/yr
     df["vel_cm_yr"] = df["velocity"] / 10.0
 
-    # Elevation proxy. Sarvey CSVs use height (HDFEOS5 geometry/height); older CSVs use dem.
+    # Elevation proxy. Sarvey CSVs use height and demError; older CSVs use dem and dem_error.
     height_col = "height" if "height" in df.columns else "dem"
-    df["elev_insarmaps"] = df["dem_error"] - df[height_col]
-    df["h_m"] = df["dem_error"].astype(float).clip(lower=0.0)
+    dem_err_col = "demError" if "demError" in df.columns else "dem_error"
+    lon_col = "longitude" if "longitude" in df.columns else "X"
+    lat_col = "latitude" if "latitude" in df.columns else "Y"
+    df["elev_insarmaps"] = df[dem_err_col] - df[height_col]
+    df["h_m"] = df[dem_err_col].astype(float).clip(lower=0.0)
 
     # ---- Auto-read from geometryRadar.h5 if provided ----
     heading_deg = args.heading_deg
@@ -238,7 +241,7 @@ def main():
         # lon/lat -> meters (UTM 17N for Miami)
         to_utm = Transformer.from_crs("EPSG:4326", "EPSG:32617", always_xy=True)
         to_ll = Transformer.from_crs("EPSG:32617", "EPSG:4326", always_xy=True)
-        x, y = to_utm.transform(df["X"].to_numpy(), df["Y"].to_numpy())
+        x, y = to_utm.transform(df[lon_col].to_numpy(), df[lat_col].to_numpy())
 
         # Look direction from HEADING + ANTENNA_SIDE
         H = np.deg2rad(heading_deg)
@@ -286,7 +289,7 @@ def main():
 
     print("Wrote:", out_kml)
     print("orbit:", orbit_dir, "| heading_deg:", heading_deg, "| antenna_side:", antenna_side, "| inc_deg:", inc_deg, "| geoid_offset:", geoid_offset)
-    print("mean lon orig:", df["X"].mean())
+    print("mean lon orig:", df[lon_col].mean())
     if "X_corr" in df.columns:
         print("mean lon corr:", df["X_corr"].mean())
 

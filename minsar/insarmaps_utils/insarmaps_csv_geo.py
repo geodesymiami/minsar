@@ -4,8 +4,8 @@ import math
 from statistics import mean
 
 # Same order as insarmaps_scripts/hdfeos5_or_csv_2json_mbtiles.py (case-insensitive match)
-LAT_CANDIDATES = ["Y_geocorr", "Latitude", "latitude", "Y", "ycoord"]
-LON_CANDIDATES = ["X_geocorr", "Longitude", "longitude", "X", "xcoord"]
+LAT_CANDIDATES = ["latitude_corrected", "Y_geocorr", "Latitude", "latitude", "Y", "ycoord"]
+LON_CANDIDATES = ["longitude_corrected", "X_geocorr", "Longitude", "longitude", "X", "xcoord"]
 
 
 def _parse_float_cell(val):
