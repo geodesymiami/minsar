@@ -21,7 +21,8 @@ Examples:
 """
 
 DESCRIPTION = (
-    "Creates makedem_sardem.sh (DEM plus ISCE water mask) and makedem_isce.sh.\n"
+    "Creates makedem_sardem.sh and makedem_isce.sh.\n"
+    "For ALOS-2, makedem_sardem.sh also builds an ISCE water mask.\n"
     "--finalize-wbd recodes a sardem NASA_WATER mask and writes .xml and .vrt."
 )
 
@@ -221,28 +222,32 @@ def main(iargs=None):
     demBbox = str(int(south)) + ' ' + str(int(north)) + ' ' + str(int(west)) + ' ' + str(int(east))
     bbox_LeftBottomRightTop = [int(west), int(south), int(east), int(north)]
     output_name = f"DEM/elevation_{format_bbox(bbox_LeftBottomRightTop)}.dem"
-    wbd_output = f"DEM/{format_wbd_name(bbox_LeftBottomRightTop)}"
+    make_water_mask = putils.is_alos2_template(dataset_template.get_options())
 
     command_sardem = f"sardem --bbox {int(west)} {int(south)} {int(east)}  {int(north)} --data COP --make-isce-xml --output-type int16 --output-format ENVI --output {output_name}"
-    command_water = f"sardem --bbox {int(west)} {int(south)} {int(east)} {int(north)} --data-source NASA_WATER --output {wbd_output}"
-    command_wbd_meta = f"generate_makedem_command.py --finalize-wbd {wbd_output}"
     command_isce = 'dem.py -a stitch --filling --filling_value 0 -b ' + demBbox + ' -c -u https://e4ftl01.cr.usgs.gov/MEASURES/SRTMGL1.003/2000.02.11/'
 
     log_command_sardem = f"echo \"$(date +\"%Y%m%d:%H-%M\") * {command_sardem} | tee -a log\""
-    log_command_water = f"echo \"$(date +\"%Y%m%d:%H-%M\") * {command_water} | tee -a log\""
-    log_command_wbd_meta = f"echo \"$(date +\"%Y%m%d:%H-%M\") * {command_wbd_meta} | tee -a log\""
     log_command_isce = f"echo \"$(date +\"%Y%m%d:%H-%M\") * {command_isce} | tee -a log\""
 
     with open('makedem_sardem.sh', 'w') as f:
         f.write("#!/usr/bin/env bash\n")
-        f.write("set -e\n")
+        if make_water_mask:
+            f.write("set -e\n")
         f.write("mkdir -p DEM\n")
         f.write(log_command_sardem + '\n')
         f.write(command_sardem + '\n')
-        f.write(log_command_water + '\n')
-        f.write(command_water + '\n')
-        f.write(log_command_wbd_meta + '\n')
-        f.write(command_wbd_meta + '\n')
+        if make_water_mask:
+            wbd_output = f"DEM/{format_wbd_name(bbox_LeftBottomRightTop)}"
+            command_water = f"sardem --bbox {int(west)} {int(south)} {int(east)} {int(north)} --data-source NASA_WATER --output {wbd_output}"
+            command_wbd_meta = f"generate_makedem_command.py --finalize-wbd {wbd_output}"
+            log_command_water = f"echo \"$(date +\"%Y%m%d:%H-%M\") * {command_water} | tee -a log\""
+            log_command_wbd_meta = f"echo \"$(date +\"%Y%m%d:%H-%M\") * {command_wbd_meta} | tee -a log\""
+            f.write(log_command_water + '\n')
+            f.write(command_water + '\n')
+            f.write(log_command_wbd_meta + '\n')
+            f.write(command_wbd_meta + '\n')
+            print('ALOS-2 template: makedem_sardem.sh includes the ISCE water mask.')
     with open('makedem_isce.sh', 'w') as f:
         f.write("#!/usr/bin/env bash\n")
         f.write("mkdir -p DEM\n")
