@@ -16,8 +16,8 @@ Strategy:
     - S1: search by intersection, then keep only dates where some granule footprint fully covers
       the AOI (Shapely); summary warns only when whole acquisition *dates* are lost (all intersecting
       granules for that date fail full cover). --show-removed lists *granules* dropped (partial overlap,
-      etc.); orbits with count 0 are omitted from the table. --select (S1) picks best orbit using
-      full-AOI date fraction, edge margin, then incidence (not incidence alone), then prints
+      etc.); orbits with count 0 are omitted from the table. --select (S1) picks the orbit with the
+      most full-AOI dates, then largest edge margin, then highest incidence, then prints
       asc_nbursts and desc_nbursts from count_bursts_on_orbit.
     - Others: ?output=count HTTP request.
     - Count requests run in parallel (default max_workers=8) to reduce time.
@@ -64,7 +64,7 @@ Examples:
   get_sar_coverage.py -23.393:-23.097,-68.356:-68.175 --platform S1   # negative lat (or use -- before AOI)
   get_sar_coverage.py 36.322:36.502,25.306:25.502 --platform S1 --flight-dir asc --start-date 20230101 --end-date 20241231
 
-Select (--select): requires exactly one platform (--platform S1 or NISAR or ALOS2). Prints asc_relorbit, asc_label, desc_relorbit, desc_label to stdout (progress to stderr). Sentinel-1 also prints asc_nbursts and desc_nbursts (distinct bursts on that orbit). In bash: eval $(get_sar_coverage.py AOI --platform S1 --select); then use $asc_relorbit, $desc_relorbit, $asc_label, $desc_label, $asc_nbursts, $desc_nbursts. For Sentinel-1, each direction picks the orbit with the best full-AOI coverage across intersecting dates (then margin, then incidence); NISAR/ALOS-2 still use max incidence.
+Select (--select): requires exactly one platform (--platform S1 or NISAR or ALOS2). Prints asc_relorbit, asc_label, desc_relorbit, desc_label to stdout (progress to stderr). Sentinel-1 also prints asc_nbursts and desc_nbursts (distinct bursts on that orbit). In bash: eval $(get_sar_coverage.py AOI --platform S1 --select); then use $asc_relorbit, $desc_relorbit, $asc_label, $desc_label, $asc_nbursts, $desc_nbursts. For Sentinel-1, each direction picks the orbit with the most dates whose footprint fully covers the AOI (then edge margin, then incidence); NISAR/ALOS-2 still use max incidence.
 
 Notes:
   NISAR RSLC data availability depends on mission phase.
@@ -1145,11 +1145,12 @@ def _s1_select_sort_tuple(
     orbit_record: Dict,
     direction: str,
     metrics: Dict[Tuple[int, str], Dict[str, Any]],
-) -> Tuple[float, int, float, float]:
+) -> Tuple[float, float, float, float, int]:
     """Sort key for Sentinel-1 --select: ascending order means *better* orbit first.
 
-    Priority: highest full-AOI date fraction, then fewest dropped intersecting dates,
-    then largest min distance AOI→footprint edge (m), then highest incidence (°).
+    Priority: most dates whose footprint fully covers the AOI (the table count),
+    then largest min distance AOI→footprint edge (m), then highest incidence (°),
+    then highest full-AOI date fraction, then fewest dropped intersecting dates.
     """
     orbit = int(orbit_record['orbit'])
     key = (orbit, direction)
@@ -1158,6 +1159,13 @@ def _s1_select_sort_tuple(
     n_inter = int(m.get('n_intersecting_dates', 0))
     min_d = m.get('min_dist_m')
     inc = orbit_record.get('inc')
+    count = orbit_record.get('count')
+    if count is None and n_inter > 0:
+        count = n_inter - n_removed
+    if count is None or int(count) < 0:
+        count_key = float('inf')
+    else:
+        count_key = -float(count)
 
     if n_inter > 0:
         ratio = (n_inter - n_removed) / n_inter
@@ -1175,7 +1183,7 @@ def _s1_select_sort_tuple(
         inc_key = float('inf')
 
     # Ascending sort: smaller tuple is better
-    return (-ratio, n_removed, min_d_key, inc_key)
+    return (count_key, min_d_key, inc_key, -ratio, n_removed)
 
 
 def _best_orbit_for_direction(
@@ -1186,8 +1194,8 @@ def _best_orbit_for_direction(
 ) -> Optional[Dict]:
     """From orbit_records (same direction), pick best orbit for --select.
 
-    Sentinel-1: if ``s1_metrics`` is non-empty, prefer robust full-AOI coverage across
-    intersecting dates (see ``_s1_select_sort_tuple``), then incidence.
+    Sentinel-1: if ``s1_metrics`` is non-empty, prefer the most full-AOI dates
+    (see ``_s1_select_sort_tuple``), then edge margin, then incidence.
     NISAR / ALOS-2: highest incidence angle (previous behavior).
 
     Returns dict with 'orbit', 'label'. Label uses SenA29 / NisarA57 / Alos2D109 style.
@@ -1274,7 +1282,7 @@ def print_best_only(
     Sentinel-1 burst counts are printed by main() as asc_nbursts and desc_nbursts.
     Suitable for: eval $(get_sar_coverage.py AOI --platform S1 --select) in bash.
 
-    For Sentinel-1, the best orbit is chosen using full-AOI coverage statistics when
+    For Sentinel-1, the best orbit is the one with the most full-AOI dates when
     ``s1_metrics`` is provided (non-empty); otherwise incidence-only ordering is used.
     """
     if not all_rows:
@@ -1551,7 +1559,7 @@ def create_parser() -> argparse.ArgumentParser:
                              'Shows granule id, date, and reason.')
     parser.add_argument('--select', action='store_true', default=False,
                         help='Print parseable key=value lines for best Asc/Desc orbit. Requires exactly one --platform (e.g. S1). '
-                             'Sentinel-1: prefer full-AOI coverage over intersecting dates, then edge margin, then incidence. '
+                             'Sentinel-1: most full-AOI dates, then edge margin, then incidence. '
                              'Sentinel-1 also prints asc_nbursts and desc_nbursts. '
                              'NISAR/ALOS-2: max incidence. '
                              'Bash: eval $(get_sar_coverage.py AOI --platform S1 --select); then use $asc_relorbit, $desc_relorbit, $asc_label, $desc_label.')

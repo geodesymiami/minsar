@@ -64,7 +64,7 @@ gsc = _load_get_sar_coverage()
 
 
 class TestS1SelectSort(unittest.TestCase):
-    """Sentinel-1 --select prefers full-AOI consistency, then margin, then incidence."""
+    """Sentinel-1 --select prefers the most full-AOI dates, then margin, then incidence."""
 
     def test_prefers_higher_coverage_ratio_over_incidence(self):
         """High incidence but many dropped dates loses to lower incidence with full cover."""
@@ -134,8 +134,8 @@ class TestS1SelectSort(unittest.TestCase):
         self.assertEqual(best['orbit'], 20)
         self.assertEqual(best['label'], 'SenD20')
 
-    def test_fewer_drops_wins_same_ratio(self):
-        """Same ratio (e.g. 50%) but fewer absolute drops wins."""
+    def test_more_kept_dates_wins_same_ratio(self):
+        """Same full-AOI fraction: more kept dates wins over fewer absolute drops."""
         orbits = [
             {'orbit': 1, 'inc': 40.0, 'subswath': 'IW2', 'count': 5},
             {'orbit': 2, 'inc': 40.0, 'subswath': 'IW2', 'count': 50},
@@ -153,7 +153,7 @@ class TestS1SelectSort(unittest.TestCase):
             },
         }
         best = gsc._best_orbit_for_direction(orbits, 'Ascending', 'Sentinel-1', metrics)
-        self.assertEqual(best['orbit'], 1)
+        self.assertEqual(best['orbit'], 2)
 
     def test_nisar_unchanged_max_incidence(self):
         """Non-S1 platforms ignore s1_metrics and use max incidence."""
