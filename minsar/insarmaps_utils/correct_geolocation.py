@@ -195,7 +195,11 @@ def _sample_incidence_azimuth(df, geometry_file, points_file):
     df["point_id"] = pd.to_numeric(df["point_id"], errors="coerce").astype(np.int64)
     df = df.drop(columns=[name for name in ("incidenceAngle", "azimuthAngle") if name in df.columns])
     df = df.merge(angles, on="point_id", how="left")
-    return _place_columns_after(df, ("height", "dem", "demError", "dem_error"), ("incidenceAngle", "azimuthAngle"))
+    df = _place_columns_after(df, ("height", "dem", "demError", "dem_error"), ("incidenceAngle", "azimuthAngle"))
+    dem_name = next((name for name in ("demError", "dem_error") if name in df.columns), None)
+    if dem_name is not None and "azimuthAngle" in df.columns:
+        df = _place_columns_after(df, ("azimuthAngle",), (dem_name,))
+    return df
 
 
 def _place_columns_after(df, after_names, new_names):
