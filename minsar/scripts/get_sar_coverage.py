@@ -18,7 +18,8 @@ Strategy:
       granules for that date fail full cover). --show-removed lists *granules* dropped (partial overlap,
       etc.); orbits with count 0 are omitted from the table. --select (S1) picks the orbit with the
       most full-AOI dates, then largest edge margin, then highest incidence, then prints
-      asc_nbursts and desc_nbursts from count_bursts_on_orbit.
+      asc_nimages and desc_nimages (the table count) and, for Sentinel-1, asc_nbursts
+      and desc_nbursts from count_bursts_on_orbit.
     - Others: ?output=count HTTP request.
     - Count requests run in parallel (default max_workers=8) to reduce time.
 
@@ -65,7 +66,7 @@ Examples:
   get_sar_coverage.py -23.393:-23.097,-68.356:-68.175 --platform S1   # negative lat (or use -- before AOI)
   get_sar_coverage.py 36.322:36.502,25.306:25.502 --platform S1 --flight-dir asc --start-date 20230101 --end-date 20241231
 
-Select (--select): requires --flight-dir and exactly one platform (--platform S1 or NISAR or ALOS2). Without --flight-dir it exits with a user error and prints no selection. asc or desc prints that pass; both, asc,desc, or desc,asc prints one orbit per pass. Prints asc_relorbit, asc_label, desc_relorbit, desc_label to stdout (progress to stderr). Sentinel-1 also prints asc_nbursts and desc_nbursts (distinct bursts on that orbit). In bash: eval $(get_sar_coverage.py AOI --platform S1 --flight-dir asc --select); then use $asc_relorbit, $asc_label, $asc_nbursts. For Sentinel-1, the requested pass picks the orbit with the most dates whose footprint fully covers the AOI (then edge margin, then incidence); NISAR/ALOS-2 still use max incidence.
+Select (--select): requires --flight-dir and exactly one platform (--platform S1 or NISAR or ALOS2). Without --flight-dir it exits with a user error and prints no selection. asc or desc prints that pass; both, asc,desc, or desc,asc prints one orbit per pass. Prints asc_relorbit, asc_label, asc_nimages, desc_relorbit, desc_label, desc_nimages to stdout (progress to stderr). asc_nimages and desc_nimages are the table count: acquisition dates whose footprint fully covers the AOI. Sentinel-1 also prints asc_nbursts and desc_nbursts (distinct bursts on that orbit that cover the AOI). In bash: eval $(get_sar_coverage.py AOI --platform S1 --flight-dir asc --select); then use $asc_relorbit, $asc_label, $asc_nimages, $asc_nbursts. For Sentinel-1, the requested pass picks the orbit with the most dates whose footprint fully covers the AOI (then edge margin, then incidence); NISAR/ALOS-2 still use max incidence.
 
 Notes:
   NISAR RSLC data availability depends on mission phase.
@@ -1199,7 +1200,8 @@ def _best_orbit_for_direction(
     (see ``_s1_select_sort_tuple``), then edge margin, then incidence.
     NISAR / ALOS-2: highest incidence angle (previous behavior).
 
-    Returns dict with 'orbit', 'label'. Label uses SenA29 / NisarA57 / Alos2D109 style.
+    Returns dict with 'orbit', 'label', and 'count' (table image count, or None).
+    Label uses SenA29 / NisarA57 / Alos2D109 style.
     """
     if not orbit_records:
         return None
@@ -1222,7 +1224,7 @@ def _best_orbit_for_direction(
         label = _orbit_label('NISAR', orbit, direction)
     else:
         label = _orbit_label('ALOS2', orbit, direction)
-    return {'orbit': orbit, 'label': label}
+    return {'orbit': orbit, 'label': label, 'count': best.get('count')}
 
 
 def _best_orbits_by_direction(
@@ -1280,6 +1282,7 @@ def print_best_only(
 
     Call only when exactly one platform is in all_rows (enforced by --select validation).
     Format: asc_relorbit=29, asc_label="SenA29", desc_relorbit=36, desc_label="SenD36".
+    Image counts are printed by main() as asc_nimages and desc_nimages.
     Sentinel-1 burst counts are printed by main() as asc_nbursts and desc_nbursts.
     Suitable for: eval $(get_sar_coverage.py AOI --platform S1 --flight-dir asc --select) in bash.
 
@@ -1561,9 +1564,9 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument('--select', action='store_true', default=False,
                         help='Print parseable key=value lines for the best orbit. Requires --flight-dir and exactly one --platform (e.g. S1). '
                              'Sentinel-1: most full-AOI dates, then edge margin, then incidence. '
-                             'Sentinel-1 also prints asc_nbursts and desc_nbursts. '
+                             'Prints asc_nimages and desc_nimages. Sentinel-1 also prints asc_nbursts and desc_nbursts. '
                              'NISAR/ALOS-2: max incidence. '
-                             'Bash: eval $(get_sar_coverage.py AOI --platform S1 --flight-dir asc --select); then use $asc_relorbit, $asc_label.')
+                             'Bash: eval $(get_sar_coverage.py AOI --platform S1 --flight-dir asc --select); then use $asc_relorbit, $asc_nimages, $asc_nbursts.')
     return parser
 
 
@@ -1835,14 +1838,20 @@ def main(iargs=None):
             all_rows.append((pol_label, rows))
 
     select_nbursts: Dict[str, int] = {}
-    if inps.select and 'S1' in platforms and all_rows:
-        platform_name, best_by_dir = _best_orbits_by_direction(
+    select_nimages: Dict[str, int] = {}
+    select_best_by_dir: Dict[str, Dict] = {}
+    if inps.select and all_rows:
+        platform_name, select_best_by_dir = _best_orbits_by_direction(
             all_rows, s1_select_metrics if s1_select_metrics else None
         )
-        if platform_name == 'Sentinel-1' and best_by_dir:
+        for direction, prefix in (('Ascending', 'asc'), ('Descending', 'desc')):
+            count = select_best_by_dir.get(direction, {}).get('count')
+            if isinstance(count, int) and count >= 0:
+                select_nimages[prefix] = count
+        if platform_name == 'Sentinel-1' and select_best_by_dir and 'S1' in platforms:
             try:
                 select_nbursts = _s1_select_burst_counts(
-                    inps.aoi, best_by_dir, start=start, end=end, verbose=inps.verbose
+                    inps.aoi, select_best_by_dir, start=start, end=end, verbose=inps.verbose
                 )
             except RuntimeError as exc:
                 print(f"Error: {exc}", file=sys.stderr)
@@ -1854,8 +1863,23 @@ def main(iargs=None):
         print(f"processing_subset=\"{_subset_str_from_wkt(wkt)}\"", file=sys.stdout)
         print_best_only(all_rows, sys.stdout, s1_select_metrics if s1_select_metrics else None)
         for prefix in ('asc', 'desc'):
+            if prefix in select_nimages:
+                print(f"{prefix}_nimages={select_nimages[prefix]}", file=sys.stdout)
             if prefix in select_nbursts:
                 print(f"{prefix}_nbursts={select_nbursts[prefix]}", file=sys.stdout)
+        for direction, prefix in (('Ascending', 'asc'), ('Descending', 'desc')):
+            chosen = select_best_by_dir.get(direction)
+            nimages = select_nimages.get(prefix)
+            if chosen is None or nimages is None:
+                continue
+            nbursts = select_nbursts.get(prefix)
+            if nbursts is not None:
+                print(
+                    f"    {chosen['label']}: {nimages} image(s), {nbursts} burst(s) cover the AOI",
+                    file=sys.stderr,
+                )
+            else:
+                print(f"    {chosen['label']}: {nimages} image(s)", file=sys.stderr)
     else:
         print()
         print_table(all_rows, do_count=True)
