@@ -251,15 +251,12 @@ def correct_geolocation_csv(input_file, output_file=None, geometry_file=None, po
 
     df["longitude_corrected"] = df[xcol].to_numpy(dtype=float) + east_m * meter_to_deg_lon
     df["latitude_corrected"] = df[ycol].to_numpy(dtype=float) + north_m * meter_to_deg_lat
-    cols = [name for name in df.columns if name not in ("longitude_corrected", "latitude_corrected")]
-    ordered = []
-    for name in cols:
-        ordered.append(name)
-        if name == xcol:
-            ordered.append("longitude_corrected")
-        if name == ycol:
-            ordered.append("latitude_corrected")
-    df = df[ordered]
+    cols = [name for name in df.columns if name not in (xcol, ycol, "longitude_corrected", "latitude_corrected")]
+    insert_at = min(df.columns.get_loc(xcol), df.columns.get_loc(ycol))
+    block = [xcol, ycol, "longitude_corrected", "latitude_corrected"]
+    for offset, name in enumerate(block):
+        cols.insert(insert_at + offset, name)
+    df = df[cols]
 
     output_path = output_file or f"{os.path.splitext(input_file)[0]}_geocorr.csv"
     df.to_csv(output_path, index=False)
