@@ -822,6 +822,35 @@ def rename_csv_columns_for_hdfeos5(csv_path):
     df.to_csv(csv_path, index=False)
 
 
+def convert_displacement_mm_to_m(csv_path):
+    """Convert DYYYYMMDD displacement columns from millimeters to meters.
+
+    sarvey_export writes those columns in millimeters. HDFEOS5 displacement is meters.
+    """
+    csv_path = Path(csv_path)
+    df = pd.read_csv(csv_path)
+    date_cols = [col for col in df.columns if re.fullmatch(r"D\d{8}", str(col))]
+    if not date_cols:
+        print(f"[WARN] no DYYYYMMDD columns in {csv_path.name}; displacement left unchanged")
+        return
+    rel = convert_to_relative_path([str(csv_path.resolve())])[0]
+    command_line = (
+        "python3 -c \"import pandas as pd; "
+        f"p={rel!r}; df=pd.read_csv(p); "
+        "cols=[c for c in df.columns if len(c)==9 and c[0]=='D' and c[1:].isdigit()]; "
+        "df[cols]=df[cols]/1000.0; df.to_csv(p, index=False)\""
+    )
+    print(
+        "##########################\n"
+        "Running (displaying relative paths)....\n"
+        f"{command_line}\n"
+        "##########################\n"
+    )
+    _append_ingest_command_log(command_line)
+    df[date_cols] = df[date_cols] / 1000.0
+    df.to_csv(csv_path, index=False)
+
+
 def create_jobfile(inps, data_path, cmds, json_dir, output_path, mbtiles_path, dataset_name, metadata):
     """
     Generate a SLURM-compatible jobfile with all processing steps and Insarmaps URL.
@@ -975,6 +1004,7 @@ def main():
         shutil.move(csv_file_path, final_csv_path)
         input_csv = final_csv_path
         rename_csv_columns_for_hdfeos5(input_csv)
+        convert_displacement_mm_to_m(input_csv)
 
         # Step 3: sample incidenceAngle/azimuthAngle and write corrected coordinates
         _, cmd_correctgeo, cmd_hdfeos5 = build_commands(

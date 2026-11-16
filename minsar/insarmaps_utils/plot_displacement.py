@@ -131,12 +131,12 @@ def load_point_timeseries(csv_file: str, point_id: int) -> tuple[pd.DataFrame, f
     ts = pd.DataFrame(
         {
             "date": pd.to_datetime([c[1:] for c in date_cols], format="%Y%m%d"),
-            "displacement_mm": pd.to_numeric([row[c] for c in date_cols], errors="coerce"),
+            "displacement_m": pd.to_numeric([row[c] for c in date_cols], errors="coerce"),
         }
     )
 
-    ts = ts.dropna(subset=["displacement_mm"]).sort_values("date").reset_index(drop=True)
-    ts["displacement_cm"] = ts["displacement_mm"] / 10.0
+    ts = ts.dropna(subset=["displacement_m"]).sort_values("date").reset_index(drop=True)
+    ts["displacement_cm"] = ts["displacement_m"] * 100.0
 
     velocity = None
     if "velocity" in df.columns:
