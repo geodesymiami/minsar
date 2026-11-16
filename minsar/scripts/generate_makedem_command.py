@@ -15,19 +15,23 @@ from minsar.objects.dataset_template import Template
 from minsar.utils import process_utilities as putils
 
 EXAMPLE = """
-  example:
-  generate_makedem_command.py  $SAMPLES/GalapagosSenDT128.template
+Examples:
+  generate_makedem_command.py $SAMPLES/GalapagosSenDT128.template
+  generate_makedem_command.py --finalize-wbd DEM/swbdLat_N03_N05_Lon_E007_E011.wbd
 """
 
-DESCRIPTION = (""" Creates makedem_sardem.sh and makedem_isce.sh scripts.""")
+DESCRIPTION = (
+    "Creates makedem_sardem.sh (DEM plus ISCE water mask) and makedem_isce.sh.\n"
+    "--finalize-wbd recodes a sardem NASA_WATER mask and writes .xml and .vrt."
+)
 
 def create_parser():
-    synopsis = 'Create makedem commands'
-    parser = argparse.ArgumentParser(description=DESCRIPTION, epilog=EXAMPLE, formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('custom_template_file', help='template file with option settings.\n')
-    inps = parser.parse_args()
-
-    return inps
+    parser = argparse.ArgumentParser(
+        description=DESCRIPTION, epilog=EXAMPLE, formatter_class=argparse.RawTextHelpFormatter
+    )
+    parser.add_argument('custom_template_file', nargs='?', help='template file with option settings')
+    parser.add_argument('--finalize-wbd', metavar='WBD', help='recode a sardem NASA_WATER mask to ISCE wbd values and write .xml and .vrt')
+    return parser.parse_args()
 
 def format_bbox(bbox):
     west, south, east, north = bbox
@@ -41,6 +45,67 @@ def format_bbox(bbox):
     # Format the output string
     name = f"{south_str}_{north_str}_{west_str}_{east_str}"
     return name
+
+def format_wbd_name(bbox):
+    """ISCE wbd.py basename, e.g. swbdLat_N03_N05_Lon_E007_E011.wbd."""
+    south_s, north_s, west_s, east_s = format_bbox(bbox).split("_")
+    return f"swbdLat_{south_s}_{north_s}_Lon_{west_s}_{east_s}.wbd"
+
+def finalize_wbd(wbd_path):
+    """Recode a sardem NASA_WATER mask and write the ISCE .xml and .vrt.
+
+    sardem writes 0 for land and 1 for water. ISCE wbd.py uses 0 for land and -1 for water.
+    """
+    import numpy as np
+    from sardem.loading import load_dem_rsc
+    from sardem.utils import gdal2isce_xml
+
+    wbd_path = os.path.abspath(wbd_path)
+    if not os.path.isfile(wbd_path):
+        raise FileNotFoundError(f"Water mask not found: {wbd_path}")
+
+    rsc = load_dem_rsc(wbd_path)
+    try:
+        width = int(rsc["width"])
+        length = int(rsc["file_length"])
+        x_first = float(rsc["x_first"])
+        y_first = float(rsc["y_first"])
+        x_step = float(rsc["x_step"])
+        y_step = float(rsc["y_step"])
+    except KeyError as exc:
+        raise ValueError(f"{wbd_path}.rsc is missing {exc}") from exc
+
+    data = np.fromfile(wbd_path, dtype=np.uint8)
+    if data.size != width * length:
+        raise ValueError(f"{wbd_path} has {data.size} pixels; .rsc says {length} x {width}")
+    mask = np.zeros(data.size, dtype=np.int8)
+    mask[data != 0] = np.int8(-1)
+    mask.tofile(wbd_path)
+
+    hdr_path = wbd_path + ".hdr"
+    hdr = (
+        "ENVI\n"
+        f"samples = {width}\n"
+        f"lines   = {length}\n"
+        "bands   = 1\n"
+        "header offset = 0\n"
+        "file type = ENVI Standard\n"
+        "data type = 1\n"
+        "interleave = bsq\n"
+        "byte order = 0\n"
+        "map info = {Geographic Lat/Lon, 1.0, 1.0, "
+        f"{x_first:.12f}, {y_first:.12f}, {x_step:.12f}, {abs(y_step):.12f}, "
+        "WGS-84, units=Degrees}\n"
+    )
+    os.environ["GDAL_PAM_ENABLED"] = "NO"
+    try:
+        with open(hdr_path, "w") as handle:
+            handle.write(hdr)
+        gdal2isce_xml(wbd_path, keep_egm=False)
+    finally:
+        if os.path.isfile(hdr_path):
+            os.remove(hdr_path)
+    print(f"Wrote ISCE water mask {wbd_path} (.xml, .vrt)")
 
 ###########################################################################################
 def exist_valid_dem_dir(dem_dir):
@@ -128,6 +193,14 @@ def main(iargs=None):
 
     inps = create_parser()
 
+    if inps.finalize_wbd:
+        finalize_wbd(inps.finalize_wbd)
+        return None
+
+    if not inps.custom_template_file:
+        print("Error: template file is required.", file=sys.stderr)
+        sys.exit(1)
+
     if not iargs is None:
         input_arguments = iargs
     else:
@@ -148,18 +221,28 @@ def main(iargs=None):
     demBbox = str(int(south)) + ' ' + str(int(north)) + ' ' + str(int(west)) + ' ' + str(int(east))
     bbox_LeftBottomRightTop = [int(west), int(south), int(east), int(north)]
     output_name = f"DEM/elevation_{format_bbox(bbox_LeftBottomRightTop)}.dem"
+    wbd_output = f"DEM/{format_wbd_name(bbox_LeftBottomRightTop)}"
 
     command_sardem = f"sardem --bbox {int(west)} {int(south)} {int(east)}  {int(north)} --data COP --make-isce-xml --output-type int16 --output-format ENVI --output {output_name}"
+    command_water = f"sardem --bbox {int(west)} {int(south)} {int(east)} {int(north)} --data-source NASA_WATER --output {wbd_output}"
+    command_wbd_meta = f"generate_makedem_command.py --finalize-wbd {wbd_output}"
     command_isce = 'dem.py -a stitch --filling --filling_value 0 -b ' + demBbox + ' -c -u https://e4ftl01.cr.usgs.gov/MEASURES/SRTMGL1.003/2000.02.11/'
 
     log_command_sardem = f"echo \"$(date +\"%Y%m%d:%H-%M\") * {command_sardem} | tee -a log\""
+    log_command_water = f"echo \"$(date +\"%Y%m%d:%H-%M\") * {command_water} | tee -a log\""
+    log_command_wbd_meta = f"echo \"$(date +\"%Y%m%d:%H-%M\") * {command_wbd_meta} | tee -a log\""
     log_command_isce = f"echo \"$(date +\"%Y%m%d:%H-%M\") * {command_isce} | tee -a log\""
 
     with open('makedem_sardem.sh', 'w') as f:
         f.write("#!/usr/bin/env bash\n")
+        f.write("set -e\n")
         f.write("mkdir -p DEM\n")
         f.write(log_command_sardem + '\n')
-        f.write(''.join(command_sardem) + '\n')
+        f.write(command_sardem + '\n')
+        f.write(log_command_water + '\n')
+        f.write(command_water + '\n')
+        f.write(log_command_wbd_meta + '\n')
+        f.write(command_wbd_meta + '\n')
     with open('makedem_isce.sh', 'w') as f:
         f.write("#!/usr/bin/env bash\n")
         f.write("mkdir -p DEM\n")
