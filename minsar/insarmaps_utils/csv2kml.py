@@ -177,8 +177,8 @@ def main():
     df = pd.read_csv(Path(args.input))
     out_kml = Path(args.output)
 
-    # Velocity units:  mm/yr -> cm/yr
-    df["vel_cm_yr"] = df["velocity"] / 10.0
+    # Velocity units: m/yr -> cm/yr
+    df["vel_cm_yr"] = df["velocity"] * 100.0
 
     # Elevation proxy. Sarvey CSVs use height and demError; older CSVs use dem and dem_error.
     height_col = "height" if "height" in df.columns else "dem"

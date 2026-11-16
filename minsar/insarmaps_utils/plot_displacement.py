@@ -159,7 +159,7 @@ def build_label(
         parts.append(direction)
 
     if velocity is not None:
-        parts.append(f"v={velocity:.2f} mm/yr")
+        parts.append(f"v={velocity:.2f} m/yr")
 
     return " (" + ", ".join(parts[1:]) + ")" if len(parts) > 1 else point_name \
         if point_name == parts[0] else f"{point_name} ({', '.join(parts[1:])})"
@@ -186,7 +186,7 @@ def main() -> None:
         if dir1 is not None:
             label1_parts.append(dir1)
         if v1 is not None:
-            label1_parts.append(f"v={v1:.2f} mm/yr")
+            label1_parts.append(f"v={v1:.2f} m/yr")
         label1 = f"P1 ({', '.join(label1_parts)})" if label1_parts else "P1"
 
         ax.scatter(ts1["date"], ts1["displacement_cm"], s=45, label=label1)
@@ -229,14 +229,14 @@ def main() -> None:
         if dir1 is not None:
             label1_parts.append(dir1)
         if v1 is not None:
-            label1_parts.append(f"v={v1:.2f} mm/yr")
+            label1_parts.append(f"v={v1:.2f} m/yr")
         label1 = f"P1 ({', '.join(label1_parts)})" if label1_parts else "P1"
 
         label2_parts = []
         if dir2 is not None:
             label2_parts.append(dir2)
         if v2 is not None:
-            label2_parts.append(f"v={v2:.2f} mm/yr")
+            label2_parts.append(f"v={v2:.2f} m/yr")
         label2 = f"P2 ({', '.join(label2_parts)})" if label2_parts else "P2"
 
         # Top panel

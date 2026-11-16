@@ -823,21 +823,23 @@ def rename_csv_columns_for_hdfeos5(csv_path):
 
 
 def convert_displacement_mm_to_m(csv_path):
-    """Convert DYYYYMMDD displacement columns from millimeters to meters.
+    """Convert sarvey millimeter columns to meters or m/year.
 
-    sarvey_export writes those columns in millimeters. HDFEOS5 displacement is meters.
+    DYYYYMMDD and st_consist are millimeters. velocity is mm/year. HDFEOS5 displacement
+    and MintPy/MiaplPy velocity are meters and m/year. omega is a phase residual and is left unchanged.
     """
     csv_path = Path(csv_path)
     df = pd.read_csv(csv_path)
     date_cols = [col for col in df.columns if re.fullmatch(r"D\d{8}", str(col))]
-    if not date_cols:
-        print(f"[WARN] no DYYYYMMDD columns in {csv_path.name}; displacement left unchanged")
+    scale_cols = date_cols + [col for col in ("velocity", "st_consist") if col in df.columns]
+    if not scale_cols:
+        print(f"[WARN] no displacement or velocity columns in {csv_path.name}; left unchanged")
         return
     rel = convert_to_relative_path([str(csv_path.resolve())])[0]
     command_line = (
         "python3 -c \"import pandas as pd; "
         f"p={rel!r}; df=pd.read_csv(p); "
-        "cols=[c for c in df.columns if len(c)==9 and c[0]=='D' and c[1:].isdigit()]; "
+        "cols=[c for c in df.columns if (len(c)==9 and c[0]=='D' and c[1:].isdigit()) or c in ('velocity','st_consist')]; "
         "df[cols]=df[cols]/1000.0; df.to_csv(p, index=False)\""
     )
     print(
@@ -847,7 +849,7 @@ def convert_displacement_mm_to_m(csv_path):
         "##########################\n"
     )
     _append_ingest_command_log(command_line)
-    df[date_cols] = df[date_cols] / 1000.0
+    df[scale_cols] = df[scale_cols] / 1000.0
     df.to_csv(csv_path, index=False)
 
 
