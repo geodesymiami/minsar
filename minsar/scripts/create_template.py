@@ -6,6 +6,7 @@ Runs get_sar_coverage.py --select to determine ascending/descending orbit labels
 reads minsar/defaults/processing.template, fills in ssaraopt.relativeOrbit, miaplpy.subset.lalo,
 and date range (optional: --quick-run, --period, --start-date/--end-date, or
 --last-year for the full previous calendar year), writes the template to CWD.
+That same date window is passed to get_sar_coverage.py --select.
 Sets ``mintpy.plot`` to yes when the ssaraopt span is ``<= 365`` days (else no);
 ``--mintpy-plot`` / ``--mintpy-no-plot`` override that rule.
 With dual-pass ``--flight-dir`` values (``asc,desc`` default; also ``desc,asc`` or
@@ -188,8 +189,17 @@ def _validate_coverage_for_flight_dir(
     return None
 
 
-def _run_get_sar_coverage(aoi: str, platform: str = "S1") -> dict[str, str | int]:
+def _run_get_sar_coverage(
+    aoi: str,
+    platform: str = "S1",
+    *,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> dict[str, str | int]:
     """Run get_sar_coverage.py --platform <platform> --select and parse stdout.
+
+    start_date and end_date are YYYYMMDD. Each one that is set is passed through
+    so orbit selection uses the same window as ssaraopt.startDate / endDate.
 
     Returns a dict that may include only ascending, only descending, or both, plus
     optional processing_subset. At least one full direction (relorbit + label) is
@@ -200,6 +210,10 @@ def _run_get_sar_coverage(aoi: str, platform: str = "S1") -> dict[str, str | int
         raise FileNotFoundError(f"get_sar_coverage.py not found: {get_sar}")
 
     args = [aoi, "--platform", platform, "--select"]
+    if start_date:
+        args.extend(["--start-date", start_date])
+    if end_date:
+        args.extend(["--end-date", end_date])
     print(f"Running.... get_sar_coverage.py {' '.join(args)}", file=sys.stderr)
     proc = subprocess.run(
         [sys.executable, str(get_sar), *args],
@@ -509,17 +523,30 @@ def _substitute_template(
 def _run_create_opposite_orbit(
     template_path: Path,
     outdir: Path,
+    *,
+    start_date: str | None = None,
+    end_date: str | None = None,
 ) -> None:
-    """Run create_opposite_orbit_template.bash."""
+    """Run create_opposite_orbit_template.bash.
+
+    start_date and end_date are YYYYMMDD and are forwarded to its get_sar_coverage --select.
+    """
     script = Path(__file__).resolve().parent / "create_opposite_orbit_template.bash"
     if not script.exists():
         raise FileNotFoundError(f"create_opposite_orbit_template.bash not found: {script}")
+
+    cmd = ["bash", str(script), "--outdir", str(outdir)]
+    if start_date:
+        cmd.extend(["--start-date", start_date])
+    if end_date:
+        cmd.extend(["--end-date", end_date])
+    cmd.append(str(template_path))
 
     env = os.environ.copy()
     python_bin = Path(sys.executable).resolve().parent
     env["PATH"] = f"{python_bin}{os.pathsep}{env.get('PATH', '')}"
     proc = subprocess.run(
-        ["bash", str(script), "--outdir", str(outdir), str(template_path)],
+        cmd,
         capture_output=True,
         text=True,
         cwd=Path.cwd(),
@@ -570,8 +597,8 @@ Examples:
     parser.add_argument("aoi", metavar="AOI", help="AOI: S:N,W:E; WKT POLYGON; Minus-first lat: quote AOI or argv normalization.")
     parser.add_argument("name", help="Project name; output is NAME<orbit_label>.template (e.g. Santorini)")
     parser.add_argument("--type", default="miaplpy", choices=["miaplpy"], help="Template type (default: miaplpy)")
-    parser.add_argument("--start-date", metavar="DATE", help="ssaraopt.startDate: YYYY-MM-DD or YYYYMMDD (e.g. 20230101)")
-    parser.add_argument("--end-date", metavar="DATE", help="ssaraopt.endDate: YYYY-MM-DD or YYYYMMDD (e.g. 20241231)")
+    parser.add_argument("--start-date", metavar="DATE", help="ssaraopt.startDate and orbit select, YYYY-MM-DD or YYYYMMDD (e.g. 20230101)")
+    parser.add_argument("--end-date", metavar="DATE", help="ssaraopt.endDate and orbit select, YYYY-MM-DD or YYYYMMDD (e.g. 20241231)")
     parser.add_argument("--period", metavar="SPEC", help="ssaraopt: YYYY full year; or START:END as YYYYMMDD:YYYYMMDD or YYYY-MM-DD:YYYY-MM-DD")
     parser.add_argument("--quick-run", type=int, metavar="YEAR", nargs="?", const=2026, default=None, help="Jan 1 to Feb 28 for YEAR (default: 2026)")
     parser.add_argument("--last-year", action="store_true", help="full previous year")
@@ -730,7 +757,12 @@ def main(
         return 1, None, None, ""
 
     try:
-        coverage = _run_get_sar_coverage(aoi, platform_for_coverage)
+        coverage = _run_get_sar_coverage(
+            aoi,
+            platform_for_coverage,
+            start_date=start_date,
+            end_date=end_date,
+        )
     except RuntimeError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1, None, None, ""
@@ -825,7 +857,9 @@ def main(
     if flight_dir_eff in ("both", "asc,desc", "desc,asc"):
         same_dir = out_path.parent
         print(f"Creating opposite-orbit template in {same_dir} ...", file=sys.stderr)
-        _run_create_opposite_orbit(out_path, same_dir)
+        _run_create_opposite_orbit(
+            out_path, same_dir, start_date=start_date, end_date=end_date
+        )
         # Complementary-pass basename: same convention as create_opposite_orbit_template.bash (name + other label).
         if flight_dir_eff in ("desc", "desc,asc"):
             opposite_prefix = "asc"

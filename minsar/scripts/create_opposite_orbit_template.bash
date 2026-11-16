@@ -17,8 +17,10 @@ matches the complementary pass (asc vs desc) for the same AOI. Updates ssaraopt.
 to the opposite pass relative orbit number.
 
 Options:
-  --outdir DIR   Output directory (default: $TEMPLATES, or $TE if TEMPLATES is unset)
-  --platform P   Single platform for get_sar_coverage.py --select (default: S1)
+  --outdir DIR       Output directory (default: $TEMPLATES, or $TE if TEMPLATES is unset)
+  --platform P       Single platform for get_sar_coverage.py --select (default: S1)
+  --start-date DATE  YYYYMMDD or YYYY-MM-DD passed to get_sar_coverage.py --select
+  --end-date DATE    YYYYMMDD or YYYY-MM-DD passed to get_sar_coverage.py --select
 
 Environment:
   TEMPLATES / TE — used for default --outdir when --outdir is omitted
@@ -85,6 +87,8 @@ print_wrote_line() {
 
 outdir=""
 platform="S1"
+start_date=""
+end_date=""
 template_path=""
 
 while [[ $# -gt 0 ]]; do
@@ -101,6 +105,16 @@ while [[ $# -gt 0 ]]; do
         --platform)
             [[ $# -ge 2 ]] || die "--platform requires an argument"
             platform="$2"
+            shift 2
+            ;;
+        --start-date)
+            [[ $# -ge 2 ]] || die "--start-date requires an argument"
+            start_date="$2"
+            shift 2
+            ;;
+        --end-date)
+            [[ $# -ge 2 ]] || die "--end-date requires an argument"
+            end_date="$2"
             shift 2
             ;;
         -*)
@@ -135,9 +149,12 @@ if [[ -z "$subset" ]]; then
 fi
 [[ -n "$subset" ]] || die "no active miaplpy.subset.lalo or mintpy.subset.lalo in $template_path"
 
-echo "Running get_sar_coverage.py \"$subset\" --platform \"$platform\" --select ..."
+sar_args=("$subset" --platform "$platform" --select)
+[[ -n "$start_date" ]] && sar_args+=(--start-date "$start_date")
+[[ -n "$end_date" ]] && sar_args+=(--end-date "$end_date")
+echo "Running get_sar_coverage.py ${sar_args[*]} ..."
 # shellcheck disable=SC1090
-eval "$(python3 "$GET_SAR_COVERAGE" "$subset" --platform "$platform" --select)"
+eval "$(python3 "$GET_SAR_COVERAGE" "${sar_args[@]}")"
 
 [[ -n "${asc_label:-}" && -n "${desc_label:-}" ]] || die "get_sar_coverage.py did not set asc_label/desc_label (check AOI and platform)"
 [[ -n "${asc_relorbit:-}" && -n "${desc_relorbit:-}" ]] || die "get_sar_coverage.py did not set asc_relorbit/desc_relorbit"
