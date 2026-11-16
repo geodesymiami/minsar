@@ -193,13 +193,15 @@ def _run_get_sar_coverage(
     aoi: str,
     platform: str = "S1",
     *,
+    flight_dir: str,
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> dict[str, str | int]:
-    """Run get_sar_coverage.py --platform <platform> --select and parse stdout.
+    """Run get_sar_coverage.py --platform <platform> --flight-dir <dir> --select and parse stdout.
 
-    start_date and end_date are YYYYMMDD. Each one that is set is passed through
-    so orbit selection uses the same window as ssaraopt.startDate / endDate.
+    flight_dir is required (asc, desc, both, asc,desc, or desc,asc). start_date and
+    end_date are YYYYMMDD. Each date that is set is passed through so orbit selection
+    uses the same window as ssaraopt.startDate / endDate.
 
     Returns a dict that may include only ascending, only descending, or both, plus
     optional processing_subset. At least one full direction (relorbit + label) is
@@ -209,7 +211,7 @@ def _run_get_sar_coverage(
     if not get_sar.exists():
         raise FileNotFoundError(f"get_sar_coverage.py not found: {get_sar}")
 
-    args = [aoi, "--platform", platform, "--select"]
+    args = [aoi, "--platform", platform, "--flight-dir", flight_dir, "--select"]
     if start_date:
         args.extend(["--start-date", start_date])
     if end_date:
@@ -760,6 +762,7 @@ def main(
         coverage = _run_get_sar_coverage(
             aoi,
             platform_for_coverage,
+            flight_dir=inps.flight_dir,
             start_date=start_date,
             end_date=end_date,
         )

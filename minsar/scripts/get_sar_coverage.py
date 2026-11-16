@@ -59,12 +59,13 @@ Examples:
   get_sar_coverage.py 36.322:36.502,25.306:25.502 --platform S1
   get_sar_coverage.py 36.33:36.485,25.32:25.502 --platform S1 -v
   get_sar_coverage.py 19.30:19.6,-155.8:-154.8 --platform S1,ALOS2 --all
-  get_sar_coverage.py 36.322:36.502,25.306:25.502 --platform S1 --select   # parseable vars for bash
+  get_sar_coverage.py 36.322:36.502,25.306:25.502 --platform S1 --flight-dir asc --select
+  get_sar_coverage.py 36.322:36.502,25.306:25.502 --platform S1 --flight-dir both --select
   get_sar_coverage.py AOI --platform S1 --show-removed   # list SLC granules dropped (partial footprint vs AOI)
   get_sar_coverage.py -23.393:-23.097,-68.356:-68.175 --platform S1   # negative lat (or use -- before AOI)
   get_sar_coverage.py 36.322:36.502,25.306:25.502 --platform S1 --flight-dir asc --start-date 20230101 --end-date 20241231
 
-Select (--select): requires exactly one platform (--platform S1 or NISAR or ALOS2). Prints asc_relorbit, asc_label, desc_relorbit, desc_label to stdout (progress to stderr). Sentinel-1 also prints asc_nbursts and desc_nbursts (distinct bursts on that orbit). In bash: eval $(get_sar_coverage.py AOI --platform S1 --select); then use $asc_relorbit, $desc_relorbit, $asc_label, $desc_label, $asc_nbursts, $desc_nbursts. For Sentinel-1, each direction picks the orbit with the most dates whose footprint fully covers the AOI (then edge margin, then incidence); NISAR/ALOS-2 still use max incidence.
+Select (--select): requires --flight-dir and exactly one platform (--platform S1 or NISAR or ALOS2). Without --flight-dir it exits with a user error and prints no selection. asc or desc prints that pass; both, asc,desc, or desc,asc prints one orbit per pass. Prints asc_relorbit, asc_label, desc_relorbit, desc_label to stdout (progress to stderr). Sentinel-1 also prints asc_nbursts and desc_nbursts (distinct bursts on that orbit). In bash: eval $(get_sar_coverage.py AOI --platform S1 --flight-dir asc --select); then use $asc_relorbit, $asc_label, $asc_nbursts. For Sentinel-1, the requested pass picks the orbit with the most dates whose footprint fully covers the AOI (then edge margin, then incidence); NISAR/ALOS-2 still use max incidence.
 
 Notes:
   NISAR RSLC data availability depends on mission phase.
@@ -1280,7 +1281,7 @@ def print_best_only(
     Call only when exactly one platform is in all_rows (enforced by --select validation).
     Format: asc_relorbit=29, asc_label="SenA29", desc_relorbit=36, desc_label="SenD36".
     Sentinel-1 burst counts are printed by main() as asc_nbursts and desc_nbursts.
-    Suitable for: eval $(get_sar_coverage.py AOI --platform S1 --select) in bash.
+    Suitable for: eval $(get_sar_coverage.py AOI --platform S1 --flight-dir asc --select) in bash.
 
     For Sentinel-1, the best orbit is the one with the most full-AOI dates when
     ``s1_metrics`` is provided (non-empty); otherwise incidence-only ordering is used.
@@ -1558,11 +1559,11 @@ def create_parser() -> argparse.ArgumentParser:
                              'does not fully cover the AOI (after intersectsWith search). '
                              'Shows granule id, date, and reason.')
     parser.add_argument('--select', action='store_true', default=False,
-                        help='Print parseable key=value lines for best Asc/Desc orbit. Requires exactly one --platform (e.g. S1). '
+                        help='Print parseable key=value lines for the best orbit. Requires --flight-dir and exactly one --platform (e.g. S1). '
                              'Sentinel-1: most full-AOI dates, then edge margin, then incidence. '
                              'Sentinel-1 also prints asc_nbursts and desc_nbursts. '
                              'NISAR/ALOS-2: max incidence. '
-                             'Bash: eval $(get_sar_coverage.py AOI --platform S1 --select); then use $asc_relorbit, $desc_relorbit, $asc_label, $desc_label.')
+                             'Bash: eval $(get_sar_coverage.py AOI --platform S1 --flight-dir asc --select); then use $asc_relorbit, $asc_label.')
     return parser
 
 
@@ -1617,6 +1618,13 @@ def main(iargs=None):
 
     if inps.select and len(platforms) != 1:
         print("Error: --select requires exactly one platform. Use --platform S1 (or NISAR or ALOS2).", file=sys.stderr)
+        sys.exit(1)
+
+    if inps.select and not inps.flight_dir:
+        print(
+            "User error: --select requires --flight-dir (asc, desc, both, asc,desc, or desc,asc).",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     if inps.select:

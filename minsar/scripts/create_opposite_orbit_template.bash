@@ -149,7 +149,7 @@ if [[ -z "$subset" ]]; then
 fi
 [[ -n "$subset" ]] || die "no active miaplpy.subset.lalo or mintpy.subset.lalo in $template_path"
 
-sar_args=("$subset" --platform "$platform" --select)
+sar_args=("$subset" --platform "$platform" --flight-dir both --select)
 [[ -n "$start_date" ]] && sar_args+=(--start-date "$start_date")
 [[ -n "$end_date" ]] && sar_args+=(--end-date "$end_date")
 echo "Running get_sar_coverage.py ${sar_args[*]} ..."

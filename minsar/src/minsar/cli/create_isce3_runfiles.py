@@ -306,7 +306,7 @@ def _resolve_aoi_orbit_label(aoi: str, flight_dir: str, track: int | None = None
         _validate_coverage_for_flight_dir,
     )
 
-    coverage = _run_get_sar_coverage(aoi, "S1")
+    coverage = _run_get_sar_coverage(aoi, "S1", flight_dir=flight_dir)
     flight_dir_eff = _effective_flight_dir_for_coverage(flight_dir, coverage)
     msg = _validate_coverage_for_flight_dir(coverage, flight_dir_eff)
     if msg:
@@ -780,7 +780,7 @@ def _resolve_n_bursts_for_dolphin(
                 "--burst-count-method sar_coverage requires --flight-dir "
                 "(or template flight direction) when --track is not set"
             )
-        coverage = _run_get_sar_coverage(aoi, "S1")
+        coverage = _run_get_sar_coverage(aoi, "S1", flight_dir=flight)
         orbit_key = "desc_relorbit" if flight.lower().startswith("d") else "asc_relorbit"
         if orbit_key not in coverage:
             raise RuntimeError(f"get_sar_coverage.py did not return {orbit_key} for AOI {aoi!r}")
