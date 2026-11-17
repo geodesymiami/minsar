@@ -1056,16 +1056,10 @@ fi
 #   Summarize results 
 ########################
 reduced_args="${reduced_args:-}"
-footer_cmd_primary="${SCRIPT_NAME} $(abbrev_path "$first_orbit_template_file") $reduced_args"
 footer_cmd_opposite="${SCRIPT_NAME} $(abbrev_path "$opposite_orbit_template_file") $reduced_args"
 
 echo "Yup! That's all from minsarApp.bash."
 echo
-
-# AOI entry only: replay full AOI invocation. Template-first: skip (stack command is below).
-if [[ -n "${cli_command_aoi:-}" ]]; then
-    echo "### Command: $cli_command_aoi"
-fi
 
 echo "### Files produced: ###"
 
@@ -1074,10 +1068,11 @@ if [[ $opposite_orbit_flag == "1" ]]; then
    print_summary --filesize  "$opposite_orbit_template_file"
 fi
 
+# AOI entry: replay the invocation the user typed. Template-first: the stack command.
 if [[ -n "${cli_command_aoi:-}" ]]; then
     echo
     echo "#################################"
-    echo "### Command: $footer_cmd_primary"
+    echo "### Command: $cli_command_aoi"
 else
     echo "### Command: $cli_command"
 fi
