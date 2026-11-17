@@ -1623,8 +1623,16 @@ def generate_intersects_string(dataset_template, delta_lat=0.0, delta_lon=0.0):
        print("Creating intersectsWith string using miaplpy.subset.lalo: dataset_template.get_options()['miaplpy.subset.lalo']")
        intersects_string = convert_subset_lalo_to_intersects_string(dataset_template.get_options()['miaplpy.subset.lalo'], delta_lat, delta_lon)
     else:
-       print("Creating intersectsWith string using *Stack.boundingBox: ", dataset_template.get_options()[prefix + 'Stack.boundingBox'])
-       intersects_string = convert_bounding_box_to_intersects_string(dataset_template.get_options()[prefix + 'Stack.boundingBox'], delta_lat, delta_lon)
+       options = dataset_template.get_options()
+       bbox = stack_option(options, 'boundingBox', prefix=prefix)
+       if is_alos2_template(options):
+           bbox_key = 'alos2Stack.boundingBox'
+       else:
+           bbox_key = prefix + 'Stack.boundingBox'
+       if bbox in (None, 'None', 'auto', ''):
+           raise KeyError(bbox_key)
+       print("Creating intersectsWith string using *Stack.boundingBox: ", bbox)
+       intersects_string = convert_bounding_box_to_intersects_string(bbox, delta_lat, delta_lon)
 
     return intersects_string
 
