@@ -1384,9 +1384,13 @@ class JOB_SUBMIT:
             job_file_lines.append( "export LAUNCHER_PPN={0}\n".format(self.number_of_parallel_tasks_per_node))
             job_file_lines.append( "export LAUNCHER_NHOSTS={0}\n".format(number_of_nodes))
             job_file_lines.append( "export LAUNCHER_JOB_FILE={0}\n".format(batch_file))
-            job_file_lines.append( """export LAUNCHER_WORKDIR=/dev/shm\n""" )
-            job_file_lines.append( """cd /dev/shm\n""" )
-            #job_file_lines.append("\nexport LAUNCHER_WORKDIR={0}".format(self.out_dir))
+            run_dir = os.path.dirname(os.path.abspath(batch_file))
+            if any("alosStack/" in line for line in tasks):
+                launcher_workdir = os.path.dirname(run_dir) if os.path.basename(run_dir) == "run_files" else run_dir
+                job_file_lines.append(f"export LAUNCHER_WORKDIR={launcher_workdir}\n")
+            else:
+                job_file_lines.append("""export LAUNCHER_WORKDIR=/dev/shm\n""")
+                job_file_lines.append("""cd /dev/shm\n""")
             #job_file_lines.append( "export PATH={0}:$PATH\n".format(self.stack_path))
 
             if self.remora:
