@@ -6,6 +6,7 @@
 #
 
 import os
+import sys
 import glob
 import shutil
 import datetime
@@ -14,6 +15,17 @@ import xml.etree.ElementTree as ET
 
 import isce, isceobj
 from isceobj.Alos2Proc.Alos2ProcPublic import runCmd
+
+# Installed script is a symlink into additions/. Python searches the real
+# directory, which does not contain StackPulic.py.
+_stack_dirs = (
+    os.path.join(os.environ.get("ISCE_STACK", ""), "alosStack"),
+    os.path.dirname(os.path.abspath(sys.argv[0])),
+)
+for _stack_dir in _stack_dirs:
+    if os.path.isfile(os.path.join(_stack_dir, "StackPulic.py")) and _stack_dir not in sys.path:
+        sys.path.insert(0, _stack_dir)
+        break
 
 from StackPulic import loadStackUserParameters
 from StackPulic import loadInsarUserParameters
