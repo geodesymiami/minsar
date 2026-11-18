@@ -37,6 +37,32 @@ function platform_is_alos2() {
 }
 
 ###########################################
+# south,north,west,east for get_alos2_swaths.py.
+# miaplpy.subset.lalo is S:N,W:E. alos2Stack.boundingBox is S N W E.
+function alos2_snwe_from_template() {
+    local raw=""
+    local subset="${template[miaplpy.subset.lalo]:-}"
+    local bbox="${template[alos2Stack.boundingBox]:-}"
+    if [[ -n "$subset" && "$subset" != "auto" && "$subset" != "no" && "$subset" != "None" ]]; then
+        raw="$subset"
+    elif [[ -n "$bbox" && "$bbox" != "auto" && "$bbox" != "None" ]]; then
+        raw="$bbox"
+    else
+        echo "Error: ALOS-2 swath selection needs miaplpy.subset.lalo or alos2Stack.boundingBox" >&2
+        return 1
+    fi
+    if [[ "$raw" == *:* ]]; then
+        raw="${raw// /}"
+        local lat="${raw%%,*}"
+        local lon="${raw#*,}"
+        printf '%s,%s\n' "${lat//:/,}" "${lon//:/,}"
+    else
+        raw=$(printf '%s' "$raw" | tr -s '[:space:]' ',')
+        printf '%s\n' "$raw"
+    fi
+}
+
+###########################################
 function set_template_assignment() {
 # Replace the value on the last uncommented "KEY = VALUE" line. Keeps spacing and any trailing comment.
 # Appends "KEY = VALUE" when the key is missing. Later template lines override earlier ones.

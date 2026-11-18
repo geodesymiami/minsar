@@ -880,6 +880,10 @@ if [[ $jobfiles_flag == "1" ]]; then
     if [[ $template_file =~ (Tsx|Csk|Env) ]]; then
        BUFFOPT="PYTHONUNBUFFERED=1"
     fi
+    if platform_is_alos2 "$platform_str"; then
+        snwe=$(alos2_snwe_from_template) || exit 1
+        run_command "get_alos2_swaths.py $snwe \"$WORK_DIR/SLC\" \"$template_file\""
+    fi
     ( run_command "$BUFFOPT create_runfiles.py $template_file --jobfiles --queue $QUEUENAME" ) 2> >(tee out_create_jobfiles.e >&2) | tee out_create_jobfiles.o
 fi
 
