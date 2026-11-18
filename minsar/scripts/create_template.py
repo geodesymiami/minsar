@@ -6,7 +6,9 @@ Runs get_sar_coverage.py --select to determine ascending/descending orbit labels
 reads minsar/defaults/processing.template, fills in ssaraopt.relativeOrbit, miaplpy.subset.lalo,
 and date range (optional: --quick-run, --period, --start-date/--end-date, or
 --last-year for the full previous calendar year), writes the template to CWD.
-That same date window is passed to get_sar_coverage.py --select.
+A resolved window is written to ssaraopt.startDate/endDate and
+miaplpy.load.startDate/endDate. --start-date or --end-date alone writes auto
+for the omitted side. Concrete dates are passed to get_sar_coverage.py --select.
 Sets ``mintpy.plot`` to yes when the ssaraopt span is ``<= 365`` days (else no);
 ``--mintpy-plot`` / ``--mintpy-no-plot`` override that rule.
 With dual-pass ``--flight-dir`` values (``asc,desc`` default; also ``desc,asc`` or
@@ -472,7 +474,11 @@ def _substitute_template(
     mintpy_tropospheric_delay_method: str | None = None,
     minsar_insarmaps_dataset: str | None = None,
 ) -> str:
-    """Replace orbit/AOI/date options, optionally adding ssaraopt.excludeSeason."""
+    """Replace orbit/AOI/date options, optionally adding ssaraopt.excludeSeason.
+
+    start_date and end_date, when set, are written to both ssaraopt and
+    miaplpy.load. A value of auto leaves that side open.
+    """
     lines = content.splitlines()
     out = []
     exclude_added = False
@@ -497,6 +503,10 @@ def _substitute_template(
                 out.append(f"ssaraopt.excludeSeason             = {exclude_season}")
                 exclude_added = True
                 continue
+        elif start_date is not None and re.match(r"^\s*miaplpy\.load\.startDate\s*=", line):
+            line = re.sub(r"=\s*[^\s#]+", f"= {start_date}", line)
+        elif end_date is not None and re.match(r"^\s*miaplpy\.load\.endDate\s*=", line):
+            line = re.sub(r"=\s*[^\s#]+", f"= {end_date}", line)
         elif re.match(r"^\s*ssaraopt\.excludeSeason\s*=", line):
             exclude_matched = True
             if exclude_season is not None:
@@ -599,8 +609,8 @@ Examples:
     parser.add_argument("aoi", metavar="AOI", help="AOI: S:N,W:E; WKT POLYGON; Minus-first lat: quote AOI or argv normalization.")
     parser.add_argument("name", help="Project name; output is NAME<orbit_label>.template (e.g. Santorini)")
     parser.add_argument("--type", default="miaplpy", choices=["miaplpy"], help="Template type (default: miaplpy)")
-    parser.add_argument("--start-date", metavar="DATE", help="ssaraopt.startDate and orbit select, YYYY-MM-DD or YYYYMMDD (e.g. 20230101)")
-    parser.add_argument("--end-date", metavar="DATE", help="ssaraopt.endDate and orbit select, YYYY-MM-DD or YYYYMMDD (e.g. 20241231)")
+    parser.add_argument("--start-date", metavar="DATE", help="ssaraopt and miaplpy.load start; YYYY-MM-DD or YYYYMMDD; omitted end is auto")
+    parser.add_argument("--end-date", metavar="DATE", help="ssaraopt and miaplpy.load end; YYYY-MM-DD or YYYYMMDD; omitted start is auto")
     parser.add_argument("--period", metavar="SPEC", help="ssaraopt: YYYY full year; or START:END as YYYYMMDD:YYYYMMDD or YYYY-MM-DD:YYYY-MM-DD")
     parser.add_argument("--quick-run", type=int, metavar="YEAR", nargs="?", const=2026, default=None, help="Jan 1 to Feb 28 for YEAR (default: 2026)")
     parser.add_argument("--last-year", action="store_true", help="full previous year")
@@ -672,13 +682,27 @@ def main(
             print(f"Error: {exc}", file=sys.stderr)
             return 1, None, None, ""
 
+    date_cli = inps.start_date is not None or inps.end_date is not None
+    if date_cli and inps.period is not None:
+        print(
+            "Error: --start-date/--end-date cannot be combined with --period",
+            file=sys.stderr,
+        )
+        return 1, None, None, ""
+    if date_cli and inps.quick_run is not None:
+        print(
+            "Error: --start-date/--end-date cannot be combined with --quick-run",
+            file=sys.stderr,
+        )
+        return 1, None, None, ""
+
     if inps.last_year:
         conflicts: list[str] = []
         if inps.quick_run is not None:
             conflicts.append("--quick-run")
         if inps.period is not None:
             conflicts.append("--period")
-        if inps.start_date is not None or inps.end_date is not None:
+        if date_cli:
             conflicts.append("--start-date/--end-date")
         if conflicts:
             print(
@@ -823,12 +847,19 @@ def main(
     )
 
     content = dummy_path.read_text()
+    write_start = start_date
+    write_end = end_date
+    if inps.start_date is not None or inps.end_date is not None:
+        if write_start is None:
+            write_start = "auto"
+        if write_end is None:
+            write_end = "auto"
     content = _substitute_template(
         content,
         relative_orbit=primary_relorbit,
         subset_lalo=subset_lalo,
-        start_date=start_date,
-        end_date=end_date,
+        start_date=write_start,
+        end_date=write_end,
         exclude_season=exclude_season,
         tops_stack_coregistration=primary_mode,
         mintpy_plot=mintpy_plot,

@@ -232,8 +232,7 @@ def main(iargs=None):
 
     with open('makedem_sardem.sh', 'w') as f:
         f.write("#!/usr/bin/env bash\n")
-        if make_water_mask:
-            f.write("set -e\n")
+        f.write("set -euo pipefail\n")
         f.write("mkdir -p DEM\n")
         f.write(log_command_sardem + '\n')
         f.write(command_sardem + '\n')

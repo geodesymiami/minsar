@@ -42,7 +42,8 @@ helptext="                                                                      
    --download-method {slc | SLC, burst | BURST, burst2safe, burst2stack, ssara-slc, ssara-bash, ssara-python} (default: burst2stack; burst downloads into BURST, full SLCs into SLC) \n\
    --delta-lat [DEG]     download larger error (default 0; bare --delta-lat: 0.2) \n\
    --minsar.excludeDates | --exclude-dates DATES  exclude YYYYMMDD scenes (comma-separated; merges with template) \n\
-   --miaplpy.load.startDate | endDate DATE  YYYYMMDD; the other load date becomes auto \n\
+   --start-date DATE | --end-date DATE   YYYYMMDD or YYYY-MM-DD. Writes ssaraopt and miaplpy.load dates; the omitted side becomes auto \n\
+   --miaplpy.load.startDate | endDate DATE  YYYYMMDD; sets only the MiaplPy load window; the other load date becomes auto \n\
    --suffix [TAG | auto]   pass --suffix to ingest_insarmaps (bare --suffix: auto from minTempCoh) \n\
                                                                                  \n\
    --mintpy              use smallbaselineApp.py for time series [default]       \n\
@@ -74,6 +75,7 @@ Per-dataset keys from MINSAR_CUSTOM_OPTIONS are applied only when AUTO_TEMPLATE 
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --platform S1 --flight-dir asc --quick-run 2026 --no-mintpy --miaplpy  \n\
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --period 20210101:20221231 --exclude-season 1101-0430 --exclude-dates 20260619 --coregistration geometry --tropo no --insarmaps-dataset DS  \n\
       minsarApp.bash \$TE/GalapagosSenDT128.template --exclude-dates 20260619 --miaplpy.load.startDate 20211201 --start jobfiles --miaplpy  \n\
+      minsarApp.bash \$TE/TamboraSenD134.template --start-date 20240101 --start miaplpy  \n\
       minsarApp.bash -0.86:-0.81,-91.19:-91.13 qtestGalapagos --flight-dir asc,desc --start-date 20181001 --end-date 20181231 --no-mintpy --miaplpy  \n\
       minsarApp.bash -8.326:-8.194,117.942:118.069 Tambora --flight-dir desc --template-dir \$ATE  \n
      "
@@ -163,6 +165,8 @@ POSITIONAL=()
 cli_exclude_dates=""
 cli_miaplpy_load_start=""
 cli_miaplpy_load_end=""
+cli_start_date=""
+cli_end_date=""
 
 # set defaults steps (insarmaps_flag and upload_flag are set to 0 if not given on command line or in template file )
 download_flag=1
@@ -376,6 +380,22 @@ do
             cli_miaplpy_load_end="$2"
             shift 2
             ;;
+        --start-date)
+            if [[ $# -lt 2 || "$2" == -* ]]; then
+                echo "Error: --start-date requires YYYYMMDD or YYYY-MM-DD." >&2
+                exit 1
+            fi
+            cli_start_date="$2"
+            shift 2
+            ;;
+        --end-date)
+            if [[ $# -lt 2 || "$2" == -* ]]; then
+                echo "Error: --end-date requires YYYYMMDD or YYYY-MM-DD." >&2
+                exit 1
+            fi
+            cli_end_date="$2"
+            shift 2
+            ;;
         --suffix)
             if [[ $# -ge 2 ]] && [[ "$2" != -* ]]; then
                 ingest_suffix_tag="$2"
@@ -418,9 +438,33 @@ if [[ "$template_file" == *AUTO_TEMPLATE* ]]; then
     fi
 fi
 
+normalize_yyyymmdd() {
+    local raw="$1"
+    local label="$2"
+    local compact="$raw"
+    if [[ "$raw" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+        compact="${raw//-/}"
+    fi
+    if [[ ! "$compact" =~ ^[0-9]{8}$ ]]; then
+        echo "Error: ${label} requires YYYYMMDD or YYYY-MM-DD, got ${raw}" >&2
+        return 1
+    fi
+    if ! python3 -c 'import datetime,sys; datetime.datetime.strptime(sys.argv[1], "%Y%m%d")' "$compact"; then
+        echo "Error: ${label} is not a calendar date: ${raw}" >&2
+        return 1
+    fi
+    printf '%s' "$compact"
+}
+
 if [[ -n "$cli_exclude_dates" ]]; then
     exclude_dates_py="${SCRIPT_DIR}/../utils/template_exclude_dates.py"
     run_command "python3 ${exclude_dates_py} ${template_file} ${cli_exclude_dates} --merge"
+fi
+if [[ -n "$cli_start_date" ]]; then
+    cli_start_date=$(normalize_yyyymmdd "$cli_start_date" "--start-date") || exit 1
+fi
+if [[ -n "$cli_end_date" ]]; then
+    cli_end_date=$(normalize_yyyymmdd "$cli_end_date" "--end-date") || exit 1
 fi
 if [[ -n "$cli_miaplpy_load_start" && ! "$cli_miaplpy_load_start" =~ ^[0-9]{8}$ ]]; then
     echo "Error: --miaplpy.load.startDate requires YYYYMMDD, got ${cli_miaplpy_load_start}" >&2
@@ -430,12 +474,29 @@ if [[ -n "$cli_miaplpy_load_end" && ! "$cli_miaplpy_load_end" =~ ^[0-9]{8}$ ]]; 
     echo "Error: --miaplpy.load.endDate requires YYYYMMDD, got ${cli_miaplpy_load_end}" >&2
     exit 1
 fi
+if [[ -n "$cli_start_date" && -n "$cli_miaplpy_load_start" && "$cli_start_date" != "$cli_miaplpy_load_start" ]]; then
+    echo "Error: --start-date ${cli_start_date} and --miaplpy.load.startDate ${cli_miaplpy_load_start} differ." >&2
+    exit 1
+fi
+if [[ -n "$cli_end_date" && -n "$cli_miaplpy_load_end" && "$cli_end_date" != "$cli_miaplpy_load_end" ]]; then
+    echo "Error: --end-date ${cli_end_date} and --miaplpy.load.endDate ${cli_miaplpy_load_end} differ." >&2
+    exit 1
+fi
+[[ -n "$cli_start_date" && -z "$cli_miaplpy_load_start" ]] && cli_miaplpy_load_start="$cli_start_date"
+[[ -n "$cli_end_date" && -z "$cli_miaplpy_load_end" ]] && cli_miaplpy_load_end="$cli_end_date"
 # One side only: the other load bound is auto (no clip). Both sides: keep both dates.
 if [[ -n "$cli_miaplpy_load_start" || -n "$cli_miaplpy_load_end" ]]; then
     [[ -z "$cli_miaplpy_load_start" ]] && cli_miaplpy_load_start="auto"
     [[ -z "$cli_miaplpy_load_end" ]] && cli_miaplpy_load_end="auto"
     run_command "set_template_assignment \"${template_file}\" miaplpy.load.startDate ${cli_miaplpy_load_start}"
     run_command "set_template_assignment \"${template_file}\" miaplpy.load.endDate ${cli_miaplpy_load_end}"
+fi
+# --start-date/--end-date also set the download window. --miaplpy.load.* does not.
+if [[ -n "$cli_start_date" || -n "$cli_end_date" ]]; then
+    ssara_start="${cli_start_date:-auto}"
+    ssara_end="${cli_end_date:-auto}"
+    run_command "set_template_assignment \"${template_file}\" ssaraopt.startDate ${ssara_start}"
+    run_command "set_template_assignment \"${template_file}\" ssaraopt.endDate ${ssara_end}"
 fi
 create_template_array "$template_file"
 
@@ -803,7 +864,7 @@ if [[ $dem_flag == "1" ]]; then
     else
        # makeDEM
        run_command "generate_makedem_command.py $template_file 2>out_generate_makedem_command.e 1>out_generate_makedem_command.o"
-       run_command "./makedem_sardem.sh  2>out_makedem.e 1>out_makedem.o"
+       run_command "cmd2jobfile.py ./makedem_sardem.sh --submit"
     fi
     if [[ "${template[minsar.zeroElevationDem]}" == "True" ]]; then
         run_command "make_zero_elevation_dem.py DEM --swap-in-place 2>out_make_zero_elevation_dem.e 1>out_make_zero_elevation_dem.o"
