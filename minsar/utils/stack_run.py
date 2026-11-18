@@ -24,6 +24,17 @@ pathObj = PathFind()
 ###########################################
 
 
+def _alos2_swath_property(template, key):
+    """Return an alos2Stack swath number, or None when the key is unset."""
+    value = str(template.get(key, 'auto')).strip()
+    if value.lower() in ('', 'auto', 'none'):
+        return None
+    try:
+        return str(int(value))
+    except ValueError as exc:
+        raise RuntimeError(f'{key} must be an integer, got {value!r}') from exc
+
+
 class CreateRun:
 
     def __init__(self, inps):
@@ -148,6 +159,13 @@ class CreateRun:
             'do ionospheric phase estimation': self.inps.template.get('alos2Stack.doIonosphere', 'False'),
             'apply ionospheric phase correction': self.inps.template.get('alos2Stack.applyIonosphere', 'False'),
         }
+        starting_swath = _alos2_swath_property(self.inps.template, 'alos2Stack.startingSwath')
+        ending_swath = _alos2_swath_property(self.inps.template, 'alos2Stack.endingSwath')
+        if (starting_swath is None) != (ending_swath is None):
+            raise RuntimeError('Set both alos2Stack.startingSwath and alos2Stack.endingSwath, or neither')
+        if starting_swath is not None:
+            properties['starting swath'] = starting_swath
+            properties['ending swath'] = ending_swath
         for name, value in properties.items():
             node = ET.SubElement(component, 'property', {'name': name})
             node.text = str(value)
