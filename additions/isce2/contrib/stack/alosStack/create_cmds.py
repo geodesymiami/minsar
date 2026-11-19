@@ -1492,5 +1492,4 @@ if __name__ == '__main__':
             f.write(cmd3)
         with open('cmd_4.sh', 'w') as f:
             f.write(cmd4)
-
-    runCmd('chmod +x cmd_1.sh cmd_2.sh cmd_3.sh cmd_4.sh', silent=1)
+        runCmd('chmod +x cmd_1.sh cmd_2.sh cmd_3.sh cmd_4.sh', silent=1)

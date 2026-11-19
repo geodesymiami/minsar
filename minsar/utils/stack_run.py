@@ -179,11 +179,18 @@ class CreateRun:
         print(' '.join(command))
         subprocess.run(command, cwd=self.work_dir, check=True)
 
+        sources = [os.path.join(self.work_dir, f'cmd_{index}.sh') for index in range(1, 5)]
+        if not any(os.path.isfile(source) for source in sources):
+            print('no alosStack command scripts were generated; no run files written.')
+            return
+        missing = [os.path.basename(source) for source in sources if not os.path.isfile(source)]
+        if missing:
+            raise RuntimeError('alosStack wrote only some command scripts; missing ' + ', '.join(missing))
+
         command_dir = os.path.join(self.work_dir, 'alos2_cmds')
         os.makedirs(command_dir, exist_ok=True)
-        for index in range(1, 5):
-            source = os.path.join(self.work_dir, f'cmd_{index}.sh')
-            destination = os.path.join(command_dir, f'cmd_{index}.sh')
+        for source in sources:
+            destination = os.path.join(command_dir, os.path.basename(source))
             shutil.move(source, destination)
         run_dir = os.path.join(self.work_dir, 'run_files')
         write_alos2_run_files(command_dir, run_dir, self.work_dir)
