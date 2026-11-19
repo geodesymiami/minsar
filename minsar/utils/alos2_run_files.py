@@ -56,7 +56,7 @@ def write_alos2_run_files(alos2_cmds, run_dir, work_dir):
                 task_name = f"{name}.bash" if key is None else f"{name}_{key}.bash"
                 task_path = tasks_dir / task_name
                 _write_task(task_path, work_dir, body)
-                lines.append(f"bash {_bash_command(task_path, work_dir)}")
+                lines.append(f"bash {_bash_command(task_path)}")
             else:
                 lines.append(" && ".join(body))
         path = run_dir / name
@@ -253,12 +253,9 @@ def _write_task(path, work_dir, body):
     path.chmod(0o755)
 
 
-def _bash_command(task_path, work_dir):
-    try:
-        relative = task_path.resolve().relative_to(work_dir.resolve())
-    except ValueError:
-        return shlex.quote(str(task_path))
-    return relative.as_posix()
+def _bash_command(task_path):
+    """Absolute path. The launcher cwd is not the project for these wrappers."""
+    return shlex.quote(str(task_path.resolve()))
 
 
 def _clear_previous(run_dir, tasks_dir):

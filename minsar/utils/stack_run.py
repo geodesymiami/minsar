@@ -158,6 +158,10 @@ class CreateRun:
             'geocode bounding box': f"[{stack_option(self.inps.template, 'boundingBox').replace(' ', ', ')}]",
             'do ionospheric phase estimation': self.inps.template.get('alos2Stack.doIonosphere', 'False'),
             'apply ionospheric phase correction': self.inps.template.get('alos2Stack.applyIonosphere', 'False'),
+            # dates_resampled and pairs exist after earlier steps, including a failed step 5.
+            'reprocess already processed dates': 'True',
+            'reprocess already processed pairs': 'True',
+            'reprocess already processed pairs for estimating ionosphere': 'True',
         }
         starting_swath = _alos2_swath_property(self.inps.template, 'alos2Stack.startingSwath')
         ending_swath = _alos2_swath_property(self.inps.template, 'alos2Stack.endingSwath')

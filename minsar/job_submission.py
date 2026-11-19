@@ -1385,7 +1385,9 @@ class JOB_SUBMIT:
             job_file_lines.append( "export LAUNCHER_NHOSTS={0}\n".format(number_of_nodes))
             job_file_lines.append( "export LAUNCHER_JOB_FILE={0}\n".format(batch_file))
             run_dir = os.path.dirname(os.path.abspath(batch_file))
-            if any("alosStack/" in line for line in tasks):
+            # ALOS-2 task wrappers live under run_files/tasks. Launcher must start in
+            # the project directory; /dev/shm cannot see those scripts.
+            if any("alosStack/" in line or "run_files/tasks/" in line for line in tasks):
                 launcher_workdir = os.path.dirname(run_dir) if os.path.basename(run_dir) == "run_files" else run_dir
                 job_file_lines.append(f"export LAUNCHER_WORKDIR={launcher_workdir}\n")
             else:
