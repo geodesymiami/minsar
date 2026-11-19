@@ -956,6 +956,24 @@ def remove_line_counter_lines_from_error_files(run_file):
 
 ##########################################################################
 
+
+def remove_processing_line_from_error_files(run_file):
+    """Drop ISCE 'processing line' progress from *.e files."""
+
+    error_files = glob.glob(run_file + '*.e*')
+    error_files = natsorted(error_files)
+    for item in error_files:
+        with open(item, 'r') as f:
+            lines = f.readlines()
+        kept = [line for line in lines if 'processing line' not in line]
+        with open(item, 'w') as f:
+            f.write(''.join(kept))
+
+    return None
+
+
+##########################################################################
+
 def remove_dask_error_lines_from_error_files(run_file):
 
     """ Remove 23 lines for dask distributed.worker - ERROR """
