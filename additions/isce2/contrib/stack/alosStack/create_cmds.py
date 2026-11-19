@@ -334,12 +334,16 @@ def createCmds(stack, datesProcess, pairsProcess, pairsProcessIon, mode):
     print('                       * * *')
     if stack.dateReferenceStack in datesProcess:
         print('reference date of stack in date list to be processed.')
-        if os.path.isfile(os.path.join(stack.datesResampledDir, stack.dateReferenceStack, 'insar', 'affine_transform.txt')):
+        reference_already_processed = os.path.isfile(os.path.join(stack.datesResampledDir, stack.dateReferenceStack, 'insar', 'affine_transform.txt'))
+        if reference_already_processed and not stack.datesReprocess:
             print('reference date of stack already processed previously.')
             print('do not implement reference-date-related processing this time.')
             processDateReferenceStack = False
         else:
-            print('reference date of stack not processed previously.')
+            if reference_already_processed:
+                print('reference date products exist, but reprocess already processed dates is set.')
+            else:
+                print('reference date of stack not processed previously.')
             print('implement reference-date-related processing this time.')
             processDateReferenceStack = True
     else:
