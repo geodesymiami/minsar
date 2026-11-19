@@ -1,0 +1,7 @@
+ssaraopt.platform                    = ALOS2
+ssaraopt.relativeOrbit               = 0
+ssaraopt.startDate                   = auto
+ssaraopt.endDate                     = auto
+acquisition_mode                     = stripmap
+mintpy.subset.lalo                   = 0:0,0:0    #[31.5:32.5,130.5:131.0 / no], auto for no
+alos2Stack.boundingBox               = 0 0 0 0

@@ -29,12 +29,26 @@ _EXAMPLES = """Examples:
 """
 
 
-def _defaults_path() -> Path:
-    return Path(__file__).resolve().parents[1] / "defaults" / "processing.template"
+def _is_alos2(options: dict[str, str]) -> bool:
+    """True when ssaraopt.platform (or stripmapStack.sensor) is ALOS2."""
+    raw = options.get("ssaraopt.platform", "")
+    token = raw.split()[0].upper().replace("-", "") if raw else ""
+    if token and token != "NONE":
+        return token == "ALOS2"
+    sensor = options.get("stripmapStack.sensor", "")
+    sensor_token = sensor.split()[0].upper().replace("-", "") if sensor else ""
+    return sensor_token == "ALOS2"
 
 
-# Prefix order follows the blocks in processing.template. aoi is first; minsarApp flags are last.
-_GROUP_ORDER = ("ssaraopt", "topsStack", "mintpy", "miaplpy", "minsar")
+def _defaults_path(template_text: str) -> Path:
+    """Sentinel-1 and ALOS-2 templates are compared to their own skeletons."""
+    options = parse_template_assignments(template_text)
+    name = "processing_Alos2.template" if _is_alos2(options) else "processing_Sentinel1.template"
+    return Path(__file__).resolve().parents[1] / "defaults" / name
+
+
+# Prefix order follows the blocks in the processing skeletons. aoi is first; minsarApp flags are last.
+_GROUP_ORDER = ("ssaraopt", "alos2Stack", "topsStack", "mintpy", "miaplpy", "minsar")
 _LAUNCHER_FIRST = ("aoi",)
 _LAUNCHER_LAST = ("options", "defaults")
 
@@ -132,8 +146,9 @@ def save(template: Path, options: str) -> Path:
         raise FileNotFoundError(
             "Set MINSAR_CUSTOM_OPTIONS or custom_template_options in $HOME/.minsar/config.cfg"
         )
-    defaults = parse_template_assignments(_defaults_path().read_text(encoding="utf-8"))
-    current = parse_template_assignments(template.read_text(encoding="utf-8"))
+    template_text = template.read_text(encoding="utf-8")
+    defaults = parse_template_assignments(_defaults_path(template_text).read_text(encoding="utf-8"))
+    current = parse_template_assignments(template_text)
     subset = current.get("miaplpy.subset.lalo") or current.get("mintpy.subset.lalo", "")
     if not subset:
         raise ValueError(f"{template} has no miaplpy.subset.lalo or mintpy.subset.lalo")
@@ -160,9 +175,9 @@ def _parser() -> argparse.ArgumentParser:
         prog="save_custom_options.py",
         description=(
             "Replace one dataset section from a finished template. A second run replaces that section, including its options line. "
-            "Keys are compared to minsar/defaults/processing.template. Order, extra spaces, and comments do not matter. "
+            "Keys are compared to processing_Sentinel1.template or processing_Alos2.template. Order, extra spaces, and comments do not matter. "
             "aoi comes from miaplpy.subset.lalo, or mintpy.subset.lalo when that line is absent. "
-            "Those subset lines are saved too. Orbit, dates, coregistration, and mintpy.plot stay with create_template."
+            "Those subset lines are saved too. Orbit, dates, coregistration, alos2Stack.boundingBox, and mintpy.plot stay with create_template."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=_EXAMPLES,

@@ -23,7 +23,7 @@ from minsar.utils.template_exclude_dates import apply_exclude_dates_to_template
 
 BEGIN = "# BEGIN custom_template_options"
 END = "# END custom_template_options"
-ALLOWED_PREFIXES = ("mintpy.", "miaplpy.", "minsar.", "topsStack.", "ssaraopt.")
+ALLOWED_PREFIXES = ("mintpy.", "miaplpy.", "minsar.", "topsStack.", "alos2Stack.", "ssaraopt.")
 LAUNCHER_KEYS = frozenset({"aoi", "options", "defaults"})
 FREEFORM_KEYS = frozenset({"aoi", "options"})
 EXCLUDE_KEYS = frozenset({"minsar.excludeDates", "topsStack.excludeDates"})
@@ -34,6 +34,7 @@ SKIP_SAVE_KEYS = frozenset(
         "ssaraopt.startDate",
         "ssaraopt.endDate",
         "topsStack.coregistration",
+        "alos2Stack.boundingBox",
         "mintpy.plot",
     }
 )

@@ -3,7 +3,9 @@
 Create a MinSAR template file for an AOI and project name.
 
 Runs get_sar_coverage.py --select to determine ascending/descending orbit labels,
-reads minsar/defaults/processing.template, fills in ssaraopt.relativeOrbit, miaplpy.subset.lalo,
+reads minsar/defaults/processing_Sentinel1.template (or processing_Alos2.template for
+--platform ALOS2), fills in ssaraopt.relativeOrbit, miaplpy.subset.lalo or
+mintpy.subset.lalo plus alos2Stack.boundingBox,
 and date range (optional: --quick-run, --period, --start-date/--end-date, or
 --last-year for the full previous calendar year), writes the template to CWD.
 A resolved window is written to ssaraopt.startDate/endDate and
@@ -63,9 +65,10 @@ def _get_minsar_home() -> Path:
     return script_dir.parent.parent
 
 
-def _get_dummy_template_path() -> Path:
-    """Return path to minsar/defaults/processing.template."""
-    return _get_minsar_home() / "minsar" / "defaults" / "processing.template"
+def _get_dummy_template_path(platform: str = "S1") -> Path:
+    """Return the Sentinel-1 or ALOS-2 processing skeleton."""
+    name = "processing_Alos2.template" if platform == "ALOS2" else "processing_Sentinel1.template"
+    return _get_minsar_home() / "minsar" / "defaults" / name
 
 
 def _aoi_to_subset_lalo(aoi_raw: str) -> str:
@@ -130,6 +133,7 @@ def _log_coverage_for_effective_mode(
 def _effective_flight_dir_for_coverage(
     requested: str,
     coverage: dict[str, str | int],
+    sensor: str = "Sentinel-1",
 ) -> str:
     """If dual-pass was requested but only one direction exists, fall back to that pass.
 
@@ -142,14 +146,14 @@ def _effective_flight_dir_for_coverage(
         return requested
     if has_desc and not has_asc:
         print(
-            "Note: this AOI has descending Sentinel-1 coverage only; "
+            f"Note: this AOI has descending {sensor} coverage only; "
             "writing one descending template (same as --flight-dir desc).",
             file=sys.stderr,
         )
         return "desc"
     if has_asc and not has_desc:
         print(
-            "Note: this AOI has ascending Sentinel-1 coverage only; "
+            f"Note: this AOI has ascending {sensor} coverage only; "
             "writing one ascending template (same as --flight-dir asc).",
             file=sys.stderr,
         )
@@ -461,6 +465,23 @@ def _with_tops_stack_coregistration(content: str, mode: str) -> str:
     return text
 
 
+def _replace_assignment_value(line: str, value: str) -> str:
+    """Replace the assignment value, keeping a trailing comment."""
+    match = re.match(r"^(\s*\S+\s*=)\s*([^#]*?)(\s*#.*)?\s*$", line)
+    if not match:
+        return line
+    comment = match.group(3) or ""
+    return f"{match.group(1)} {value}{comment}"
+
+
+def _subset_lalo_to_bounding_box(subset_lalo: str) -> str:
+    """Convert S:N,W:E to the S N W E form used by alos2Stack.boundingBox."""
+    lat, lon = subset_lalo.split(",", 1)
+    south, north = lat.split(":", 1)
+    west, east = lon.split(":", 1)
+    return f"{south} {north} {west} {east}"
+
+
 def _substitute_template(
     content: str,
     *,
@@ -473,6 +494,8 @@ def _substitute_template(
     mintpy_plot: str = "no",
     mintpy_tropospheric_delay_method: str | None = None,
     minsar_insarmaps_dataset: str | None = None,
+    bounding_box: str | None = None,
+    write_mintpy_plot: bool = True,
 ) -> str:
     """Replace orbit/AOI/date options, optionally adding ssaraopt.excludeSeason.
 
@@ -483,6 +506,8 @@ def _substitute_template(
     out = []
     exclude_added = False
     exclude_matched = False
+    tropo_matched = False
+    insarmaps_matched = False
     for line in lines:
         if re.match(r"^\s*ssaraopt\.relativeOrbit\s*=", line):
             line = re.sub(r"=\s*[0-9]+", f"= {relative_orbit}", line)
@@ -494,6 +519,10 @@ def _substitute_template(
             )
         elif re.match(r"^\s*miaplpy\.subset\.lalo\s*=", line):
             line = re.sub(r"=\s*[^\s#]+", f"= {subset_lalo}", line)
+        elif re.match(r"^\s*mintpy\.subset\.lalo\s*=", line):
+            line = _replace_assignment_value(line, subset_lalo)
+        elif bounding_box is not None and re.match(r"^\s*alos2Stack\.boundingBox\s*=", line):
+            line = _replace_assignment_value(line, bounding_box)
         elif start_date is not None and re.match(r"^\s*ssaraopt\.startDate\s*=", line):
             line = re.sub(r"=\s*[^\s#]+", f"= {start_date}", line)
         elif end_date is not None and re.match(r"^\s*ssaraopt\.endDate\s*=", line):
@@ -515,6 +544,7 @@ def _substitute_template(
             mintpy_tropospheric_delay_method is not None
             and re.match(r"^\s*mintpy\.troposphericDelay\.method\s*=", line)
         ):
+            tropo_matched = True
             line = re.sub(
                 r"=\s*[^\s#]+",
                 f"= {mintpy_tropospheric_delay_method}",
@@ -524,11 +554,18 @@ def _substitute_template(
             minsar_insarmaps_dataset is not None
             and re.match(r"^\s*minsar\.insarmaps_dataset\s*=", line)
         ):
+            insarmaps_matched = True
             line = re.sub(r"=\s*[^\s#]+", f"= {minsar_insarmaps_dataset}", line)
         out.append(line)
     if exclude_season is not None and not exclude_added and not exclude_matched:
         out.append(f"ssaraopt.excludeSeason             = {exclude_season}")
+    if mintpy_tropospheric_delay_method is not None and not tropo_matched:
+        out.append(f"mintpy.troposphericDelay.method      = {mintpy_tropospheric_delay_method}")
+    if minsar_insarmaps_dataset is not None and not insarmaps_matched:
+        out.append(f"minsar.insarmaps_dataset             = {minsar_insarmaps_dataset}")
     text = "\n".join(out) + "\n"
+    if not write_mintpy_plot:
+        return text
     return apply_mintpy_plot_line(text, mintpy_plot)
 
 
@@ -538,6 +575,7 @@ def _run_create_opposite_orbit(
     *,
     start_date: str | None = None,
     end_date: str | None = None,
+    platform: str = "S1",
 ) -> None:
     """Run create_opposite_orbit_template.bash.
 
@@ -547,7 +585,7 @@ def _run_create_opposite_orbit(
     if not script.exists():
         raise FileNotFoundError(f"create_opposite_orbit_template.bash not found: {script}")
 
-    cmd = ["bash", str(script), "--outdir", str(outdir)]
+    cmd = ["bash", str(script), "--outdir", str(outdir), "--platform", platform]
     if start_date:
         cmd.extend(["--start-date", start_date])
     if end_date:
@@ -597,6 +635,7 @@ Examples:
   create_template.py 36.331:36.486,25.318:25.492 Santorini --minsar.excludeDates 20260619,20260207
   create_template.py 36.331:36.486,25.318:25.492 Santorini --flight-dir asc
   create_template.py 36.331:36.486,25.318:25.492 Santorini --platform S1
+  create_template.py 4.19:4.25,9.158:9.221 par7Cameroon --platform ALOS2
   create_template.py 36.331:36.486,25.318:25.492 Santorini --geometry
   create_template.py 36.331:36.486,25.318:25.492 Santorini --coregistration NESD
   create_template.py 36.331:36.486,25.318:25.492 Santorini --topsstack.coregistration geometry
@@ -624,7 +663,7 @@ Examples:
         help="Comma-separated YYYYMMDD to exclude (sets minsar.excludeDates and topsStack.excludeDates)",
     )
     parser.add_argument("--flight-dir", dest="flight_dir", default="asc,desc", type=normalize_flight_dir, metavar="DIR", help="asc, desc, asc,desc, desc,asc, both (Default: asc,desc)")
-    parser.add_argument("--platform", default="S1", metavar="NAME", help="get_sar_coverage sensor (default S1); use S1 (NISAR/ALOS2 unsupported here)")
+    parser.add_argument("--platform", default="S1", metavar="NAME", help="get_sar_coverage sensor (default S1). S1 or ALOS2 (NISAR is unsupported)")
     parser.add_argument(
         "--coregistration", "--topsstack.coregistration", "--topsStack.coregistration",
         dest="tops_coregistration", default=None, choices=["geometry", "NESD"], metavar="MODE",
@@ -774,13 +813,8 @@ def main(
         )
         return 1, None, None, ""
 
-    if platform_for_coverage == "ALOS2":
-        print(
-            "Error: ALOS2 (or Alos2) is not yet implemented for create_template.py. "
-            "Use --platform S1 (Sentinel-1) for template generation.",
-            file=sys.stderr,
-        )
-        return 1, None, None, ""
+    is_alos2 = platform_for_coverage == "ALOS2"
+    sensor_name = "ALOS-2" if is_alos2 else "Sentinel-1"
 
     try:
         coverage = _run_get_sar_coverage(
@@ -794,7 +828,7 @@ def main(
         print(f"Error: {exc}", file=sys.stderr)
         return 1, None, None, ""
 
-    flight_dir_eff = _effective_flight_dir_for_coverage(inps.flight_dir, coverage)
+    flight_dir_eff = _effective_flight_dir_for_coverage(inps.flight_dir, coverage, sensor_name)
     msg = _validate_coverage_for_flight_dir(coverage, flight_dir_eff)
     if msg:
         print(f"Error: {msg}", file=sys.stderr)
@@ -817,34 +851,40 @@ def main(
         primary_relorbit = int(coverage["asc_relorbit"])
         primary_label = str(coverage["asc_label"])
 
-    explicit_mode = tops_co if (inps.geometry_mode or inps.tops_coregistration is not None) else None
-    primary_n = _coverage_burst_count(coverage, primary_prefix)
-    primary_mode = coregistration_for_burst_count(
-        explicit_mode=explicit_mode,
-        burst_count=primary_n,
-    )
-    if explicit_mode is None and primary_mode == "geometry":
-        print(
-            f"Single burst on orbit {primary_relorbit} ({primary_prefix}); topsStack.coregistration = geometry",
-            file=sys.stderr,
+    explicit_mode = None
+    primary_mode = "NESD"
+    if not is_alos2:
+        explicit_mode = tops_co if (inps.geometry_mode or inps.tops_coregistration is not None) else None
+        primary_n = _coverage_burst_count(coverage, primary_prefix)
+        primary_mode = coregistration_for_burst_count(
+            explicit_mode=explicit_mode,
+            burst_count=primary_n,
         )
+        if explicit_mode is None and primary_mode == "geometry":
+            print(
+                f"Single burst on orbit {primary_relorbit} ({primary_prefix}); topsStack.coregistration = geometry",
+                file=sys.stderr,
+            )
 
-    dummy_path = _get_dummy_template_path()
+    dummy_path = _get_dummy_template_path(platform_for_coverage)
     if not dummy_path.exists():
         print(f"Error: dummy template not found: {dummy_path}", file=sys.stderr)
         return 1, None, None, ""
 
-    mintpy_plot = resolve_mintpy_plot_value(
-        start_date,
-        end_date,
-        cli_override=inps.mintpy_plot_cli,
-    )
-    print(
-        f"mintpy.plot = {mintpy_plot} "
-        f"(CLI override={inps.mintpy_plot_cli!r}; span from ssaraopt dates)",
-        file=sys.stderr,
-        flush=True,
-    )
+    write_mintpy_plot = not is_alos2 or inps.mintpy_plot_cli is not None
+    mintpy_plot = "no"
+    if write_mintpy_plot:
+        mintpy_plot = resolve_mintpy_plot_value(
+            start_date,
+            end_date,
+            cli_override=inps.mintpy_plot_cli,
+        )
+        print(
+            f"mintpy.plot = {mintpy_plot} "
+            f"(CLI override={inps.mintpy_plot_cli!r}; span from ssaraopt dates)",
+            file=sys.stderr,
+            flush=True,
+        )
 
     content = dummy_path.read_text()
     write_start = start_date
@@ -865,6 +905,8 @@ def main(
         mintpy_plot=mintpy_plot,
         mintpy_tropospheric_delay_method=mintpy_tropospheric_delay_method,
         minsar_insarmaps_dataset=minsar_insarmaps_dataset,
+        bounding_box=_subset_lalo_to_bounding_box(subset_lalo) if is_alos2 else None,
+        write_mintpy_plot=write_mintpy_plot,
     )
 
     if inps.minsar_exclude_dates is not None:
@@ -891,9 +933,14 @@ def main(
     if flight_dir_eff in ("both", "asc,desc", "desc,asc"):
         same_dir = out_path.parent
         print(f"Creating opposite-orbit template in {same_dir} ...", file=sys.stderr)
-        _run_create_opposite_orbit(
-            out_path, same_dir, start_date=start_date, end_date=end_date
-        )
+        opposite_kwargs = {}
+        if start_date:
+            opposite_kwargs["start_date"] = start_date
+        if end_date:
+            opposite_kwargs["end_date"] = end_date
+        if platform_for_coverage != "S1":
+            opposite_kwargs["platform"] = platform_for_coverage
+        _run_create_opposite_orbit(out_path, same_dir, **opposite_kwargs)
         # Complementary-pass basename: same convention as create_opposite_orbit_template.bash (name + other label).
         if flight_dir_eff in ("desc", "desc,asc"):
             opposite_prefix = "asc"
@@ -909,6 +956,8 @@ def main(
             burst_count=opposite_n,
         )
         opposite_path = (out_path.parent / f"{name}{opposite_label}.template").resolve()
+        if is_alos2:
+            return 0, out_path.resolve(), opposite_path, flight_dir_eff
         if opposite_mode != primary_mode:
             if not opposite_path.is_file():
                 print(f"Error: opposite-orbit template not found: {opposite_path}", file=sys.stderr)
