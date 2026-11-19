@@ -871,20 +871,17 @@ def main(
         print(f"Error: dummy template not found: {dummy_path}", file=sys.stderr)
         return 1, None, None, ""
 
-    write_mintpy_plot = not is_alos2 or inps.mintpy_plot_cli is not None
-    mintpy_plot = "no"
-    if write_mintpy_plot:
-        mintpy_plot = resolve_mintpy_plot_value(
-            start_date,
-            end_date,
-            cli_override=inps.mintpy_plot_cli,
-        )
-        print(
-            f"mintpy.plot = {mintpy_plot} "
-            f"(CLI override={inps.mintpy_plot_cli!r}; span from ssaraopt dates)",
-            file=sys.stderr,
-            flush=True,
-        )
+    mintpy_plot = resolve_mintpy_plot_value(
+        start_date,
+        end_date,
+        cli_override=inps.mintpy_plot_cli,
+    )
+    print(
+        f"mintpy.plot = {mintpy_plot} "
+        f"(CLI override={inps.mintpy_plot_cli!r}; span from ssaraopt dates)",
+        file=sys.stderr,
+        flush=True,
+    )
 
     content = dummy_path.read_text()
     write_start = start_date
@@ -906,7 +903,6 @@ def main(
         mintpy_tropospheric_delay_method=mintpy_tropospheric_delay_method,
         minsar_insarmaps_dataset=minsar_insarmaps_dataset,
         bounding_box=_subset_lalo_to_bounding_box(subset_lalo) if is_alos2 else None,
-        write_mintpy_plot=write_mintpy_plot,
     )
 
     if inps.minsar_exclude_dates is not None:
