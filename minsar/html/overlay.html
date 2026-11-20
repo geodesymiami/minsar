@@ -1188,6 +1188,7 @@
         const setViewAckTimerByIndex = new Map(); // index -> no-ack fallback timer of the last set-view
         const setViewNotReadyByIndex = new Map(); // index -> consecutive 'not-ready' answers (dataset still loading)
         const setViewFallbackByIndex = new Set(); // indexes whose set-view failed: reload them at the new view
+        const setRefAfterViewByIndex = new Set(); // indexes whose set-ref waits for the ack of their set-view
         // The child answers at once (a synchronous camera jump), so silence means no handler; a busy
         // iframe still answers within this.
         const SET_VIEW_ACK_TIMEOUT_MS = 8000;
@@ -3128,6 +3129,7 @@
             bgAppliedView.delete(index);
             setViewNotReadyByIndex.delete(index);
             setViewFallbackByIndex.delete(index);
+            setRefAfterViewByIndex.delete(index);
             const t = setViewAckTimerByIndex.get(index);
             if (t) {
                 clearTimeout(t);
@@ -3141,12 +3143,12 @@
                 document.getElementById(`iframe${index}`)?.src || null;
         }
 
-        // The view an iframe shows: the last set-view it was sent, once acked (or before its ack when
-        // the server is known to handle set-view: an iframe handles messages in order, so the view is
-        // in place before anything sent later), else the view in its own URL.
+        // The view an iframe shows: the last set-view it was sent once acked, else the view in its own
+        // URL. A set-view still unanswered leaves it unknown (null), so a dataset switch reloads the
+        // target rather than reveal a map that may stay at its old view ('not-ready', no answer).
         function viewOnIframe(index) {
             const sent = bgAppliedView.get(index);
-            if (sent && (sent.acked || setViewSupport === 'yes')) return sent;
+            if (sent) return sent.acked ? sent : null;
             return viewFromInsarmapsUrl(iframeEffectiveUrl(index));
         }
 
@@ -3571,9 +3573,19 @@
                             }
                             return; // still waiting for insarmaps-ref-applied
                         }
-                        // The ref was picked in the overlay's view: move there first, so set-ref
-                        // finds it drawn (the iframe handles the two messages in this order).
-                        if (viewStale && !syncViewToIframe(index, wantView, desiredUrl, reason)) return;
+                        // The ref was picked in the overlay's view: send set-ref only once the iframe
+                        // acked its set-view to that view (the ack re-runs this), so the ref is
+                        // picked there, never at the old view of an iframe that did not move.
+                        const sentView = bgAppliedView.get(index);
+                        if (viewStale || (sentView && !sentView.acked)) {
+                            if (viewStale && !syncViewToIframe(index, wantView, desiredUrl, reason)) return;
+                            if (!setRefAfterViewByIndex.has(index)) {
+                                console.log(`[overlay] iframe SET-REF ${iframeLabelForLog(index)} waits for its set-view ack`);
+                            }
+                            setRefAfterViewByIndex.add(index);
+                            return;
+                        }
+                        setRefAfterViewByIndex.delete(index);
                         sendSetRefToIframe(index, desired.refPointLat, desired.refPointLon);
                         return;
                     }
@@ -4670,6 +4682,9 @@
                                 if (ackOk) {
                                     sent.acked = true;
                                     setViewNotReadyByIndex.delete(ackIndex);
+                                    if (setRefAfterViewByIndex.has(ackIndex)) {
+                                        scheduleBackgroundSync('set-view-acked');
+                                    }
                                 } else {
                                     bgAppliedView.delete(ackIndex);
                                     const notReady = (setViewNotReadyByIndex.get(ackIndex) || 0) + 1;
@@ -5085,12 +5100,16 @@
                                 refPointLon = currentMapParams.refPointLon;
                             }
                         }
-                        // The view too: a background echoes the set-view it was sent or, still
-                        // booting, the view it was loaded with — never a new view for the overlay.
-                        const keepView = !senderIsActive && !!currentMapParams.lat;
+                        // The view and the colorscale too: a background echoes the set-view and
+                        // set-colorscale it was sent or, still booting, what it was loaded with —
+                        // never new state for the overlay. Judged by the sender's status when its post
+                        // arrived: a dataset switch can make it active before this callback runs.
+                        const keepView = !isFromActiveIframe && !!currentMapParams.lat;
                         const viewLat = keepView ? currentMapParams.lat : lat;
                         const viewLon = keepView ? currentMapParams.lon : lon;
                         const viewZoom = keepView ? currentMapParams.zoom : zoom;
+                        const keptColorscale = (!isFromActiveIframe && currentMapParams.colorscale)
+                            ? currentMapParams.colorscale : colorscaleValue;
                         if (getPointKey({ pointLat, pointLon }) !==
                             getPointKey({ pointLat: currentMapParams.pointLat, pointLon: currentMapParams.pointLon })) {
                             console.log('[overlay] point selection CHANGED (url-update-debounced)', {
@@ -5164,7 +5183,7 @@
                             startDate, endDate,
                             pixelSize, background, opacity,
                             contour: contourValue,
-                            colorscale: colorscaleValue,
+                            colorscale: keptColorscale,
                             refPointLat, refPointLon,
                             pointLat, pointLon
                         };
@@ -5208,7 +5227,7 @@
                             pinnedScaleState.minScale !== currentMapParams.minScale ||
                             pinnedScaleState.maxScale !== currentMapParams.maxScale ||
                             contourValue !== prevContourNorm ||
-                            colorscaleValue !== currentMapParams.colorscale ||
+                            keptColorscale !== currentMapParams.colorscale ||
                             pixelSize !== currentMapParams.pixelSize ||
                             background !== currentMapParams.background ||
                             opacity !== currentMapParams.opacity
