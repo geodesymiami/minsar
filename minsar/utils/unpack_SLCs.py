@@ -12,6 +12,7 @@ Unpacks SLC files into SLC directory using a two-stage approach:
 import os
 import sys
 import glob
+import math
 import shutil
 import argparse
 from pathlib import Path
@@ -27,7 +28,7 @@ Examples:
     unpack_SLCs.py RAW_data
     unpack_SLCs.py SLC_ORIG
     unpack_SLCs.py SLC_ORIG --queue skx --unpack-walltime 1:30 --uncompress-walltime 0:45
-    unpack_SLCs.py SLC_ORIG --alos-stack --queue skx
+    unpack_SLCs.py SLC_ORIG --alos-stack --queue skx --jobs 5
 """
 
 DESCRIPTION = (
@@ -40,14 +41,28 @@ def create_parser():
     parser.add_argument("slc_orig_dir", metavar="SLC_ORIG", help="path to SLC_ORIG directory")
     parser.add_argument("--queue", dest="queue", metavar="QUEUE", help="Name of queue to submit job to")
     parser.add_argument('--jobfiles', dest='write_jobs', action='store_true', help='writes the jobs corresponding to run files')
-    parser.add_argument('--uncompress-walltime', dest='uncompress_wall_time', metavar="WALLTIME (HH:MM)", default='0:30', help='walltime for data uncompress stage (default=0:30)')
+    parser.add_argument('--jobs', dest='jobs', type=int, default=5, metavar='N', help='simultaneous archives to uncompress (default: 5)')
+    parser.add_argument('--uncompress-walltime', dest='uncompress_wall_time', metavar='WALLTIME (HH:MM)', default=None,
+                        help='uncompress walltime (default: 15 min per wave of --jobs, 30 min floor)')
     parser.add_argument('--unpack-walltime', dest='unpack_wall_time', metavar="WALLTIME (HH:MM)", default='1:00', help='walltime for unpackFrame stage (default=1:00)')
     parser.add_argument('--alos-stack', action='store_true', help='Prepare ALOS-2 L1.1 archives for ISCE2 alosStack')
     return parser
 
+def uncompress_walltime_for(n_files, jobs):
+    """15 minutes per wave of `jobs`, with a 30 minute floor. Cap at 23:59 (strptime %H)."""
+    jobs = max(int(jobs), 1)
+    waves = math.ceil(n_files / jobs) if n_files else 1
+    minutes = max(30, 15 * waves)
+    hours, mins = divmod(minutes, 60)
+    if hours > 23:
+        return '23:59'
+    return f'{hours}:{mins:02d}'
+
 def cmd_line_parse(iargs=None):
     parser = create_parser()
     inps = parser.parse_args(args=iargs)
+    if inps.jobs < 1:
+        parser.error('--jobs must be a positive integer')
     return inps
 
 def main(iargs=None):
@@ -72,15 +87,18 @@ def main(iargs=None):
     print("\n" + "#"*60)
     print("STAGE 1: Creating run file for data uncompression and renaming")
     
-    uncompress_rename_run_file = sensorsObj.create_uncompress_rename_runfile()
+    uncompress_rename_run_file = sensorsObj.create_uncompress_rename_runfile(jobs=inps.jobs)
     uncompress_rename_run_file = os.path.abspath(uncompress_rename_run_file)
     print(f"Created: {uncompress_rename_run_file}")
     
     inps.out_dir = inps.work_dir
     inps.num_data = 1
-    inps.custom_template_file = None    
-    if hasattr(inps, 'uncompress_wall_time'):
+    inps.custom_template_file = None
+    if inps.uncompress_wall_time:
         inps.wall_time = inps.uncompress_wall_time
+    else:
+        inps.wall_time = uncompress_walltime_for(len(sensorsObj.file_list), inps.jobs)
+    print(f"Uncompress walltime: {inps.wall_time}  jobs: {inps.jobs}  archives: {len(sensorsObj.file_list)}")
     
     job_obj = JOB_SUBMIT(inps)
     print(f"\nSubmitting uncompress_rename job...")

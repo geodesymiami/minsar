@@ -45,13 +45,13 @@ class Sensors:
 
         return unpackFrame_runfile
     
-    def create_uncompress_rename_runfile(self):
+    def create_uncompress_rename_runfile(self, jobs=5):
         """
         Creates the run_01_uncompress_rename file without doing the actual unpacking.
         Returns the uncompress_rename runfile path.
         """
         self.get_sensor_type()
-        uncompress_rename_runfile = self.create_run_uncompress_rename()
+        uncompress_rename_runfile = self.create_run_uncompress_rename(jobs=jobs)
         return uncompress_rename_runfile
 
     def get_sensor_type(self):
@@ -322,30 +322,38 @@ class Sensors:
         return successflag, acquisitionDate
 
 
-    def create_run_uncompress_rename(self):
+    def create_run_uncompress_rename(self, jobs=5):
         """
-        Creates a run file with commands to uncompress and rename archive files in parallel.
-        Each line will process one archive file.
+        Write one uncompress command per archive, and a one-line run file that
+        executes that list with at most `jobs` processes at a time.
         """
-        # Get the uncompress_and_rename_data script path
         minsar_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         uncompress_script = os.path.join(minsar_path, 'utils', 'uncompress_and_rename_data.py')
-        
-        # filename of the run file
+        uncompress_archives = os.path.join(minsar_path, 'utils', 'uncompress_archives.bash')
+
+        commands_file = os.path.join(self.input_dir, 'run_01_uncompress_commands')
         run_uncompress_rename = os.path.join(self.input_dir, 'run_01_uncompress_rename')
-        
-        # Determine remove flag
+
         remove_flag = '--remove' if self.rmfile in [True, 'True'] else ''
-        
-        with open(run_uncompress_rename, 'w') as f:
+        jobs = max(int(jobs), 1)
+
+        with open(commands_file, 'w') as f:
             for archive_file in self.file_list:
                 cmd = f'{shlex.quote(uncompress_script)} {shlex.quote(os.path.abspath(archive_file))} {remove_flag}'
                 if self.alos_stack:
                     cmd += f' --output-dir {shlex.quote(os.path.abspath(self.output_dir))} --alos-stack'
-                cmd = cmd.strip()  # Remove trailing space if no remove_flag
+                cmd = cmd.strip()
                 print(cmd)
                 f.write(cmd + '\n')
-        
+
+        run_cmd = (
+            f'{shlex.quote(os.path.abspath(uncompress_archives))} --jobs {jobs} '
+            f'{shlex.quote(os.path.abspath(commands_file))}'
+        )
+        print(run_cmd)
+        with open(run_uncompress_rename, 'w') as f:
+            f.write(run_cmd + '\n')
+
         return run_uncompress_rename
 
     def create_run_unpackFrame(self):

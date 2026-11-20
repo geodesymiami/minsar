@@ -168,8 +168,12 @@ def main():
     output_dir = args.output_dir.expanduser().resolve() if args.output_dir else Path(workdir)
     
     print(f"Processing: {data_file}")
-    
+
     if not os.path.isfile(data_file):
+        archived = os.path.join(workdir, 'ARCHIVED_FILES', os.path.basename(data_file))
+        if os.path.isfile(archived):
+            print(f"  Already unpacked, skipping: {os.path.basename(data_file)}")
+            return 0
         print(f"ERROR: Data file not found: {data_file}")
         sys.exit(1)
     
@@ -189,7 +193,10 @@ def main():
         
         out_folder = os.path.basename(data_file).split('.')[0]
         out_folder = os.path.join(workdir, out_folder)
-        
+        if os.path.isdir(out_folder):
+            print(f"  Removing partial extract: {out_folder}")
+            shutil.rmtree(out_folder)
+
         print(f"  Uncompressing to: {out_folder}")
         success = uncompressfile(data_file, out_folder)
         
