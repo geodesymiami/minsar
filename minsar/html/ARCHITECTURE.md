@@ -141,7 +141,7 @@ Latest debug-table example (from this debugging session):
 | `bgAppliedDates` | index → `{ startDate, endDate }` last applied to that iframe via `insarmaps-set-dates` (cleared on any reload of that iframe) |
 | `bgAppliedScale` | index → `{ autoColorScale, minScale, maxScale }` last sent via `insarmaps-set-auto-color-scale` (cleared on reload). Scale params are ignored in URL staleness compares; changes propagate as a repaint postMessage, never a reload |
 | `bgAppliedDisplay` | index → `{ pixelSize, opacity, contour, background }` last sent via `insarmaps-set-pixelSize`/`-opacity`/`-contour`/`-background` (cleared on reload). Same rule as scale: ignored in URL compares, synced by in-page postMessages |
-| `bgAppliedView` | index → `{ lat, lon, zoom, acked }` last view sent via `insarmaps-set-view` (cleared on reload, and for the active iframe on each of its own posts: the user moves it). The view is ignored in URL compares and compared numerically (`viewsClose`, one unit of insarmaps' 4th decimal) |
+| `bgAppliedView` | index → `{ lat, lon, zoom, acked }` last view sent via `insarmaps-set-view` (cleared on reload, and for the active iframe on each of its own posts: the user moves it). The view is ignored in URL compares and compared numerically (`viewsClose`, one unit of insarmaps' 4th decimal). The switch path counts a sent view only once acked (`viewOnIframe`): a target with a set-view still unanswered is reloaded, not revealed |
 | `setViewSupport` | `'unknown'` → `'yes'` on the first `insarmaps-set-view-applied` ack, `'no'` when the first set-view gets none within `SET_VIEW_ACK_TIMEOUT_MS` (8 s): an insarmaps server without the handler, so views sync by reloads again. Per iframe, `setViewNotReadyByIndex` counts `not-ready` answers (retried every second, up to 30) and `setViewFallbackByIndex` marks iframes to reload |
 | (colorscale) | No record of what was sent: the colorscale an iframe shows is read from its own URL (`colorscaleOnIframe`; insarmaps always writes `colorscale=` into the URLs it posts) |
 | `pendingDateSyncByIndex` | Awaiting `insarmaps-set-dates-applied` ack for narrowed dates |
@@ -339,8 +339,9 @@ reconcileBackgroundIframes(reason)      // idempotent
         view    — set-view (ack insarmaps-set-view-applied; no ack in 8 s or repeated
                   not-ready → reload); tracked in bgAppliedView, compared with viewsClose.
                   Waits while a ref is being applied (insarmaps picks the ref point among
-                  the points drawn in view); sent before set-ref/set-point otherwise, and
-                  also while a failed ref backs off (no reload: it was tried at this view)
+                  the points drawn in view); a set-ref waits for the view's ack (the ack
+                  re-runs the reconciler); set-point follows it in the same pass. Also sent
+                  while a failed ref backs off (no reload: it was tried at this view)
         point   — set-point (ack insarmaps-set-point-applied); tracked in bgAppliedPoint
         colorscale — set-colorscale (default ref only; fire-and-forget, the child no-ops
                   when unchanged); the iframe's own URL is the record. Before scale:
@@ -359,8 +360,9 @@ reconcileBackgroundIframes(reason)      // idempotent
 
 Channel ordering invariant: while a ref is pending on an iframe, no view/scale/display/dates/
 point messages are sent to it (`insarmaps-set-dates` before ref breaks the recolor — §19; a
-camera move can take the ref point out of view while insarmaps picks it). A set-ref that is
-about to be sent goes right after a set-view: the ref was picked in the overlay's view.
+camera move can take the ref point out of view while insarmaps picks it). A set-ref waits until
+the iframe acked its set-view to the overlay's view, where the ref was picked
+(`setRefAfterViewByIndex`).
 Ref/point/dates/view degrade gracefully to URL reloads on servers without the insarmaps
 handlers; scale and display have no acks, but dataset switches re-broadcast them
 (`broadcastMapDisplayStateAfterSwitch` / `broadcastDisplayChannelToIframe`), so a lost
@@ -452,11 +454,13 @@ When the **active** iframe changes pan/zoom/scales/dates:
 
 **Cooldown:** Non-active iframe messages ignored for 3s after a sync (`SYNC_COOLDOWN_MS`). Active iframe bypasses cooldown.
 
-**Only the active iframe moves the view:** a background's `insarmaps-url-update` never changes
-`currentMapParams.lat/lon/zoom` (like point, ref and scale). Backgrounds post after every
-`insarmaps-set-view` (an echo of the overlay's view), and one still booting posts the view it was
-loaded with: processed as user intent, that would move every background (and the next dataset
-switch) back to an older view.
+**Only the active iframe moves the view or the colorscale:** a background's `insarmaps-url-update`
+never changes `currentMapParams.lat/lon/zoom` or `colorscale` (like point, ref and scale).
+Backgrounds post after every `insarmaps-set-view` and `insarmaps-set-colorscale` (echoes of the
+overlay's state), and one still booting posts the state it was loaded with: processed as user
+intent, that would move every background (and the next dataset switch) back to an older view or
+colorscale. The sender counts as active by its status when the post arrived, since a dataset
+switch can make it active before the debounced handler runs.
 
 **Per-post trust (settled handshake — replaced the 3s switch-suppress window):** every
 `insarmaps-url-update` carries `settled` — `false` while the child document is still booting
