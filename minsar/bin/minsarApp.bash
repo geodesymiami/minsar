@@ -70,7 +70,7 @@ Debug options:                                                                  
                                                                                  \n\
 Using AOI and name as the first two arguments. create_template and minsarApp options may follow in any order.\n\
 create_template.py --help lists the template options.\n\
---template-dir DIR    AOI mode: write the template in DIR instead of \$TE (run_minsar.bash uses \$ATE).\n\
+--template-dir DIR    AOI mode: write the template in DIR instead of \$ATE.\n\
 Per-dataset keys from MINSAR_CUSTOM_OPTIONS are applied only when AUTO_TEMPLATE is in the template path.\n\
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --platform S1 --flight-dir asc --quick-run 2026 --no-mintpy --miaplpy  \n\
       minsarApp.bash 4.19:4.25,9.158:9.221 par7Cameroon --platform ALOS2  \n\
@@ -85,7 +85,7 @@ Per-dataset keys from MINSAR_CUSTOM_OPTIONS are applied only when AUTO_TEMPLATE 
     exit 0
 fi
 
-# AOI + project name: first create templates under TEMPLATES, then continue as template mode.
+# AOI + project name: first create templates under AUTO_TEMPLATES, then continue as template mode.
 # Mixed create_template and minsarApp flags are split in minsarapp_aoi_entry.py.
 # Accept AOI as first positional even when it starts with '-' (negative latitude).
 # Exclude long-option invocations and template-file mode.
@@ -143,7 +143,13 @@ else
     template_print_name="$template_file"
 fi
 echo "#############################################################################################" | tee -a "${WORK_DIR}"/log
-echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $template_print_name ${@:2}" | tee -a "${WORK_DIR}"/log
+# AOI runs re-exec with the template path. Log the command the user typed.
+if [[ -n "${cli_command_aoi:-}" ]]; then
+    log_invocation="$cli_command_aoi"
+else
+    log_invocation="$SCRIPT_NAME $template_print_name ${@:2}"
+fi
+echo "$(date +"%Y%m%d:%H-%M") * $log_invocation" | tee -a "${WORK_DIR}"/log
 cli_command=$(echo "$SCRIPT_NAME $template_print_name ${@:2}")
 if ! [[ -v cli_command_first ]]; then
   cli_command_first=$cli_command
@@ -855,14 +861,21 @@ fi
 
 
 if [[ $dem_flag == "1" ]]; then
-    dem_key_re='^stripmapStack.demDir|^topsStack.demDir'
+    # Parsed template values already drop trailing comments. auto/None/empty means build DEM/.
     if platform_is_alos2 "$platform_str"; then
-        dem_key_re="^alos2Stack.demDir|$dem_key_re"
+        demDir="${template[alos2Stack.demDir]:-}"
+    elif [[ $platform_str =~ COSMO-SKYMED|TERRASAR-X|ENVISAT ]]; then
+        demDir="${template[stripmapStack.demDir]:-}"
+    else
+        demDir="${template[topsStack.demDir]:-}"
     fi
-    if [[ ! -z $(grep -E "$dem_key_re" $template_file) ]];  then
-       # copy DEM if given
-       demDir=$(grep -E "$dem_key_re" $template_file | awk -F = '{printf "%s\n",$2}' | sed 's/ //')
-       rm -rf DEM; eval "cp -r $demDir DEM"
+    if [[ -n "$demDir" && "$demDir" != "auto" && "$demDir" != "None" ]]; then
+       echo "Copying DEM from $demDir"
+       rm -rf DEM
+       if ! eval "cp -r $demDir DEM"; then
+           echo "ERROR: failed to copy DEM from $demDir" >&2
+           exit 1
+       fi
     else
        # makeDEM
        run_command "generate_makedem_command.py $template_file 2>out_generate_makedem_command.e 1>out_generate_makedem_command.o"

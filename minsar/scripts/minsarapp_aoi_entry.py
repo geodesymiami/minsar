@@ -20,7 +20,8 @@ sent to the command that accepts it. ``--exclude-dates`` and ``--minsar.excludeD
 copied to both. ``create_template.py --help`` lists the template options.
 
 ``MINSAR_APP_BASH`` must be set to the path of ``minsarApp.bash`` (set by the shell before
-``exec``). ``TEMPLATES`` (or ``TE``) is the output directory (same as for template-first runs).
+``exec``). AOI runs write the template under ``AUTO_TEMPLATES`` (or ``ATE``).
+A ``*.template`` argument is not handled here; ``minsarApp.bash`` uses that file in place.
 ``--template-dir DIR`` writes the template and the AOI log in DIR instead, and is removed
 before ``create_template`` and the minsarApp re-exec.
 """
@@ -82,10 +83,11 @@ def pop_template_dir(argv: list[str]) -> tuple[list[str], Path | None]:
 
 
 def _templates_dir() -> Path:
-    t = os.environ.get("TEMPLATES") or os.environ.get("TE")
+    """Directory for templates created from an AOI and a project name."""
+    t = os.environ.get("AUTO_TEMPLATES") or os.environ.get("ATE")
     if not t:
         print(
-            "minsarapp_aoi_entry: TEMPLATES or TE must be set in the environment.",
+            "minsarapp_aoi_entry: AUTO_TEMPLATES or ATE must be set in the environment.",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -345,19 +347,20 @@ def run() -> None:
         )
         sys.exit(1)
 
-    # Log the original AOI invocation. --template-dir keeps this log out of $TE.
+    # Log the original AOI invocation. Default dir is $ATE; --template-dir overrides it.
     if template_dir is not None:
-        try:
-            template_dir.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            print(
-                f"minsarapp_aoi_entry: cannot create {template_dir}: {exc}",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        tdir = template_dir.resolve()
+        tdir = template_dir
     else:
         tdir = _templates_dir()
+    try:
+        tdir.mkdir(parents=True, exist_ok=True)
+        tdir = tdir.resolve()
+    except OSError as exc:
+        print(
+            f"minsarapp_aoi_entry: cannot create {tdir}: {exc}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     log_path = tdir / "log"
     timestamp = datetime.now().strftime("%Y%m%d:%H-%M")
     with open(log_path, "a", encoding="utf-8") as f:

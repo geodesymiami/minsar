@@ -222,6 +222,27 @@ def _format_key(text: str, key: str, value: str) -> str:
     return f"{key}{' ' * gap}= {value}"
 
 
+_SWATH_NOTES = {
+    "alos2Stack.startingSwath": "auto for the swaths that cover the AOI",
+    "alos2Stack.endingSwath": "auto for the swaths that cover the AOI; set both or neither",
+}
+
+
+def _swath_comment(line: str, key: str) -> str:
+    """Keep the note after the value. Two spaces, then #, matching processing_Alos2.template."""
+    raw = line.split("=", 1)[1] if "=" in line else ""
+    raw = raw.split("\n", 1)[0]
+    if "#" in raw:
+        body = raw.split("#", 1)[1].strip()
+    else:
+        parts = raw.split(None, 1)
+        body = parts[1].strip() if len(parts) > 1 else ""
+    body = re.sub(r"^\[int\],\s*", "", body).strip()
+    if not body:
+        body = _SWATH_NOTES[key]
+    return f"  # {body}"
+
+
 def write_template(template: Path, starting: int, ending: int) -> None:
     text = template.read_text()
     keys = {
@@ -235,10 +256,7 @@ def write_template(template: Path, starting: int, ending: int) -> None:
         key = line.split("=", 1)[0].strip() if "=" in line and not line.lstrip().startswith("#") else ""
         if key in keys:
             newline = "\n" if line.endswith("\n") else ""
-            comment = ""
-            if "#" in line:
-                comment = "  " + line.split("#", 1)[1].rstrip("\n")
-            updated.append(_format_key(text, key, keys[key]) + comment + newline)
+            updated.append(_format_key(text, key, keys[key]) + _swath_comment(line, key) + newline)
             present.add(key)
         else:
             updated.append(line)
@@ -248,7 +266,9 @@ def write_template(template: Path, starting: int, ending: int) -> None:
         for index, line in enumerate(updated):
             if line.lstrip().startswith("alos2Stack."):
                 insert_at = index + 1
-        block = "".join(_format_key(text, key, keys[key]) + "\n" for key in missing)
+        block = "".join(
+            _format_key(text, key, keys[key]) + f"  # {_SWATH_NOTES[key]}\n" for key in missing
+        )
         updated.insert(insert_at, block)
     template.write_text("".join(updated))
 

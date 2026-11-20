@@ -20,8 +20,10 @@ alos2Stack.polarization              = HH  #[HH / HV / VH / VV], auto for HH
 alos2Stack.numberOfSubsequentDates   = 4  #[int], auto for 4, pair each date with this many later dates
 alos2Stack.doIonosphere              = False  #[True / False], auto for False, estimate ionospheric phase
 alos2Stack.applyIonosphere           = False  #[True / False], auto for False, apply the ionospheric correction
-alos2Stack.startingSwath             = auto  #[int], auto for the swaths that cover the AOI
-alos2Stack.endingSwath               = auto  #[int], auto for the swaths that cover the AOI; set both or neither
+alos2Stack.startingSwath             = auto  # auto for the swaths that cover the AOI
+alos2Stack.endingSwath               = auto  # auto for the swaths that cover the AOI; set both or neither
+alos2Stack.azimuthLooks              = auto  # ~4 m spotlight, ~5 m SM1, ~12 m SM2, ~13 m SM3, ~40 m ScanSAR
+alos2Stack.rangeLooks                = auto  # ~3 m spotlight/SM1, ~6 m SM2, ~9 m SM3/ScanSAR nominal, ~17 m ScanSAR wide
 ######################################################
 mintpy.subset.lalo                   = 0:0,0:0    #[S:N,W:E / no], auto for no
 mintpy.load.autoPath                 = yes   # [yes / no], auto for no, use pre-defined auto path
@@ -39,6 +41,7 @@ mintpy.save.kmz                      = yes   #[yes / no], auto for yes, save geo
 mintpy.reference.minCoherence        = 0.7      #[0.0-1.0], auto for 0.85, minimum coherence for auto method
 mintpy.troposphericDelay.method      = auto   # pyaps  #[pyaps / height_correlation / base_trop_cor / no], auto for pyaps
 mintpy.networkInversion.minTempCoh   = 0.6 #[0.0-1.0], auto for 0.7, min temporal coherence for mask
+mintpy.deramp                        = linear  #[no / linear / quadratic], auto for no - no ramp will be removed
 ######################################################
 miaplpy.load.autoPath                 = yes   # [yes / no], auto for no, use pre-defined auto path
 miaplpy.load.processor               = isce
@@ -50,15 +53,16 @@ miaplpy.timeseries.tempCohType       = full     # [full, average], auto for full
 miaplpy.interferograms.networkType   = delaunay # network
 miaplpy.unwrap.snaphu.tileNumPixels  = 10000000000     # number of pixels in a tile, auto for 10000000
 ######################################################
+minsar.mintpyDir.addition            = date  #[name / lalo / no] auto for no (miaply_$name_startDate_endDate))
 minsar.miaplpyDir.addition           = date  #[name / lalo / no] auto for no (miaply_$name_startDate_endDate))
 miaplpy.subset.lalo                  = 0:0,0:0    #[S:N,W:E / no], auto for no
 miaplpy.load.startDate               = auto  # 20200101
 miaplpy.load.endDate                 = auto
-mintpy.geocode.laloStep              = 0.0008,0.0008
-miaplpy.timeseries.minTempCoh        = 0.75      # auto for 0.5
-mintpy.networkInversion.minTempCoh   = 0.75
+#mintpy.geocode.laloStep              = 0.0008,0.0008
+miaplpy.timeseries.minTempCoh        = 0.55      # auto for 0.5
+mintpy.networkInversion.minTempCoh   = 0.55
 ######################################################
 minsar.insarmaps_flag                = True
 minsar.upload_flag                   = True
-minsar.insarmaps_dataset             = DS,filt*DS
+minsar.insarmaps_dataset             = geo
 minsar.product.suffix                = auto
