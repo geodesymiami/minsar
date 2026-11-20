@@ -960,6 +960,11 @@
             try {
                 const u = new URL(url, baseUrl || window.location.href);
                 u.searchParams.delete('_t');
+                // The view (/start/{lat}/{lon}/{zoom}) is postMessage-synced (set-view) and compared
+                // numerically (viewsClose): drop it from the path.
+                const path = (options && options.ignoreView)
+                    ? u.pathname.replace(/\/start\/[^\/]+\/[^\/]+\/[^\/]+\/?$/, '/start')
+                    : u.pathname;
                 if (options && (options.ignoreDates || options.ignoreSelections)) {
                     u.searchParams.delete('startDate');
                     u.searchParams.delete('endDate');
@@ -1015,7 +1020,7 @@
                 }
                 const entries = [...u.searchParams.entries()].sort((a, b) => a[0].localeCompare(b[0]));
                 const qs = new URLSearchParams(entries).toString();
-                return `${u.pathname}${qs ? '?' + qs : ''}`;
+                return `${path}${qs ? '?' + qs : ''}`;
             } catch (e) {
                 return stripUrlCacheBuster(url);
             }
@@ -1033,18 +1038,47 @@
                 canonicalInsarmapsUrl(urlB, { ignoreDates: true });
         }
 
-        // Same view; dates, point, ref, color scale, and the display channel (pixelSize/
-        // opacity/contour/background) may differ — all postMessage-synced. Under custom
-        // ref, colorscale is also ignored (stripped from those URLs).
-        function insarmapsUrlsEquivalentIgnoringSelections(urlA, urlB, ignoreColorscale) {
+        // Same page (dataset, server, other options): everything the postMessage channels sync may
+        // differ — the view (set-view), dates, point, ref, colorscale (set-colorscale), color scale,
+        // and the display channel (pixelSize/opacity/contour/background). Callers that need the view
+        // or the colorscale to match compare them on their own (viewsClose, colorscaleOnIframe).
+        function insarmapsUrlsEquivalentIgnoringChannels(urlA, urlB) {
             if (!urlA || !urlB) return false;
             const opts = {
+                ignoreView: true,
                 ignoreSelections: true,
                 ignoreScale: true,
                 ignoreDisplayChannel: true,
-                ignoreColorscale: !!ignoreColorscale
+                ignoreColorscale: true
             };
             return canonicalInsarmapsUrl(urlA, opts) === canonicalInsarmapsUrl(urlB, opts);
+        }
+
+        function viewFromMapParams(params) {
+            if (!params) return null;
+            const lat = parseFloat(params.lat), lon = parseFloat(params.lon), zoom = parseFloat(params.zoom);
+            if (!isFinite(lat) || !isFinite(lon) || !isFinite(zoom)) return null;
+            return { lat, lon, zoom };
+        }
+
+        // The view in an insarmaps URL's /start/{lat}/{lon}/{zoom} path, as numbers.
+        function viewFromInsarmapsUrl(url) {
+            if (!url) return null;
+            try {
+                const m = new URL(url, baseUrl || window.location.href).pathname
+                    .match(/\/start\/([^\/]+)\/([^\/]+)\/([^\/]+)\/?$/);
+                return m ? viewFromMapParams({ lat: m[1], lon: m[2], zoom: m[3] }) : null;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function viewsClose(a, b) {
+            const va = viewFromMapParams(a), vb = viewFromMapParams(b);
+            if (!va || !vb) return false;
+            const dLon = Math.abs((((va.lon - vb.lon) % 360) + 540) % 360 - 180);
+            return Math.abs(va.lat - vb.lat) < VIEW_SAME_TOLERANCE && dLon < VIEW_SAME_TOLERANCE &&
+                Math.abs(va.zoom - vb.zoom) < VIEW_SAME_TOLERANCE;
         }
 
         // Extract lat/lon/zoom from an insarmaps URL
@@ -1146,6 +1180,22 @@
         const SET_POINT_ACK_TIMEOUT_MS = 12000;
         const SET_REF_PENDING_TIMEOUT_MS = 20000;  // no receipt/ref-applied by then -> URL reload fallback
         const SET_REF_FAILED_BACKOFF_MS = 60000;   // after a background ref-failed, reload instead of re-sending
+        // View sync (pan/zoom) to background iframes via insarmaps-set-view: a camera jump in the
+        // loaded map instead of a reload. Acked by insarmaps-set-view-applied; no ack in time ->
+        // URL reloads (server without the handler, or an iframe that stopped answering).
+        const bgAppliedView = new Map();      // index -> { lat, lon, zoom, acked } last view sent via set-view
+        let setViewSupport = 'unknown';       // 'unknown' | 'yes' | 'no' — probed by the first set-view ack
+        const setViewAckTimerByIndex = new Map(); // index -> no-ack fallback timer of the last set-view
+        const setViewNotReadyByIndex = new Map(); // index -> consecutive 'not-ready' answers (dataset still loading)
+        const setViewFallbackByIndex = new Set(); // indexes whose set-view failed: reload them at the new view
+        // The child answers at once (a synchronous camera jump), so silence means no handler; a busy
+        // iframe still answers within this.
+        const SET_VIEW_ACK_TIMEOUT_MS = 8000;
+        const SET_VIEW_NOT_READY_RETRY_MS = 1000;
+        const SET_VIEW_NOT_READY_MAX = 30;    // ~30 s of a loading dataset, then a reload
+        // insarmaps writes lat/lon/zoom with 4 decimals: views closer than one unit of the 4th
+        // decimal are the same (e.g. a log's 5-decimal coordinates and an iframe's rounding).
+        const VIEW_SAME_TOLERANCE = 0.75e-4;
         let activeDatasetIdx = 0;
         let dataFirstDate = null;
         let dataLastDate = null;
@@ -2708,10 +2758,14 @@
             const urlMatch = !!(desiredUrl && src && insarmapsUrlsEquivalent(src, desiredUrl));
             const wantRef = hasCustomRefPoint(currentMapParams);
             // Point/ref reach backgrounds via set-point/set-ref postMessages and get snapped
-            // per dataset, so URL strings never match exactly — compare the view ignoring
-            // selections (like the reconciler) and judge point/ref via channel state instead.
+            // per dataset, so URL strings never match exactly — compare the page ignoring
+            // the channels (like the reconciler) and judge point/ref via channel state instead.
+            // The view and (default ref) the colorscale must match: set-view and
+            // set-colorscale keep them current, so they are read from channel state.
             const viewMatch = !!(desiredUrl && src &&
-                insarmapsUrlsEquivalentIgnoringSelections(src, desiredUrl, wantRef));
+                insarmapsUrlsEquivalentIgnoringChannels(src, desiredUrl) &&
+                viewsClose(viewOnIframe(index), viewFromInsarmapsUrl(desiredUrl)) &&
+                (wantRef || colorscaleOnIframe(index) === effectiveColorscale(iframeParams)));
             const inFlightEntry = bgLoadInFlightEntry(index);
             const inFlight = !!inFlightEntry;
             const inFlightMatchesDesired = !!(inFlight && desiredUrl &&
@@ -3066,12 +3120,48 @@
                 clearTimeout(t);
                 setPointAckTimerByIndex.delete(index);
             }
+            forgetSetViewState(index);
+        }
+
+        // Also when an iframe is the active one: the user moves it, and its own posts record its view.
+        function forgetSetViewState(index) {
+            bgAppliedView.delete(index);
+            setViewNotReadyByIndex.delete(index);
+            setViewFallbackByIndex.delete(index);
+            const t = setViewAckTimerByIndex.get(index);
+            if (t) {
+                clearTimeout(t);
+                setViewAckTimerByIndex.delete(index);
+            }
         }
 
         // What the iframe actually shows: its own last posted URL beats the load-time src.
         function iframeEffectiveUrl(index) {
             return iframeLiveUrl.get(index) ||
                 document.getElementById(`iframe${index}`)?.src || null;
+        }
+
+        // The view an iframe shows: the last set-view it was sent, once acked (or before its ack when
+        // the server is known to handle set-view: an iframe handles messages in order, so the view is
+        // in place before anything sent later), else the view in its own URL.
+        function viewOnIframe(index) {
+            const sent = bgAppliedView.get(index);
+            if (sent && (sent.acked || setViewSupport === 'yes')) return sent;
+            return viewFromInsarmapsUrl(iframeEffectiveUrl(index));
+        }
+
+        // The colorscale an iframe shows, from its own URL: insarmaps always writes colorscale
+        // (velocity|displacement) into the URLs it posts, so after a set-colorscale its next
+        // url-update records it.
+        function colorscaleOnIframe(index) {
+            const url = iframeEffectiveUrl(index);
+            if (!url) return null;
+            try {
+                return new URL(url, baseUrl || window.location.href).searchParams.get('colorscale') ||
+                    INSARMAP_URL_DEFAULTS.colorscale;
+            } catch (e) {
+                return null;
+            }
         }
 
         function recordIframeLiveUrl(index, urlPath) {
@@ -3118,6 +3208,72 @@
                     scheduleBackgroundSync('set-point-unsupported');
                 }, SET_POINT_ACK_TIMEOUT_MS));
             }
+            return true;
+        }
+
+        // A camera jump in the loaded map (insarmaps-set-view) instead of a reload. The ack
+        // (insarmaps-set-view-applied) confirms it; without one in SET_VIEW_ACK_TIMEOUT_MS the
+        // reconciler reloads instead (every iframe while no server ever acked: no handler there).
+        function sendSetViewToIframe(index, view, reason) {
+            const iframe = document.getElementById(`iframe${index}`);
+            if (!iframe || !iframe.contentWindow) return false;
+            const msg = {
+                type: 'insarmaps-set-view',
+                lat: String(view.lat),
+                lon: String(view.lon),
+                zoom: String(view.zoom)
+            };
+            try {
+                iframe.contentWindow.postMessage(msg, '*');
+            } catch (e) {
+                return false;
+            }
+            bgAppliedView.set(index, { lat: msg.lat, lon: msg.lon, zoom: msg.zoom, acked: false });
+            console.log(`[overlay] iframe SET-VIEW ${iframeLabelForLog(index)}  reason=${reason}`, {
+                lat: msg.lat, lon: msg.lon, zoom: msg.zoom
+            });
+            const old = setViewAckTimerByIndex.get(index);
+            if (old) clearTimeout(old);
+            setViewAckTimerByIndex.set(index, setTimeout(() => {
+                setViewAckTimerByIndex.delete(index);
+                const sent = bgAppliedView.get(index);
+                if (!sent || sent.acked) return;
+                bgAppliedView.delete(index);
+                if (setViewSupport === 'unknown') {
+                    setViewSupport = 'no';
+                    console.log('[overlay] insarmaps-set-view unsupported (no ack); using reloads');
+                } else if (index !== activeDatasetIdx) {
+                    setViewFallbackByIndex.add(index);
+                    console.log(`[overlay] set-view not acked by ${iframeLabelForLog(index)}; reloading it`);
+                }
+                scheduleBackgroundSync('set-view-no-ack');
+            }, SET_VIEW_ACK_TIMEOUT_MS));
+            return true;
+        }
+
+        // View channel of the reconciler. False when it reloaded the iframe instead (server without
+        // set-view, or set-view failed on this iframe): the reload carries everything, stop there.
+        function syncViewToIframe(index, view, desiredUrl, reason) {
+            if (setViewSupport === 'no' || setViewFallbackByIndex.has(index) ||
+                !sendSetViewToIframe(index, view, reason)) {
+                loadBackgroundIframe(index, desiredUrl, `${reason}:view`);
+                return false;
+            }
+            return true;
+        }
+
+        // Fire-and-forget like scale/display (the child no-ops when unchanged). No record of what was
+        // sent: the iframe's own URL is the record (colorscaleOnIframe), so a message that reached a
+        // not-yet-ready iframe is sent again by a later reconcile.
+        function sendSetColorscaleToIframe(index, colorscale, reason) {
+            const iframe = document.getElementById(`iframe${index}`);
+            if (!iframe || !iframe.contentWindow) return false;
+            try {
+                iframe.contentWindow.postMessage({ type: 'insarmaps-set-colorscale', colorscale: colorscale }, '*');
+            } catch (e) {
+                return false;
+            }
+            console.log(`[overlay] iframe SET-COLORSCALE ${iframeLabelForLog(index)}  reason=${reason}`, { colorscale });
             return true;
         }
 
@@ -3246,8 +3402,9 @@
                 currentMapParams.lat, currentMapParams.lon, currentMapParams.zoom,
                 desiredBackgroundParams(), `ds${index}`, false, false
             );
-            if (!insarmapsUrlsEquivalentIgnoringSelections(iframeEffectiveUrl(index), desiredUrl, true)) {
-                return notQualified(`view-mismatch (have ${canonicalInsarmapsUrl(iframeEffectiveUrl(index), { ignoreSelections: true, ignoreDisplayChannel: true, ignoreColorscale: true })} want ${canonicalInsarmapsUrl(desiredUrl, { ignoreSelections: true, ignoreDisplayChannel: true, ignoreColorscale: true })})`);
+            if (!insarmapsUrlsEquivalentIgnoringChannels(iframeEffectiveUrl(index), desiredUrl) ||
+                !viewsClose(viewOnIframe(index), viewFromInsarmapsUrl(desiredUrl))) {
+                return notQualified(`view-mismatch (have ${JSON.stringify(viewOnIframe(index))} ${canonicalInsarmapsUrl(iframeEffectiveUrl(index), { ignoreView: true, ignoreSelections: true, ignoreDisplayChannel: true, ignoreColorscale: true })} want ${canonicalInsarmapsUrl(desiredUrl, { ignoreSelections: true, ignoreDisplayChannel: true, ignoreColorscale: true })})`);
             }
             if (hasTimeSeriesPoint(currentMapParams) &&
                 !pointAppliedOnIframe(index, currentMapParams)) {
@@ -3362,12 +3519,18 @@
                     return;
                 }
                 const effUrl = iframeEffectiveUrl(index);
-                // View or display params differ: only a reload can fix those.
-                if (!insarmapsUrlsEquivalentIgnoringSelections(effUrl, desiredUrl, customRef)) {
+                // Another page (dataset, server, other options): only a reload can fix that.
+                if (!insarmapsUrlsEquivalentIgnoringChannels(effUrl, desiredUrl)) {
                     loadBackgroundIframe(index, desiredUrl, reason);
                     return;
                 }
                 const sel = snapshotPointRefOnIframe(index) || {};
+                // The view the iframe shows or was last sent (a set-view still awaiting its ack is
+                // not sent again: its timer re-runs this if no ack comes).
+                const wantView = {
+                    lat: currentMapParams.lat, lon: currentMapParams.lon, zoom: currentMapParams.zoom
+                };
+                const viewStale = !viewsClose(bgAppliedView.get(index) || viewFromInsarmapsUrl(effUrl), wantView);
                 // ── Ref channel (first: dates/point must never be synced ahead of a pending ref).
                 if (customRef) {
                     // Ref identity uses refCoordsMatch (~0.002°): insarmaps snaps the ref to each
@@ -3385,8 +3548,13 @@
                                 desired.refPointLat, desired.refPointLon))) {
                             // This ref just failed on this iframe; retrying here would loop.
                             // The dataset switch falls back to the force-reload refSwitch path.
+                            // The view still follows (nothing is being picked now); a reload
+                            // would not help: the ref was already tried at the overlay's view.
+                            if (viewStale) syncViewToIframe(index, wantView, desiredUrl, reason);
                             return;
                         }
+                        // While a ref is being applied, the view waits too: insarmaps picks the
+                        // ref point among the points drawn in the current view.
                         if (refCoordsMatch(sel.refPointLat, sel.refPointLon,
                             desired.refPointLat, desired.refPointLon)) {
                             // Loaded with this ref in the URL; insarmaps is still applying it
@@ -3403,6 +3571,9 @@
                             }
                             return; // still waiting for insarmaps-ref-applied
                         }
+                        // The ref was picked in the overlay's view: move there first, so set-ref
+                        // finds it drawn (the iframe handles the two messages in this order).
+                        if (viewStale && !syncViewToIframe(index, wantView, desiredUrl, reason)) return;
                         sendSetRefToIframe(index, desired.refPointLat, desired.refPointLon);
                         return;
                     }
@@ -3411,6 +3582,9 @@
                     loadBackgroundIframe(index, desiredUrl, `${reason}:ref-cleared`);
                     return;
                 }
+                // ── View channel: a pan/zoom of the active iframe is a camera jump here, not a
+                // reload. Before the point channel: set-point picks among the points drawn in view.
+                if (viewStale && !syncViewToIframe(index, wantView, desiredUrl, reason)) return;
                 // ── Point channel.
                 const wantPoint = (desired.pointLat && desired.pointLon)
                     ? { pointLat: desired.pointLat, pointLon: desired.pointLon } : null;
@@ -3437,6 +3611,16 @@
                     // Point deselected: insarmaps has no unselect API — reload for cleanliness.
                     loadBackgroundIframe(index, desiredUrl, `${reason}:point-cleared`);
                     return;
+                }
+                // ── Colorscale channel (default ref; custom-ref URLs carry no colorscale and switches
+                // re-broadcast it): velocity/displacement is an in-page recolor, not a reload. Before
+                // the scale channel: insarmaps rescales its limits when the colorscale changes, and
+                // the scale message then sets the overlay's.
+                if (!customRef) {
+                    const wantColorscale = effectiveColorscale(desired);
+                    if (colorscaleOnIframe(index) !== wantColorscale) {
+                        sendSetColorscaleToIframe(index, wantColorscale, reason);
+                    }
                 }
                 // ── Scale channel. minScale/maxScale/autoColorScale are ignored by the URL
                 // compare above (per-dataset flavors: permissible-value rounding, displacement
@@ -4468,6 +4652,40 @@
                         }
                         return;
                     }
+                    if (event.data.type === 'insarmaps-set-view-applied') {
+                        const ackIndex = iframeIndexForMessageSource(event.source);
+                        if (ackIndex >= 0) {
+                            setViewSupport = 'yes';
+                            const sent = bgAppliedView.get(ackIndex);
+                            // Only the answer to the latest set-view counts.
+                            if (sent && !sent.acked && viewsClose(sent, event.data)) {
+                                const ackTimer = setViewAckTimerByIndex.get(ackIndex);
+                                if (ackTimer) {
+                                    clearTimeout(ackTimer);
+                                    setViewAckTimerByIndex.delete(ackIndex);
+                                }
+                                const ackOk = event.data.ok !== false;
+                                console.log(`[overlay] set-view ack ${iframeLabelForLog(ackIndex)}  ok=${ackOk}` +
+                                    (ackOk ? '' : `  reason=${event.data.reason || 'unknown'}`));
+                                if (ackOk) {
+                                    sent.acked = true;
+                                    setViewNotReadyByIndex.delete(ackIndex);
+                                } else {
+                                    bgAppliedView.delete(ackIndex);
+                                    const notReady = (setViewNotReadyByIndex.get(ackIndex) || 0) + 1;
+                                    if (event.data.reason === 'not-ready' && notReady <= SET_VIEW_NOT_READY_MAX) {
+                                        // Its dataset is still loading: send again shortly.
+                                        setViewNotReadyByIndex.set(ackIndex, notReady);
+                                        scheduleBackgroundSync('set-view-retry', { delayMs: SET_VIEW_NOT_READY_RETRY_MS });
+                                    } else {
+                                        setViewFallbackByIndex.add(ackIndex);
+                                        scheduleBackgroundSync('set-view-fallback');
+                                    }
+                                }
+                            }
+                        }
+                        return;
+                    }
                     if (event.data.type === 'insarmaps-set-ref-received') {
                         const recIndex = iframeIndexForMessageSource(event.source);
                         if (recIndex >= 0) {
@@ -4627,7 +4845,12 @@
                     }
                     // Track the live URL of every dataset iframe (before any cooldown returns):
                     // this is the state the iframe actually shows, unlike its load-time src.
-                    recordIframeLiveUrl(iframeIndexForMessageSource(event.source), event.data.url);
+                    const liveUrlIndex = iframeIndexForMessageSource(event.source);
+                    recordIframeLiveUrl(liveUrlIndex, event.data.url);
+                    // The user moves the active iframe: its own posts are the record of its view.
+                    if (liveUrlIndex >= 0 && liveUrlIndex === activeDatasetIdx) {
+                        forgetSetViewState(liveUrlIndex);
+                    }
                     
                     // Check if message is from the active iframe
                     // In Time Controls mode, the visible period iframe is the active one
@@ -4862,6 +5085,12 @@
                                 refPointLon = currentMapParams.refPointLon;
                             }
                         }
+                        // The view too: a background echoes the set-view it was sent or, still
+                        // booting, the view it was loaded with — never a new view for the overlay.
+                        const keepView = !senderIsActive && !!currentMapParams.lat;
+                        const viewLat = keepView ? currentMapParams.lat : lat;
+                        const viewLon = keepView ? currentMapParams.lon : lon;
+                        const viewZoom = keepView ? currentMapParams.zoom : zoom;
                         if (getPointKey({ pointLat, pointLon }) !==
                             getPointKey({ pointLat: currentMapParams.pointLat, pointLon: currentMapParams.pointLon })) {
                             console.log('[overlay] point selection CHANGED (url-update-debounced)', {
@@ -4928,7 +5157,7 @@
                         const opacity = params.get('opacity') ?? currentMapParams.opacity;
                         const prevContourNorm = normalizeContourValue(currentMapParams.contour);
                         let incomingParams = {
-                            lat, lon, zoom,
+                            lat: viewLat, lon: viewLon, zoom: viewZoom,
                             autoColorScale: pinnedScaleState.autoColorScale,
                             minScale: pinnedScaleState.minScale,
                             maxScale: pinnedScaleState.maxScale,
@@ -4972,9 +5201,9 @@
                         // Detect display-param change (lat, lon, zoom, minScale, maxScale, etc.) so we can reload ALL period iframes
                         // Includes lat/lon/zoom so map view changes override the period sync cooldown
                         const displayParamsChanged = (
-                            lat !== currentMapParams.lat ||
-                            lon !== currentMapParams.lon ||
-                            zoom !== currentMapParams.zoom ||
+                            viewLat !== currentMapParams.lat ||
+                            viewLon !== currentMapParams.lon ||
+                            viewZoom !== currentMapParams.zoom ||
                             pinnedScaleState.autoColorScale !== (currentMapParams.autoColorScale ?? 'true') ||
                             pinnedScaleState.minScale !== currentMapParams.minScale ||
                             pinnedScaleState.maxScale !== currentMapParams.maxScale ||

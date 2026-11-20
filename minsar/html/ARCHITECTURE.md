@@ -1,6 +1,6 @@
 # overlay.html Architecture Documentation
 
-**Last updated:** 2026-07-02 (background pre-warm replaced by single reconciler; see §8)
+**Last updated:** 2026-11-20 (pan/zoom and colorscale reach background iframes by postMessage, not reloads; see §8)
 
 ## Overview
 
@@ -39,8 +39,8 @@ The overlay page is served from the **data server** (e.g. `http://149.165.154.65
 
 | Mechanism | When used | What it can set |
 |-----------|-----------|-----------------|
-| **URL reload** (`iframe.src = buildInsarmapsUrl(...)`) | Background warm, dataset switch, pan/zoom/scale sync to other iframes | Everything insarmaps reads from URL: view, scales, dates, point, ref, pixelSize, contour, colorscale |
-| **postMessage** | Contours, narrowed dates after custom-ref switch, ref-applied ack, chart dot clicks | Only what insarmaps explicitly handles in `mainPage.js` listeners |
+| **URL reload** (`iframe.src = buildInsarmapsUrl(...)`) | Background first load, dataset switch to a stale target, fallback when insarmaps does not answer a postMessage (older server) | Everything insarmaps reads from URL: view, scales, dates, point, ref, pixelSize, contour, colorscale |
+| **postMessage** | Background sync of view (pan/zoom), colorscale, scale, display, dates, point and ref (§8); acks; chart dot clicks | Only what insarmaps explicitly handles in `mainPage.js` listeners |
 
 **Critical rule:** The overlay **cannot** call `iframe.contentWindow.myMap...` (cross-origin `SecurityError`). All in-iframe control after load must go through **postMessage** or a **new URL reload**.
 
@@ -141,6 +141,9 @@ Latest debug-table example (from this debugging session):
 | `bgAppliedDates` | index → `{ startDate, endDate }` last applied to that iframe via `insarmaps-set-dates` (cleared on any reload of that iframe) |
 | `bgAppliedScale` | index → `{ autoColorScale, minScale, maxScale }` last sent via `insarmaps-set-auto-color-scale` (cleared on reload). Scale params are ignored in URL staleness compares; changes propagate as a repaint postMessage, never a reload |
 | `bgAppliedDisplay` | index → `{ pixelSize, opacity, contour, background }` last sent via `insarmaps-set-pixelSize`/`-opacity`/`-contour`/`-background` (cleared on reload). Same rule as scale: ignored in URL compares, synced by in-page postMessages |
+| `bgAppliedView` | index → `{ lat, lon, zoom, acked }` last view sent via `insarmaps-set-view` (cleared on reload, and for the active iframe on each of its own posts: the user moves it). The view is ignored in URL compares and compared numerically (`viewsClose`, one unit of insarmaps' 4th decimal) |
+| `setViewSupport` | `'unknown'` → `'yes'` on the first `insarmaps-set-view-applied` ack, `'no'` when the first set-view gets none within `SET_VIEW_ACK_TIMEOUT_MS` (8 s): an insarmaps server without the handler, so views sync by reloads again. Per iframe, `setViewNotReadyByIndex` counts `not-ready` answers (retried every second, up to 30) and `setViewFallbackByIndex` marks iframes to reload |
+| (colorscale) | No record of what was sent: the colorscale an iframe shows is read from its own URL (`colorscaleOnIframe`; insarmaps always writes `colorscale=` into the URLs it posts) |
 | `pendingDateSyncByIndex` | Awaiting `insarmaps-set-dates-applied` ack for narrowed dates |
 | `refAppliedForDateSyncByIndex` | Custom ref confirmed on iframe; gates date postMessage |
 | `activeSwitchTracking` | Per-switch debug outcome: refOk, datesOk (see §12) |
@@ -154,6 +157,9 @@ applied via postMessage:
 ```javascript
 insarmapsUrlsEquivalent(a, b)               // canonical compare (sorted params, _t stripped, contour normalized)
 insarmapsUrlsEquivalentIgnoringDates(a, b)  // same but ignoring startDate/endDate (set-dates fast path)
+insarmapsUrlsEquivalentIgnoringChannels(a, b) // same page: ignores the view and everything the postMessage channels sync
+viewsClose(a, b) / viewOnIframe(index)      // the view, compared numerically; last set-view (acked) or the URL's
+colorscaleOnIframe(index)                   // colorscale from the iframe's own URL
 getSyncKey(params)                          // still used for lastSyncedKey message dedup only
 getPointKey(params)                         // pointLat/Lon + refPointLat/Lon only
 ```
@@ -260,8 +266,10 @@ Done: Asc has custom ref + narrowed period
 | `insarmaps-set-background` (2026-07) | `{ value: 'streets'\|'satellite'\|'hillshade' }` — in-page basemap swap, insar layers carried over; no-op when unchanged | `mainPage.js` → `switchLayer({ target: { id } })` |
 | `insarmaps-set-point` (2026-07) | `{ pointLat, pointLon }` — apply time-series point on the loaded map, no reload. Ack: `insarmaps-set-point-applied` `{ ok, reason }` (`not-ready` → overlay retries; no ack → overlay marks server unsupported and falls back to URL reloads) | `mainPage.js` → `mainMap.applyOverlayPointSelection(lat, lon, false)` |
 | `insarmaps-set-ref` (2026-07) | `{ refPointLat, refPointLon }` — apply custom ref on the loaded map (warm tiles, so more reliable than load-time URL ref). Receipt: `insarmaps-set-ref-received`; outcome via existing `insarmaps-ref-applied` / `insarmaps-ref-failed`. No receipt within 20s → overlay falls back to a URL reload | `mainPage.js` → `mainMap.applyOverlayPointSelection(lat, lon, true)` |
+| `insarmaps-set-view` (2026-11) | `{ lat, lon, zoom }` — the `/start/` path's values: move the loaded map there (camera jump, no reload). Ack: `insarmaps-set-view-applied` `{ lat, lon, zoom, ok, reason }` (`not-ready` while the dataset load has not started → overlay retries every second; no ack within 8 s → overlay marks the server unsupported, or that iframe unresponsive, and reloads at the new view) | `mainPage.js` → `mainMap.applyOverlayView(lat, lon, zoom)` (ends in `afterDoneMoving` like a user's pan: address + `insarmaps-url-update`; zoom-out limit set as a load at that zoom would) |
+| `insarmaps-set-colorscale` | `{ colorscale: 'velocity'\|'displacement' }` — recolor in place; no-op when unchanged; no ack (the iframe's next `insarmaps-url-update` carries `colorscale=`) | `mainPage.js` → `colorDatasetOnVelocity` / `colorDatasetOnDisplacement` |
 
-Point and ref also still load via the **iframe URL** (initial warm loads and all fallbacks).
+Point, ref and view also still load via the **iframe URL** (initial warm loads and all fallbacks).
 
 ---
 
@@ -323,14 +331,20 @@ reconcileBackgroundIframes(reason)      // idempotent
      desiredUrl = buildInsarmapsUrl(desiredBackgroundParams())
      1. in-flight load already = desiredUrl        → leave it
      2. in-flight load stale                       → restart with desiredUrl
-     3. view/display differ (URL compare ignoring
-        dates+point+ref+minScale/maxScale/autoColorScale
-        +pixelSize+opacity, and colorscale/contours
-        under custom ref)                          → reload with desiredUrl
-     4. otherwise, five postMessage channels:
+     3. another page (URL compare ignoring the view
+        and everything the channels below sync)    → reload with desiredUrl
+     4. otherwise, seven postMessage channels:
         ref     — set-ref → wait insarmaps-ref-applied → complete recolor + dates
                   (completeBackgroundRefWarm); tracked in bgRefAppliedByIndex
+        view    — set-view (ack insarmaps-set-view-applied; no ack in 8 s or repeated
+                  not-ready → reload); tracked in bgAppliedView, compared with viewsClose.
+                  Waits while a ref is being applied (insarmaps picks the ref point among
+                  the points drawn in view); sent before set-ref/set-point otherwise, and
+                  also while a failed ref backs off (no reload: it was tried at this view)
         point   — set-point (ack insarmaps-set-point-applied); tracked in bgAppliedPoint
+        colorscale — set-colorscale (default ref only; fire-and-forget, the child no-ops
+                  when unchanged); the iframe's own URL is the record. Before scale:
+                  insarmaps rescales its limits when the colorscale changes
         scale   — set-auto-color-scale (fire-and-forget; child no-ops when unchanged);
                   tracked in bgAppliedScale; scaleStatesClose (2% relative) absorbs
                   per-dataset flavors (permissible rounding, displacement yearsDiff)
@@ -343,9 +357,11 @@ reconcileBackgroundIframes(reason)      // idempotent
    each onload → reconcile again (chases state changed during the load)
 ```
 
-Channel ordering invariant: while a ref is pending on an iframe, no scale/display/dates/
-point messages are sent to it (`insarmaps-set-dates` before ref breaks the recolor — §19).
-Ref/point/dates degrade gracefully to URL reloads on servers without the 2026-07 insarmaps
+Channel ordering invariant: while a ref is pending on an iframe, no view/scale/display/dates/
+point messages are sent to it (`insarmaps-set-dates` before ref breaks the recolor — §19; a
+camera move can take the ref point out of view while insarmaps picks it). A set-ref that is
+about to be sent goes right after a set-view: the ref was picked in the overlay's view.
+Ref/point/dates/view degrade gracefully to URL reloads on servers without the insarmaps
 handlers; scale and display have no acks, but dataset switches re-broadcast them
 (`broadcastMapDisplayStateAfterSwitch` / `broadcastDisplayChannelToIframe`), so a lost
 send self-heals at the next switch.
@@ -365,6 +381,13 @@ Key properties:
 - **Date-only changes never reload.** Slider/period changes propagate to backgrounds via
   `insarmaps-set-dates` postMessage (insarmaps snaps per dataset). `bgAppliedDates` records
   what was sent so the reconciler and switch path know dates are already applied.
+- **Pan/zoom and velocity/displacement never reload** (on insarmaps servers that answer
+  `insarmaps-set-view`). Before 2026-11 the URL compare kept the `/start/lat/lon/zoom` path, so
+  every pan or zoom of the active iframe reloaded every background (several times per drag:
+  with auto color scale the active iframe posts its URL after each store round), and under the
+  default ref so did a colorscale switch. Views are compared numerically, so a log's
+  5-decimal coordinates no longer reload the backgrounds a second time at boot when the active
+  iframe echoes them with 4.
 - **Deferrals instead of skips.** During `switchOpInFlight` the reconciler reschedules
   itself (`BG_SYNC_RETRY_AFTER_SWITCH_MS`) instead of dropping the work; during Time
   Controls it stays off (TC owns the period iframes; `restoreToBaselineState` reconciles
@@ -384,7 +407,7 @@ Key properties:
 | Target state | Action | Path |
 |---|---|---|
 | Preload with current params in flight | reveal when it loads (+ set-dates after load) | `await-preload` |
-| View matches (URL ignoring selections+dates), ref state OK, dates applied | nothing — instant show/hide | `skip-synced` |
+| View matches (page by URL ignoring the channels; view via `viewOnIframe`; default-ref colorscale via `colorscaleOnIframe`), ref state OK, dates applied | nothing — instant show/hide | `skip-synced` |
 | View + ref OK, dates differ | `insarmaps-set-dates` postMessage | `set-dates` |
 | Anything else (view/display changed, or stale custom ref) | full reload | `crossDataset-reload` |
 
@@ -429,6 +452,12 @@ When the **active** iframe changes pan/zoom/scales/dates:
 
 **Cooldown:** Non-active iframe messages ignored for 3s after a sync (`SYNC_COOLDOWN_MS`). Active iframe bypasses cooldown.
 
+**Only the active iframe moves the view:** a background's `insarmaps-url-update` never changes
+`currentMapParams.lat/lon/zoom` (like point, ref and scale). Backgrounds post after every
+`insarmaps-set-view` (an echo of the overlay's view), and one still booting posts the view it was
+loaded with: processed as user intent, that would move every background (and the next dataset
+switch) back to an older view.
+
 **Per-post trust (settled handshake — replaced the 3s switch-suppress window):** every
 `insarmaps-url-update` carries `settled` — `false` while the child document is still booting
 (dataset loading, starting URL params being applied; latch set in `loadDatasetFromFeature`'s
@@ -456,7 +485,7 @@ When switching Desc ↔ Asc ↔ Horz ↔ Vert, these should persist:
 
 | State | How it transfers | Common failure |
 |-------|------------------|----------------|
-| Map view (lat/lon/zoom) | In reload URL | Usually OK |
+| Map view (lat/lon/zoom) | `insarmaps-set-view` keeps backgrounds at the overlay's view; reload URL on first load and fallback | Usually OK |
 | minScale / maxScale | In reload URL | Usually OK |
 | **Custom ref** (`refPointLat`/`refPointLon`) | `refSwitch` URL + insarmaps ref recolor | Marker shows but **data not re-referenced** if dates/colorscale race ref |
 | **Time-series point** (`pointLat`/`pointLon`) | In reload URL | Lost if `mapParamsForIframeLoad` strips point |
@@ -550,6 +579,7 @@ Overlay alone is insufficient for custom ref + narrowed dates. Insarmaps must pr
 | `insarmaps-ref-failed` postMessage | `mainMap.js` | When URL ref apply exhausts retries. |
 | `applyOverlayPointSelection(lat, lon, isRef, cb)` (2026-07) | `mainMap.js` | Synthetic click on the loaded map for `insarmaps-set-point` / `insarmaps-set-ref`. |
 | `insarmaps-set-point` / `insarmaps-set-ref` handlers (2026-07) | `mainPage.js` | Point/ref sync without reload; acks `insarmaps-set-point-applied` / `insarmaps-set-ref-received`. |
+| `insarmaps-set-view` handler, `applyOverlayView(lat, lon, zoom)` (2026-11) | `mainPage.js`, `mainMap.js` | View sync without reload; acks `insarmaps-set-view-applied`. Older servers never ack: the overlay then reloads, as before. |
 
 Deploy overlay to **data server**; deploy insarmaps JS to **insarmaps server** (different hosts).
 
@@ -678,7 +708,9 @@ Pure UI toggle for registering start/end dates from chart dot clicks. No reload 
 
 | User action | Overlay response | Iframes reloaded? |
 |-------------|------------------|-----------------|
-| Pan/zoom/scales/background/opacity/contour/pixelSize | reconciler (250ms) → reload **other** datasets | Others only |
+| Pan/zoom | reconciler (250ms) → `insarmaps-set-view` to **other** datasets | None (reload only as fallback: insarmaps without set-view) |
+| Velocity/displacement (default ref) | reconciler → `insarmaps-set-colorscale` to others | None |
+| Scales/background/opacity/contour/pixelSize | reconciler → `insarmaps-set-auto-color-scale` / display-channel postMessages | None |
 | Period slider / chart period change (default ref) | reconciler → `insarmaps-set-dates` postMessage to others | None |
 | Dataset switch, **no custom ref** | Show/hide; §8 table (`skip-synced` / `set-dates` / `await-preload` / reload) | Target only if stale |
 | Dataset switch, **custom ref**, target ref-warmed | `ref-warm-fast`: reveal + `set-dates` postMessage | None |
@@ -712,6 +744,9 @@ Pure UI toggle for registering start/end dates from chart dot clicks. No reload 
 | `shouldReassertAfterDateReject()` | Guard against reassert feedback loops |
 | `beginSwitchTracking()` / `logSwitchOutcomePart()` | Debug switch tables |
 | `insarmapsUrlsEquivalent()` / `insarmapsUrlsEquivalentIgnoringDates()` | Staleness detection (canonical URL compare) |
+| `insarmapsUrlsEquivalentIgnoringChannels()` | Same page (dataset/options) ignoring the view and every postMessage channel |
+| `syncViewToIframe()` / `sendSetViewToIframe()` | View channel: set-view with ack timer, or reload when unsupported/failed |
+| `viewsClose()` / `viewOnIframe()` / `colorscaleOnIframe()` | View and colorscale an iframe shows, for the reconciler and the switch path |
 
 ---
 
@@ -909,7 +944,7 @@ If rebuilding from scratch with a new implementation:
 
 1. **One iframe per dataset**; a single reconciler keeps backgrounds converged to `currentMapParams` (§8) — no per-reason warm scheduling.
 2. **Single `currentMapParams` object** plus explicit `userNarrowedDateRange` for narrowed-period semantics.
-3. **Two sync channels:** URL reload for bulk state; postMessage for contour + dates-after-ref only.
+3. **Two sync channels:** URL reload for the first load and as the fallback; postMessage for everything a loaded map can change in place (view, colorscale, scale, display, dates, point, ref).
 4. **Custom ref switch = two phases:** ref URL without dates → wait `insarmaps-ref-applied` → `insarmaps-set-dates`.
 5. **Never put dates + custom ref in the same refSwitch URL** when period is narrowed.
 6. **Strip `colorscale` on cross-dataset loads** when custom ref is set.
