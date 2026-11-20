@@ -58,6 +58,30 @@ def uncompress_walltime_for(n_files, jobs):
         return '23:59'
     return f'{hours}:{mins:02d}'
 
+def _walltime_seconds(walltime):
+    """HH:MM or HH:MM:SS to seconds. Two fields are hours and minutes."""
+    parts = [int(part) for part in str(walltime).split(':')]
+    if len(parts) == 2:
+        parts.append(0)
+    hours, minutes, seconds = parts[0], parts[1], parts[2]
+    return hours * 3600 + minutes * 60 + seconds
+
+def fit_uncompress_submission(walltime, queue):
+    """Keep walltime inside the queue limit so sbatch accepts the job."""
+    if not queue:
+        return walltime, queue
+    platform = os.environ.get('PLATFORM_NAME', 'stampede3')
+    params = putils.get_queue_rerun_params(platform, queue)
+    needed = _walltime_seconds(walltime)
+    limit = putils.walltime_to_seconds(params['MAX_WALLTIME'])
+    if needed <= limit:
+        return walltime, queue
+    hours = limit // 3600
+    minutes = (limit % 3600) // 60
+    capped = f'{hours}:{minutes:02d}'
+    print(f"Uncompress walltime {walltime} exceeds {queue} limit {params['MAX_WALLTIME']}; using {capped}")
+    return capped, queue
+
 def cmd_line_parse(iargs=None):
     parser = create_parser()
     inps = parser.parse_args(args=iargs)
@@ -98,6 +122,10 @@ def main(iargs=None):
         inps.wall_time = inps.uncompress_wall_time
     else:
         inps.wall_time = uncompress_walltime_for(len(sensorsObj.file_list), inps.jobs)
+    queue = getattr(inps, 'queue', None) or os.environ.get('QUEUENAME')
+    inps.wall_time, queue = fit_uncompress_submission(inps.wall_time, queue)
+    if queue:
+        inps.queue = queue
     print(f"Uncompress walltime: {inps.wall_time}  jobs: {inps.jobs}  archives: {len(sensorsObj.file_list)}")
     
     job_obj = JOB_SUBMIT(inps)

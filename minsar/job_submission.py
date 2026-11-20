@@ -366,7 +366,13 @@ class JOB_SUBMIT:
                 print(f"Queue {self.queue} is full ({num_active_jobs}/{self.max_submit} jobs). Waiting 30 seconds...")
                 time.sleep(30)
 
-        output_job = subprocess.check_output(command, stderr=subprocess.STDOUT, shell=True)
+        try:
+            output_job = subprocess.check_output(command, stderr=subprocess.STDOUT, shell=True)
+        except subprocess.CalledProcessError as exc:
+            detail = exc.output.decode('utf-8', errors='replace').strip()
+            if detail:
+                print(detail, file=sys.stderr)
+            raise
 
         if job_num_exists:
             # job_number = re.findall('\d+', output_job.decode("utf-8"))
