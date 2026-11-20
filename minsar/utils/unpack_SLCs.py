@@ -12,14 +12,12 @@ Unpacks SLC files into SLC directory using a two-stage approach:
 import os
 import sys
 import glob
-import math
 import shutil
 import argparse
 from pathlib import Path
 from minsar.objects import message_rsmas
 from minsar.objects.unpack_sensors import Sensors
 from minsar.utils.stack_run import CreateRun
-import minsar.utils.process_utilities as putils
 from minsar.job_submission import JOB_SUBMIT
 
 ##############################################################################
@@ -42,45 +40,10 @@ def create_parser():
     parser.add_argument("--queue", dest="queue", metavar="QUEUE", help="Name of queue to submit job to")
     parser.add_argument('--jobfiles', dest='write_jobs', action='store_true', help='writes the jobs corresponding to run files')
     parser.add_argument('--jobs', dest='jobs', type=int, default=5, metavar='N', help='simultaneous archives to uncompress (default: 5)')
-    parser.add_argument('--uncompress-walltime', dest='uncompress_wall_time', metavar='WALLTIME (HH:MM)', default=None,
-                        help='uncompress walltime (default: 15 min per wave of --jobs, 30 min floor)')
+    parser.add_argument('--uncompress-walltime', dest='uncompress_wall_time', metavar='WALLTIME (HH:MM)', default=None, help='uncompress walltime (default: 02:00)')
     parser.add_argument('--unpack-walltime', dest='unpack_wall_time', metavar="WALLTIME (HH:MM)", default='1:00', help='walltime for unpackFrame stage (default=1:00)')
     parser.add_argument('--alos-stack', action='store_true', help='Prepare ALOS-2 L1.1 archives for ISCE2 alosStack')
     return parser
-
-def uncompress_walltime_for(n_files, jobs):
-    """15 minutes per wave of `jobs`, with a 30 minute floor. Cap at 23:59 (strptime %H)."""
-    jobs = max(int(jobs), 1)
-    waves = math.ceil(n_files / jobs) if n_files else 1
-    minutes = max(30, 15 * waves)
-    hours, mins = divmod(minutes, 60)
-    if hours > 23:
-        return '23:59'
-    return f'{hours}:{mins:02d}'
-
-def _walltime_seconds(walltime):
-    """HH:MM or HH:MM:SS to seconds. Two fields are hours and minutes."""
-    parts = [int(part) for part in str(walltime).split(':')]
-    if len(parts) == 2:
-        parts.append(0)
-    hours, minutes, seconds = parts[0], parts[1], parts[2]
-    return hours * 3600 + minutes * 60 + seconds
-
-def fit_uncompress_submission(walltime, queue):
-    """Keep walltime inside the queue limit so sbatch accepts the job."""
-    if not queue:
-        return walltime, queue
-    platform = os.environ.get('PLATFORM_NAME', 'stampede3')
-    params = putils.get_queue_rerun_params(platform, queue)
-    needed = _walltime_seconds(walltime)
-    limit = putils.walltime_to_seconds(params['MAX_WALLTIME'])
-    if needed <= limit:
-        return walltime, queue
-    hours = limit // 3600
-    minutes = (limit % 3600) // 60
-    capped = f'{hours}:{minutes:02d}'
-    print(f"Uncompress walltime {walltime} exceeds {queue} limit {params['MAX_WALLTIME']}; using {capped}")
-    return capped, queue
 
 def cmd_line_parse(iargs=None):
     parser = create_parser()
@@ -120,13 +83,7 @@ def main(iargs=None):
     inps.custom_template_file = None
     if inps.uncompress_wall_time:
         inps.wall_time = inps.uncompress_wall_time
-    else:
-        inps.wall_time = uncompress_walltime_for(len(sensorsObj.file_list), inps.jobs)
-    queue = getattr(inps, 'queue', None) or os.environ.get('QUEUENAME')
-    inps.wall_time, queue = fit_uncompress_submission(inps.wall_time, queue)
-    if queue:
-        inps.queue = queue
-    print(f"Uncompress walltime: {inps.wall_time}  jobs: {inps.jobs}  archives: {len(sensorsObj.file_list)}")
+    print(f"Uncompress jobs: {inps.jobs}  archives: {len(sensorsObj.file_list)}")
     
     job_obj = JOB_SUBMIT(inps)
     print(f"\nSubmitting uncompress_rename job...")
