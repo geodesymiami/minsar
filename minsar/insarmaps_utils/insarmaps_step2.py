@@ -131,8 +131,9 @@ def ingest_step2_rsync_and_remote_ingest(insarmaps_host, local_json_dir, local_m
     print("####################################")
     print(f"Uploading JSON dir to {target}:{remote_json_dir}/ (rsh: {rsh})")
     run_command(rsh_parts + [target, f"mkdir -p {shlex.quote(remote_json_dir)}"])
+    # --delete: the staging folder holds exactly this JSON/, also when an earlier attempt failed and left one behind
     run_command([
-        "rsync", "-avzh", "--progress", "--exclude=*.mbtiles",
+        "rsync", "-avzh", "--progress", "--delete", "--exclude=*.mbtiles",
         "-e", rsh,
         f"{local_json_dir}/",
         f"{target}:{remote_json_dir}/",
