@@ -13,8 +13,8 @@ import platform
 from datetime import date
 
 import sys
-sys.path.insert(0, os.getenv("SSARAHOME"))
-import password_config as password
+
+from insarmaps_step2 import ingest_step2_rsync_and_remote_ingest, insarmaps_host_list
 
 
 REQUIRED_COLS = {"X", "Y"}
@@ -25,7 +25,9 @@ def parse_args():
     parser.add_argument("--output-dir", type=str, default="outputs/", help="Directory to write outputs.")
     parser.add_argument("--drop-duplicates", action="store_true", help="Drop duplicates based on (X, Y).")
     parser.add_argument("--suffix", type=str, default=None, help="Suffix for final CSV filename (default: input folder name).")
-    parser.add_argument("--insarmaps-host", type=str, default=os.environ.get("INSARMAPS_HOST", "insarmaps.miami.edu"), help="Insarmaps host")
+    parser.add_argument("--insarmaps-host", type=str,
+                        default=os.environ.get("INSARMAPS_HOST") or os.environ.get("INSARMAPSHOST_OLDDATA", "insarmaps.miami.edu"),
+                        help="Insarmaps host, or comma-separated hosts (default: INSARMAPS_HOST, else INSARMAPSHOST_OLDDATA)")
     parser.add_argument("--skip-upload", action="store_true", help="Skip Insarmaps upload step")
     return parser.parse_args()
 
@@ -112,31 +114,26 @@ def run_command(cmd, cwd=None):
     subprocess.run(cmd, check=True, cwd=cwd)
 
 def ingest_to_insarmaps(csv_path, output_dir, insarmaps_host, skip_upload):
-    json_dir = Path(output_dir) / "JSON"
+    output_dir = Path(output_dir).resolve()
+    json_dir = output_dir / "JSON"
     json_dir.mkdir(parents=True, exist_ok=True)
-    mbtiles_path = json_dir / csv_path.with_suffix(".mbtiles").name
 
     run_command(["hdfeos5_or_csv_2json_mbtiles.py", str(csv_path), str(json_dir)])
 
+    hosts = insarmaps_host_list(insarmaps_host)
     if not skip_upload:
-        run_command([
-            "json_mbtiles2insarmaps.py",
-            "--num-workers", "3",
-            "-u", password.docker_insaruser,
-            "-p", password.docker_insarpass,
-            "--host", insarmaps_host,
-            "-P", password.docker_databasepass,
-            "-U", password.docker_databaseuser,
-            "--json_folder", str(json_dir),
-            "--mbtiles_file", str(mbtiles_path)
-        ])
+        # step 2, as ingest_insarmaps.bash does it: rsync JSON/ to each host (output_dir must lie under $SCRATCHDIR)
+        # and run json_mbtiles2insarmaps.py there, which loads the dataset and builds its recolor store
+        for host in hosts:
+            ingest_step2_rsync_and_remote_ingest(host, json_dir, data_dir=output_dir)
 
     #print Insarmaps URL
     df = pd.read_csv(csv_path)
     lat = df["Y"].mean()
     lon = df["X"].mean()
     dataset_name = csv_path.stem
-    print(f"[INFO] View in Insarmaps: http://{insarmaps_host}/start/{lat:.4f}/{lon:.4f}/11.0?startDataset={dataset_name}")
+    for host in hosts:
+        print(f"[INFO] View in Insarmaps: http://{host}/start/{lat:.4f}/{lon:.4f}/11.0?startDataset={dataset_name}")
 
 
 def main():

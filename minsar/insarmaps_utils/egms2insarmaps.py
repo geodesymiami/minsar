@@ -3,7 +3,8 @@
 Ingest EGMS L2a CSV (+ optional companion XML) into Insarmaps.
 
 Pipeline:
-  EGMS CSV → hdfeos5_or_csv_2json_mbtiles.py → patch metadata.pickle → json_mbtiles2insarmaps.py
+  EGMS CSV → hdfeos5_or_csv_2json_mbtiles.py → patch metadata.pickle → step 2 (insarmaps_step2.py: rsync JSON/ to
+  the Insarmaps host and run json_mbtiles2insarmaps.py there, which loads the dataset and builds its recolor store)
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from pathlib import Path
 
 from egms_metadata import build_egms_attributes
 from insarmaps_csv_geo import csv_mean_lat_lon
+from insarmaps_step2 import ingest_step2_rsync_and_remote_ingest
 
 UTILS_DIR = Path(__file__).resolve().parents[1] / "utils"
 if str(UTILS_DIR) not in sys.path:
@@ -28,12 +30,6 @@ from reference_point_egms import (  # noqa: E402
     parse_ref_lalo,
     reference_point_egms,
 )
-
-sys.path.insert(0, os.getenv("SSARAHOME") or "")
-try:
-    import password_config as password
-except ImportError:
-    password = None
 
 
 def create_parser():
@@ -189,19 +185,6 @@ def resolve_insarmaps_hosts(csv_path: Path, cli_host: str | None = None) -> list
 def insarmaps_url_protocol(host: str) -> str:
     """https for insarmaps.miami.edu, http for other hosts (ingest_insarmaps.bash)."""
     return "https" if "insarmaps.miami.edu" in host else "http"
-
-
-def find_mbtiles(output_dir: Path, csv_stem: str) -> Path:
-    mbtiles_path = output_dir / f"{csv_stem}.mbtiles"
-    if mbtiles_path.is_file():
-        return mbtiles_path
-    candidates = sorted(output_dir.glob("*.mbtiles"))
-    if candidates:
-        print(f"[INFO] Using mbtiles: {candidates[0].name}")
-        return candidates[0]
-    raise FileNotFoundError(
-        f"No .mbtiles found under {output_dir} (run --step 1 / --hdfeos5_2json_mbtiles first)"
-    )
 
 
 SCRIPT_NAME = Path(__file__).name
@@ -429,7 +412,6 @@ def main(argv=None):
         )
         patch_metadata_pickle(output_dir, egms_attrs)
 
-    mbtiles_path = find_mbtiles(output_dir, csv_path.stem)
     if not (output_dir / "metadata.pickle").is_file() and ingest_step == "step2":
         raise FileNotFoundError(
             f"metadata.pickle missing (run --step 1 first): {output_dir / 'metadata.pickle'}"
@@ -439,32 +421,11 @@ def main(argv=None):
         patch_metadata_pickle(output_dir, egms_attrs)
 
     if ingest_step in ("all", "step2"):
-        if password is None:
-            raise RuntimeError("password_config not available (SSARAHOME); cannot upload")
         insarmaps_hosts = resolve_insarmaps_hosts(csv_path, args.insarmaps_host)
         print(f"[INFO] Insarmaps host(s): {', '.join(insarmaps_hosts)}")
         for host in insarmaps_hosts:
-            run_command(
-                [
-                    "json_mbtiles2insarmaps.py",
-                    "--num-workers",
-                    "3",
-                    "-u",
-                    password.docker_insaruser,
-                    "-p",
-                    password.docker_insarpass,
-                    "--host",
-                    host,
-                    "-P",
-                    password.docker_databasepass,
-                    "-U",
-                    password.docker_databaseuser,
-                    "--json_folder",
-                    str(output_dir),
-                    "--mbtiles_file",
-                    str(mbtiles_path),
-                ]
-            )
+            # the JSON folder's parent must lie under $SCRATCHDIR (it maps to /data/scratch on the host)
+            ingest_step2_rsync_and_remote_ingest(host, output_dir, data_dir=output_dir.parent)
     else:
         print("[INFO] Skipping upload (step 1 only)")
 
