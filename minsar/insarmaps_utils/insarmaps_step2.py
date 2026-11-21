@@ -138,7 +138,8 @@ def ingest_step2_local(local_json_dir):
     _append_ingest_command_log(" ".join(password_cmd))
     _append_command_log(" ".join(password_cmd))
     try:
-        pg_pass = "".join(subprocess.check_output(password_cmd, text=True).split())
+        # a fixed argument list, no shell: sudo -n cat and the constant password file, nothing from the caller
+        pg_pass = "".join(subprocess.check_output(password_cmd, text=True).split())  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
     except (subprocess.CalledProcessError, OSError) as exc:
         raise RuntimeError(f"failed to read the DB password from {INSARMAPS_DB_PASSWORD_FILE}: {exc}") from exc
     if not pg_pass:
