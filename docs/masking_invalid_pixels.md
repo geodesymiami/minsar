@@ -39,15 +39,15 @@ The converter **does** use the HE5 mask. It is not unused.
 displacement = HDFEOS.read('displacement')
 mask = HDFEOS.read('mask')           # quality/mask
 displacement = mask_matrix(displacement, mask)   # mask==0 → NaN on all dates
-keep pixel if first-date value is not NaN
-write all dates for that pixel into JSON
+keep pixel if it has values at two dates or more
+write its values (NaN where missing) and its velocity, fitted over the dates it has, into the points
 ```
 
-`should_mask = True` is hardcoded. Lat/lon come from `geometry/latitude` and `geometry/longitude` (radar or geo). If `X_STEP` / `Y_FIRST` are missing, tippecanoe runs in “high res” mode; a regular geo grid uses those attributes.
+`should_mask = True` is hardcoded. Lat/lon come from `geometry/latitude` and `geometry/longitude` (radar or geo). A geocoded file (with `X_STEP`) gets base zoom 12 in the map's recolor store (every point shows from zoom 12), a radar-coded one base zoom 14.
 
-Pixel inclusion is **first date not NaN** after masking. A later-date NaN still gets written into JSON and can break ingest. That is why `dolphin2he5.py` also drops pixels that are non-finite on **any** date.
+Pixel inclusion is **values at two dates or more** after masking (insarmaps_scripts since 2026-11-21; before, it was the first date not NaN, and a later-date NaN could break the ingest). A pixel with gaps is kept, NaN at the missing dates. `dolphin2he5.py` drops pixels that are non-finite on **any** date, which the ingest no longer needs.
 
-Changing ingest is still reasonable (skip a pixel if **any** date is NaN; optional `--no-mask`), but you do **not** need that change for “apply `quality/mask`.” The HE5 displacement cube plus `quality/mask` already gives the same InsarMaps points, as long as surviving pixels are finite on every date.
+Changing ingest is still reasonable (skip a pixel if **any** date is NaN; optional `--no-mask`), but you do **not** need that change for “apply `quality/mask`.” The HE5 displacement cube plus `quality/mask` already gives the InsarMaps points; surviving pixels with gaps are kept with NaN at the missing dates.
 
 ### `view.py` and `tsview.py`
 
@@ -137,7 +137,7 @@ remask_he5.py timeseries/S1_asc_048_operaDisp_20160927_20210104_N2578W08031_N258
 ingest_insarmaps.bash timeseries/S1_asc_048_operaDisp_20160927_20210104_N2578W08031_N2581W08031_N2581W08026_N2578W08026_tc070sim050.he5
 ```
 
-Replace the export name in place (no suffix, no backup): `--overwrite`. Same flags on `ingest_insarmaps.bash` (remask step before JSON/mbtiles). MintPy shortcut: `--mask-thresh 0.85` is `-m tc --vmin 0.85`.
+Replace the export name in place (no suffix, no backup): `--overwrite`. Same flags on `ingest_insarmaps.bash` (remask step before step 1). MintPy shortcut: `--mask-thresh 0.85` is `-m tc --vmin 0.85`.
 
 ```bash
 remask_he5.py timeseries/S1_….he5 -m tc --vmin 0.85 --overwrite

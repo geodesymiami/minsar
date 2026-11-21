@@ -133,7 +133,7 @@ def merge_into_metadata_pickle(json_dir, attrs):
 
 def create_parser():
     parser = argparse.ArgumentParser(
-        description="End-to-end pipeline for: SARvey shapefiles -> CSV -> JSON -> Insarmaps -> jetstream\n"
+        description="End-to-end pipeline for: SARvey shapefiles -> CSV -> points (numpy arrays in JSON/) -> Insarmaps -> jetstream\n"
                     "Insarmaps upload rsyncs JSON/ to the host (under /data/scratch) and runs json_mbtiles2insarmaps.py there over ssh,\n"
                     "which loads the dataset and builds the recolor store the map draws it from. On the Insarmaps host itself\n"
                     "(localhost, its own name, or a host in INSARMAPS_LOCAL_HOSTS) it runs json_mbtiles2insarmaps.py on JSON/ where it is.",
@@ -383,7 +383,7 @@ def build_commands(shp_file_path, csv_file_path, geocorr_csv_path, json_dir, inp
     Returns three commands:
         cmd1 - Convert SHP to CSV using ogr2ogr with WGS84 coordinates.
         cmd2 - Sample incidenceAngle/azimuthAngle and write longitude_corrected/latitude_corrected.
-        cmd3 - Convert CSV or HDF5 to JSON chunks using hdfeos5_or_csv_2json_mbtiles.py.
+        cmd3 - Convert CSV or HDF5 to the dataset's points (numpy arrays in JSON/) using hdfeos5_or_csv_2json_mbtiles.py.
     Insarmaps upload is ingest_step2_rsync_and_remote_ingest(), not a local json_mbtiles2insarmaps.py call.
     """
     cmd_ogr2ogr = ["ogr2ogr", "-f", "CSV", "-lco", "GEOMETRY=AS_XY", "-t_srs", "EPSG:4326", str(csv_file_path), str(shp_file_path)]
@@ -846,7 +846,7 @@ def main():
         )
         run_command(cmd_correctgeo, conda_env=None)
 
-        # Step 4: convert the CSV into JSON chunks and metadata.pickle
+        # Step 4: convert the CSV into the dataset's points and metadata.pickle
         run_command(cmd_hdfeos5, conda_env=None)
         metadata, _ = extract_metadata_from_inputs(sarvey_inputs_dir_path)
         merge_into_metadata_pickle(json_dir, metadata)

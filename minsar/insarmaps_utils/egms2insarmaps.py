@@ -3,7 +3,8 @@
 Ingest EGMS L2a CSV (+ optional companion XML) into Insarmaps.
 
 Pipeline:
-  EGMS CSV → hdfeos5_or_csv_2json_mbtiles.py → patch metadata.pickle → step 2 (insarmaps_step2.py: rsync JSON/ to
+  EGMS CSV → hdfeos5_or_csv_2json_mbtiles.py (the dataset's points, numpy arrays in JSON/) → patch metadata.pickle →
+  step 2 (insarmaps_step2.py: rsync JSON/ to
   the Insarmaps host and run json_mbtiles2insarmaps.py there, which loads the dataset and builds its recolor store;
   on the Insarmaps host itself, json_mbtiles2insarmaps.py runs on JSON/ where it is)
 """
@@ -35,7 +36,7 @@ from reference_point_egms import (  # noqa: E402
 
 def create_parser():
     parser = argparse.ArgumentParser(
-        description="Ingest an EGMS L2a CSV into Insarmaps (JSON/MBTiles + optional upload).",
+        description="Ingest an EGMS L2a CSV into Insarmaps (the dataset's points + optional upload).",
         formatter_class=argparse.RawTextHelpFormatter,
         epilog="""\
 Examples:
@@ -57,7 +58,7 @@ Examples:
     parser.add_argument(
         "--output-dir",
         default=None,
-        help="Directory for JSON chunks and MBTiles (default: <csv_dir>/JSON)",
+        help="Directory for the dataset's points and metadata.pickle (default: <csv_dir>/JSON)",
     )
     parser.add_argument(
         "--num-workers",
@@ -79,12 +80,12 @@ Examples:
         type=int,
         choices=(1, 2),
         default=None,
-        help="1 = CSV→JSON/MBTiles + metadata patch only; 2 = upload only (requires prior step 1). Default: both.",
+        help="1 = CSV → points + metadata patch only; 2 = upload only (requires prior step 1). Default: both.",
     )
     parser.add_argument(
         "--hdfeos5_2json_mbtiles",
         action="store_true",
-        help="Same as --step 1 (CSV→JSON/MBTiles + metadata patch; no upload)",
+        help="Same as --step 1 (CSV → points + metadata patch; no upload)",
     )
     parser.add_argument(
         "--json_mbtiles2insarmaps",

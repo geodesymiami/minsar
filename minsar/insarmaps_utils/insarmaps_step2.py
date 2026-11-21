@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Step 2 of an Insarmaps ingest, for the Python uploaders (sarvey2insarmaps.py and others): rsync the JSON folder that
-step 1 wrote to the Insarmaps host, under /data/scratch, run json_mbtiles2insarmaps.py there over ssh against the
+step 1 wrote (the dataset's points as numpy arrays, and metadata.pickle) to the Insarmaps host, under /data/scratch, run json_mbtiles2insarmaps.py there over ssh against the
 host's database (--host 127.0.0.1), then delete the remote copy. On the Insarmaps host itself (insarmaps_host_is_local)
 it runs json_mbtiles2insarmaps.py on the JSON folder where it is instead: no copy, no ssh, no $SCRATCHDIR.
 ingest_insarmaps.bash does the same in bash (ingest_step2_rsync_and_remote_ingest)."""
@@ -87,7 +87,7 @@ def ingest_remote_paths_for_scratch(data_dir):
     """Map a directory under $SCRATCHDIR to /data/scratch/<relpath> and /data/scratch/<project>."""
     scratch = os.environ.get("SCRATCHDIR", "").strip()
     if not scratch:
-        raise RuntimeError("SCRATCHDIR must be set for remote JSON upload (path under /data/scratch/)")
+        raise RuntimeError("SCRATCHDIR must be set for an upload to another machine (path under /data/scratch/)")
     scratch_abs = Path(scratch).resolve()
     data_abs = Path(data_dir).resolve()
     try:
