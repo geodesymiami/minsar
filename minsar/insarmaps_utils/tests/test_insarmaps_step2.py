@@ -48,6 +48,7 @@ class Step2(unittest.TestCase):
         step2.ingest_step2_rsync_and_remote_ingest("149.165.153.50", self.data / "JSON", data_dir=self.data)
         rsync = [c for c in self.ran if c[0] == "rsync"][0]
         self.assertIn("--exclude=*.mbtiles", rsync)
+        self.assertIn("--delete", rsync)            # no chunk left over from an earlier attempt
         self.assertEqual(rsync[-1], "exouser@149.165.153.50:/data/scratch/Proj/mintpy/JSON/")
         remote = self.remote_command()
         self.assertIn("json_mbtiles2insarmaps.py --num-workers 6 -u insaradmin -p secret --host 127.0.0.1 "

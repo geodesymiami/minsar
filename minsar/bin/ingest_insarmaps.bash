@@ -686,7 +686,8 @@ ingest_step2_rsync_and_remote_ingest() {
     echo "Uploading JSON dir to ${remote_user}@${insarmaps_host}:${remote_json_dir}/ (rsh: $rsh)"
     mkdir_cmd="${rsh} ${remote_user}@${insarmaps_host} mkdir -p $(printf '%q' "$remote_json_dir")"
     run_command "$mkdir_cmd"
-    rsync_cmd="rsync -avzh --progress --exclude='*.mbtiles' -e $(printf '%q' "$rsh") $(printf '%q' "${local_json_dir}/") $(printf '%q' "${remote_user}@${insarmaps_host}:${remote_json_dir}/")"
+    # --delete: the staging folder holds exactly this JSON/, also when an earlier attempt failed and left one behind
+    rsync_cmd="rsync -avzh --progress --delete --exclude='*.mbtiles' -e $(printf '%q' "$rsh") $(printf '%q' "${local_json_dir}/") $(printf '%q' "${remote_user}@${insarmaps_host}:${remote_json_dir}/")"
     run_command "$rsync_cmd"
 
     # -p from remote password file (root-only); -u insaradmin.
