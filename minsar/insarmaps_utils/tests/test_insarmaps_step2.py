@@ -91,5 +91,44 @@ class SarveyJobfile(unittest.TestCase):
         self.assertNotIn("mbtiles", code)
 
 
+class Uploaders(unittest.TestCase):
+    """egms2insarmaps.py and concatenate_csv2insarmaps.py upload through the shared step 2 (no remote --host)."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        cwd = os.getcwd()
+        os.chdir(self.tmp)                              # they write ./log and insarmaps.log
+        self.addCleanup(os.chdir, cwd)
+
+    def test_egms_step2(self):
+        import egms2insarmaps
+        csv = self.tmp / "Proj" / "egms" / "EGMS_L2a_088_0286_IW2_VV_2019_2023_1.csv"
+        (csv.parent / "JSON").mkdir(parents=True)
+        (csv.parent / "JSON" / "metadata.pickle").write_bytes(b"")
+        csv.write_text("latitude,longitude\n45.0,7.0\n")
+        with unittest.mock.patch.object(egms2insarmaps, "ingest_step2_rsync_and_remote_ingest") as step:
+            egms2insarmaps.main([str(csv), "--step", "2", "--insarmaps-host", "h1,h2"])
+        self.assertEqual([(c.args, c.kwargs) for c in step.call_args_list],
+                         [(("h1", csv.parent / "JSON"), {"data_dir": csv.parent}),
+                          (("h2", csv.parent / "JSON"), {"data_dir": csv.parent})])
+
+    def test_concatenate_upload(self):
+        import concatenate_csv2insarmaps as concat
+        out = self.tmp / "Proj" / "outputs"
+        out.mkdir(parents=True)
+        csv = out / "S1_044_x.csv"
+        csv.write_text("X,Y\n7.0,45.0\n")
+        with unittest.mock.patch.object(concat, "run_command") as run, \
+                unittest.mock.patch.object(concat, "ingest_step2_rsync_and_remote_ingest") as step:
+            concat.ingest_to_insarmaps(csv, out, "h1,h2", skip_upload=False)
+            self.assertEqual(run.call_args.args[0][0], "hdfeos5_or_csv_2json_mbtiles.py")
+            self.assertEqual([(c.args, c.kwargs) for c in step.call_args_list],
+                             [(("h1", out / "JSON"), {"data_dir": out}), (("h2", out / "JSON"), {"data_dir": out})])
+            step.reset_mock()
+            concat.ingest_to_insarmaps(csv, out, "h1", skip_upload=True)
+            step.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
