@@ -108,11 +108,39 @@ class Uploaders(unittest.TestCase):
         (csv.parent / "JSON").mkdir(parents=True)
         (csv.parent / "JSON" / "metadata.pickle").write_bytes(b"")
         csv.write_text("latitude,longitude\n45.0,7.0\n")
-        with unittest.mock.patch.object(egms2insarmaps, "ingest_step2_rsync_and_remote_ingest") as step:
+        with unittest.mock.patch.dict(os.environ, {"SCRATCHDIR": str(self.tmp)}), \
+                unittest.mock.patch.object(egms2insarmaps, "ingest_step2_rsync_and_remote_ingest") as step:
             egms2insarmaps.main([str(csv), "--step", "2", "--insarmaps-host", "h1,h2"])
         self.assertEqual([(c.args, c.kwargs) for c in step.call_args_list],
                          [(("h1", csv.parent / "JSON"), {"data_dir": csv.parent}),
                           (("h2", csv.parent / "JSON"), {"data_dir": csv.parent})])
+
+    def test_egms_checks_the_upload_before_converting(self):
+        import egms2insarmaps
+        csv = self.tmp / "elsewhere" / "EGMS_L2a_088_0286_IW2_VV_2019_2023_1.csv"
+        csv.parent.mkdir()
+        csv.write_text("latitude,longitude\n45.0,7.0\n")
+        other = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, other, True)
+        with unittest.mock.patch.dict(os.environ, {"SCRATCHDIR": other}), \
+                unittest.mock.patch.object(egms2insarmaps, "run_command") as run, \
+                unittest.mock.patch.object(egms2insarmaps, "ingest_step2_rsync_and_remote_ingest") as step, \
+                unittest.mock.patch("sys.stderr"):
+            with self.assertRaises(SystemExit):
+                egms2insarmaps.main([str(csv), "--insarmaps-host", "h1"])
+        run.assert_not_called()                     # the conversion never started
+        step.assert_not_called()
+
+    def test_concatenate_checks(self):
+        import concatenate_csv2insarmaps as concat
+        out = self.tmp / "Proj" / "outputs"
+        out.mkdir(parents=True)
+        with unittest.mock.patch.dict(os.environ, {"SCRATCHDIR": str(self.tmp)}):
+            concat.check_upload("h1", out)
+            with self.assertRaises(RuntimeError):
+                concat.check_upload("", out)                       # no host
+            with self.assertRaises(RuntimeError):
+                concat.check_upload("h1", tempfile.gettempdir())   # not under $SCRATCHDIR
 
     def test_concatenate_upload(self):
         import concatenate_csv2insarmaps as concat
@@ -127,7 +155,7 @@ class Uploaders(unittest.TestCase):
             self.assertEqual([(c.args, c.kwargs) for c in step.call_args_list],
                              [(("h1", out / "JSON"), {"data_dir": out}), (("h2", out / "JSON"), {"data_dir": out})])
             step.reset_mock()
-            concat.ingest_to_insarmaps(csv, out, "h1", skip_upload=True)
+            concat.ingest_to_insarmaps(csv, out, "", skip_upload=True)   # converting only needs no host
             step.assert_not_called()
 
 

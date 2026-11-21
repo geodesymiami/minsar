@@ -20,7 +20,7 @@ from pathlib import Path
 
 from egms_metadata import build_egms_attributes
 from insarmaps_csv_geo import csv_mean_lat_lon
-from insarmaps_step2 import ingest_step2_rsync_and_remote_ingest
+from insarmaps_step2 import ingest_remote_paths_for_scratch, ingest_step2_rsync_and_remote_ingest
 
 UTILS_DIR = Path(__file__).resolve().parents[1] / "utils"
 if str(UTILS_DIR) not in sys.path:
@@ -333,6 +333,13 @@ def main(argv=None):
         )
 
     print(f"[INFO] Ingest mode: {ingest_step}")
+    if ingest_step in ("all", "step2"):
+        # step 2 stages the JSON folder under /data/scratch on the host: check that it can before converting
+        try:
+            resolve_insarmaps_hosts(csv_path, args.insarmaps_host)
+            ingest_remote_paths_for_scratch(output_dir.parent)
+        except (RuntimeError, ValueError) as e:
+            parser.error(f"{e} (needed for the upload; --step 1 or --skip-upload converts only)")
 
     ref_lat = ref_lon = None
     if args.ref_lalo:

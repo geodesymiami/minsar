@@ -14,7 +14,7 @@ from datetime import date
 
 import sys
 
-from insarmaps_step2 import ingest_step2_rsync_and_remote_ingest, insarmaps_host_list
+from insarmaps_step2 import ingest_remote_paths_for_scratch, ingest_step2_rsync_and_remote_ingest, insarmaps_host_list
 
 
 REQUIRED_COLS = {"X", "Y"}
@@ -120,7 +120,9 @@ def ingest_to_insarmaps(csv_path, output_dir, insarmaps_host, skip_upload):
 
     run_command(["hdfeos5_or_csv_2json_mbtiles.py", str(csv_path), str(json_dir)])
 
-    hosts = insarmaps_host_list(insarmaps_host)
+    # an upload needs a host; converting only (skip_upload) doesn't, and prints a URL per host given
+    hosts = ([h.strip() for h in str(insarmaps_host or "").split(",") if h.strip()] if skip_upload
+             else insarmaps_host_list(insarmaps_host))
     if not skip_upload:
         # step 2, as ingest_insarmaps.bash does it: rsync JSON/ to each host (output_dir must lie under $SCRATCHDIR)
         # and run json_mbtiles2insarmaps.py there, which loads the dataset and builds its recolor store
@@ -136,11 +138,23 @@ def ingest_to_insarmaps(csv_path, output_dir, insarmaps_host, skip_upload):
         print(f"[INFO] View in Insarmaps: http://{host}/start/{lat:.4f}/{lon:.4f}/11.0?startDataset={dataset_name}")
 
 
+def check_upload(insarmaps_host, output_dir):
+    """What step 2 needs, checked before the CSVs are read: a host, and output_dir under $SCRATCHDIR (it is staged
+    under /data/scratch on the host). Raises RuntimeError saying what is missing."""
+    insarmaps_host_list(insarmaps_host)
+    ingest_remote_paths_for_scratch(Path(output_dir).resolve())
+
+
 def main():
     args = parse_args()
     input_dir = Path(args.input_dir)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    if not args.skip_upload:
+        try:
+            check_upload(args.insarmaps_host, output_dir)
+        except RuntimeError as e:
+            sys.exit(f"[ERROR] {e} (needed for the upload; --skip-upload converts only)")
 
     csv_files = sorted(input_dir.glob("*.csv"))
     if not csv_files:
