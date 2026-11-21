@@ -101,6 +101,6 @@ MintPy short forms may include `…_mintpy_YYYYMMDD_XXXXXXXX.he5` or `…_XXXXXX
 | `reference_point_hdfeos5.bash` | Re-reference in-memory; may write short name |
 | `geocode.py` (`.he5` input) | `geo_` + radar basename |
 | `extract_hdfeos5.py` | Reverse export (not naming) |
-| `sarvey2insarmaps.py` | SARvey CSV/MBTiles ingest; same base pattern via `get_output_filename()`, corners always from CSV bbox |
+| `sarvey2insarmaps.py` | SARvey CSV ingest; same base pattern via `get_output_filename()`, corners always from CSV bbox |
 
 Horz/vert products (`*vert*.he5`, `*horz*.he5`) use a separate pipeline in `horzvert_timeseries.bash`, not the patterns above.

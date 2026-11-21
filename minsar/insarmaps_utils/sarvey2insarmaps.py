@@ -133,8 +133,9 @@ def merge_into_metadata_pickle(json_dir, attrs):
 
 def create_parser():
     parser = argparse.ArgumentParser(
-        description="End-to-end pipeline for: SARvey shapefiles -> CSV -> JSON -> MBTiles -> Insarmaps -> jetstream\n"
-                    "Insarmaps upload rsyncs JSON/ to the host (under /data/scratch) and runs json_mbtiles2insarmaps.py there over ssh.",
+        description="End-to-end pipeline for: SARvey shapefiles -> CSV -> JSON -> Insarmaps -> jetstream\n"
+                    "Insarmaps upload rsyncs JSON/ to the host (under /data/scratch) and runs json_mbtiles2insarmaps.py there over ssh,\n"
+                    "which loads the dataset and builds the recolor store the map draws it from.",
         epilog="""\
     Examples:
 
@@ -216,7 +217,7 @@ def load_config_and_input_path(inps):
 def set_output_paths(output_path, base_filename, do_geocorr):
     """
     Create output directories and return key paths.
-    Returns: csv_file_path, geocorr_csv_path, json_dir, mbtiles_path, outdir, base_dir, dataset_name
+    Returns: csv_file_path, geocorr_csv_path, json_dir, output_path
     (base_dir extension if exist will be appended to dataset_name )
     """
     output_path = Path(output_path).resolve()
@@ -227,9 +228,7 @@ def set_output_paths(output_path, base_filename, do_geocorr):
     json_dir = output_path / "JSON"
     json_dir.mkdir(parents=True, exist_ok=True)
 
-    mbtiles_path = json_dir / f"{base_filename}.mbtiles"
-
-    return csv_file_path, geocorr_csv_path, json_dir, mbtiles_path, output_path
+    return csv_file_path, geocorr_csv_path, json_dir, output_path
 
 def _parse_int_orbit(value):
     """Parse orbit/track numbers stored as int, float, or numeric string."""
@@ -383,7 +382,7 @@ def build_commands(shp_file_path, csv_file_path, geocorr_csv_path, json_dir, inp
     Returns three commands:
         cmd1 - Convert SHP to CSV using ogr2ogr with WGS84 coordinates.
         cmd2 - Sample incidenceAngle/azimuthAngle and write longitude_corrected/latitude_corrected.
-        cmd3 - Convert CSV or HDF5 to JSON and MBTiles format using hdfeos5_or_csv_2json_mbtiles.py.
+        cmd3 - Convert CSV or HDF5 to JSON chunks using hdfeos5_or_csv_2json_mbtiles.py.
     Insarmaps upload is ingest_step2_rsync_and_remote_ingest(), not a local json_mbtiles2insarmaps.py call.
     """
     cmd_ogr2ogr = ["ogr2ogr", "-f", "CSV", "-lco", "GEOMETRY=AS_XY", "-t_srs", "EPSG:4326", str(csv_file_path), str(shp_file_path)]
@@ -598,23 +597,7 @@ def run_command(command, shell=False, conda_env=None, cwd=None):
     )
 
 
-def resolve_produced_mbtiles(json_dir, ingest_stem):
-    """Return the mbtiles file hdfeos5 wrote, renaming the p1_ts.mbtiles fallback when needed."""
-    json_dir = Path(json_dir)
-    final_mbtiles_path = json_dir / f"{ingest_stem}.mbtiles"
-    if final_mbtiles_path.is_file():
-        return final_mbtiles_path
-    default_mbtiles_path = json_dir / "p1_ts.mbtiles"
-    if default_mbtiles_path.is_file():
-        print(f"[INFO] Renaming fallback p1_ts.mbtiles → {final_mbtiles_path.name}")
-        shutil.move(str(default_mbtiles_path), str(final_mbtiles_path))
-        return final_mbtiles_path
-    raise FileNotFoundError(
-        f"Neither final nor fallback mbtiles found:\n  {final_mbtiles_path}\n  {default_mbtiles_path}"
-    )
-
-
-def remote_ingest_job_command(host, json_dir, mbtiles_path, data_dir):
+def remote_ingest_job_command(host, json_dir, data_dir):
     """One jobfile line that runs ingest_step2_rsync_and_remote_ingest from this script."""
     script = str(Path(__file__).resolve())
     code = (
@@ -623,7 +606,7 @@ def remote_ingest_job_command(host, json_dir, mbtiles_path, data_dir):
         "mod = importlib.util.module_from_spec(spec)\n"
         "spec.loader.exec_module(mod)\n"
         "mod.ingest_step2_rsync_and_remote_ingest("
-        f"{host!r}, {str(json_dir)!r}, {str(mbtiles_path)!r}, {str(data_dir)!r})\n"
+        f"{host!r}, {str(json_dir)!r}, data_dir={str(data_dir)!r})\n"
     )
     return "python3 -c " + shlex.quote(code)
 
@@ -702,7 +685,7 @@ def convert_displacement_mm_to_m(csv_path):
     df.to_csv(csv_path, index=False)
 
 
-def create_jobfile(inps, data_path, cmds, json_dir, output_path, mbtiles_path, dataset_name, metadata):
+def create_jobfile(inps, data_path, cmds, json_dir, output_path, dataset_name, metadata):
     """
     Generate a SLURM-compatible jobfile with all processing steps and Insarmaps URL.
     """
@@ -729,7 +712,7 @@ def create_jobfile(inps, data_path, cmds, json_dir, output_path, mbtiles_path, d
     ])
     # Step 5: rsync JSON/ to each host and ingest there (same as ingest_insarmaps.bash step 2)
     for host in insarmaps_host_list(inps.insarmaps_host):
-        slurm_commands.append(remote_ingest_job_command(host, json_dir, mbtiles_path, output_path))
+        slurm_commands.append(remote_ingest_job_command(host, json_dir, output_path))
 
     with open(jobfile_path, 'w') as f:
         f.write("#!/bin/bash\n\n")
@@ -806,10 +789,9 @@ def main():
 
     # FA this section is important while the above is just dealing with filenames/options. This should be optically emphasized with comment signs and text
     # FA: unclear what geocorr_csv is. A file path? then sat it as you do for the others. Same for input_csv below. So it would be csv_file_path, shp_file_path ?
-    #csv_path, geocorr_csv_path, json_dir, mbtiles_path, base_dir, dataset_name = set_output_paths(output_path, dataset_name, inps.do_geocorr)
     data_path = Path(inps.input_file).resolve()
     base_filename = data_path.stem
-    csv_file_path, geocorr_csv_path, json_dir, mbtiles_path, output_path = set_output_paths(
+    csv_file_path, geocorr_csv_path, json_dir, output_path = set_output_paths(
         output_path, base_filename, inps.do_geocorr
     )
     input_csv = csv_file_path
@@ -828,7 +810,7 @@ def main():
 
     if inps.make_jobfile:
             print("[INFO] Creating jobfile only, skipping execution.")
-            create_jobfile(inps, data_path, (cmd_sarvey_export, cmd_ogr2ogr, cmd_correctgeo, cmd_hdfeos5), json_dir, output_path, mbtiles_path, dataset_name, metadata)
+            create_jobfile(inps, data_path, (cmd_sarvey_export, cmd_ogr2ogr, cmd_correctgeo, cmd_hdfeos5), json_dir, output_path, dataset_name, metadata)
 
     else:
         _reset_ingest_command_log()
@@ -863,19 +845,16 @@ def main():
         )
         run_command(cmd_correctgeo, conda_env=None)
 
-        # Step 4: run hdfeos5_2_mbtiles.pt to convert csv-file into mbptile.
+        # Step 4: convert the CSV into JSON chunks and metadata.pickle
         run_command(cmd_hdfeos5, conda_env=None)
         metadata, _ = extract_metadata_from_inputs(sarvey_inputs_dir_path)
         merge_into_metadata_pickle(json_dir, metadata)
         metadata = update_and_save_final_metadata(json_dir, output_path, ingest_stem, metadata)
 
-        # Mbtiles must be in JSON/ before rsync; remote ingest copies that filename into mbtiles_dir.
-        mbtiles_path = resolve_produced_mbtiles(json_dir, ingest_stem)
-
         # Step 5: rsync JSON/ to each Insarmaps host and ingest there
         if not inps.skip_upload:
             for host in insarmaps_host_list(inps.insarmaps_host):
-                ingest_step2_rsync_and_remote_ingest(host, json_dir, mbtiles_path, output_path)
+                ingest_step2_rsync_and_remote_ingest(host, json_dir, data_dir=output_path)
 
         # Step 6: create insarmaps.log with URL
         urls = [

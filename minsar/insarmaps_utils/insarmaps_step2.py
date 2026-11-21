@@ -106,20 +106,20 @@ def _append_ingest_command_log(command_line):
         handle.write(command_line + "\n")
 
 
-def ingest_step2_rsync_and_remote_ingest(insarmaps_host, local_json_dir, local_mbtiles, data_dir):
-    """Rsync JSON/ to the Insarmaps host, ingest via ssh against 127.0.0.1, then delete the remote scratch tree."""
+def ingest_step2_rsync_and_remote_ingest(insarmaps_host, local_json_dir, local_mbtiles=None, data_dir=None):
+    """Rsync JSON/ to the Insarmaps host, ingest via ssh against 127.0.0.1, then delete the remote scratch tree.
+    json_mbtiles2insarmaps.py builds the dataset's recolor store there, from which the map draws it; no .mbtiles is
+    sent or installed. local_mbtiles is ignored: it stays in the signature for jobfiles written before."""
     insarmaps_host = str(insarmaps_host).strip()
     local_json_dir = Path(local_json_dir)
-    local_mbtiles = Path(local_mbtiles)
+    if data_dir is None:
+        raise ValueError("data_dir is required (the folder under $SCRATCHDIR that holds JSON/)")
     if not local_json_dir.is_dir():
         raise FileNotFoundError(f"JSON directory missing: {local_json_dir}")
-    if not local_mbtiles.is_file():
-        raise FileNotFoundError(f"mbtiles file missing: {local_mbtiles}")
 
     remote_user = (os.environ.get("REMOTEUSER") or "exouser").strip() or "exouser"
     remote_pass_file = "/data/insarmaps2/postgres_dir/.insaradmin_db_password"
     remote_minsar_home = os.environ.get("INSARMAPS_REMOTE_MINSAR_HOME") or "/data/insarmaps2/code/minsar"
-    remote_mbtiles_dir = os.environ.get("INSARMAPS_REMOTE_MBTILES_DIR") or "/data/insarmaps2/mbtiles_dir"
     workers = os.environ.get("MBTILES_NUM_WORKERS") or "6"
     rsh = ingest_step2_rsh()
     rsh_parts = shlex.split(rsh)
@@ -127,13 +127,12 @@ def ingest_step2_rsync_and_remote_ingest(insarmaps_host, local_json_dir, local_m
 
     remote_data_dir, remote_project_dir = ingest_remote_paths_for_scratch(data_dir)
     remote_json_dir = f"{remote_data_dir}/{local_json_dir.name}"
-    remote_mbtiles = f"{remote_json_dir}/{local_mbtiles.name}"
 
     print("####################################")
     print(f"Uploading JSON dir to {target}:{remote_json_dir}/ (rsh: {rsh})")
     run_command(rsh_parts + [target, f"mkdir -p {shlex.quote(remote_json_dir)}"])
     run_command([
-        "rsync", "-avzh", "--progress",
+        "rsync", "-avzh", "--progress", "--exclude=*.mbtiles",
         "-e", rsh,
         f"{local_json_dir}/",
         f"{target}:{remote_json_dir}/",
@@ -164,18 +163,13 @@ def ingest_step2_rsync_and_remote_ingest(insarmaps_host, local_json_dir, local_m
     _append_ingest_command_log(f"{rsh} {target} {ingest_cmd}")
     _append_command_log(f"{rsh} {target} {ingest_cmd}")
 
-    # Source remote minsar env so PROJ_LIB is set, then copy mbtiles into the HTTP tile dir.
-    remote_mbtiles_installed = f"{remote_mbtiles_dir}/{local_mbtiles.name}"
+    # Source remote minsar env so PROJ_LIB is set.
     remote_body = (
         "set -euo pipefail; "
         f"export MINSAR_HOME={shlex.quote(remote_minsar_home)}; "
         'source "$MINSAR_HOME/setup/environment.bash" >/dev/null; '
         f"json_mbtiles2insarmaps.py --num-workers {shlex.quote(str(workers))} -u insaradmin "
-        f"-p {shlex.quote(pg_pass)} --host 127.0.0.1 --json_folder {shlex.quote(remote_json_dir)}; "
-        f"sudo -n mkdir -p {shlex.quote(remote_mbtiles_dir)}; "
-        f"sudo -n cp -f {shlex.quote(remote_mbtiles)} {shlex.quote(remote_mbtiles_dir)}/; "
-        f"sudo -n chown www-data:www-data {shlex.quote(remote_mbtiles_installed)}; "
-        f'echo "Installed mbtiles: {remote_mbtiles_installed}"'
+        f"-p {shlex.quote(pg_pass)} --host 127.0.0.1 --json_folder {shlex.quote(remote_json_dir)}"
     )
     remote_status = subprocess.run(rsh_parts + [target, "bash -lc " + shlex.quote(remote_body)]).returncode
     if remote_status != 0:

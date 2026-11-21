@@ -13,7 +13,8 @@ source ${SCRIPT_DIR}/../lib/utils.sh
 
 # Dependencies (PATH): reference_point_hdfeos5.bash, hdfeos5_2json_mbtiles.py, hdfeos5_or_csv_2json_mbtiles.py,
 #   get_data_footprint_centroid.py, get_zoomfactor_from_data_footprint.py; step 2 needs rsync/ssh and
-#   json_mbtiles2insarmaps.py on the remote host. Sourced: minsarApp_specifics.sh, utils.sh.
+#   json_mbtiles2insarmaps.py on the remote host, which loads the dataset and builds its recolor store there.
+#   Sourced: minsarApp_specifics.sh, utils.sh.
 # Output: With --ref-lalo the selected .he5 in the input dir is modified in place. insarmaps.log appended. No backup files.
 
 if [[ "$1" == "--help" || "$1" == "-h" ]]; then
@@ -34,16 +35,18 @@ Examples:
       --ref-lalo LAT,LON or LAT LON   Reference point (lat,lon or lat lon)
       --dataset {PS,DS,filtDS,filt*DS,geo} or comma-separated {PS,DS,filt*DS}  Dataset to upload (default: geo)
                                           Use comma-separated values to ingest multiple types: --dataset PS,DS or --dataset PS,DS,filt*DS
-      --suffix TAG or auto              Append _TAG to .he5/.csv basename for ingest (mbtiles/dataset name)
+      --suffix TAG or auto              Append _TAG to .he5/.csv basename for ingest (dataset name)
                                           auto reads miaplpy.timeseries.minTempCoh from ../miaplpyApp.cfg (0.85 -> coh085)
       --insarmapshost HOST[,HOST...]  Override INSARMAPSHOST_RECENTDATA / INSARMAPSHOST_OLDDATA for upload
-      --hdfeos5_2json_mbtiles         Run only HDFEOS5 → JSON/mbtiles (no insarmaps upload); same as --step 1
+      --hdfeos5_2json_mbtiles         Run only HDFEOS5 → JSON (no insarmaps upload); same as --step 1
                                       For a .csv input, step 1 runs hdfeos5_or_csv_2json_mbtiles.py instead of hdfeos5_2json_mbtiles.py
       --json_mbtiles2insarmaps        Run only insarmaps upload (assumes step 1 succeeded); same as --step 2
       --step N                        N is 1 or 2; same effect as the long names above. Also --step=N
                                       Step 2: rsync JSON/ to REMOTEUSER@host:/data/scratch/<path-under-\$SCRATCHDIR>/,
                                       then ssh-run json_mbtiles2insarmaps.py on the host (--host 127.0.0.1;
-                                      DB password from /data/insarmaps2/postgres_dir/.insaradmin_db_password).
+                                      DB password from /data/insarmaps2/postgres_dir/.insaradmin_db_password),
+                                      which loads the dataset and builds its recolor store (the map draws a
+                                      dataset only from it; no .mbtiles is sent or installed).
                                       After success, removes remote /data/scratch/<project>/ (includes JSON/)
       --num-workers N                 Parallel workers for hdfeos5_2json_mbtiles (sets HDFEOS_NUM_WORKERS; default 1 or env)
       --mbtiles-num-workers N         Parallel workers for json_mbtiles2insarmaps (sets MBTILES_NUM_WORKERS; default 6 or env)
@@ -89,7 +92,7 @@ echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $*" | tee -a "$LOG_FILE"
 debug_flag=0
 submit_flag=0
 positional=()
-# ingest_step: all (default) | step1 (HDFEOS5→JSON/mbtiles only) | step2 (upload only; step1 must have run)
+# ingest_step: all (default) | step1 (HDFEOS5→JSON only) | step2 (upload only; step1 must have run)
 ingest_step="all"
 
 # Default values for options (lowercase - local/temporary variables)
@@ -409,7 +412,7 @@ _strip_prior_ingest_suffix_from_stem() {
     echo "$stem"
 }
 
-# Hardlink/symlink to stem_TAG.ext so mbtiles/dataset names include the tag (no file copy).
+# Hardlink/symlink to stem_TAG.ext so dataset names include the tag (no file copy).
 apply_ingest_suffix() {
     local src="$1"
     local tag="$2"
@@ -667,35 +670,28 @@ ingest_step2_rsh() {
 ingest_step2_rsync_and_remote_ingest() {
     local insarmaps_host="$1"
     local local_json_dir="$2"
-    local local_mbtiles="$3"
     local remote_user="${REMOTEUSER:-exouser}"
     local remote_pass_file="/data/insarmaps2/postgres_dir/.insaradmin_db_password"
     local remote_minsar_home="${INSARMAPS_REMOTE_MINSAR_HOME:-/data/insarmaps2/code/minsar}"
-    local remote_mbtiles_dir="${INSARMAPS_REMOTE_MBTILES_DIR:-/data/insarmaps2/mbtiles_dir}"
-    local remote_data_dir remote_project_dir remote_json_dir remote_mbtiles json_basename mbtiles_basename
+    local remote_data_dir remote_project_dir remote_json_dir json_basename
     local rsh mkdir_cmd rsync_cmd remote_status remote_body cleanup_cmd
-    local remote_json_q remote_mbtiles_q remote_pass_q remote_mbtiles_dir_q remote_project_q workers_q remote_minsar_q
+    local remote_json_q remote_pass_q remote_project_q workers_q remote_minsar_q
 
     rsh="$(ingest_step2_rsh)"
     read -r remote_data_dir remote_project_dir < <(ingest_remote_paths_for_scratch "$DATA_DIR")
     json_basename="$(basename "$local_json_dir")"
-    mbtiles_basename="$(basename "$local_mbtiles")"
     remote_json_dir="${remote_data_dir}/${json_basename}"
-    remote_mbtiles="${remote_json_dir}/${mbtiles_basename}"
 
     echo "####################################"
     echo "Uploading JSON dir to ${remote_user}@${insarmaps_host}:${remote_json_dir}/ (rsh: $rsh)"
     mkdir_cmd="${rsh} ${remote_user}@${insarmaps_host} mkdir -p $(printf '%q' "$remote_json_dir")"
     run_command "$mkdir_cmd"
-    rsync_cmd="rsync -avzh --progress -e $(printf '%q' "$rsh") $(printf '%q' "${local_json_dir}/") $(printf '%q' "${remote_user}@${insarmaps_host}:${remote_json_dir}/")"
+    rsync_cmd="rsync -avzh --progress --exclude='*.mbtiles' -e $(printf '%q' "$rsh") $(printf '%q' "${local_json_dir}/") $(printf '%q' "${remote_user}@${insarmaps_host}:${remote_json_dir}/")"
     run_command "$rsync_cmd"
 
     # -p from remote password file (root-only); -u insaradmin.
-    # Mbtiles: copy into mbtiles_dir on the host (HTTP /auth login to 127.0.0.1 is unreliable).
     remote_json_q=$(printf '%q' "$remote_json_dir")
-    remote_mbtiles_q=$(printf '%q' "$remote_mbtiles")
     remote_pass_q=$(printf '%q' "$remote_pass_file")
-    remote_mbtiles_dir_q=$(printf '%q' "$remote_mbtiles_dir")
     workers_q=$(printf '%q' "$MBTILES_NUM_WORKERS")
     remote_minsar_q=$(printf '%q' "$remote_minsar_home")
 
@@ -720,11 +716,7 @@ ingest_step2_rsync_and_remote_ingest() {
     remote_body="set -euo pipefail; "
     remote_body+="export MINSAR_HOME=${remote_minsar_q}; "
     remote_body+="source \"\$MINSAR_HOME/setup/environment.bash\" >/dev/null; "
-    remote_body+="json_mbtiles2insarmaps.py --num-workers ${workers_q} -u insaradmin -p ${pg_pass_q} --host 127.0.0.1 --json_folder ${remote_json_q}; "
-    remote_body+="sudo -n mkdir -p ${remote_mbtiles_dir_q}; "
-    remote_body+="sudo -n cp -f ${remote_mbtiles_q} ${remote_mbtiles_dir_q}/; "
-    remote_body+="sudo -n chown www-data:www-data ${remote_mbtiles_dir_q}/$(printf '%q' "$mbtiles_basename"); "
-    remote_body+="echo \"Installed mbtiles: ${remote_mbtiles_dir}/${mbtiles_basename}\""
+    remote_body+="json_mbtiles2insarmaps.py --num-workers ${workers_q} -u insaradmin -p ${pg_pass_q} --host 127.0.0.1 --json_folder ${remote_json_q}"
     # shellcheck disable=SC2086
     ${rsh} "${remote_user}@${insarmaps_host}" "bash -lc $(printf '%q' "$remote_body")"
     remote_status=$?
@@ -769,7 +761,7 @@ for ingest_file in "${ingest_files[@]}"; do
     fi
 
     if [[ "$ingest_step" == "step2" && ${#ref_lalo[@]} -gt 0 ]]; then
-        echo "Warning: --ref-lalo ignored with --step 2 / --json_mbtiles2insarmaps (step 1 must have produced JSON/mbtiles)" >&2
+        echo "Warning: --ref-lalo ignored with --step 2 / --json_mbtiles2insarmaps (step 1 must have produced JSON/)" >&2
     fi
 
     # If --ref-lalo was provided, update the reference point in the he5 file (step 1 or full run only; not CSV)
@@ -810,19 +802,9 @@ for ingest_file in "${ingest_files[@]}"; do
 
     JSON_DIR=$DATA_DIR/JSON${JSON_SUFFIX}
 
-    if [[ "$input_format" == "csv" ]]; then
-        MBTILES_FILE="$JSON_DIR/$(basename "${ingest_file%.csv}.mbtiles")"
-    else
-        MBTILES_FILE="$JSON_DIR/$(basename "${ingest_file%.he5}.mbtiles")"
-    fi
-
     if [[ "$ingest_step" == "step2" ]]; then
         if [[ ! -d "$JSON_DIR" ]]; then
             echo "Error: JSON directory missing (run --step 1 or --hdfeos5_2json_mbtiles first): $JSON_DIR" >&2
-            exit 1
-        fi
-        if [[ ! -f "$MBTILES_FILE" ]]; then
-            echo "Error: mbtiles file missing (run --step 1 or --hdfeos5_2json_mbtiles first): $MBTILES_FILE" >&2
             exit 1
         fi
     fi
@@ -845,7 +827,7 @@ for ingest_file in "${ingest_files[@]}"; do
         fi
         for insarmaps_host in "${HOSTS[@]}"; do
             [[ -z "$insarmaps_host" ]] && continue
-            ingest_step2_rsync_and_remote_ingest "$insarmaps_host" "$JSON_DIR" "$MBTILES_FILE"
+            ingest_step2_rsync_and_remote_ingest "$insarmaps_host" "$JSON_DIR"
         done
 
         wait   # Wait for all ingests to complete (parallel using & is not implemented)
