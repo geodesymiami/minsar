@@ -13,7 +13,8 @@ source ${SCRIPT_DIR}/../lib/utils.sh
 
 # Dependencies (PATH): reference_point_hdfeos5.bash, hdfeos5_2json_mbtiles.py, hdfeos5_or_csv_2json_mbtiles.py,
 #   get_data_footprint_centroid.py, get_zoomfactor_from_data_footprint.py; step 2 needs rsync/ssh and
-#   json_mbtiles2insarmaps.py on the remote host, which loads the dataset and builds its recolor store there.
+#   json_mbtiles2insarmaps.py on the remote host, which loads the dataset and builds its recolor store there
+#   (on the insarmaps host itself, see insarmaps_host_is_local: json_mbtiles2insarmaps.py on PATH and sudo here).
 #   Sourced: minsarApp_specifics.sh, utils.sh.
 # Output: With --ref-lalo the selected .he5 in the input dir is modified in place. insarmaps.log appended. No backup files.
 
@@ -48,6 +49,9 @@ Examples:
                                       which loads the dataset and builds its recolor store (the map draws a
                                       dataset only from it; no .mbtiles is sent or installed).
                                       After success, removes remote /data/scratch/<project>/ (includes JSON/)
+                                      On the insarmaps host itself (localhost, its own name, or a host in
+                                      INSARMAPS_LOCAL_HOSTS): runs json_mbtiles2insarmaps.py on JSON/ where it is
+                                      (no rsync, no ssh, no SCRATCHDIR)
       --num-workers N                 Parallel workers for hdfeos5_2json_mbtiles (sets HDFEOS_NUM_WORKERS; default 1 or env)
       --mbtiles-num-workers N         Parallel workers for json_mbtiles2insarmaps (sets MBTILES_NUM_WORKERS; default 6 or env)
       --quiet-summary                 suppress printing generated insarmaps URLs (still appends to insarmaps.log)
@@ -65,7 +69,10 @@ Examples:
       - INSARMAPSHOST_RECENTDATA : when filename contains XXXXXXXX, else INSARMAPSHOST_OLDDATA
       - --insarmapshost overrides both when given
       - REMOTEUSER : ssh/rsync user for step 2 (default: exouser)
-      - SCRATCHDIR : required for step 2 remote path under /data/scratch/
+      - SCRATCHDIR : required for step 2 to another machine (remote path under /data/scratch/)
+      - INSARMAPS_LOCAL_HOSTS : comma-separated insarmaps hosts that are this machine, for an address it can't
+                                      recognise as its own (on insarmaps2: 149.165.153.50, its floating IP);
+                                      step 2 to them uploads JSON/ in place
       - INSARMAPS_RSH / INSARMAPS_SSH_JUMP : remote shell for step 2 (default: ssh).
                                       From Stampede use e.g. INSARMAPS_SSH_JUMP=exouser@\$REMOTEHOST_DATA
                                       so rsync/ssh hop through jetstream to the InsarMaps host.
@@ -666,10 +673,62 @@ ingest_step2_rsh() {
     fi
 }
 
+# True when the insarmaps host is this machine: localhost, 127.0.0.1 or ::1, this machine's name (short or full), or a
+# host named in INSARMAPS_LOCAL_HOSTS (comma-separated). The variable is for an address the machine can't recognise as
+# its own, such as a cloud floating IP: on insarmaps2, 149.165.153.50.
+insarmaps_host_is_local() {
+    local host name
+    local -a names listed
+    host="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+    [[ -z "$host" ]] && return 1
+    names=(localhost 127.0.0.1 ::1 "$(hostname 2>/dev/null)" "$(hostname -s 2>/dev/null)" "$(hostname -f 2>/dev/null)")
+    IFS=',' read -ra listed <<< "${INSARMAPS_LOCAL_HOSTS:-}"
+    for name in "${names[@]}" "${listed[@]}"; do
+        name="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+        [[ -n "$name" && "$name" == "$host" ]] && return 0
+    done
+    return 1
+}
+
+# Step 2 on the insarmaps host itself: json_mbtiles2insarmaps.py loads JSON/ where it is into this machine's database
+# (--host 127.0.0.1) and builds the dataset's recolor store. No copy, no ssh, no SCRATCHDIR. The password comes from
+# the same file as on the remote path, through sudo, and is not written to the logs.
+ingest_step2_local() {
+    local local_json_dir="$1"
+    local pass_file="/data/insarmaps2/postgres_dir/.insaradmin_db_password"
+    local pg_pass shown status=0
+
+    local_json_dir="$(cd "$local_json_dir" && pwd)"
+    echo "####################################"
+    echo "Step 2 on this machine (the insarmaps host): uploading ${local_json_dir} where it is"
+    echo "Reading DB password from ${pass_file}"
+    pg_pass="$(sudo -n cat "$pass_file" | tr -d '[:space:]')" || true
+    if [[ -z "$pg_pass" ]]; then
+        echo "Error: could not read the DB password from ${pass_file} (needs sudo -n on this machine)" >&2
+        exit 1
+    fi
+
+    shown="json_mbtiles2insarmaps.py --num-workers ${MBTILES_NUM_WORKERS} -u insaradmin -p *** --host 127.0.0.1 --json_folder ${local_json_dir}"
+    echo "####################################"
+    echo "Running.... ${shown}"
+    echo "$(date +"%Y%m%d:%H-%M") * ${shown}" | tee -a log
+    json_mbtiles2insarmaps.py --num-workers "$MBTILES_NUM_WORKERS" -u insaradmin -p "$pg_pass" --host 127.0.0.1 \
+        --json_folder "$local_json_dir" || status=$?
+    if [[ "$status" -ne 0 ]]; then
+        echo "json_mbtiles2insarmaps.py exited with a non-zero exit code (exit code: $status). Exiting."
+        exit 1
+    fi
+}
+
 # Step 2: rsync JSON/ to host, then ssh-run json_mbtiles2insarmaps.py with local DB (--host 127.0.0.1).
+# On the insarmaps host itself, ingest_step2_local instead.
 ingest_step2_rsync_and_remote_ingest() {
     local insarmaps_host="$1"
     local local_json_dir="$2"
+    if insarmaps_host_is_local "$insarmaps_host"; then
+        ingest_step2_local "$local_json_dir"
+        return
+    fi
     local remote_user="${REMOTEUSER:-exouser}"
     local remote_pass_file="/data/insarmaps2/postgres_dir/.insaradmin_db_password"
     local remote_minsar_home="${INSARMAPS_REMOTE_MINSAR_HOME:-/data/insarmaps2/code/minsar}"

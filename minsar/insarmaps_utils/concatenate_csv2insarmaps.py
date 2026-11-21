@@ -14,7 +14,8 @@ from datetime import date
 
 import sys
 
-from insarmaps_step2 import ingest_remote_paths_for_scratch, ingest_step2_rsync_and_remote_ingest, insarmaps_host_list
+from insarmaps_step2 import (ingest_remote_paths_for_scratch, ingest_step2_rsync_and_remote_ingest,
+                             insarmaps_host_is_local, insarmaps_host_list)
 
 
 REQUIRED_COLS = {"X", "Y"}
@@ -125,7 +126,8 @@ def ingest_to_insarmaps(csv_path, output_dir, insarmaps_host, skip_upload):
              else insarmaps_host_list(insarmaps_host))
     if not skip_upload:
         # step 2, as ingest_insarmaps.bash does it: rsync JSON/ to each host (output_dir must lie under $SCRATCHDIR)
-        # and run json_mbtiles2insarmaps.py there, which loads the dataset and builds its recolor store
+        # and run json_mbtiles2insarmaps.py there, which loads the dataset and builds its recolor store; on the
+        # Insarmaps host itself, json_mbtiles2insarmaps.py runs on JSON/ where it is
         for host in hosts:
             ingest_step2_rsync_and_remote_ingest(host, json_dir, data_dir=output_dir)
 
@@ -139,10 +141,12 @@ def ingest_to_insarmaps(csv_path, output_dir, insarmaps_host, skip_upload):
 
 
 def check_upload(insarmaps_host, output_dir):
-    """What step 2 needs, checked before the CSVs are read: a host, and output_dir under $SCRATCHDIR (it is staged
-    under /data/scratch on the host). Raises RuntimeError saying what is missing."""
-    insarmaps_host_list(insarmaps_host)
-    ingest_remote_paths_for_scratch(Path(output_dir).resolve())
+    """What step 2 needs, checked before the CSVs are read: a host, and, unless every host is this machine,
+    output_dir under $SCRATCHDIR (it is staged under /data/scratch on the host). Raises RuntimeError saying what is
+    missing."""
+    hosts = insarmaps_host_list(insarmaps_host)
+    if not all(insarmaps_host_is_local(h) for h in hosts):
+        ingest_remote_paths_for_scratch(Path(output_dir).resolve())
 
 
 def main():
