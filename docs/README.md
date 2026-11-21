@@ -64,7 +64,7 @@ minsarApp.bash $SAMPLESDIR/bdunittestGalapagosSenDT128.template --burst-download
 
 - **miaplpy:**    submits  `miaplpyApp.py $SAMPLESDIR/unittestGalapagosSenDT128.template  --dir miaplpy --jobfiles` to SLURM via the `srun` command. Creates
 
-- **insarmaps:**  submits   `insarmaps.job` to slurm, which runs `ingest_insarmaps.py $SAMPLESDIR/unittestGalapagosSenDT128.template` to create `run_insarmaps` containing the two commands required fro ingesting.
+- **insarmaps:**  runs `create_ingest_insarmaps_jobfile.py` and submits the job it writes, which runs `ingest_insarmaps.bash`: step 1 converts the `.he5` to JSON, step 2 uploads it to the insarmaps host, which loads the dataset and builds the recolor store the map draws it from.
 
 - **upload:**    runs `upload_data_products.py $SAMPLESDIR/unittestGalapagosSenDT128.template` (options `--mintpy, --miaplpy, --dir`) to upload the mintpy and/or miaplpy/network* directories to jetstream
 
