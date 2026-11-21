@@ -23,7 +23,8 @@ def run_command(command, cwd=None):
         f"{command_line}\n"
         "##########################\n"
     )
-    subprocess.run(cmd_parts, check=True, cwd=str(cwd) if cwd else None)
+    # an argument list without a shell, built by the uploaders (mkdir, rsync and rm of the staging folder over ssh)
+    subprocess.run(cmd_parts, check=True, cwd=str(cwd) if cwd else None)  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
 
 
 def convert_to_relative_path(cmd_list, cwd=None):
@@ -147,7 +148,9 @@ def ingest_step2_rsync_and_remote_ingest(insarmaps_host, local_json_dir, local_m
     _append_ingest_command_log(password_display)
     _append_command_log(password_display)
     try:
-        pg_pass = subprocess.check_output(rsh_parts + [target, password_cmd], text=True).strip()
+        # ssh from the operator's own settings (INSARMAPS_RSH, INSARMAPS_SSH_JUMP, REMOTEUSER); the remote command's
+        # only value, the password file's path, is a constant passed through shlex.quote
+        pg_pass = subprocess.check_output(rsh_parts + [target, password_cmd], text=True).strip()  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args
     except subprocess.CalledProcessError as exc:
         raise RuntimeError(
             f"failed to read DB password from {target}:{remote_pass_file} (exit {exc.returncode})"
@@ -172,7 +175,8 @@ def ingest_step2_rsync_and_remote_ingest(insarmaps_host, local_json_dir, local_m
         f"json_mbtiles2insarmaps.py --num-workers {shlex.quote(str(workers))} -u insaradmin "
         f"-p {shlex.quote(pg_pass)} --host 127.0.0.1 --json_folder {shlex.quote(remote_json_dir)}"
     )
-    remote_status = subprocess.run(rsh_parts + [target, "bash -lc " + shlex.quote(remote_body)]).returncode
+    # ssh as above; every value in remote_body went through shlex.quote, and the whole through shlex.quote again
+    remote_status = subprocess.run(rsh_parts + [target, "bash -lc " + shlex.quote(remote_body)]).returncode  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit, python.lang.security.audit.dangerous-subprocess-use-tainted-env-args
     if remote_status != 0:
         print(
             f"{rsh} {target} json_mbtiles2insarmaps.py exited with a non-zero exit code "
