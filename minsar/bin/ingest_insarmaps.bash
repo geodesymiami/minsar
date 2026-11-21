@@ -39,10 +39,12 @@ Examples:
       --suffix TAG or auto              Append _TAG to .he5/.csv basename for ingest (dataset name)
                                           auto reads miaplpy.timeseries.minTempCoh from ../miaplpyApp.cfg (0.85 -> coh085)
       --insarmapshost HOST[,HOST...]  Override INSARMAPSHOST_RECENTDATA / INSARMAPSHOST_OLDDATA for upload
-      --hdfeos5_2json_mbtiles         Run only HDFEOS5 → JSON (no insarmaps upload); same as --step 1
+      --hdfeos5_2json_mbtiles         Run only step 1, no upload; same as --step 1
                                       For a .csv input, step 1 runs hdfeos5_or_csv_2json_mbtiles.py instead of hdfeos5_2json_mbtiles.py
       --json_mbtiles2insarmaps        Run only insarmaps upload (assumes step 1 succeeded); same as --step 2
       --step N                        N is 1 or 2; same effect as the long names above. Also --step=N
+                                      Step 1: writes the dataset's points (numpy arrays: points.json, p.npy, lon.npy,
+                                      lat.npy, m.npy, d.npy) and metadata.pickle to JSON/ (the folder keeps that name)
                                       Step 2: rsync JSON/ to REMOTEUSER@host:/data/scratch/<path-under-\$SCRATCHDIR>/,
                                       then ssh-run json_mbtiles2insarmaps.py on the host (--host 127.0.0.1;
                                       DB password from /data/insarmaps2/postgres_dir/.insaradmin_db_password),
@@ -52,8 +54,8 @@ Examples:
                                       On the insarmaps host itself (localhost, its own name, or a host in
                                       INSARMAPS_LOCAL_HOSTS): runs json_mbtiles2insarmaps.py on JSON/ where it is
                                       (no rsync, no ssh, no SCRATCHDIR)
-      --num-workers N                 Parallel workers for hdfeos5_2json_mbtiles (sets HDFEOS_NUM_WORKERS; default 1 or env)
-      --mbtiles-num-workers N         Parallel workers for json_mbtiles2insarmaps (sets MBTILES_NUM_WORKERS; default 6 or env)
+      --num-workers N                 Not needed any more: step 1 runs in one process (sets HDFEOS_NUM_WORKERS; accepted)
+      --mbtiles-num-workers N         Not needed any more: the upload loads in one stream (sets MBTILES_NUM_WORKERS; accepted)
       --quiet-summary                 suppress printing generated insarmaps URLs (still appends to insarmaps.log)
       --submit                        Run ingest now (inline on Mac/Jetstream; jobfile + run_workflow on SLURM login)
                                       Prints InsarMaps URLs after completion when using --submit
@@ -81,7 +83,7 @@ Examples:
 
   Output: With --ref-lalo the selected .he5 in the input dir is modified in place. insarmaps.log appended. No backup files.
 
-  Memory: Default --num-workers is 1 to limit RAM. Increase only if you have enough memory, or set HDFEOS_NUM_WORKERS.
+  Memory: step 1 holds the .he5's displacement (dates x rows x columns, 4 bytes each) in memory; --num-workers doesn't change that.
     "
     printf "$helptext"
     exit 0
@@ -99,7 +101,7 @@ echo "$(date +"%Y%m%d:%H-%M") * $SCRIPT_NAME $*" | tee -a "$LOG_FILE"
 debug_flag=0
 submit_flag=0
 positional=()
-# ingest_step: all (default) | step1 (HDFEOS5→JSON only) | step2 (upload only; step1 must have run)
+# ingest_step: all (default) | step1 (the points only) | step2 (upload only; step1 must have run)
 ingest_step="all"
 
 # Default values for options (lowercase - local/temporary variables)
@@ -613,7 +615,8 @@ if [[ -n "$SSARAHOME" ]]; then
     DB_PASS=$(python3 -c "import sys; sys.path.insert(0, '$SSARAHOME'); import password_config; print(password_config.docker_databasepass)" 2>/dev/null || echo "")
 fi
 
-# Parallelism: CLI overrides env; else HDFEOS_NUM_WORKERS default 1, MBTILES_NUM_WORKERS default 6
+# Workers: CLI overrides env; else HDFEOS_NUM_WORKERS default 1, MBTILES_NUM_WORKERS default 6. Both still go to the
+# scripts as --num-workers, which they accept and no longer need (step 1 runs in one process, the upload in one stream)
 if [[ -n "$num_workers_cli" ]]; then
     HDFEOS_NUM_WORKERS="$num_workers_cli"
 else
