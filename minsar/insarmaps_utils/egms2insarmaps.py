@@ -4,7 +4,8 @@ Ingest EGMS L2a CSV (+ optional companion XML) into Insarmaps.
 
 Pipeline:
   EGMS CSV → hdfeos5_or_csv_2json_mbtiles.py → patch metadata.pickle → step 2 (insarmaps_step2.py: rsync JSON/ to
-  the Insarmaps host and run json_mbtiles2insarmaps.py there, which loads the dataset and builds its recolor store)
+  the Insarmaps host and run json_mbtiles2insarmaps.py there, which loads the dataset and builds its recolor store;
+  on the Insarmaps host itself, json_mbtiles2insarmaps.py runs on JSON/ where it is)
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from pathlib import Path
 
 from egms_metadata import build_egms_attributes
 from insarmaps_csv_geo import csv_mean_lat_lon
-from insarmaps_step2 import ingest_remote_paths_for_scratch, ingest_step2_rsync_and_remote_ingest
+from insarmaps_step2 import ingest_remote_paths_for_scratch, ingest_step2_rsync_and_remote_ingest, insarmaps_host_is_local
 
 UTILS_DIR = Path(__file__).resolve().parents[1] / "utils"
 if str(UTILS_DIR) not in sys.path:
@@ -334,10 +335,12 @@ def main(argv=None):
 
     print(f"[INFO] Ingest mode: {ingest_step}")
     if ingest_step in ("all", "step2"):
-        # step 2 stages the JSON folder under /data/scratch on the host: check that it can before converting
+        # step 2 to another machine stages the JSON folder under /data/scratch there: check that it can before
+        # converting (on the Insarmaps host itself it uploads the folder where it is)
         try:
-            resolve_insarmaps_hosts(csv_path, args.insarmaps_host)
-            ingest_remote_paths_for_scratch(output_dir.parent)
+            hosts = resolve_insarmaps_hosts(csv_path, args.insarmaps_host)
+            if not all(insarmaps_host_is_local(h) for h in hosts):
+                ingest_remote_paths_for_scratch(output_dir.parent)
         except (RuntimeError, ValueError) as e:
             parser.error(f"{e} (needed for the upload; --step 1 or --skip-upload converts only)")
 
@@ -431,7 +434,7 @@ def main(argv=None):
         insarmaps_hosts = resolve_insarmaps_hosts(csv_path, args.insarmaps_host)
         print(f"[INFO] Insarmaps host(s): {', '.join(insarmaps_hosts)}")
         for host in insarmaps_hosts:
-            # the JSON folder's parent must lie under $SCRATCHDIR (it maps to /data/scratch on the host)
+            # for another machine, the JSON folder's parent must lie under $SCRATCHDIR (it maps to /data/scratch there)
             ingest_step2_rsync_and_remote_ingest(host, output_dir, data_dir=output_dir.parent)
     else:
         print("[INFO] Skipping upload (step 1 only)")

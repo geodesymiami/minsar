@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """Step 2 of an Insarmaps ingest, for the Python uploaders (sarvey2insarmaps.py and others): rsync the JSON folder that
 step 1 wrote to the Insarmaps host, under /data/scratch, run json_mbtiles2insarmaps.py there over ssh against the
-host's database (--host 127.0.0.1), then delete the remote copy. ingest_insarmaps.bash does the same in bash
-(ingest_step2_rsync_and_remote_ingest)."""
+host's database (--host 127.0.0.1), then delete the remote copy. On the Insarmaps host itself (insarmaps_host_is_local)
+it runs json_mbtiles2insarmaps.py on the JSON folder where it is instead: no copy, no ssh, no $SCRATCHDIR.
+ingest_insarmaps.bash does the same in bash (ingest_step2_rsync_and_remote_ingest)."""
 import os
 import shlex
+import socket
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
+
+# the insarmaps database password, readable with sudo on the Insarmaps host
+INSARMAPS_DB_PASSWORD_FILE = "/data/insarmaps2/postgres_dir/.insaradmin_db_password"
 
 
 def run_command(command, cwd=None):
@@ -51,6 +56,20 @@ def insarmaps_host_list(host_arg):
     if not hosts:
         raise RuntimeError("no InsarMaps host set (use --insarmaps-host or INSARMAPSHOST_OLDDATA)")
     return hosts
+
+
+def insarmaps_host_is_local(host):
+    """True when the Insarmaps host is the machine this runs on: localhost, 127.0.0.1 or ::1, this machine's name
+    (short or full), or a host named in INSARMAPS_LOCAL_HOSTS (comma-separated). The variable is for an address the
+    machine can't recognise as its own, such as a cloud floating IP: on insarmaps2, 149.165.153.50."""
+    host = str(host or "").strip().lower()
+    if not host:
+        return False
+    names = {"localhost", "127.0.0.1", "::1"}
+    name = socket.gethostname().lower()
+    names.update({name, name.split(".")[0], socket.getfqdn().lower()})
+    names.update(h.strip().lower() for h in os.environ.get("INSARMAPS_LOCAL_HOSTS", "").split(",") if h.strip())
+    return host in names
 
 
 def ingest_step2_rsh():
@@ -107,19 +126,56 @@ def _append_ingest_command_log(command_line):
         handle.write(command_line + "\n")
 
 
+def ingest_step2_local(local_json_dir):
+    """Step 2 on the Insarmaps host itself: json_mbtiles2insarmaps.py loads JSON/ where it is into this machine's
+    database (--host 127.0.0.1) and builds the dataset's recolor store. No copy, no ssh, no $SCRATCHDIR. The password
+    comes from INSARMAPS_DB_PASSWORD_FILE through sudo, as on the remote path, and is not written to the logs."""
+    workers = os.environ.get("MBTILES_NUM_WORKERS") or "6"
+    print("####################################")
+    print(f"Step 2 on this machine (the Insarmaps host): uploading {local_json_dir} where it is")
+    password_cmd = ["sudo", "-n", "cat", INSARMAPS_DB_PASSWORD_FILE]
+    print(f"Running.... {' '.join(password_cmd)}")
+    _append_ingest_command_log(" ".join(password_cmd))
+    _append_command_log(" ".join(password_cmd))
+    try:
+        pg_pass = "".join(subprocess.check_output(password_cmd, text=True).split())
+    except (subprocess.CalledProcessError, OSError) as exc:
+        raise RuntimeError(f"failed to read the DB password from {INSARMAPS_DB_PASSWORD_FILE}: {exc}") from exc
+    if not pg_pass:
+        raise RuntimeError(f"empty password from {INSARMAPS_DB_PASSWORD_FILE}")
+
+    ingest_args = ["--num-workers", str(workers), "-u", "insaradmin", "-p", pg_pass, "--host", "127.0.0.1",
+                   "--json_folder", str(local_json_dir)]
+    shown = (f"json_mbtiles2insarmaps.py --num-workers {workers} -u insaradmin -p *** --host 127.0.0.1 "
+             f"--json_folder {local_json_dir}")
+    print("####################################")
+    print(f"Running.... {shown}")
+    _append_ingest_command_log(shown)
+    _append_command_log(shown)
+    # a fixed program with an argument list, no shell; the values are the JSON folder and the password file's content
+    status = subprocess.run(["json_mbtiles2insarmaps.py"] + ingest_args).returncode  # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
+    if status != 0:
+        print(f"json_mbtiles2insarmaps.py exited with a non-zero exit code (exit code: {status}). Exiting.")
+        sys.exit(1)
+
+
 def ingest_step2_rsync_and_remote_ingest(insarmaps_host, local_json_dir, local_mbtiles=None, data_dir=None):
-    """Rsync JSON/ to the Insarmaps host, ingest via ssh against 127.0.0.1, then delete the remote scratch tree.
+    """Rsync JSON/ to the Insarmaps host, ingest via ssh against 127.0.0.1, then delete the remote scratch tree; on the
+    Insarmaps host itself (insarmaps_host_is_local), ingest_step2_local instead, which needs no data_dir.
     json_mbtiles2insarmaps.py builds the dataset's recolor store there, from which the map draws it; no .mbtiles is
     sent or installed. local_mbtiles is ignored: it stays in the signature for jobfiles written before."""
     insarmaps_host = str(insarmaps_host).strip()
     local_json_dir = Path(local_json_dir)
-    if data_dir is None:
-        raise ValueError("data_dir is required (the folder under $SCRATCHDIR that holds JSON/)")
     if not local_json_dir.is_dir():
         raise FileNotFoundError(f"JSON directory missing: {local_json_dir}")
+    if insarmaps_host_is_local(insarmaps_host):
+        ingest_step2_local(local_json_dir.resolve())
+        return
+    if data_dir is None:
+        raise ValueError("data_dir is required (the folder under $SCRATCHDIR that holds JSON/)")
 
     remote_user = (os.environ.get("REMOTEUSER") or "exouser").strip() or "exouser"
-    remote_pass_file = "/data/insarmaps2/postgres_dir/.insaradmin_db_password"
+    remote_pass_file = INSARMAPS_DB_PASSWORD_FILE
     remote_minsar_home = os.environ.get("INSARMAPS_REMOTE_MINSAR_HOME") or "/data/insarmaps2/code/minsar"
     workers = os.environ.get("MBTILES_NUM_WORKERS") or "6"
     rsh = ingest_step2_rsh()

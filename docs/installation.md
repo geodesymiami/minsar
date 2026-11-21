@@ -50,6 +50,7 @@ Customize these in `~/.minsar/user_env.bash`:
 | `QUEUENAME` | queue selected for this host (`normal` when the host file did not set one) |
 | `INSARMAPSHOST_RECENTDATA` | `insarmaps.miami.edu` |
 | `INSARMAPSHOST_OLDDATA` | `insarmaps.miami.edu` |
+| `INSARMAPS_LOCAL_HOSTS` | empty. Only on the insarmaps host itself: the hosts above that are this machine but that it can't recognise as its own (on insarmaps2, its floating IP `149.165.153.50`). Step 2 of an ingest to them uploads the JSON folder where it is, without rsync or ssh (localhost and the machine's own name count without it). |
 | `MINSAR_CUSTOM_OPTIONS` | `$MINSAR_HOME/minsar/defaults/sample_custom_template_options.txt` |
 
 ### Troubleshooting

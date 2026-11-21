@@ -135,7 +135,8 @@ def create_parser():
     parser = argparse.ArgumentParser(
         description="End-to-end pipeline for: SARvey shapefiles -> CSV -> JSON -> Insarmaps -> jetstream\n"
                     "Insarmaps upload rsyncs JSON/ to the host (under /data/scratch) and runs json_mbtiles2insarmaps.py there over ssh,\n"
-                    "which loads the dataset and builds the recolor store the map draws it from.",
+                    "which loads the dataset and builds the recolor store the map draws it from. On the Insarmaps host itself\n"
+                    "(localhost, its own name, or a host in INSARMAPS_LOCAL_HOSTS) it runs json_mbtiles2insarmaps.py on JSON/ where it is.",
         epilog="""\
     Examples:
 
@@ -851,7 +852,7 @@ def main():
         merge_into_metadata_pickle(json_dir, metadata)
         metadata = update_and_save_final_metadata(json_dir, output_path, ingest_stem, metadata)
 
-        # Step 5: rsync JSON/ to each Insarmaps host and ingest there
+        # Step 5: rsync JSON/ to each Insarmaps host and ingest there (on the Insarmaps host itself, in place)
         if not inps.skip_upload:
             for host in insarmaps_host_list(inps.insarmaps_host):
                 ingest_step2_rsync_and_remote_ingest(host, json_dir, data_dir=output_path)
