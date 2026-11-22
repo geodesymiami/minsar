@@ -126,7 +126,13 @@ class TestConverterLatLon(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("hdfeos5_or_csv_2json_mbtiles", script)
         mod = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = mod
-        spec.loader.exec_module(mod)
+        # The converter imports modules from its own folder (points_bundle). Python finds them when the script runs
+        # as a command, as minsar runs it, but not when it is loaded by path, as here.
+        sys.path.insert(0, str(script.parent))
+        try:
+            spec.loader.exec_module(mod)
+        finally:
+            sys.path.remove(str(script.parent))
         lat, lon = mod.detect_lat_lon_columns(["latitude", "longitude", "20200104"])
         self.assertEqual(lat, "latitude")
         self.assertEqual(lon, "longitude")
