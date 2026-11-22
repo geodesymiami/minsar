@@ -3,7 +3,7 @@
 Ingest EGMS L2a CSV (+ optional companion XML) into Insarmaps.
 
 Pipeline:
-  EGMS CSV → hdfeos5_or_csv_2json_mbtiles.py (the dataset's points, numpy arrays in JSON/) → patch metadata.pickle →
+  EGMS CSV → insarmaps_ingester.py (the dataset's points, numpy arrays in JSON/) → patch metadata.pickle →
   step 2 (insarmaps_step2.py: rsync JSON/ to
   the Insarmaps host and run json_mbtiles2insarmaps.py there, which loads the dataset and builds its recolor store;
   on the Insarmaps host itself, json_mbtiles2insarmaps.py runs on JSON/ where it is)
@@ -64,7 +64,7 @@ Examples:
         "--num-workers",
         type=int,
         default=1,
-        help="Workers for hdfeos5_or_csv_2json_mbtiles.py (default: 1; prefer low for large CSVs)",
+        help="Not needed any more: step 1 (insarmaps_ingester.py) runs in one process. Accepted (default: 1)",
     )
     parser.add_argument(
         "--insarmaps-host",
@@ -414,7 +414,7 @@ def main(argv=None):
     if ingest_step in ("all", "step1"):
         run_command(
             [
-                "hdfeos5_or_csv_2json_mbtiles.py",
+                "insarmaps_ingester.py",
                 str(csv_path),
                 str(output_dir),
                 "--num-workers",

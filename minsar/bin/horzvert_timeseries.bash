@@ -319,7 +319,7 @@ Options:
       --upload                        Upload to Jetstream after --submit completes (default on Stampede/Mac)
       --no-upload                     Skip Jetstream upload
       --sleep SECS                    sleep seconds before running
-      --num-workers N                 ingest_insarmaps hdfeos5_2json workers (default: 1)
+      --num-workers N                 ingest_insarmaps step 1 workers (insarmaps_ingester.py; not needed; default: 1)
       --mbtiles-num-workers N         ingest_insarmaps mbtiles workers (default: 6)
       --debug                         set -x
 

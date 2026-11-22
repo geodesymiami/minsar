@@ -3,7 +3,7 @@
 
 Finds the nearest CSV point within --search-radius (meters), subtracts that
 point's displacement time series from every row (all date columns), and writes
-the result in place or to --output. Date columns match hdfeos5_or_csv_2json_mbtiles.py:
+the result in place or to --output. Date columns match insarmaps_ingester.py:
 SARvey ``DYYYYMMDD`` or EGMS ``YYYYMMDD`` (values in millimeters).
 """
 
@@ -167,7 +167,7 @@ def reference_point_egms(
     if lat_col is None or lon_col is None:
         raise ValueError(
             "Could not find latitude/longitude columns in CSV. "
-            "Supported names match hdfeos5_or_csv_2json_mbtiles.py."
+            "Supported names match insarmaps_ingester.py."
         )
 
     date_cols = detect_date_columns(df.columns)
