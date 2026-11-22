@@ -112,7 +112,7 @@ flowchart LR
 
 **Missing for correct Insarmaps title/metadata (give manually or derive)**
 
-These are the ones that matter for display naming (see `sarvey2insarmaps.merge_into_metadata_pickle`):
+These are the ones that matter for display naming (see `sarvey2insarmaps.insarmaps_area_attributes`):
 
 | Attribute | EGMS-derived value | How |
 |-----------|-------------------|-----|
