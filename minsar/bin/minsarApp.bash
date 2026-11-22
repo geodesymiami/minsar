@@ -40,6 +40,7 @@ helptext="                                                                      
    --end STEP, --stop STEP                                                       \n\
    --dostep STEP         run processing at the named step only                   \n\
    --download-method {slc | SLC, burst | BURST, burst2safe, burst2stack, ssara-slc, ssara-bash, ssara-python} (default: burst2stack; burst downloads into BURST, full SLCs into SLC) \n\
+                         ALOS-2: slc-unpack (SLURM job) or slc-unpack-login (login node) unpack each archive right after its download (default: slc) \n\
    --delta-lat [DEG]     download larger error (default 0; bare --delta-lat: 0.2) \n\
    --minsar.excludeDates | --exclude-dates DATES  exclude YYYYMMDD scenes (comma-separated; merges with template) \n\
    --start-date DATE | --end-date DATE   YYYYMMDD or YYYY-MM-DD. Writes ssaraopt and miaplpy.load dates; the omitted side becomes auto \n\
@@ -717,7 +718,7 @@ fi
 
 if platform_is_alos2 "$platform_str"; then
     download_dir="$WORK_DIR/SLC_ORIG"
-    download_method="slc"
+    [[ $download_method == slc-unpack* ]] || download_method="slc"
 elif [[ $platform_str =~ COSMO-SKYMED|TERRASAR-X|ENVISAT ]]; then
     download_dir="$WORK_DIR/SLC_ORIG"
     [[ $download_method == *burst2safe* ]] && download_method="ssara-bash"   # FA July 2026   Not sure why this was there. 
@@ -742,6 +743,8 @@ if [[ $preprocess_flag == "1" && $platform_str == *"SENTINEL-1"*  ]]; then
         preprocess_flag=1
     fi # no preprocessing needed for burst2stack and slc
 fi
+# slc-unpack and slc-unpack-login unpack during the download
+[[ $download_method == slc-unpack* ]] && preprocess_flag=0
 
 # set isce_start/isce_stop from CLI + defaults
 # NESD/auto full=16 partial=12; geometry full=11 partial=7 (slc workflow uses the shorter pair).
@@ -801,6 +804,10 @@ if [[ $download_flag == "1" ]]; then
         run_command "cmd2jobfile.py ./download_burst2stack.sh --submit"
     elif [[ "$download_method" == "slc" ]]; then
         run_command "./download_slc.sh 2>out_download_slc.e 1>out_download_slc.o"
+    elif [[ "$download_method" == "slc-unpack" ]]; then
+        run_command "cmd2jobfile.py ./download_slc_unpack.sh --submit"
+    elif [[ "$download_method" == "slc-unpack-login" ]]; then
+        run_command "./download_slc_unpack.sh 2>out_download_slc_unpack.e 1>out_download_slc_unpack.o"
     elif [[ $download_method == "ssara-python" ]]; then
         cd $download_dir
         cmd=$(cat ../download_ssara_python.cmd)

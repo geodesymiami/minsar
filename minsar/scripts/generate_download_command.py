@@ -195,6 +195,14 @@ def generate_download_command(template,inps):
     #with open('download_slc.cmd', 'w') as f:
     #    f.write(' '.join(asf_slc_download_cmd) + '\n')
 
+    # create download_slc_unpack.sh (slc-unpack methods: each archive is unpacked right after its download)
+    if is_alos2:
+        with open('download_slc_unpack.sh', 'w') as f:
+            f.write("#!/usr/bin/env bash\n")
+            f.write("set -e\n")
+            f.write(_join_cmd(['asf_download_unpack.py'] + [arg for arg in download_args[1:] if arg != '--download']) + '\n')
+        os.chmod('download_slc_unpack.sh', 0o755)
+
     # create download_burst2safe.sh (burst2safe method: download only, listing + two download runs)
     asf_burst_download_opts = ['--processingLevel=BURST'] + asf_ssaraopt + [f'--dir={burst_dir}']
     if effective_exclude_season:

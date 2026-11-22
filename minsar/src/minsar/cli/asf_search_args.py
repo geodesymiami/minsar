@@ -221,10 +221,11 @@ def _dedupe_products_by_file_id(products):
         unique.append(product)
     return unique, removed
 
-def main(iargs=None, namespace=None):
-    """Main function to execute the search and download."""
-    inps = create_parser(iargs, namespace)
+def find_products(inps):
+    """Search ASF and apply the season, duplicate, and coverage filters.
 
+    Returns (results, result_list): the raw search results and the filtered products.
+    """
     print("Searching for data...\n")
 
     results = asf.search(
@@ -263,6 +264,14 @@ def main(iargs=None, namespace=None):
             if polygon.contains(bbox):
                 kept.append(r)
         result_list = kept
+
+    return results, result_list
+
+
+def main(iargs=None, namespace=None):
+    """Main function to execute the search and download."""
+    inps = create_parser(iargs, namespace)
+    results, result_list = find_products(inps)
 
     for r in result_list:
         if inps.print:
