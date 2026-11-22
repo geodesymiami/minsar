@@ -69,71 +69,10 @@ def he5_dataset_filename(metadata, suffix=None, subset_mode=True):
         return get_output_filename(metadata, {}, **kwargs)
     return get_output_filename(metadata, **kwargs)
 
-def merge_into_metadata_pickle(json_dir, attrs):
-    """Ensure Insarmaps' JSON/metadata.pickle has every direction key/value the title might read."""
-
-    p = Path(json_dir) / "metadata.pickle"
-    if not p.exists():
-        print("[WARN] metadata.pickle not found; cannot set orbit_direction/mission")
-        return
-
-    with open(p, "rb") as f:
-        meta = pickle.load(f)
-
-    a = meta.get("attributes", {})
-
-    # Normalize mission for title (e.g., "S1")
-    mission_raw = (attrs.get("PLATFORM") or attrs.get("mission") or a.get("mission") or "").upper()
-    aliases = {"SENTINEL-1": "S1", "SEN": "S1", "S1": "S1",
-               "TERRASAR-X": "TSX", "TSX": "TSX"}
-    a["mission"] = aliases.get(mission_raw, mission_raw or "S1")
-
-    # Derive orbit/flight direction in both long and short forms
-    raw_dir = (
-        attrs.get("ORBIT_DIRECTION")
-        or attrs.get("flight_direction")
-        or a.get("orbit_direction")
-        or a.get("flight_direction")
-        or ""
-    )
-    raw_dir = str(raw_dir).strip().upper()
-
-    if raw_dir in ("A", "ASCENDING"):
-        long_dir, short_dir = "ASCENDING", "A"
-    elif raw_dir in ("D", "DESCENDING"):
-        long_dir, short_dir = "DESCENDING", "D"
-    else:
-        # Fallback: try to infer from SAR track if available (no-op here); otherwise bail.
-        long_dir, short_dir = None, None
-
-    if long_dir:
-        # Make every likely-read key the short letter so the title shows A/D
-        a["orbit_direction"]  = short_dir   # "A"/"D"
-        a["flight_direction"] = short_dir   # force letter
-        a["direction"]        = short_dir   # force letter
-        a["ORBIT_DIRECTION"]  = short_dir   # force letter
-
-
-    # Pass through other handy fields if missing
-    for k in ("relative_orbit", "beam_mode", "look_direction", "first_frame", "last_frame"):
-        if k in attrs and k not in a:
-            a[k] = attrs[k]
-
-    meta["attributes"] = a
-    with open(p, "wb") as f:
-        pickle.dump(meta, f)
-
-    # Debug: show which keys ended up in the pickle
-    print("[INFO] metadata.pickle keys:", sorted(a.keys()))
-    if long_dir:
-        print(f"[INFO] Set direction keys -> long='{long_dir}', short='{short_dir}'")
-    else:
-        print("[WARN] Could not determine orbit/flight direction to set")
-
-
 def create_parser():
     parser = argparse.ArgumentParser(
         description="End-to-end pipeline for: SARvey shapefiles -> CSV -> points (numpy arrays in JSON/) -> Insarmaps -> jetstream\n"
+                    "The points come from the CSV (metres, positions corrected for the DEM error), written with insarmaps_ingester.py's writers.\n"
                     "Insarmaps upload rsyncs JSON/ to the host (under /data/scratch) and runs json_mbtiles2insarmaps.py there over ssh,\n"
                     "which loads the dataset and builds the recolor store the map draws it from. On the Insarmaps host itself\n"
                     "(localhost, its own name, or a host in INSARMAPS_LOCAL_HOSTS) it runs json_mbtiles2insarmaps.py on JSON/ where it is.",
@@ -376,15 +315,15 @@ def sarvey_points_h5(data_path):
     return data_path.with_suffix(".h5")
 
 
-def build_commands(shp_file_path, csv_file_path, geocorr_csv_path, json_dir, input_csv, geometry_h5=None, points_h5=None):
+def build_commands(shp_file_path, csv_file_path, geocorr_csv_path, geometry_h5=None, points_h5=None):
     """
     Build the list of shell command sequences for the SARvey-to-Insarmaps pipeline.
 
-    Returns three commands:
+    Returns two commands:
         cmd1 - Convert SHP to CSV using ogr2ogr with WGS84 coordinates.
         cmd2 - Sample incidenceAngle/azimuthAngle and write longitude_corrected/latitude_corrected.
-        cmd3 - Convert CSV or HDF5 to the dataset's points (numpy arrays in JSON/) using insarmaps_ingester.py.
-    Insarmaps upload is ingest_step2_rsync_and_remote_ingest(), not a local json_mbtiles2insarmaps.py call.
+    The dataset's points come from write_insarmaps_points(), and the Insarmaps upload is
+    ingest_step2_rsync_and_remote_ingest(), not a local json_mbtiles2insarmaps.py call.
     """
     cmd_ogr2ogr = ["ogr2ogr", "-f", "CSV", "-lco", "GEOMETRY=AS_XY", "-t_srs", "EPSG:4326", str(csv_file_path), str(shp_file_path)]
     correct_csv = geocorr_csv_path if geocorr_csv_path else csv_file_path
@@ -393,8 +332,7 @@ def build_commands(shp_file_path, csv_file_path, geocorr_csv_path, json_dir, inp
     cmd_correctgeo = [sys.executable, str(geocorr_script), str(correct_csv), "--outfile", str(correct_csv)]
     if geometry_h5 is not None and points_h5 is not None:
         cmd_correctgeo.extend(["--geometry", str(geometry_h5), "--points", str(points_h5)])
-    cmd_hdfeos5 = ["insarmaps_ingester.py", str(input_csv), str(json_dir)]
-    return cmd_ogr2ogr, cmd_correctgeo, cmd_hdfeos5
+    return cmd_ogr2ogr, cmd_correctgeo
 
 def get_sarvey_export_path():
     """
@@ -686,12 +624,171 @@ def convert_displacement_mm_to_m(csv_path):
     df.to_csv(csv_path, index=False)
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# Step 1 of the Insarmaps ingest: the dataset's points (numpy arrays) and metadata.pickle, written from this script's CSV
+# ---------------------------------------------------------------------------------------------------------------------
+MISSION_ALIASES = {"SENTINEL-1": "S1", "SEN": "S1", "S1": "S1", "TERRASAR-X": "TSX", "TSX": "TSX"}
+
+# what write_insarmaps_points uses of step 1's script
+INSARMAPS_INGESTER_FUNCTIONS = (
+    "get_date", "get_decimal_date", "dataset_name", "add_calculated_attributes", "add_data_footprint_attribute",
+    "add_dummy_attribute", "write_csv_points", "write_metadata_like_csv",
+)
+_insarmaps_ingester = None
+
+
+def load_insarmaps_ingester():
+    """Step 1's script, insarmaps_ingester.py (insarmaps_scripts), as a module: the copy on PATH, which minsar's
+    environment puts in $MINSAR_HOME/tools/insarmaps_scripts, the one ingest_insarmaps.bash runs."""
+    global _insarmaps_ingester
+    if _insarmaps_ingester is not None:
+        return _insarmaps_ingester
+    import importlib.util
+
+    script = shutil.which("insarmaps_ingester.py")
+    if script is None:
+        raise RuntimeError("insarmaps_ingester.py not found on PATH: source minsar's environment; a "
+                           "$MINSAR_HOME/tools/insarmaps_scripts from before 2026-11-22 needs a git pull")
+    folder = str(Path(script).resolve().parent)
+    spec = importlib.util.spec_from_file_location("insarmaps_ingester", script)
+    module = importlib.util.module_from_spec(spec)
+    sys.path.insert(0, folder)              # it imports points_bundle from its own folder
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.path.remove(folder)
+    missing = [name for name in INSARMAPS_INGESTER_FUNCTIONS if not hasattr(module, name)]
+    if missing:
+        raise RuntimeError(f"{script} has no {', '.join(missing)}: minsar and {folder} are from different times; "
+                           "git pull in both")
+    _insarmaps_ingester = module
+    return module
+
+
+def flight_direction_letter(stack):
+    """A or D, from the stack's ORBIT_DIRECTION or flight_direction; None when neither says."""
+    raw = str(stack.get("ORBIT_DIRECTION") or stack.get("flight_direction") or "").strip().upper()
+    if raw in ("A", "ASCENDING"):
+        return "A"
+    if raw in ("D", "DESCENDING"):
+        return "D"
+    return None
+
+
+def insarmaps_point_attributes(df):
+    """The CSV's columns that become each point's attributes on Insarmaps, as step 1 gave them to SARvey datasets
+    before the CSV took HDF-EOS5 names and metres (2026-11-16): under the names the map's popup and chart read, in the
+    same order and the same units, NaN where a value is missing. st_consist goes back to mm, as SARvey writes it (the
+    chart shows it with two decimals); elevation is demError - height, as step 1 has computed it (dem_error - dem)
+    since 2025-06."""
+    columns = {}
+    if "demError" in df.columns and "height" in df.columns:
+        dem_error = df["demError"].to_numpy(dtype=float)
+        columns["dem_error"] = dem_error
+        columns["elevation"] = dem_error - df["height"].to_numpy(dtype=float)
+    if "temporalCoherence" in df.columns:
+        columns["coherence"] = df["temporalCoherence"].to_numpy(dtype=float)
+    if "omega" in df.columns:
+        columns["omega"] = df["omega"].to_numpy(dtype=float)
+    if "st_consist" in df.columns:
+        columns["st_consist"] = df["st_consist"].to_numpy(dtype=float) * 1000.0
+    point_id = next((col for col in df.columns if col.lower() == "point_id"), None)
+    if point_id is not None:
+        columns["point_ID"] = pd.to_numeric(df[point_id], errors="coerce").to_numpy(dtype=float)
+    return columns
+
+
+def insarmaps_area_attributes(ingester, stack, lats, lons, dates):
+    """The dataset's attributes for metadata.pickle, from which step 2 makes its area row and extra_attributes: what
+    step 1 gives a SARvey CSV (insarmaps_ingester.py's read_from_csv_file, with its defaults for what Insarmaps needs),
+    except the mission, relative orbit, flight direction, beam mode and look direction, which come from the stack
+    (extract_metadata_from_inputs) rather than from the file name. A TSX stack without a beam mode gets SM, as step 1
+    gives a TSX file name."""
+    mission_raw = str(stack.get("PLATFORM") or stack.get("mission") or "").strip().upper()
+    mission = MISSION_ALIASES.get(mission_raw, mission_raw or "S1")
+    attributes = {
+        "PROJECT_NAME": "CSV_IMPORT",
+        "LAT_ARRAY": lats,
+        "LON_ARRAY": lons,
+        "DATE_COLUMNS": dates,
+        "processing_type": "LOS_TIMESERIES",
+        "look_direction": stack.get("look_direction") or "R",
+        "collection": "sarvey",
+        "data_type": "LOS Displacement",
+        "mission": mission,
+    }
+    relative_orbit = _parse_int_orbit(stack.get("relative_orbit"))
+    if relative_orbit is not None:
+        attributes["relative_orbit"] = relative_orbit
+    direction = flight_direction_letter(stack)
+    if direction:
+        attributes["flight_direction"] = direction
+    beam_mode = stack.get("beam_mode") or ("SM" if mission == "TSX" else None)
+    if beam_mode:
+        attributes["beam_mode"] = beam_mode
+    ingester.add_calculated_attributes(attributes)      # REF_LAT/REF_LON (the mean position), first/last date, history
+    ingester.add_data_footprint_attribute(attributes, lats, lons)
+    ingester.add_dummy_attribute(attributes, True)      # the rest Insarmaps needs, as for any SARvey CSV
+    return attributes
+
+
+def write_insarmaps_points(csv_path, json_dir, sarvey_inputs_dir_path, stack=None):
+    """Step 1 of the Insarmaps ingest for this script's CSV: writes the dataset's points (numpy arrays) and
+    metadata.pickle into json_dir, which step 2 (ingest_step2_rsync_and_remote_ingest) loads into the database and
+    builds the dataset's recolor store from. Step 1's own functions (insarmaps_ingester.py) write the files, as for any
+    CSV, but the CSV is read here, as this script writes it: the displacement in metres (convert_displacement_mm_to_m),
+    the positions corrected for the DEM error (correct_geolocation.py's longitude_corrected and latitude_corrected) and
+    the columns as rename_csv_columns_for_hdfeos5 names them; step 1's CSV reader expects millimetres and the
+    shapefile's names. The dataset is named after the CSV, as step 1 names it. stack: extract_metadata_from_inputs'
+    attributes, read from sarvey_inputs_dir_path when not given. Returns the number of points."""
+    ingester = load_insarmaps_ingester()
+    if stack is None:
+        stack, _ = extract_metadata_from_inputs(Path(sarvey_inputs_dir_path))
+    csv_path = Path(csv_path)
+    # round_trip: the values the CSV holds, exactly (pandas' default parser is off in the last digits of most of them)
+    df = pd.read_csv(csv_path, float_precision="round_trip")
+    df.columns = [str(col).strip() for col in df.columns]
+    missing = [col for col in ("longitude_corrected", "latitude_corrected") if col not in df.columns]
+    if missing:
+        raise ValueError(f"{csv_path.name} has no {' or '.join(missing)}: correct_geolocation.py writes them")
+    date_cols = sorted(col for col in df.columns if re.fullmatch(r"D\d{8}", col))
+    if not date_cols:
+        raise ValueError(f"{csv_path.name} has no date columns (DYYYYMMDD)")
+    dates = [col[1:] for col in date_cols]
+    decimal_dates = [ingester.get_decimal_date(ingester.get_date(d)) for d in dates]
+    lats = df["latitude_corrected"].to_numpy(dtype=float)
+    lons = df["longitude_corrected"].to_numpy(dtype=float)
+    attributes = insarmaps_area_attributes(ingester, stack, lats, lons, dates)
+
+    json_dir = Path(json_dir)
+    json_dir.mkdir(parents=True, exist_ok=True)
+    num_points = ingester.write_csv_points(json_dir, df[date_cols].to_numpy(dtype=float), lats, lons,
+                                           decimal_dates, insarmaps_point_attributes(df))
+    ingester.write_metadata_like_csv(json_dir, ingester.dataset_name(str(csv_path)), attributes, dates,
+                                     decimal_dates, lats, lons)
+    print(f"[INFO] points: {num_points} of {len(df)} rows, {len(dates)} dates, in {json_dir}")
+    return num_points
+
+
+def write_points_command(csv_path, json_dir, sarvey_inputs_dir_path, cwd=None):
+    """A shell line that runs write_insarmaps_points from this script, for the jobfile and ./ingest_commands.log; with
+    cwd, the paths under it are shown relative to it."""
+    paths = [str(Path(path).resolve()) for path in (csv_path, json_dir, sarvey_inputs_dir_path)]
+    if cwd is not None:
+        paths = convert_to_relative_path(paths, cwd=cwd)
+    code = (
+        f"import sys; sys.path.insert(0, {str(Path(__file__).resolve().parent)!r}); import sarvey2insarmaps; "
+        "sarvey2insarmaps.write_insarmaps_points({!r}, {!r}, {!r})".format(*paths)
+    )
+    return "python3 -c " + shlex.quote(code)
+
+
 def create_jobfile(inps, data_path, cmds, json_dir, output_path, dataset_name, metadata):
     """
     Generate a SLURM-compatible jobfile with all processing steps and Insarmaps URL.
     """
 
-    cmd_sarvey_export, cmd_ogr2ogr, cmd_geocorr, cmd_hdfeos5 = cmds
+    cmd_sarvey_export, cmd_ogr2ogr, cmd_geocorr, cmd_points = cmds
 
     jobfile_path = Path(output_path) / "sarvey2insarmaps.job"
     slurm_commands = []
@@ -708,8 +805,8 @@ def create_jobfile(inps, data_path, cmds, json_dir, output_path, dataset_name, m
 
     slurm_commands.extend([
         f"rm -rf {json_dir}",
-        # Step 4: insarmaps_ingester.py
-        " ".join(cmd_hdfeos5),
+        # Step 4: the dataset's points and metadata.pickle (write_insarmaps_points)
+        cmd_points,
     ])
     # Step 5: rsync JSON/ to each host and ingest there (same as ingest_insarmaps.bash step 2)
     for host in insarmaps_host_list(inps.insarmaps_host):
@@ -723,7 +820,7 @@ def create_jobfile(inps, data_path, cmds, json_dir, output_path, dataset_name, m
 
         for cmd in slurm_commands:
             f.write(cmd + "\n")
-            if any(key in cmd for key in ("rm -rf", "geolocation", "insarmaps_ingester")):
+            if any(key in cmd for key in ("rm -rf", "geolocation", "write_insarmaps_points")):
                 f.write("\n")
 
         f.write("wait\n\n")
@@ -798,8 +895,8 @@ def main():
     input_csv = csv_file_path
 
 
-    cmd_ogr2ogr, cmd_correctgeo, cmd_hdfeos5 = build_commands(
-        shp_file_path, csv_file_path, csv_file_path, json_dir, input_csv, geometry_h5, points_h5
+    cmd_ogr2ogr, cmd_correctgeo = build_commands(
+        shp_file_path, csv_file_path, csv_file_path, geometry_h5, points_h5
     )
 
     #assign python environment for insarmaps_scripts
@@ -811,7 +908,8 @@ def main():
 
     if inps.make_jobfile:
             print("[INFO] Creating jobfile only, skipping execution.")
-            create_jobfile(inps, data_path, (cmd_sarvey_export, cmd_ogr2ogr, cmd_correctgeo, cmd_hdfeos5), json_dir, output_path, dataset_name, metadata)
+            cmd_points = write_points_command(input_csv, json_dir, sarvey_inputs_dir_path)
+            create_jobfile(inps, data_path, (cmd_sarvey_export, cmd_ogr2ogr, cmd_correctgeo, cmd_points), json_dir, output_path, dataset_name, metadata)
 
     else:
         _reset_ingest_command_log()
@@ -841,15 +939,22 @@ def main():
         convert_displacement_mm_to_m(input_csv)
 
         # Step 3: sample incidenceAngle/azimuthAngle and write corrected coordinates
-        _, cmd_correctgeo, cmd_hdfeos5 = build_commands(
-            shp_file_path, csv_file_path, input_csv, json_dir, input_csv, geometry_h5, points_h5
+        _, cmd_correctgeo = build_commands(
+            shp_file_path, csv_file_path, input_csv, geometry_h5, points_h5
         )
         run_command(cmd_correctgeo, conda_env=None)
 
-        # Step 4: convert the CSV into the dataset's points and metadata.pickle
-        run_command(cmd_hdfeos5, conda_env=None)
+        # Step 4: write the dataset's points and metadata.pickle into JSON/ (step 1 of the Insarmaps ingest)
         metadata, _ = extract_metadata_from_inputs(sarvey_inputs_dir_path)
-        merge_into_metadata_pickle(json_dir, metadata)
+        command_line = write_points_command(input_csv, json_dir, sarvey_inputs_dir_path, cwd=os.getcwd())
+        print(
+            "##########################\n"
+            "Running (displaying relative paths)....\n"
+            f"{command_line}\n"
+            "##########################\n"
+        )
+        _append_ingest_command_log(command_line)
+        write_insarmaps_points(input_csv, json_dir, sarvey_inputs_dir_path, stack=metadata)
         metadata = update_and_save_final_metadata(json_dir, output_path, ingest_stem, metadata)
 
         # Step 5: rsync JSON/ to each Insarmaps host and ingest there (on the Insarmaps host itself, in place)
