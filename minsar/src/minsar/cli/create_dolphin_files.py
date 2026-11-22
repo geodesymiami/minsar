@@ -20,7 +20,7 @@ from minsar.src.minsar.helper_functions import (
 )
 
 # Minimal attrs present in working insarmaps ingests (SARvey CSV + MintPy Galapagos).
-# hdfeos5_2json_mbtiles.py copies these into metadata.pickle attribute_keys when present on .he5.
+# insarmaps_ingester.py copies these into metadata.pickle attribute_keys when present on .he5.
 INSARMAPS_ESSENTIAL_ATTRS = (
     "WIDTH",
     "LENGTH",
@@ -46,7 +46,7 @@ INSARMAPS_ESSENTIAL_ATTRS = (
     "prf",
 )
 
-# Geo grid keys used by hdfeos5_2json_mbtiles (non-high-res); not in SARvey CSV ingest but required for .he5.
+# Geo grid keys used by insarmaps_ingester.py (non-high-res); not in SARvey CSV ingest but required for .he5.
 INSARMAPS_GEO_ATTRS = (
     "X_FIRST",
     "Y_FIRST",

@@ -4,7 +4,7 @@ Extract center coordinates from data_footprint attribute in HDFEOS5 files.
 Falls back to REF_LAT/REF_LON if data_footprint is not available.
 
 For .csv inputs (SARvey/Insarmaps CSV), uses the mean of latitude and longitude
-columns (same column detection as hdfeos5_or_csv_2json_mbtiles.py).
+columns (same column detection as insarmaps_ingester.py).
 """
 import argparse
 import h5py

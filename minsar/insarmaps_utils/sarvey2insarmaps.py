@@ -383,7 +383,7 @@ def build_commands(shp_file_path, csv_file_path, geocorr_csv_path, json_dir, inp
     Returns three commands:
         cmd1 - Convert SHP to CSV using ogr2ogr with WGS84 coordinates.
         cmd2 - Sample incidenceAngle/azimuthAngle and write longitude_corrected/latitude_corrected.
-        cmd3 - Convert CSV or HDF5 to the dataset's points (numpy arrays in JSON/) using hdfeos5_or_csv_2json_mbtiles.py.
+        cmd3 - Convert CSV or HDF5 to the dataset's points (numpy arrays in JSON/) using insarmaps_ingester.py.
     Insarmaps upload is ingest_step2_rsync_and_remote_ingest(), not a local json_mbtiles2insarmaps.py call.
     """
     cmd_ogr2ogr = ["ogr2ogr", "-f", "CSV", "-lco", "GEOMETRY=AS_XY", "-t_srs", "EPSG:4326", str(csv_file_path), str(shp_file_path)]
@@ -393,7 +393,7 @@ def build_commands(shp_file_path, csv_file_path, geocorr_csv_path, json_dir, inp
     cmd_correctgeo = [sys.executable, str(geocorr_script), str(correct_csv), "--outfile", str(correct_csv)]
     if geometry_h5 is not None and points_h5 is not None:
         cmd_correctgeo.extend(["--geometry", str(geometry_h5), "--points", str(points_h5)])
-    cmd_hdfeos5 = ["hdfeos5_or_csv_2json_mbtiles.py", str(input_csv), str(json_dir)]
+    cmd_hdfeos5 = ["insarmaps_ingester.py", str(input_csv), str(json_dir)]
     return cmd_ogr2ogr, cmd_correctgeo, cmd_hdfeos5
 
 def get_sarvey_export_path():
@@ -708,7 +708,7 @@ def create_jobfile(inps, data_path, cmds, json_dir, output_path, dataset_name, m
 
     slurm_commands.extend([
         f"rm -rf {json_dir}",
-        # Step 4: hdfeos5_or_csv_2json_mbtiles.py
+        # Step 4: insarmaps_ingester.py
         " ".join(cmd_hdfeos5),
     ])
     # Step 5: rsync JSON/ to each host and ingest there (same as ingest_insarmaps.bash step 2)
@@ -723,7 +723,7 @@ def create_jobfile(inps, data_path, cmds, json_dir, output_path, dataset_name, m
 
         for cmd in slurm_commands:
             f.write(cmd + "\n")
-            if any(key in cmd for key in ("rm -rf", "geolocation", "hdfeos5")):
+            if any(key in cmd for key in ("rm -rf", "geolocation", "insarmaps_ingester")):
                 f.write("\n")
 
         f.write("wait\n\n")

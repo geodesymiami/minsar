@@ -4,7 +4,7 @@ Calculate appropriate zoom factor from data_footprint attribute in HDFEOS5 files
 Uses the bounding box extent to determine zoom level that fits the data nicely.
 
 For .csv inputs, extent is taken from min/max of latitude and longitude columns
-(same column detection as hdfeos5_or_csv_2json_mbtiles.py).
+(same column detection as insarmaps_ingester.py).
 """
 import argparse
 import h5py

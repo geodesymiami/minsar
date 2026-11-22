@@ -228,7 +228,7 @@ class Uploaders(unittest.TestCase):
         with unittest.mock.patch.object(concat, "run_command") as run, \
                 unittest.mock.patch.object(concat, "ingest_step2_rsync_and_remote_ingest") as step:
             concat.ingest_to_insarmaps(csv, out, "h1,h2", skip_upload=False)
-            self.assertEqual(run.call_args.args[0][0], "hdfeos5_or_csv_2json_mbtiles.py")
+            self.assertEqual(run.call_args.args[0][0], "insarmaps_ingester.py")
             self.assertEqual([(c.args, c.kwargs) for c in step.call_args_list],
                              [(("h1", out / "JSON"), {"data_dir": out}), (("h2", out / "JSON"), {"data_dir": out})])
             step.reset_mock()

@@ -10,7 +10,7 @@ SCRIPT_NAME="$(basename "$0")"
 # APPLY_MODE: off | memory | all
 APPLY_MODE=off
 MIN_SHM_MB=100   # only report /dev/shm files at least this large
-MIN_RSS_KB=$((500 * 1024))  # suggest kill only if RSS >= 500 MB (unless holds shm / is hdfeos5)
+MIN_RSS_KB=$((500 * 1024))  # suggest kill only if RSS >= 500 MB (unless holds shm / is step 1)
 
 usage() {
     cat <<EOF
@@ -194,7 +194,7 @@ while IFS=$'\t' read -r pid pmem rss_kb stat cmd; do
     is_protected_process "$safe_cmd" && continue
 
     is_ingest=0
-    [[ "$safe_cmd" == *hdfeos5_2json* || "$safe_cmd" == *tippecanoe* ]] && is_ingest=1
+    [[ "$safe_cmd" == *insarmaps_ingester* || "$safe_cmd" == *tippecanoe* ]] && is_ingest=1
     holds_shm=0
     [[ -n "${SHM_HOLDER_PIDS[$pid]:-}" ]] && holds_shm=1
     high_rss=0
@@ -218,9 +218,9 @@ done < <(
               pid=$1; pmem=$2; rss=$3; stat=$4
               $1=$2=$3=$4=""; sub(/^ +/,"");
               cmd=$0
-              # exclude scanner awk (may contain hdfeos5_2json in the pattern text)
+              # exclude scanner awk (may contain insarmaps_ingester in the pattern text)
               if (cmd ~ /^awk([[:space:]]|$)/) next
-              if (rss >= minrss || stat ~ /T/ || cmd ~ /(^|\/)hdfeos5_2json/ || cmd ~ /(^|[[:space:]])tippecanoe([[:space:]]|$)/)
+              if (rss >= minrss || stat ~ /T/ || cmd ~ /(^|\/)insarmaps_ingester/ || cmd ~ /(^|[[:space:]])tippecanoe([[:space:]]|$)/)
                   print pid, pmem, rss, stat, cmd
             }' \
         | head -40
@@ -236,7 +236,7 @@ while IFS=$'\t' read -r pid pmem rss_kb stat cmd; do
     safe_cmd=$(printf '%s' "$cmd" | redact_cmd)
     is_scanner_noise "$safe_cmd" && continue
     [[ "$rss_kb" -ge "$MIN_RSS_KB" ]] && continue
-    [[ "$safe_cmd" == *hdfeos5_2json* || "$safe_cmd" == *tippecanoe* ]] && continue
+    [[ "$safe_cmd" == *insarmaps_ingester* || "$safe_cmd" == *tippecanoe* ]] && continue
     [[ -n "${SHM_HOLDER_PIDS[$pid]:-}" ]] && continue
     printf "%-8s %6s %6s %-6s %s\n" "$pid" "$pmem" "$(bytes_to_human $((rss_kb * 1024)))" "$stat" "$safe_cmd"
     echo "  # optional: kill $pid"
@@ -259,7 +259,7 @@ if [[ "$stopped_note" -eq 0 ]]; then
 fi
 
 if [[ "$found_proc" -eq 0 ]]; then
-    echo "(none matching: RSS>=500M, stopped, hdfeos5_2json*, or tippecanoe)"
+    echo "(none matching: RSS>=500M, stopped, insarmaps_ingester*, or tippecanoe)"
 fi
 
 if [[ ${#LIVE_SHM[@]} -gt 0 ]]; then

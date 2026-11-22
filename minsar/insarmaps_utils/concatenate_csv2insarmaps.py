@@ -119,7 +119,7 @@ def ingest_to_insarmaps(csv_path, output_dir, insarmaps_host, skip_upload):
     json_dir = output_dir / "JSON"
     json_dir.mkdir(parents=True, exist_ok=True)
 
-    run_command(["hdfeos5_or_csv_2json_mbtiles.py", str(csv_path), str(json_dir)])
+    run_command(["insarmaps_ingester.py", str(csv_path), str(json_dir)])
 
     # an upload needs a host; converting only (skip_upload) doesn't, and prints a URL per host given
     hosts = ([h.strip() for h in str(insarmaps_host or "").split(",") if h.strip()] if skip_upload

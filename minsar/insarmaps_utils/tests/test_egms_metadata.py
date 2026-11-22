@@ -114,7 +114,7 @@ class TestConverterLatLon(unittest.TestCase):
             Path(__file__).resolve().parents[3]
             / "tools"
             / "insarmaps_scripts"
-            / "hdfeos5_or_csv_2json_mbtiles.py"
+            / "insarmaps_ingester.py"
         )
         if not script.is_file():
             self.skipTest(f"converter not found at {script}")
@@ -123,7 +123,7 @@ class TestConverterLatLon(unittest.TestCase):
         except ImportError:
             self.skipTest("mintpy not installed")
 
-        spec = importlib.util.spec_from_file_location("hdfeos5_or_csv_2json_mbtiles", script)
+        spec = importlib.util.spec_from_file_location("insarmaps_ingester", script)
         mod = importlib.util.module_from_spec(spec)
         sys.modules[spec.name] = mod
         # The converter imports modules from its own folder (points_bundle). Python finds them when the script runs

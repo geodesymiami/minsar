@@ -1,9 +1,9 @@
-"""Lat/lon extraction from Insarmaps/SARvey CSV; column names match hdfeos5_or_csv_2json_mbtiles.py."""
+"""Lat/lon extraction from Insarmaps/SARvey CSV; column names match insarmaps_ingester.py."""
 import csv
 import math
 from statistics import mean
 
-# Same order as insarmaps_scripts/hdfeos5_or_csv_2json_mbtiles.py (case-insensitive match)
+# Same order as insarmaps_scripts/insarmaps_ingester.py (case-insensitive match)
 LAT_CANDIDATES = ["latitude_corrected", "Y_geocorr", "Latitude", "latitude", "Y", "ycoord"]
 LON_CANDIDATES = ["longitude_corrected", "X_geocorr", "Longitude", "longitude", "X", "xcoord"]
 

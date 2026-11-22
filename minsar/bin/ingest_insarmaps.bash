@@ -11,7 +11,7 @@ source ${SCRIPT_DIR}/../lib/minsarApp_specifics.sh
 echo "sourcing ${SCRIPT_DIR}/../lib/utils.sh ..."
 source ${SCRIPT_DIR}/../lib/utils.sh
 
-# Dependencies (PATH): reference_point_hdfeos5.bash, hdfeos5_2json_mbtiles.py, hdfeos5_or_csv_2json_mbtiles.py,
+# Dependencies (PATH): reference_point_hdfeos5.bash, insarmaps_ingester.py (step 1, for a .he5 or a .csv),
 #   get_data_footprint_centroid.py, get_zoomfactor_from_data_footprint.py; step 2 needs rsync/ssh and
 #   json_mbtiles2insarmaps.py on the remote host, which loads the dataset and builds its recolor store there
 #   (on the insarmaps host itself, see insarmaps_host_is_local: json_mbtiles2insarmaps.py on PATH and sudo here).
@@ -40,11 +40,11 @@ Examples:
                                           auto reads miaplpy.timeseries.minTempCoh from ../miaplpyApp.cfg (0.85 -> coh085)
       --insarmapshost HOST[,HOST...]  Override INSARMAPSHOST_RECENTDATA / INSARMAPSHOST_OLDDATA for upload
       --hdfeos5_2json_mbtiles         Run only step 1, no upload; same as --step 1
-                                      For a .csv input, step 1 runs hdfeos5_or_csv_2json_mbtiles.py instead of hdfeos5_2json_mbtiles.py
       --json_mbtiles2insarmaps        Run only insarmaps upload (assumes step 1 succeeded); same as --step 2
       --step N                        N is 1 or 2; same effect as the long names above. Also --step=N
-                                      Step 1: writes the dataset's points (numpy arrays: points.json, p.npy, lon.npy,
-                                      lat.npy, m.npy, d.npy) and metadata.pickle to JSON/ (the folder keeps that name)
+                                      Step 1: insarmaps_ingester.py (.he5 or .csv) writes the dataset's points (numpy
+                                      arrays: points.json, p.npy, lon.npy, lat.npy, m.npy, d.npy) and metadata.pickle
+                                      to JSON/ (the folder keeps that name)
                                       Step 2: rsync JSON/ to REMOTEUSER@host:/data/scratch/<path-under-\$SCRATCHDIR>/,
                                       then ssh-run json_mbtiles2insarmaps.py on the host (--host 127.0.0.1;
                                       DB password from /data/insarmaps2/postgres_dir/.insaradmin_db_password),
@@ -875,11 +875,8 @@ for ingest_file in "${ingest_files[@]}"; do
     if [[ "$ingest_step" == "all" || "$ingest_step" == "step1" ]]; then
         echo "####################################"
         rm -rf "$JSON_DIR"
-        if [[ "$input_format" == "csv" ]]; then
-            cmd="hdfeos5_or_csv_2json_mbtiles.py \"$ingest_file\" \"$JSON_DIR\" --num-workers $HDFEOS_NUM_WORKERS"
-        else
-            cmd="hdfeos5_2json_mbtiles.py \"$ingest_file\" \"$JSON_DIR\" --num-workers $HDFEOS_NUM_WORKERS"
-        fi
+        # insarmaps_ingester.py reads a .csv as a CSV and any other file as HDF-EOS5, as input_format does here
+        cmd="insarmaps_ingester.py \"$ingest_file\" \"$JSON_DIR\" --num-workers $HDFEOS_NUM_WORKERS"
         run_command "$cmd"
     fi
 

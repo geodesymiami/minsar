@@ -31,7 +31,7 @@ MintPy `timeseries.h5` often keeps 0 in unused pixels; display/export uses **`ma
 
 After HE5 write, invalid-for-publish is **`quality/mask == False`**. Displacement may still hold a number (or a source NaN) there so `remask_he5.py` can change the mask without reconverting.
 
-### InsarMaps ingest (`hdfeos5_2json_mbtiles.py`)
+### InsarMaps ingest (`insarmaps_ingester.py`)
 
 The converter **does** use the HE5 mask. It is not unused.
 
@@ -231,7 +231,7 @@ dolphin2he5.py dolphin --method-string dolphinStandard --watermask dolphin/unwra
 | Convert | `minsar/utils/dolphin2he5.py` |
 | Remask | `minsar/utils/remask_he5.py` |
 | Shared rules | `minsar/utils/dolphin_he5_utils.py` |
-| Ingest mask | `tools/insarmaps_scripts/hdfeos5_2json_mbtiles.py` (`mask_matrix`) |
+| Ingest mask | `tools/insarmaps_scripts/insarmaps_ingester.py` (`mask_matrix`) |
 | Viewer auto mask | `tools/MintPy/src/mintpy/utils/plot.py` (`read_mask`) |
 | MintPy HE5 mask copy | `save_hdfeos5.py` `-m maskTempCoh.h5` / `geo_maskTempCoh.h5` |
 
