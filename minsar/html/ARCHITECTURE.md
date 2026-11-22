@@ -145,6 +145,7 @@ Latest debug-table example (from this debugging session):
 | `setViewSupport` | `'unknown'` → `'yes'` on the first `insarmaps-set-view-applied` ack, `'no'` when the first set-view gets none within `SET_VIEW_ACK_TIMEOUT_MS` (8 s): an insarmaps server without the handler, so views sync by reloads again. Per iframe, `setViewNotReadyByIndex` counts `not-ready` answers (retried every second, up to 30) and `setViewFallbackByIndex` marks iframes to reload |
 | (colorscale) | No record of what was sent: the colorscale an iframe shows is read from its own URL (`colorscaleOnIframe`; insarmaps always writes `colorscale=` into the URLs it posts) |
 | `pendingDateSyncByIndex` | Awaiting `insarmaps-set-dates-applied` ack for narrowed dates |
+| `moviePlayingIdx` (2026-11) | The dataset iframe whose movie (insarmaps' Movie / Quick Movie) is playing, or -1: set by its `insarmaps-movie` posts, cleared by its `playing: false` post or when the overlay stops it (`stopMovieInIframe`) |
 | `refAppliedForDateSyncByIndex` | Custom ref confirmed on iframe; gates date postMessage |
 | `activeSwitchTracking` | Per-switch debug outcome: refOk, datesOk (see §12) |
 
@@ -254,6 +255,7 @@ Done: Asc has custom ref + narrowed period
 | `insarmaps-ref-failed` | Ref application failed; overlay may auto-retry refSwitch. |
 | `insarmaps-set-dates-applied` | Ack that dates were applied inside iframe. |
 | `insarmaps-timeseries-date` | User clicked a date on the displacement chart (Time Controls period selection). |
+| `insarmaps-movie` (2026-11) | A movie of the Timeseries Window (insarmaps' Movie / Quick Movie, `DateWindowMovie.js`): `{ playing: true, frame, frames, startDate, endDate, windowStart, windowEnd }` for each date window (startDate/endDate YYYYMMDD: the acquisitions the map colors), `{ playing: false, reason }` when it stops. The movie's own address waits until it stops (one `insarmaps-url-update` then). From the active iframe each window becomes the overlay's period (`userNarrowedDateRange`, `currentMapParams`) and goes to the other dataset iframes at once (`scheduleBackgroundSync('movie', { immediate: true })`: `insarmaps-set-dates`, no 250 ms debounce), so that they play along; from any other iframe (still playing after a dataset switch), or during a switch or Time Controls, the overlay answers with `insarmaps-movie-stop`. |
 
 ### overlay → iframe (overlay sends)
 
@@ -268,6 +270,7 @@ Done: Asc has custom ref + narrowed period
 | `insarmaps-set-ref` (2026-07) | `{ refPointLat, refPointLon }` — apply custom ref on the loaded map (warm tiles, so more reliable than load-time URL ref). Receipt: `insarmaps-set-ref-received`; outcome via existing `insarmaps-ref-applied` / `insarmaps-ref-failed`. No receipt within 20s → overlay falls back to a URL reload | `mainPage.js` → `mainMap.applyOverlayPointSelection(lat, lon, true)` |
 | `insarmaps-set-view` (2026-11) | `{ lat, lon, zoom }` — the `/start/` path's values: move the loaded map there (camera jump, no reload). Ack: `insarmaps-set-view-applied` `{ lat, lon, zoom, ok, reason }` (`not-ready` while the dataset load has not started → overlay retries every second; no ack within 8 s → overlay marks the server unsupported, or that iframe unresponsive, and reloads at the new view) | `mainPage.js` → `mainMap.applyOverlayView(lat, lon, zoom)` (ends in `afterDoneMoving` like a user's pan: address + `insarmaps-url-update`; zoom-out limit set as a load at that zoom would) |
 | `insarmaps-set-colorscale` | `{ colorscale: 'velocity'\|'displacement' }` — recolor in place; no-op when unchanged; no ack (the iframe's next `insarmaps-url-update` carries `colorscale=`) | `mainPage.js` → `colorDatasetOnVelocity` / `colorDatasetOnDisplacement` |
+| `insarmaps-movie-stop` (2026-11) | `{}` — stop the iframe's movie: sent by `selectDataset` to the iframe the user switches away from (before `insarmaps-query-switch-state`, whose reply then has the window the movie stopped at), and to an iframe whose movie plays while it is not the active one. insarmaps also stops a movie on `insarmaps-set-dates` and on `insarmaps-query-switch-state`, so older overlay copies stop it at a switch too | `mainPage.js` → `DateWindowMovie.stop()` (the window shown stays; address + `insarmaps-url-update`) |
 
 Point, ref and view also still load via the **iframe URL** (initial warm loads and all fallbacks).
 
@@ -330,7 +333,10 @@ reconcileBackgroundIframes(reason)      // idempotent
    for each non-active dataset iframe:
      desiredUrl = buildInsarmapsUrl(desiredBackgroundParams())
      1. in-flight load already = desiredUrl        → leave it
-     2. in-flight load stale                       → restart with desiredUrl
+     2. in-flight load stale                       → restart with desiredUrl (not for a movie's
+                                                     window, reason 'movie': a load restarted for
+                                                     every window might never end; its onload
+                                                     reconcile sends the latest dates)
      3. another page (URL compare ignoring the view
         and everything the channels below sync)    → reload with desiredUrl
      4. otherwise, seven postMessage channels:

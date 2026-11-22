@@ -1218,6 +1218,8 @@
         const refAutoRetryCountByIndex = new Map();  // index -> retry count this switch
         // User-selected narrowed period; not overwritten by background iframe url-updates.
         let userNarrowedDateRange = null;  // { startDate, endDate } or null
+        // The dataset iframe whose movie (insarmaps' Movie / Quick Movie, insarmaps-movie) is playing, or -1
+        let moviePlayingIdx = -1;
         // How the user last set the narrowed period: 'slider' | 'chart-dot' | 'iframe-sync' | null
         let periodSelectionSource = null;
         let lastSliderCaptureAt = 0;
@@ -1794,6 +1796,18 @@
                 if (iframe && iframe.contentWindow === source) return i;
             }
             return -1;
+        }
+
+        // Stops the movie (insarmaps-movie) of dataset iframe index, if one plays there: the window shown
+        // stays, and the iframe posts its address.
+        function stopMovieInIframe(index) {
+            if (index < 0) return;
+            if (index === moviePlayingIdx) moviePlayingIdx = -1;
+            const iframe = document.getElementById(`iframe${index}`);
+            if (!iframe || !iframe.contentWindow) return;
+            try {
+                iframe.contentWindow.postMessage({ type: 'insarmaps-movie-stop' }, '*');
+            } catch (e) {}
         }
 
         function refCoordsMatch(mapRefLat, mapRefLon, lat, lon) {
@@ -3516,6 +3530,9 @@
                     return;
                 }
                 if (inFlight) {
+                    // A movie's next window changes only the dates, and a load restarted for each window
+                    // might never end: the load goes on, and its onload reconcile sends the latest dates.
+                    if (reason === 'movie') return;
                     // In flight towards a stale state: restart with the latest params.
                     loadBackgroundIframe(index, desiredUrl, reason);
                     return;
@@ -4334,6 +4351,9 @@
                     }
                     cancelScheduledBackgroundSync();
                     const previousIdx = activeDatasetIdx;
+                    // A movie of the map left stops there, before it is asked for its state: the dataset
+                    // switched to shows the window the movie stopped at.
+                    stopMovieInIframe(moviePlayingIdx);
                     const targetWarmStatus = getDatasetIframeSyncStatus(index);
                     // #region agent log
                     const targetIframe = document.getElementById(`iframe${index}`);
@@ -4810,6 +4830,38 @@
                             console.log(`[overlay] background REF WARM complete ${iframeLabelForLog(refIndex)}`);
                             completeBackgroundRefWarm(refIndex);
                         }
+                        return;
+                    }
+                    // A movie (insarmaps' Movie / Quick Movie buttons): each window of the active map's movie
+                    // becomes the overlay's period, as a move of its time slider would, and goes to the other
+                    // maps at once instead of after the usual debounce, so that they play along. A movie in a
+                    // map that is not the active one (still playing after a dataset switch) is stopped. When a
+                    // movie stops, its map posts its address (insarmaps-url-update) as after a slider move.
+                    if (event.data.type === 'insarmaps-movie') {
+                        const movieIndex = iframeIndexForMessageSource(event.source);
+                        if (movieIndex < 0) return;
+                        if (event.data.playing !== true) {
+                            if (movieIndex === moviePlayingIdx) moviePlayingIdx = -1;
+                            return;
+                        }
+                        const inTC = (typeof timeControlsActive !== 'undefined' && timeControlsActive);
+                        if (movieIndex !== activeDatasetIdx || switchOpInFlight || inTC) {
+                            stopMovieInIframe(movieIndex);
+                            return;
+                        }
+                        const movieStart = String(event.data.startDate || '');
+                        const movieEnd = String(event.data.endDate || '');
+                        if (!/^\d{8}$/.test(movieStart) || !/^\d{8}$/.test(movieEnd)) return;
+                        moviePlayingIdx = movieIndex;
+                        userNarrowedDateRange = { startDate: movieStart, endDate: movieEnd };
+                        periodSelectionSource = 'slider';
+                        lastSliderCaptureAt = Date.now();
+                        currentMapParams.startDate = movieStart;
+                        currentMapParams.endDate = movieEnd;
+                        // what the active map shows (see the active-postMessage path)
+                        bgAppliedDates.set(movieIndex, { startDate: movieStart, endDate: movieEnd });
+                        updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, false);
+                        scheduleBackgroundSync('movie', { immediate: true });
                         return;
                     }
                     if (event.data.type === 'insarmaps-set-dates-applied' &&
