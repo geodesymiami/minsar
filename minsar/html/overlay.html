@@ -56,6 +56,56 @@
             outline: none;
             border-color: #4a90e2;
         }
+        /* Auto Pixel Resize: a check box in a button, blue with the box ticked while on
+           (as insarmaps' Fixed Color Scale button) */
+        .auto-pixel-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            font-size: 13px;
+            font-family: inherit;
+            color: #333;
+            background-color: white;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .auto-pixel-btn:hover {
+            background-color: #ebebeb;
+        }
+        .auto-pixel-btn.on {
+            color: white;
+            background-color: #337ab7;
+            border-color: #2e6da4;
+        }
+        .auto-pixel-btn.on:hover {
+            background-color: #286090;
+        }
+        .auto-pixel-btn .auto-pixel-box {
+            position: relative;
+            width: 13px;
+            height: 13px;
+            box-sizing: border-box;
+            border: 1px solid #767676;
+            border-radius: 2px;
+            background-color: white;
+        }
+        .auto-pixel-btn.on .auto-pixel-box {
+            border-color: white;
+        }
+        .auto-pixel-btn.on .auto-pixel-box::after {
+            content: "";
+            position: absolute;
+            left: 3.5px;
+            top: 0.5px;
+            width: 4px;
+            height: 8px;
+            box-sizing: border-box;
+            border: solid #337ab7;
+            border-width: 0 2px 2px 0;
+            transform: rotate(45deg);
+        }
         .time-controls-column {
             display: flex;
             flex-direction: column;
@@ -425,6 +475,11 @@
             <label for="frame-select">Dataset:</label>
             <select id="frame-select"></select>
         </div>
+        <!-- Shown when insarmaps.log has a Horizontal or Vertical dataset (setupAutoPixelResizeButton) -->
+        <button type="button" class="auto-pixel-btn" id="auto-pixel-resize-btn" aria-pressed="false" style="display:none;"
+            title="Off: every dataset uses the Pixel Size.&#10;On: Horizontal and Vertical draw their points larger where the Pixel Size would leave white space between them (they often have fewer points than Descending and Ascending); Descending and Ascending keep the Pixel Size.">
+            <span class="auto-pixel-box" aria-hidden="true"></span>Auto Pixel Resize
+        </button>
         <!-- Time controls panel - shown when checkbox checked -->
         <div class="time-controls-panel" id="time-controls-panel">
             <div class="time-control-group" id="period-input-group">
@@ -575,6 +630,7 @@
                 pointLat: params.get('pointLat'),
                 pointLon: params.get('pointLon'),
                 autoColorScale: params.get('autoColorScale'),
+                autoPixelResize: params.get('autoPixelResize'),
                 timeControls: params.get('timeControls'),
                 periods: params.get('periods')
             };
@@ -824,6 +880,9 @@
                 params.set('contour', params.get('contours'));
                 params.delete('contours');
             }
+            if (autoPixelResize) {
+                params.set('autoPixelResize', 'true');
+            }
             if (timeControlsActive && periodsArray && periodsArray.length > 0) {
                 params.set('timeControls', 'true');
                 params.set('periods', serializePeriods(periodsArray));
@@ -905,6 +964,11 @@
                 includeContours: !shareable,
                 includePixelSize: !shareable
             });
+            // Auto Pixel Resize: a Horizontal or Vertical map loads with it on (insarmaps reads it at load;
+            // later changes go by insarmaps-set-auto-pixel-size). Never in shareable links.
+            if (!shareable && autoPixelResize && isHorzOrVertDataset(dataset)) {
+                params.set('autoPixelSize', 'true');
+            }
             // shareable links (footer) omit _t; iframes use cache-busting unless stableCache is set.
             if (!shareable) {
                 if (stableCache && uniqueId !== undefined) {
@@ -960,6 +1024,9 @@
             try {
                 const u = new URL(url, baseUrl || window.location.href);
                 u.searchParams.delete('_t');
+                // Auto Pixel Resize's autoPixelSize is a load-time copy of a postMessage-synced state
+                // (autoPixelSizeOnIframe), never a reason to reload, and insarmaps' own URLs drop it.
+                u.searchParams.delete('autoPixelSize');
                 // The view (/start/{lat}/{lon}/{zoom}) is postMessage-synced (set-view) and compared
                 // numerically (viewsClose): drop it from the path.
                 const path = (options && options.ignoreView)
@@ -1173,6 +1240,13 @@
         // Display channel (pixelSize/opacity/contour/background): in-page postMessage
         // updates, never a reload.
         const bgAppliedDisplay = new Map();   // index -> displayChannelState last sent
+        // Auto Pixel Resize (the button): while on, the Horizontal and Vertical maps draw their points larger
+        // where the Pixel Size would leave white space between them (insarmaps' auto pixel size); Descending and
+        // Ascending keep the Pixel Size. Sent with the display channel (insarmaps-set-auto-pixel-size), and in
+        // the load URL of a Horizontal or Vertical map (autoPixelSize=true). The Pixel Size itself stays one
+        // value for every map.
+        let autoPixelResize = false;
+        const bgAppliedAutoPixelSize = new Map(); // index -> autoPixelSize last sent (cleared on reload)
         const SET_POINT_MAX_ATTEMPTS = 3;     // then fall back to a URL reload for that iframe
         let setPointSupport = 'unknown';      // 'unknown' | 'yes' | 'no' — probed by the first set-point ack
         // Generous: a busy (recoloring) iframe acks late; only a server without the handler
@@ -1927,6 +2001,96 @@
             const label = iframeLabels.get(index);
             return label === 'Horizontal' || label === 'Vertical';
         }
+
+        function isHorzOrVertDataset(dataset) {
+            for (const [index, name] of iframeDatasets) {
+                if (name === dataset) return isHorzOrVertIndex(index);
+            }
+            return false;
+        }
+
+        // ===== AUTO PIXEL RESIZE =====
+        // On: the Horizontal and Vertical maps draw their points at least as large as closes the gaps
+        // between them (insarmaps' auto pixel size: it measures how far apart the points it draws are);
+        // Descending and Ascending keep the Pixel Size. So switching from Descending/Ascending to
+        // Horizontal/Vertical shows larger points only where the Pixel Size would leave white space, and
+        // switching back shows the Pixel Size again. Off: every map draws the Pixel Size, as before.
+        function wantAutoPixelSize(index) {
+            return autoPixelResize && isHorzOrVertIndex(index);
+        }
+
+        // What the iframe was last sent, else what it was loaded with.
+        function autoPixelSizeOnIframe(index) {
+            if (bgAppliedAutoPixelSize.has(index)) return bgAppliedAutoPixelSize.get(index);
+            const iframe = document.getElementById(`iframe${index}`);
+            try {
+                return !!(iframe && iframe.src) &&
+                    new URL(iframe.src).searchParams.get('autoPixelSize') === 'true';
+            } catch (e) {
+                return false;
+            }
+        }
+
+        // Fire-and-forget like the display channel: insarmaps no-ops when unchanged; an insarmaps without
+        // the handler ignores it, and its maps keep the Pixel Size (as with the button off).
+        function postAutoPixelSize(iframe, value) {
+            if (!iframe || !iframe.src || !iframe.contentWindow) return false;
+            try {
+                iframe.contentWindow.postMessage({ type: 'insarmaps-set-auto-pixel-size', value: !!value }, '*');
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function sendAutoPixelSizeToIframe(index, value) {
+            if (!postAutoPixelSize(document.getElementById(`iframe${index}`), value)) return false;
+            bgAppliedAutoPixelSize.set(index, !!value);
+            return true;
+        }
+
+        function syncAutoPixelResizeButton() {
+            const btn = document.getElementById('auto-pixel-resize-btn');
+            if (!btn) return;
+            btn.classList.toggle('on', autoPixelResize);
+            btn.setAttribute('aria-pressed', autoPixelResize ? 'true' : 'false');
+        }
+
+        // The button shows only when insarmaps.log has a Horizontal or Vertical dataset.
+        function setupAutoPixelResizeButton() {
+            const btn = document.getElementById('auto-pixel-resize-btn');
+            if (!btn) return;
+            const any = [...iframeLabels.keys()].some((index) => isHorzOrVertIndex(index));
+            btn.style.display = any ? '' : 'none';
+            syncAutoPixelResizeButton();
+            btn.addEventListener('click', () => setAutoPixelResize(!autoPixelResize));
+        }
+
+        function setAutoPixelResize(on) {
+            autoPixelResize = !!on;
+            syncAutoPixelResizeButton();
+            console.log(`[overlay] Auto Pixel Resize ${autoPixelResize ? 'on' : 'off'}`);
+            // Every dataset map now, and again when it next loads: a document still loading may not
+            // listen yet, and the URL of a load started before this click has the old state.
+            iframeDatasets.forEach((_, index) => {
+                const iframe = document.getElementById(`iframe${index}`);
+                if (!iframe) return;
+                sendAutoPixelSizeToIframe(index, wantAutoPixelSize(index));
+                iframe.addEventListener('load', () => {
+                    sendAutoPixelSizeToIframe(index, wantAutoPixelSize(index));
+                }, { once: true });
+            });
+            // Time Controls' period maps show the active dataset (ids period-iframe-<dataset>-<period>).
+            document.querySelectorAll('iframe[id^="period-iframe-"]').forEach((iframe) => {
+                const index = parseInt(iframe.id.split('-')[2], 10);
+                postAutoPixelSize(iframe, wantAutoPixelSize(index));
+                iframe.addEventListener('load', () => {
+                    postAutoPixelSize(iframe, wantAutoPixelSize(index));
+                }, { once: true });
+            });
+            updateOverlayUrl(currentViewCode, currentMapParams, currentDataset, false, undefined, { immediate: true });
+        }
+        // ===== END AUTO PIXEL RESIZE =====
 
         function refSwitchLoadKindForIndex(index) {
             return isHorzOrVertIndex(index) ? 'refSwitchNoPoint' : 'refSwitch';
@@ -3125,6 +3289,7 @@
             bgAppliedPoint.delete(index);
             bgAppliedScale.delete(index);
             bgAppliedDisplay.delete(index);
+            bgAppliedAutoPixelSize.delete(index); // the load URL's autoPixelSize says it now
             displayReapplyCountByIndex.delete(index); // fresh document, fresh reapply budget
             setPointAttemptsByIndex.delete(index);
             bgRefAppliedByIndex.delete(index);
@@ -3360,6 +3525,8 @@
                 return false;
             }
             bgAppliedDisplay.set(index, { ...state });
+            // Auto Pixel Resize rides along: per map (Horizontal/Vertical only), not part of state.
+            sendAutoPixelSizeToIframe(index, wantAutoPixelSize(index));
             return true;
         }
 
@@ -3670,6 +3837,10 @@
                     console.log(`[overlay] iframe SET-DISPLAY ${iframeLabelForLog(index)}  reason=${reason}`, wantDisplay);
                     sendDisplayChannelToIframe(index, wantDisplay);
                     // fall through: dates can sync alongside
+                } else if (autoPixelSizeOnIframe(index) !== wantAutoPixelSize(index)) {
+                    console.log(`[overlay] iframe SET-AUTO-PIXEL-SIZE ${iframeLabelForLog(index)}  reason=${reason}`,
+                        wantAutoPixelSize(index));
+                    sendAutoPixelSizeToIframe(index, wantAutoPixelSize(index));
                 }
                 // ── Dates channel. Under custom ref the URL carries no dates (refSwitch kind);
                 // the target period is what phase-2 of a switch would apply.
@@ -4097,7 +4268,9 @@
                 
                 // Get initial params from overlay.html URL
                 const initialParams = getOverlayUrlParams();
-                
+                // Before any iframe URL is built: a Horizontal or Vertical map loads with it.
+                autoPixelResize = initialParams.autoPixelResize === 'true';
+
                 // When URL has timeControls=true and periods, startDate/endDate come from first period
                 const firstLogDefaults = parseInsarmapsUrlParams(urlsFileOrder[0]);
                 let initialStartDate = initialParams.startDate ?? firstLogDefaults?.startDate ?? null;
@@ -4267,6 +4440,11 @@
                         iframe.onload = () => {
                             const reason = isActive ? 'initial-active' : 'matrix-initial';
                             console.log(`[overlay] iframe LOADED ${iframeLabelForLog(index)}  reason=${reason}`);
+                            // A URL from insarmaps.log as it is (no view in the overlay's URL nor the
+                            // log's first line) has no autoPixelSize.
+                            if (autoPixelSizeOnIframe(index) !== wantAutoPixelSize(index)) {
+                                sendAutoPixelSizeToIframe(index, wantAutoPixelSize(index));
+                            }
                             if (urls.length > 1 && (isActive || index === urls.length - 1)) {
                                 scheduleBackgroundSync(
                                     isActive ? 'after-initial-active' : 'after-matrix-initial',
@@ -4298,7 +4476,8 @@
                 if (isSingleFileMode) {
                     document.getElementById('frame-selector').style.display = 'none';
                 }
-                
+                setupAutoPixelResizeButton();
+
                 // Create dropdown options
                 const frameSelect = document.getElementById('frame-select');
                 iframeLabels.forEach((label, index) => {

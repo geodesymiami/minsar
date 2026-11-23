@@ -1,10 +1,10 @@
 # overlay.html Architecture Documentation
 
-**Last updated:** 2026-11-20 (pan/zoom and colorscale reach background iframes by postMessage, not reloads; see §8)
+**Last updated:** 2026-11-23 (Auto Pixel Resize: Horizontal/Vertical draw their points larger where the Pixel Size leaves white space; see §20)
 
 ## Overview
 
-`overlay.html` is a multi-dataset InSAR map viewer. It embeds one **insarmaps** iframe per dataset (Descending, Ascending, Horizontal, Vertical) and keeps their **view state** in sync: map position, color scale, time period, pixel size, contours, time-series point, and custom reference point.
+`overlay.html` is a multi-dataset InSAR map viewer. It embeds one **insarmaps** iframe per dataset (Descending, Ascending, Horizontal, Vertical) and keeps their **view state** in sync: map position, color scale, time period, pixel size, contours, time-series point, and custom reference point. With **Auto Pixel Resize** on (§20), the Horizontal and Vertical maps draw their points larger than the Pixel Size where it would leave white space between them.
 
 The overlay page is served from the **data server** (e.g. `http://149.165.154.65/data/HDF5EOS/.../overlay.html`). Each iframe loads **insarmaps** from a separate origin (e.g. `http://149.165.153.50`). That cross-origin split is central to the design.
 
@@ -87,6 +87,8 @@ Hash-based (preferred):
 overlay.html#/start/0.7480/-77.9687/9.8000?startDataset=S1_desc_...&minScale=-3&maxScale=3&startDate=...&endDate=...
 ```
 
+`autoPixelResize=true` is there while Auto Pixel Resize is on (§20); a page loaded with it starts with the button on.
+
 ---
 
 ## Debug Table Workflow
@@ -141,6 +143,8 @@ Latest debug-table example (from this debugging session):
 | `bgAppliedDates` | index → `{ startDate, endDate }` last applied to that iframe via `insarmaps-set-dates` (cleared on any reload of that iframe) |
 | `bgAppliedScale` | index → `{ autoColorScale, minScale, maxScale }` last sent via `insarmaps-set-auto-color-scale` (cleared on reload). Scale params are ignored in URL staleness compares; changes propagate as a repaint postMessage, never a reload |
 | `bgAppliedDisplay` | index → `{ pixelSize, opacity, contour, background }` last sent via `insarmaps-set-pixelSize`/`-opacity`/`-contour`/`-background` (cleared on reload). Same rule as scale: ignored in URL compares, synced by in-page postMessages |
+| `autoPixelResize` (2026-11) | The Auto Pixel Resize button (§20); in the overlay URL as `autoPixelResize=true` |
+| `bgAppliedAutoPixelSize` (2026-11) | index → `autoPixelSize` last sent via `insarmaps-set-auto-pixel-size` (cleared on reload: the load URL's `autoPixelSize=true` says it then, `autoPixelSizeOnIframe`). Wanted: on for a Horizontal or Vertical map while the button is on (`wantAutoPixelSize`) |
 | `bgAppliedView` | index → `{ lat, lon, zoom, acked }` last view sent via `insarmaps-set-view` (cleared on reload, and for the active iframe on each of its own posts: the user moves it). The view is ignored in URL compares and compared numerically (`viewsClose`, one unit of insarmaps' 4th decimal). The switch path counts a sent view only once acked (`viewOnIframe`): a target with a set-view still unanswered is reloaded, not revealed |
 | `setViewSupport` | `'unknown'` → `'yes'` on the first `insarmaps-set-view-applied` ack, `'no'` when the first set-view gets none within `SET_VIEW_ACK_TIMEOUT_MS` (8 s): an insarmaps server without the handler, so views sync by reloads again. Per iframe, `setViewNotReadyByIndex` counts `not-ready` answers (retried every second, up to 30) and `setViewFallbackByIndex` marks iframes to reload |
 | (colorscale) | No record of what was sent: the colorscale an iframe shows is read from its own URL (`colorscaleOnIframe`; insarmaps always writes `colorscale=` into the URLs it posts) |
@@ -271,6 +275,7 @@ Done: Asc has custom ref + narrowed period
 | `insarmaps-set-view` (2026-11) | `{ lat, lon, zoom }` — the `/start/` path's values: move the loaded map there (camera jump, no reload). Ack: `insarmaps-set-view-applied` `{ lat, lon, zoom, ok, reason }` (`not-ready` while the dataset load has not started → overlay retries every second; no ack within 8 s → overlay marks the server unsupported, or that iframe unresponsive, and reloads at the new view) | `mainPage.js` → `mainMap.applyOverlayView(lat, lon, zoom)` (ends in `afterDoneMoving` like a user's pan: address + `insarmaps-url-update`; zoom-out limit set as a load at that zoom would) |
 | `insarmaps-set-colorscale` | `{ colorscale: 'velocity'\|'displacement' }` — recolor in place; no-op when unchanged; no ack (the iframe's next `insarmaps-url-update` carries `colorscale=`) | `mainPage.js` → `colorDatasetOnVelocity` / `colorDatasetOnDisplacement` |
 | `insarmaps-movie-stop` (2026-11) | `{}` — stop the iframe's movie: sent by `selectDataset` to the iframe the user switches away from (before `insarmaps-query-switch-state`, whose reply then has the window the movie stopped at), and to an iframe whose movie plays while it is not the active one. insarmaps also stops a movie on `insarmaps-set-dates` and on `insarmaps-query-switch-state`, so older overlay copies stop it at a switch too | `mainPage.js` → `DateWindowMovie.stop()` (the window shown stays; address + `insarmaps-url-update`) |
+| `insarmaps-set-auto-pixel-size` (2026-11) | `{ value: true/false }` — Auto Pixel Resize (§20): the map's auto pixel size on or off, no reload, no ack; no-op when unchanged. Sent with every display-channel push (`sendDisplayChannelToIframe`), by the reconciler when only it differs, and by the button to every map (and Time Controls' period maps), once at the click and again at each map's next load. Horizontal/Vertical maps also load with `autoPixelSize=true` in their URL while the button is on (never in shareable links; `canonicalInsarmapsUrl` drops it, so it never causes a reload) | `mainPage.js` → `mainMap.setAutoPixelSize(on)` → `RecolorStoreLayer.setFill(on)` |
 
 Point, ref and view also still load via the **iframe URL** (initial warm loads and all fallbacks).
 
@@ -359,7 +364,10 @@ reconcileBackgroundIframes(reason)      // idempotent
                   (fire-and-forget in-page updates; child no-ops when unchanged);
                   tracked in bgAppliedDisplay; absent URL params compare as
                   INSARMAP defaults; background swaps the basemap style in-page
-                  (setBaseMapLayer carries insar layers over)
+                  (setBaseMapLayer carries insar layers over). set-auto-pixel-size
+                  rides along (per map: on for Horizontal/Vertical with Auto Pixel
+                  Resize on), and is sent alone when only it differs
+                  (bgAppliedAutoPixelSize, §20)
         dates   — set-dates (narrow AND widen-to-full); tracked in bgAppliedDates
    each onload → reconcile again (chases state changed during the load)
 ```
@@ -590,6 +598,7 @@ Overlay alone is insufficient for custom ref + narrowed dates. Insarmaps must pr
 | `applyOverlayPointSelection(lat, lon, isRef, cb)` (2026-07) | `mainMap.js` | Synthetic click on the loaded map for `insarmaps-set-point` / `insarmaps-set-ref`. |
 | `insarmaps-set-point` / `insarmaps-set-ref` handlers (2026-07) | `mainPage.js` | Point/ref sync without reload; acks `insarmaps-set-point-applied` / `insarmaps-set-ref-received`. |
 | `insarmaps-set-view` handler, `applyOverlayView(lat, lon, zoom)` (2026-11) | `mainPage.js`, `mainMap.js` | View sync without reload; acks `insarmaps-set-view-applied`. Older servers never ack: the overlay then reloads, as before. |
+| `insarmaps-set-auto-pixel-size` handler, `autoPixelSize=true` URL parameter, `setAutoPixelSize(on)` (2026-11) | `mainPage.js`, `mainMap.js`, `helperFunctions.js`, `RecolorStoreLayer.js` | Auto Pixel Resize (§20). Older servers ignore both: their maps draw the Pixel Size, as with the button off. |
 
 Deploy overlay to **data server**; deploy insarmaps JS to **insarmaps server** (different hosts).
 
@@ -728,6 +737,7 @@ Pure UI toggle for registering start/end dates from chart dot clicks. No reload 
 | Point click | reconciler → `insarmaps-set-point` postMessage to others | None (reload only as fallback) |
 | Ref set/moved | reconciler → `insarmaps-set-ref` → ref-applied → recolor+dates on backgrounds | None (reload only as fallback) |
 | Time Controls period step | Show/hide period panel | None |
+| Auto Pixel Resize on/off | `insarmaps-set-auto-pixel-size` to every map (on for Horizontal/Vertical only), overlay URL `autoPixelResize=true` | None |
 
 ---
 
@@ -757,6 +767,7 @@ Pure UI toggle for registering start/end dates from chart dot clicks. No reload 
 | `insarmapsUrlsEquivalentIgnoringChannels()` | Same page (dataset/options) ignoring the view and every postMessage channel |
 | `syncViewToIframe()` / `sendSetViewToIframe()` | View channel: set-view with ack timer, or reload when unsupported/failed |
 | `viewsClose()` / `viewOnIframe()` / `colorscaleOnIframe()` | View and colorscale an iframe shows, for the reconciler and the switch path |
+| `setAutoPixelResize()` / `wantAutoPixelSize()` / `autoPixelSizeOnIframe()` / `sendAutoPixelSizeToIframe()` | Auto Pixel Resize: the button, what each map should have and has, the send (§20) |
 
 ---
 
@@ -966,6 +977,42 @@ If rebuilding from scratch with a new implementation:
 
 ---
 
+## 20. Auto Pixel Resize (2026-11)
+
+The Horizontal and Vertical datasets often have far fewer points than the Descending and Ascending ones they come
+from (Tambora: 47,914 against 425,032 and 561,295; insarmaps also thins every dataset's points at low zooms). The
+Pixel Size that fills the space between Descending's points then leaves a mesh of white space between Vertical's,
+which disappears again on a switch back to Descending.
+
+The **Auto Pixel Resize** button (next to the Dataset list; shown only when insarmaps.log has a Horizontal or Vertical
+dataset) is off by default: every map draws the Pixel Size, as before. On, it turns on insarmaps' auto pixel size in
+the Horizontal and Vertical maps only. Such a map measures how far apart the points it draws in view are, after each
+round of data, and draws them with the radius `max(Pixel Size, min(10, 0.8 × spacing + 0.5))` px, which follows the
+zoom. So switching from Descending/Ascending to Horizontal/Vertical shows larger points, but only where the Pixel Size
+would leave white space between them (at a low zoom, where the points are close on screen, it changes nothing), and
+switching back shows the Pixel Size again. At Tambora's view at zoom 12.4 with Pixel Size 1.5, Vertical is drawn at
+2.4; zoomed in to 12.85, at 3.0.
+
+- **One Pixel Size.** The overlay keeps one `pixelSize` for every map (`currentMapParams`, the display channel, the
+  URLs); the auto pixel size only changes the radius a map draws. insarmaps' slider and address keep the size asked
+  for, and its label shows both, e.g. `Pixel Size: 1.5 (auto 2.4)`. A Pixel Size larger than the auto one wins.
+- **No reloads.** The button sends `insarmaps-set-auto-pixel-size` to every map, once at the click and again at each
+  map's next load (a document still loading may not listen yet, and a load URL built before the click has the old
+  state); maps built afterwards load with `autoPixelSize=true` in their URL when they are Horizontal or Vertical
+  (`buildInsarmapsUrl`; Time Controls' period maps of a Horizontal/Vertical dataset too). `canonicalInsarmapsUrl`
+  drops the parameter, so it never makes a URL stale.
+- **Kept in step** like the display channel (§8): `sendDisplayChannelToIframe` sends it with every push (dataset
+  switches re-broadcast the display to the map switched to), and the reconciler sends it alone when only it differs
+  (`bgAppliedAutoPixelSize`, cleared on reload, else the load URL: `autoPixelSizeOnIframe`).
+- **Bookmarkable:** `autoPixelResize=true` in the overlay URL.
+- **Older insarmaps** ignore the message and the parameter: the button then changes nothing.
+
+Measured on the live site (2026-11-23, Tambora's quartet, both changes): with the button off, every map's canvas was
+byte-identical to the overlay and insarmaps before them at boot, after a switch and after a zoom; on, only the
+Horizontal and Vertical canvases changed, and off again restored them byte for byte; no step reloaded an iframe.
+
+---
+
 ## Related files
 
 | File | Role |
@@ -975,4 +1022,5 @@ If rebuilding from scratch with a new implementation:
 | `tools/insarmaps/public/js/mainPage.js` | postMessage listeners |
 | `tools/insarmaps/public/js/mainMap.js` | Ref point application, ref-applied message |
 | `tools/insarmaps/public/js/GraphsController.js` | Date slider, chart navigator |
+| `tools/insarmaps/public/js/RecolorStoreLayer.js` | Draws the points; the auto pixel size of Auto Pixel Resize (§20) |
 | `create_insarmaps_framepages.py` | Copies templates to project directory |
