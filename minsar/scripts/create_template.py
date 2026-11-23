@@ -99,6 +99,15 @@ def _validate_coverage_pairs(coverage: dict[str, str | int], stdout: str) -> Non
             )
 
 
+def _coverage_select_line(prefix: str, coverage: dict[str, str | int]) -> str:
+    """One stderr line: relative orbit and scene count. The label is not printed."""
+    parts = [f"{prefix}_relorbit={coverage[f'{prefix}_relorbit']}"]
+    nimages = coverage.get(f"{prefix}_nimages")
+    if nimages is not None:
+        parts.append(f"{prefix}_nimages={nimages}")
+    return "  " + " ".join(parts)
+
+
 def _log_coverage_for_effective_mode(
     coverage: dict[str, str | int],
     flight_dir_eff: str,
@@ -107,27 +116,15 @@ def _log_coverage_for_effective_mode(
     dual = flight_dir_eff in ("both", "asc,desc", "desc,asc")
     if dual:
         if _coverage_has_asc(coverage):
-            print(
-                f"  asc_label={coverage['asc_label']} asc_relorbit={coverage['asc_relorbit']}",
-                file=sys.stderr,
-            )
+            print(_coverage_select_line("asc", coverage), file=sys.stderr)
         if _coverage_has_desc(coverage):
-            print(
-                f"  desc_label={coverage['desc_label']} desc_relorbit={coverage['desc_relorbit']}",
-                file=sys.stderr,
-            )
+            print(_coverage_select_line("desc", coverage), file=sys.stderr)
         return
     if flight_dir_eff == "asc" and _coverage_has_asc(coverage):
-        print(
-            f"  asc_label={coverage['asc_label']} asc_relorbit={coverage['asc_relorbit']}",
-            file=sys.stderr,
-        )
+        print(_coverage_select_line("asc", coverage), file=sys.stderr)
         return
     if flight_dir_eff == "desc" and _coverage_has_desc(coverage):
-        print(
-            f"  desc_label={coverage['desc_label']} desc_relorbit={coverage['desc_relorbit']}",
-            file=sys.stderr,
-        )
+        print(_coverage_select_line("desc", coverage), file=sys.stderr)
 
 
 def _effective_flight_dir_for_coverage(
@@ -252,7 +249,7 @@ def _run_get_sar_coverage(
             result["desc_label"] = val
         elif key == "processing_subset":
             result["processing_subset"] = val
-        elif key in ("asc_nbursts", "desc_nbursts"):
+        elif key in ("asc_nimages", "desc_nimages", "asc_nbursts", "desc_nbursts"):
             try:
                 result[key] = int(val)
             except ValueError as exc:

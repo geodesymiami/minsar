@@ -2,6 +2,7 @@
 
 from minsar.src.minsar.helper_functions import parse_polygon
 from shapely.geometry import Polygon, box
+import shapely.wkt
 import asf_search as asf
 from asf_search.constants import INTERNAL
 import datetime
@@ -57,6 +58,9 @@ def create_parser(iargs=None, namespace=None):
     parser.add_argument('--burst-id', nargs='*', type=str, metavar='BURST', default=None, help='Burst ID')
     parser.add_argument('--frame', type=int, metavar='FRAME', help='Frame number (Default: None)')
     parser.add_argument('--fullcover', action='store_true', help='Download only full coverage of the search area (Default: False)')
+    parser.add_argument('--first-covering-frame', action='store_true',
+                        help='Keep only the lowest-numbered frame whose footprint fully covers the search area\n'
+                             '(ALOS-2: one frame per date instead of every frame that touches the AOI)')
     parser.add_argument('--platform', nargs='?', default='S1', metavar='SENTINEL1, ALOS2, NISAR', help='Platform to search')
     parser.add_argument('--parallel', type=int, default=6, help='Number of parallel downloads (Default: 1)')
     parser.add_argument('--print', dest='print', action='store_true', help='Print the whole search results')
@@ -221,6 +225,39 @@ def _dedupe_products_by_file_id(products):
         unique.append(product)
     return unique, removed
 
+
+def _frame_number(product):
+    """Return the product's frame number as an int, or None."""
+    props = getattr(product, "properties", None) or {}
+    try:
+        return int(props.get("frameNumber"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _filter_results_by_frame(products, frame):
+    """Keep products whose frame number equals frame."""
+    return [p for p in products if _frame_number(p) == frame]
+
+
+def _select_first_covering_frame(products, intersects_with):
+    """Keep only the lowest-numbered frame whose footprint fully covers the AOI.
+
+    An AOI inside the overlap of two ALOS-2 frames matches both frames on every date.
+    Returns (kept_products, chosen_frame); chosen_frame is None and all products are kept
+    when no single frame covers the AOI.
+    """
+    aoi = shapely.wkt.loads(intersects_with.strip().strip("'\""))
+    covering = set()
+    for p in products:
+        frame = _frame_number(p)
+        if frame is not None and Polygon(p.geometry['coordinates'][0]).contains(aoi):
+            covering.add(frame)
+    if not covering:
+        return products, None
+    chosen = min(covering)
+    return _filter_results_by_frame(products, chosen), chosen
+
 def main(iargs=None, namespace=None):
     """Main function to execute the search and download."""
     inps = create_parser(iargs, namespace)
@@ -248,6 +285,16 @@ def main(iargs=None, namespace=None):
     result_list, duplicate_count = _dedupe_products_by_file_id(result_list)
     if duplicate_count:
         print(f"After removing duplicate file ids: {len(result_list)} results (removed {duplicate_count}).")
+    if inps.frame is not None:
+        result_list = _filter_results_by_frame(result_list, inps.frame)
+        print(f"After --frame={inps.frame}: {len(result_list)} results.")
+    if inps.first_covering_frame and inps.intersectsWith:
+        frames = sorted({f for f in map(_frame_number, result_list) if f is not None})
+        result_list, chosen = _select_first_covering_frame(result_list, inps.intersectsWith)
+        if chosen is None:
+            print(f"No single frame covers the AOI; keeping all frames {frames}.")
+        else:
+            print(f"Frames {frames} found; keeping frame {chosen}, the first that covers the AOI: {len(result_list)} results.")
     if inps.print and len(result_list) > 0:
             print(', '.join(k for k in result_list[0].properties.keys() if k not in ['centerLat', 'centerLon']))
 

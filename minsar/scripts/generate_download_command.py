@@ -174,6 +174,7 @@ def generate_download_command(template,inps):
     asf_ssaraopt = _expand_platform_args(ssaraopt)
     if is_alos2:
         asf_ssaraopt = [arg for arg in asf_ssaraopt if not arg.startswith('--frame=')]
+        asf_ssaraopt.append('--first-covering-frame')
         product_level = '1.1'
         asf_download_dir = 'SLC_ORIG'
     else:
