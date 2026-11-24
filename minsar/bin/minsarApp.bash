@@ -20,6 +20,7 @@ helptext="                                                                      
       minsarApp.bash  \$TE/GalapagosSenDT128.template --start ifgram --isce-start 5  \n\
       minsarApp.bash  \$TE/GalapagosSenDT128.template --start ifgram --isce-start 5 --isce-stop 6  \n\
       minsarApp.bash  \$TE/GalapagosSenDT128.template --start ifgram --isce-step 5 \n\
+      minsarApp.bash  \$SAMPLESDIR/unittestGalapagosSenD128.template --azimuth-looks 10 --range-looks 40 --isce-start looks  \n\
       minsarApp.bash  \$TE/GalapagosSenDT128.template --start miaplpy --miaplpy-start 6         \n\
       minsarApp.bash  \$TE/GalapagosSenDT128.template --start miaplpy --miaplpy-start 6 --miaplpy-stop 6 \n\
       minsarApp.bash  \$TE/GalapagosSenDT128.template --start miaplpy --miaplpy-step 6     \n\
@@ -48,6 +49,8 @@ helptext="                                                                      
    --miaplpy.load.startDate | endDate DATE  YYYYMMDD; sets only the MiaplPy load window; the other load date becomes auto \n\
    --range-looks N | --azimuth-looks N   write the number of looks into the template (topsStack or alos2Stack by platform) \n\
                          also --rangeLooks, --topsStack.rangeLooks, --alos2Stack.rangeLooks (same for azimuth) \n\
+   --isce-start looks    rerun a processed dataset with other looks: starts at the first ISCE step that depends on looks \n\
+                         (Sentinel-1 and ALOS-2) and writes the template looks into the existing configs / run files \n\
    --suffix [TAG | auto]   pass --suffix to ingest_insarmaps (bare --suffix: auto from minTempCoh) \n\
                                                                                  \n\
    --mintpy              use smallbaselineApp.py for time series [default]       \n\
@@ -768,6 +771,7 @@ fi
 # --no-mintpy stops at partial (merge SLC). --isce-start without --isce-stop runs through full
 # so a resume past the partial step (NESD 13, geometry 8) is not an inverted range.
 isce_start="${isce_start_cli:-1}"
+[[ "$isce_start" == "looks" ]] && { isce_start=$(update_looks_in_runfiles.py "$template_file" --print-step) || exit 1; }
 if [[ "$isce_stop_cli_flag" == "1" ]]; then
     isce_stop="$isce_stop_cli"
 elif [[ "$platform_str" == *"SENTINEL-1"* && "$no_mintpy_cli_flag" == "1" && "$isce_start" -le "$partial_isce_run_stop" ]]; then
@@ -997,6 +1001,11 @@ if [[ $jobfiles_flag == "1" ]]; then
         run_command "get_alos2_swaths.py $snwe \"$WORK_DIR/SLC\" \"$template_file\""
     fi
     ( run_command "$BUFFOPT create_runfiles.py $template_file --jobfiles --queue $QUEUENAME" ) 2> >(tee out_create_jobfiles.e >&2) | tee out_create_jobfiles.o
+fi
+
+# other looks for a processed dataset (--isce-start looks): write them into the existing configs / run files
+if [[ ( ${#cli_looks_args[@]} -gt 0 || "${isce_start_cli:-}" == "looks" ) && $jobfiles_flag == "0" && $ifgram_flag == "1" ]]; then
+    run_command "update_looks_in_runfiles.py $template_file --isce-start $isce_start"
 fi
 
 if [[ $ifgram_flag == "1" ]]; then
