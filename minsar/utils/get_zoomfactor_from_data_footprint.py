@@ -2,7 +2,7 @@
 """
 Calculate appropriate zoom factor from data_footprint attribute in HDFEOS5 files.
 Uses the bounding box extent to determine the zoom level at which the data cover
-most (about 94%) of a typical browser window.
+about 112% of a typical browser window (slightly overfill it).
 
 For .csv inputs, extent is taken from min/max of latitude and longitude columns
 (same column detection as insarmaps_ingester.py).
@@ -39,7 +39,7 @@ EXAMPLE = """Examples:
 
 DESCRIPTION = (
     "Calculates the insarmaps zoom from data_footprint in HDFEOS5 files, or from the lat/lon extent in CSV.\n"
-    "The zoom is chosen such that the data bounding box covers --viewport-fill (default 0.9375) of the map\n"
+    "The zoom is chosen such that the data bounding box covers --viewport-fill (default 1.125) of the map\n"
     "view of a typical browser window (open_insarmaps.py --bounds 304 55 1452 947), along the limiting\n"
     "dimension, using the Web Mercator / Mapbox GL scale (world = 512 * 2^zoom px).\n"
     "Outputs a single zoom factor value."

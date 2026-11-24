@@ -488,7 +488,7 @@ def get_data_footprint_center(metadata):
 def generate_insarmaps_url(host, dataset_name, metadata, geocorr=False):
     """
     Generate an Insarmaps viewer URL using center of data footprint if available.
-    The zoom is such that the data cover most (about 94%) of a typical browser window.
+    The zoom is such that the data cover about 112% of a typical browser window (slightly overfill it).
     """
     lat, lon = get_data_footprint_center(metadata)
     bounds = wkt_polygon_bounds(metadata.get("data_footprint", ""))
