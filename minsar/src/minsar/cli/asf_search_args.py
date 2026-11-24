@@ -70,7 +70,7 @@ def create_parser(iargs=None, namespace=None):
     parser.add_argument('--post-download-cmd', metavar='CMD', default=None,
                         help='Command run on each file as soon as its download is complete ({} = file path).\n'
                              'Restartable: finished files are skipped, interrupted downloads are resumed;\n'
-                             'timing goes to <dir>/download_timing.csv')
+                             'timing goes to <dir>/download_timing.txt')
     parser.add_argument('--exclude-season', metavar='MMDD-MMDD', default=None, help='Exclude scenes in a recurring inclusive seasonal window (supports year wrap), e.g. 1005-0320')
 
     if isinstance(iargs, argparse.Namespace):

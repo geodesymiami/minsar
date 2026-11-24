@@ -41,7 +41,7 @@ helptext="                                                                      
    --end STEP, --stop STEP                                                       \n\
    --dostep STEP         run processing at the named step only                   \n\
    --download-method {slc | SLC, slc-unpack, slc-unpack-login, burst | BURST, burst2safe, burst2stack, ssara-slc, ssara-bash, ssara-python} (default: burst2stack; burst downloads into BURST, full SLCs into SLC) \n\
-                                 slc-unpack (ALOS-2): job that unpacks each granule as soon as it is downloaded; restartable, timing in SLC_ORIG/download_timing.csv \n\
+                                 slc-unpack (ALOS-2): job that unpacks each granule as soon as it is downloaded; restartable, timing in SLC_ORIG/download_timing.txt \n\
                                  slc-unpack-login (ALOS-2): same, but run on the login node instead of as a job (no queue wait, no walltime; for small stacks) \n\
    --delta-lat [DEG]     download larger error (default 0; bare --delta-lat: 0.2) \n\
    --minsar.excludeDates | --exclude-dates DATES  exclude YYYYMMDD scenes (comma-separated; merges with template) \n\

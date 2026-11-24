@@ -1,7 +1,7 @@
 """Tests for minsar.utils.granule_pipeline (restartable per-granule download + unpack)."""
-import csv
 import io
 import os
+import re
 import tempfile
 import threading
 import unittest
@@ -89,9 +89,23 @@ class GranulePipelineTest(unittest.TestCase):
     def run_pipeline(self, session, post=None):
         return gp.run_pipeline([self.product], self.dir, post or self.post, 2, lambda: session)
 
-    def rows(self):
+    def timing_text(self):
         with open(os.path.join(self.dir, gp.TIMING_FILE)) as f:
-            return list(csv.DictReader(f))
+            return f.read()
+
+    def rows(self):
+        """Granule lines of download_timing.txt as dicts keyed by the column names (all runs)."""
+        rows, columns = [], None
+        for line in self.timing_text().splitlines():
+            if not line or line.startswith('#'):
+                continue
+            cells = re.split(r' {2,}', line.strip())
+            if cells[0] == 'granule':
+                columns = cells
+                continue
+            cells += [''] * (len(columns) - len(cells))
+            rows.append(dict(zip(columns, cells)))
+        return rows
 
     def test_fresh_download_and_unpack(self):
         session = FakeSession(self.content)
@@ -99,9 +113,43 @@ class GranulePipelineTest(unittest.TestCase):
         self.assertTrue(os.path.isfile(self.archive))
         self.assertFalse(os.path.exists(self.final + '.part'))
         rows = self.rows()
-        self.assertEqual([(r['step'], r['status']) for r in rows], [('download', 'ok'), ('unpack', 'ok')])
-        self.assertEqual(rows[0]['final_host'], 'cdn.example')
-        self.assertEqual(int(rows[0]['bytes_this_attempt']), len(self.content))
+        self.assertEqual(len(rows), 1)      # one line per granule: download and unpack together
+        self.assertEqual(rows[0]['granule'], self.name[:-4])
+        self.assertEqual((rows[0]['status'], rows[0]['tries'], rows[0]['GB']), ('ok', '1', '0.0'))
+        self.assertRegex(rows[0]['download_s'], r'^\d+$')
+        self.assertRegex(rows[0]['unpack_s'], r'^\d+$')
+        self.assertEqual(rows[0]['note'], '')
+        self.assertRegex(self.timing_text().splitlines()[0], r'^# \d{4}-\d\d-\d\d \d\d:\d\d  (job \S+  )?node [^.\s]+$')
+
+    def test_timing_columns_line_up(self):
+        rows = [
+            dict(granule='ALOS2493403800-230713-WBDR1.1__D.zip', step='download', attempt=1, status='failed', seconds='1200.4',
+                 bytes_this_attempt=21600000000, resumed_from_byte=0, message='connection closed at 21600000000 of 61159871905 bytes'),
+            dict(granule='ALOS2493403800-230713-WBDR1.1__D.zip', step='download', attempt=2, status='ok', seconds='2290.0',
+                 bytes_this_attempt=39559871905, resumed_from_byte=21600000000, message=''),
+            dict(granule='ALOS2493403800-230713-WBDR1.1__D.zip', step='unpack', attempt=1, status='ok', seconds='905.9'),
+            dict(granule='S.zip', step='unpack', attempt=1, status='failed', seconds='3.0', message='exit code 1, see S.unpack.log'),
+        ]
+        header, first, second = gp.format_timing_block(rows, '# run').splitlines()[1:]
+        self.assertEqual(first, 'ALOS2493403800-230713-WBDR1.1__D  ok                 3490    57.0    16.7       906      2'
+                                '  try 1: connection closed at 21600000000 of 61159871905 bytes')
+        self.assertEqual(second.split(), ['S', 'failed', '-', '-', '-', '3', '-', 'exit', 'code', '1,', 'see', 'S.unpack.log'])
+        for title in ('download_s', 'GB', 'MB/s', 'unpack_s', 'tries'):
+            end = header.index(title) + len(title)
+            self.assertNotEqual(first[end - 1], ' ', msg=title)      # right-aligned numbers end under their title
+            self.assertEqual(first[end:end + 2], '  ', msg=title)
+        self.assertEqual(header.index('status'), first.index('ok'))
+
+    def test_second_run_keeps_the_first_block(self):
+        self.assertEqual(self.run_pipeline(FakeSession(self.content), post='false'), 1)
+        first_block = self.timing_text()
+        self.assertEqual(self.rows()[0]['status'], 'failed')
+        self.assertEqual(self.run_pipeline(FakeSession(self.content)), 0)
+        text = self.timing_text()
+        self.assertTrue(text.startswith(first_block))
+        rows = self.rows()
+        self.assertEqual([r['status'] for r in rows], ['failed', 'ok'])
+        self.assertEqual((rows[1]['download_s'], rows[1]['tries']), ('-', '-'))    # only unpacked in the second run
 
     def test_done_is_skipped(self):
         os.makedirs(os.path.dirname(self.archive))
@@ -123,7 +171,7 @@ class GranulePipelineTest(unittest.TestCase):
         self.assertEqual(self.run_pipeline(session), 0)
         self.assertEqual(session.ranges, ['bytes=70000-'])
         self.assertEqual(read(self.archive), self.content)
-        self.assertEqual(self.rows()[0]['resumed_from_byte'], '70000')
+        self.assertIn('resumed at', self.rows()[0]['note'])
 
     def test_truncated_zip_from_old_downloader_is_resumed(self):
         write(self.final, self.content[:50000])
@@ -138,7 +186,7 @@ class GranulePipelineTest(unittest.TestCase):
         session = FakeSession(self.content, ignore_range=True)
         self.assertEqual(self.run_pipeline(session), 0)
         self.assertEqual(read(self.archive), self.content)
-        self.assertEqual(self.rows()[0]['resumed_from_byte'], '0')
+        self.assertEqual(self.rows()[0]['note'], 'server ignored Range, restarted from zero')
 
     def test_dropped_connection_is_retried_with_resume(self):
         session = FakeSession(self.content, drop_after=60000)
@@ -149,7 +197,9 @@ class GranulePipelineTest(unittest.TestCase):
         finally:
             threading.Event.wait = wait
         self.assertEqual(session.ranges, [None, 'bytes=60000-'])
-        self.assertEqual([r['status'] for r in self.rows() if r['step'] == 'download'], ['failed', 'ok'])
+        row = self.rows()[0]
+        self.assertEqual((row['status'], row['tries']), ('ok', '2'))
+        self.assertIn('try 1: connection closed', row['note'])
         self.assertEqual(read(self.archive), self.content)
 
     def test_interrupt_keeps_part_and_logs_row(self):

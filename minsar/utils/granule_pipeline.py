@@ -12,11 +12,11 @@ The state of a granule is read from the file system, never from a status file:
 A download is written to X.zip.part and renamed to X.zip only once its size matches the
 catalog and the zip opens, so a file named X.zip is always complete.
 
-Timing is appended to <dir>/download_timing.csv (one row per attempt) and, while a
-download runs, to <dir>/X.download.log (one line per PROGRESS_INTERVAL seconds).
+Timing is written to <dir>/download_timing.txt (one line per granule: download and unpack
+seconds; a block per run) and, while a download runs, to <dir>/X.download.log (one line per
+PROGRESS_INTERVAL seconds).
 """
 
-import csv
 import datetime
 import os
 import shlex
@@ -29,16 +29,13 @@ import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 
-TIMING_FILE = 'download_timing.csv'
+TIMING_FILE = 'download_timing.txt'
 ARCHIVE_DIR = 'ARCHIVED_FILES'
 PROGRESS_INTERVAL = 60        # seconds between lines in X.download.log
 CHUNK_SIZE = 1024 * 1024
 MAX_ATTEMPTS = 3
-TIMING_FIELDS = [
-    'granule', 'step', 'attempt', 'status', 'start', 'end', 'seconds', 'bytes_this_attempt',
-    'resumed_from_byte', 'mean_MB_per_s', 'seconds_to_first_byte', 'http_status', 'final_host',
-    'slurm_job_id', 'node', 'message',
-]
+# download_timing.txt columns after the granule name: (header, width); note is free text and comes last
+TIMING_COLUMNS = [('status', 11), ('download_s', 10), ('GB', 6), ('MB/s', 6), ('unpack_s', 8), ('tries', 5)]
 MB = 1024 * 1024
 GB = 1024 * MB
 
@@ -114,27 +111,80 @@ def classify(directory, name, expected_bytes):
     return 'download', 0
 
 
+def _timing_line(name, status, values, note, width):
+    cells = [f'{name:<{width}}', f'{status:<{TIMING_COLUMNS[0][1]}}']
+    cells += [f'{value:>{w}}' for value, (_, w) in zip(values, TIMING_COLUMNS[1:])]
+    return '  '.join(cells + [note]).rstrip()
+
+
+def format_timing_block(rows, header):
+    """Text of one run: the header line, the column names and one line per granule.
+
+    rows are the dicts passed to TimingLog.write (one per download attempt or unpack).
+    download_s, GB and MB/s are totals over the download attempts; unpack_s is '-' until the unpack ended.
+    status: ok (downloaded and unpacked), downloaded, failed, interrupted.
+    """
+    granules = {}
+    for row in rows:
+        granules.setdefault(row['granule'], []).append(row)
+    names = {granule: granule[:-4] if granule.endswith('.zip') else granule for granule in granules}
+    width = max([len('granule')] + [len(name) for name in names.values()])
+    lines = [header, _timing_line('granule', 'status', [title for title, _ in TIMING_COLUMNS[1:]], 'note', width)]
+    for granule, granule_rows in granules.items():
+        downloads = [r for r in granule_rows if r['step'] == 'download']
+        unpacks = [r for r in granule_rows if r['step'] == 'unpack']
+        notes = []
+        values = ['-', '-', '-', '-', '-']
+        status = '-'
+        if downloads:
+            seconds = sum(float(r.get('seconds') or 0) for r in downloads)
+            received = sum(int(r.get('bytes_this_attempt') or 0) for r in downloads)
+            values[0] = f'{seconds:.0f}'
+            values[1] = f'{received / GB:.1f}'
+            values[2] = f'{received / MB / seconds:.1f}' if seconds > 0 else '-'
+            values[4] = str(len(downloads))
+            resumed = int(downloads[0].get('resumed_from_byte') or 0)
+            if resumed > 0:
+                notes.append(f'resumed at {resumed / GB:.1f} GB')
+            for r in downloads:
+                if r.get('message'):
+                    notes.append(f"try {r.get('attempt')}: {r['message']}" if len(downloads) > 1 else r['message'])
+            status = 'downloaded' if downloads[-1]['status'] == 'ok' else downloads[-1]['status']
+        if unpacks:
+            values[3] = f"{float(unpacks[-1].get('seconds') or 0):.0f}"
+            status = unpacks[-1]['status']
+            if unpacks[-1].get('message'):
+                notes.append(unpacks[-1]['message'])
+        lines.append(_timing_line(names[granule], status, values, '; '.join(notes), width))
+    return ''.join(f'{line}\n' for line in lines)
+
+
 class TimingLog:
-    """Appends rows to <dir>/download_timing.csv; safe to use from several threads."""
+    """Writes <dir>/download_timing.txt; safe to use from several threads.
+
+    The file has one block per run. Blocks of earlier runs are kept; the block of this run is written
+    again each time a download attempt or an unpack ends, so each granule stays on one line.
+    """
 
     def __init__(self, directory):
         self.path = os.path.join(directory, TIMING_FILE)
         self.lock = threading.Lock()
         self.rows = []
-        self.job_id = os.environ.get('SLURM_JOB_ID', '')
-        self.node = socket.gethostname()
+        job_id = os.environ.get('SLURM_JOB_ID', '')
+        node = socket.gethostname().split('.')[0]
+        self.header = f"# {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}  " + (f'job {job_id}  ' if job_id else '') + f'node {node}'
+        self.earlier_runs = ''
+        if os.path.isfile(self.path) and os.path.getsize(self.path) > 0:
+            with open(self.path) as f:
+                self.earlier_runs = f.read().rstrip('\n') + '\n\n'
 
     def write(self, **row):
-        row.setdefault('slurm_job_id', self.job_id)
-        row.setdefault('node', self.node)
         with self.lock:
             self.rows.append(row)
-            new = not os.path.isfile(self.path) or os.path.getsize(self.path) == 0
-            with open(self.path, 'a', newline='') as f:
-                writer = csv.DictWriter(f, fieldnames=TIMING_FIELDS, extrasaction='ignore')
-                if new:
-                    writer.writeheader()
-                writer.writerow(row)
+            tmp = self.path + '.tmp'
+            with open(tmp, 'w') as f:
+                f.write(self.earlier_runs + format_timing_block(self.rows, self.header))
+            os.replace(tmp, self.path)
 
 
 def _open_stream(session, url, offset):
