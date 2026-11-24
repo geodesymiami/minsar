@@ -12,7 +12,7 @@ EXAMPLE = """
 Examples:
     make_alos2_run_files.py alos2_cmds
     make_alos2_run_files.py --dry-run /path/project/alos2_cmds
-    make_alos2_run_files.py --unw-method whirlwind alos2_cmds
+    make_alos2_run_files.py --unw-method snaphu alos2_cmds
 """
 
 
@@ -21,7 +21,7 @@ def create_parser():
     parser.add_argument("alos2_cmds", metavar="ALOS2_CMDS", help="directory that contains cmd_1.sh, cmd_2.sh, and cmd_4.sh")
     parser.add_argument("--work-dir", type=Path, help="project directory (default: parent of ALOS2_CMDS)")
     parser.add_argument("--out-dir", type=Path, help="run_files directory (default: WORK/run_files)")
-    parser.add_argument("--unw-method", default="snaphu", choices=["snaphu", "whirlwind"], help="unwrapper for run_15_unwrap (default: %(default)s)")
+    parser.add_argument("--unw-method", default="whirlwind", choices=["snaphu", "whirlwind"], help="unwrapper for run_15_unwrap (default: %(default)s)")
     parser.add_argument("--dry-run", action="store_true", help="print run-file names and line counts and do not write")
     return parser
 

@@ -22,9 +22,9 @@ alos2Stack.doIonosphere              = False  #[True / False], auto for False, e
 alos2Stack.applyIonosphere           = False  #[True / False], auto for False, apply the ionospheric correction
 alos2Stack.startingSwath             = auto  # auto for the swaths that cover the AOI
 alos2Stack.endingSwath               = auto  # auto for the swaths that cover the AOI; set both or neither
-alos2Stack.azimuthLooks              = auto  # ~4 m spotlight, ~5 m SM1, ~12 m SM2, ~13 m SM3, ~40 m ScanSAR
-alos2Stack.unwMethod                 = auto  #[snaphu / whirlwind], auto for snaphu, unwrapper of run_15_unwrap
-alos2Stack.rangeLooks                = auto  # ~3 m spotlight/SM1, ~6 m SM2, ~9 m SM3/ScanSAR nominal, ~17 m ScanSAR wide
+alos2Stack.rangeLooks                = 5  #[int], final range looks, ~60-90 m ground range (far-near swath). ISCE ScanSAR default (auto): 5 = 1 x 5
+alos2Stack.azimuthLooks              = 28  #[multiple of 14], final azimuth looks, ~73 m; pixel ~60-90 by 73 m. ISCE ScanSAR default (auto): 28 = 14 x 2
+alos2Stack.unwMethod                 = auto  #[snaphu / whirlwind], auto for whirlwind, unwrapper of run_15_unwrap
 ######################################################
 mintpy.subset.lalo                   = 0:0,0:0    #[S:N,W:E / no], auto for no
 mintpy.load.autoPath                 = yes   # [yes / no], auto for no, use pre-defined auto path

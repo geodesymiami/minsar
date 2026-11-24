@@ -35,6 +35,42 @@ def _alos2_swath_property(template, key):
         raise RuntimeError(f'{key} must be an integer, got {value!r}') from exc
 
 
+SCANSAR_LOOKS1 = (1, 14)   # ISCE looks 1 (range, azimuth) for ALOS-2 ScanSAR
+
+
+def _alos2_look_properties(template):
+    """Return alosStack.xml look properties for alos2Stack.rangeLooks and azimuthLooks (ScanSAR).
+
+    The template values are the final looks. Looks 1 stay at the ISCE ScanSAR values (1 x 14) and
+    looks 2 = final looks / looks 1. Both auto returns {} and ISCE uses its default for the mode.
+    """
+    looks = {}
+    for key in ('alos2Stack.rangeLooks', 'alos2Stack.azimuthLooks'):
+        value = str(template.get(key, 'auto')).strip()
+        if value.lower() in ('', 'auto', 'none'):
+            continue
+        try:
+            looks[key] = int(value)
+        except ValueError as exc:
+            raise RuntimeError(f'{key} must be an integer, got {value!r}') from exc
+        if looks[key] < 1:
+            raise RuntimeError(f'{key} must be 1 or larger, got {value!r}')
+    if not looks:
+        return {}
+    if len(looks) != 2:
+        raise RuntimeError('Set both alos2Stack.rangeLooks and alos2Stack.azimuthLooks, or neither')
+    range_looks1, azimuth_looks1 = SCANSAR_LOOKS1
+    range_looks, azimuth_looks = looks['alos2Stack.rangeLooks'], looks['alos2Stack.azimuthLooks']
+    if range_looks % range_looks1 or azimuth_looks % azimuth_looks1:
+        raise RuntimeError(f'alos2Stack.azimuthLooks must be a multiple of {azimuth_looks1} (ScanSAR), got {azimuth_looks}')
+    return {
+        'number of range looks 1': range_looks1,
+        'number of azimuth looks 1': azimuth_looks1,
+        'number of range looks 2': range_looks // range_looks1,
+        'number of azimuth looks 2': azimuth_looks // azimuth_looks1,
+    }
+
+
 class CreateRun:
 
     def __init__(self, inps):
@@ -170,6 +206,7 @@ class CreateRun:
         if starting_swath is not None:
             properties['starting swath'] = starting_swath
             properties['ending swath'] = ending_swath
+        properties.update(_alos2_look_properties(self.inps.template))
         for name, value in properties.items():
             node = ET.SubElement(component, 'property', {'name': name})
             node.text = str(value)
@@ -198,5 +235,5 @@ class CreateRun:
             shutil.move(source, destination)
         run_dir = os.path.join(self.work_dir, 'run_files')
         write_alos2_run_files(command_dir, run_dir, self.work_dir,
-                              unwrap_method=self.inps.template.get('alos2Stack.unwMethod', 'snaphu'))
+                              unwrap_method=self.inps.template.get('alos2Stack.unwMethod', 'auto'))
 

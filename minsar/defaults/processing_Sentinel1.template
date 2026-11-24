@@ -10,7 +10,7 @@ topsStack.numConnections             = 4    # comment
 topsStack.azimuthLooks               = 4    # comment
 topsStack.rangeLooks                 = 16   # comment
 topsStack.filtStrength               = 0.2  # comment
-topsStack.unwMethod                  = snaphu  # comment
+topsStack.unwMethod                  = whirlwind  #[snaphu / icu / whirlwind], auto for whirlwind
 topsStack.coregistration             = NESD  # [NESD geometry], auto for NESD
 ######################################################
 mintpy.load.autoPath                 = yes   # [yes / no], auto for no, use pre-defined auto path

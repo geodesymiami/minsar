@@ -29,15 +29,17 @@ class TestAlos2UnwrapMethod(unittest.TestCase):
             with mock.patch.object(arf, "_parse_cmd", side_effect=[fake_steps(), [], []]):
                 return dict(arf.plan_alos2_run_files(tmp, tmp_method))
 
-    def test_snaphu_is_default(self):
-        for method in ("snaphu", "auto", None):
+    def test_snaphu_keeps_the_stock_script(self):
+        body = self.plan("snaphu")["run_15_unwrap"][0][1]
+        self.assertEqual(body, [UNWRAP_LINE])
+
+    def test_whirlwind_is_default(self):
+        for method in ("whirlwind", "auto", None):
             body = self.plan(method)["run_15_unwrap"][0][1]
-            self.assertEqual(body, [UNWRAP_LINE], msg=method)
+            self.assertEqual(body, [UNWRAP_LINE.replace("unwrap_snaphu.py", "unwrap_whirlwind.py")], msg=method)
 
     def test_whirlwind_replaces_only_the_unwrap_script(self):
         planned = self.plan("whirlwind")
-        body = planned["run_15_unwrap"][0][1]
-        self.assertEqual(body, [UNWRAP_LINE.replace("unwrap_snaphu.py", "unwrap_whirlwind.py")])
         others = [line for name, tasks in planned.items() if name != "run_15_unwrap" for _, lines in tasks for line in lines]
         self.assertFalse(any("whirlwind" in line for line in others))
 

@@ -125,4 +125,8 @@ Wall clock is from the measured run. For a loop, it is the slowest date or pair.
 
 ## Unwrapping with whirlwind
 
-`alos2Stack.unwMethod = whirlwind` (default `snaphu`) makes `run_15_unwrap` call `unwrap_whirlwind.py` (MinSAR addition, `additions/isce2/contrib/stack/alosStack/`) in place of `unwrap_snaphu.py`. It takes the same arguments and writes the same files (`filt_PAIR_*.unw`, `filt_PAIR_*_msk.unw`, `.conncomp`), so geocode and MintPy are unchanged. It uses [whirlwind-insar](https://github.com/scottstanie/whirlwind-insar) with the `.phsig` file as coherence. For Sentinel-1 the matching option is `topsStack.unwMethod = whirlwind`. Both call `minsar/utils/unwrap_whirlwind.py`.
+Whirlwind is the default unwrapper (`alos2Stack.unwMethod = auto` or `whirlwind`; set `snaphu` for the stock `unwrap_snaphu.py`). `run_15_unwrap` then calls `unwrap_whirlwind.py` (MinSAR addition, `additions/isce2/contrib/stack/alosStack/`) in place of `unwrap_snaphu.py`. It takes the same arguments and writes the same files (`filt_PAIR_*.unw`, `filt_PAIR_*_msk.unw`, `.conncomp`), so geocode and MintPy are unchanged. It uses [whirlwind-insar](https://github.com/scottstanie/whirlwind-insar) with the `.phsig` file as coherence. For Sentinel-1 the matching option is `topsStack.unwMethod` (also whirlwind by default). Both call `minsar/utils/unwrap_whirlwind.py`.
+
+## Number of looks (ScanSAR)
+
+`alos2Stack.rangeLooks` and `alos2Stack.azimuthLooks` are the final looks. `auto` leaves the ISCE ScanSAR default, 5 x 28 (looks 1 = 1 x 14 when the interferogram is formed, looks 2 = 5 x 2 before filtering and unwrapping), about 60-90 m ground range (far to near swath) by 73 m azimuth. With numbers, MinSAR keeps looks 1 at 1 x 14 and writes looks 2 = final / looks 1 to `alosStack.xml`, so `azimuthLooks` is a multiple of 14. Example: 2 and 14 give about 25-35 m by 36 m.

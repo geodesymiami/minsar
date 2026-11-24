@@ -39,7 +39,7 @@ class Step:
     used: bool = field(default=False)
 
 
-def write_alos2_run_files(alos2_cmds, run_dir, work_dir, unwrap_method="snaphu"):
+def write_alos2_run_files(alos2_cmds, run_dir, work_dir, unwrap_method="auto"):
     """Write run_01..run_16 and, where a task cds more than once, a bash file per task."""
     planned = plan_alos2_run_files(alos2_cmds, unwrap_method)
     run_dir = Path(run_dir)
@@ -68,10 +68,10 @@ def write_alos2_run_files(alos2_cmds, run_dir, work_dir, unwrap_method="snaphu")
     return written
 
 
-def plan_alos2_run_files(alos2_cmds, unwrap_method="snaphu"):
+def plan_alos2_run_files(alos2_cmds, unwrap_method="auto"):
     """Return (run-file stem, [(key or None, shell lines), ...]) in plan order.
 
-    unwrap_method whirlwind calls unwrap_whirlwind.py (MinSAR addition) in place of unwrap_snaphu.py.
+    unwrap_method whirlwind (also auto) calls unwrap_whirlwind.py (MinSAR addition) in place of unwrap_snaphu.py.
     """
     unwrap_method = _unwrap_method(unwrap_method)
     alos2_cmds = Path(alos2_cmds)
@@ -96,12 +96,12 @@ def plan_alos2_run_files(alos2_cmds, unwrap_method="snaphu"):
 
 
 def _unwrap_method(value):
-    """Return snaphu or whirlwind. None and auto mean snaphu."""
+    """Return snaphu or whirlwind. None and auto mean whirlwind."""
     method = "auto" if value is None else str(value).strip().lower()
-    if method in ("auto", "none", "snaphu"):
-        return "snaphu"
-    if method == "whirlwind":
+    if method in ("auto", "none", "whirlwind"):
         return "whirlwind"
+    if method == "snaphu":
+        return "snaphu"
     raise RuntimeError(f"alos2Stack.unwMethod must be snaphu or whirlwind, not {value}")
 
 
