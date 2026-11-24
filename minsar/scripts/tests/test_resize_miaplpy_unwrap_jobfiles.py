@@ -13,7 +13,9 @@ from minsar.scripts.resize_miaplpy_unwrap_jobfiles import (
     RUN05_BASE,
     compute_ppn,
     mem_per_task_mib,
+    extract_unwrap_command,
     parse_num_tiles_from_command,
+    read_unwrap_tasks,
     parse_num_tiles_from_run_files,
     parse_num_tiles_from_tasks,
     plan_job_split,
@@ -34,6 +36,15 @@ class TestParseNumTiles(unittest.TestCase):
             'unwrap_ifgram.py --num_tiles 25 --ifg b.int\n',
         ]
         self.assertEqual(parse_num_tiles_from_tasks(tasks), 25)
+
+    def test_whirlwind_tasks_are_read(self):
+        cmd = '/code/additions/miaplpy/unwrap_ifgram_whirlwind.py --ifg a.int --nlooks 50'
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp)
+            (run_dir / RUN05_BASE).write_text(cmd + '\nwait\n')
+            self.assertEqual(read_unwrap_tasks(run_dir), [cmd + '\n'])
+        self.assertEqual(extract_unwrap_command('/usr/bin/time -v ' + cmd + ' > out 2> err'), cmd)
+        self.assertEqual(parse_num_tiles_from_command(cmd), 1)
 
     def test_empty_tasks(self):
         self.assertEqual(parse_num_tiles_from_tasks([]), 1)

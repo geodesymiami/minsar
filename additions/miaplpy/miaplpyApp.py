@@ -533,6 +533,12 @@ class miaplpyTimeSeriesAnalysis(TimeSeriesAnalysis):
         height = self.metadata['HEIGHT']
         nlooks = int(self.template['miaplpy.inversion.azimuthWindow']) * int(self.template['miaplpy.inversion.rangeWindow'])
 
+        unwrap_method = str(self.template.get('miaplpy.unwrap.method', 'snaphu')).lower()
+        if unwrap_method not in ('snaphu', 'whirlwind'):
+            raise ValueError('miaplpy.unwrap.method must be snaphu or whirlwind, got {}'.format(unwrap_method))
+        print('unwrap method: {}'.format(unwrap_method))
+        whirlwind_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'unwrap_ifgram_whirlwind.py')
+
         run_commands = []
         num_cpu = os.cpu_count()
         ntiles = self.num_pixels // int(self.template['miaplpy.unwrap.snaphu.tileNumPixels'])
@@ -573,6 +579,23 @@ class miaplpyTimeSeriesAnalysis(TimeSeriesAnalysis):
             if self.template['miaplpy.unwrap.two-stage'] == 'yes':
                 scp_args += ' --two-stage'
             cmd = '{} unwrap_ifgram.py {}'.format(self.text_cmd.strip("'"), scp_args)
+            if unwrap_method == 'whirlwind':
+                ww_args = '--ifg {} --coherence {} --unwrapped_ifg {} --nlooks {}'.format(
+                    os.path.join(out_dir, 'filt_fine.int'), corr_file, os.path.join(out_dir, 'filt_fine.unw'), nlooks)
+                if self.template['miaplpy.unwrap.mask']:
+                    ww_args += ' -m {}'.format(unwrap_mask)
+                if '--rmfilter' in scp_args:
+                    ww_args += ' --rmfilter'
+                t = self.template
+                ww_args += ' --num-threads {} --min-conncomp-frac {} --max-ncomps {} --conncomp-reliability {} --downsample {}'.format(
+                    t['miaplpy.unwrap.whirlwind.numThreads'], t['miaplpy.unwrap.whirlwind.minConnCompFrac'],
+                    t['miaplpy.unwrap.whirlwind.maxNComps'], t['miaplpy.unwrap.whirlwind.connCompReliability'],
+                    t['miaplpy.unwrap.whirlwind.downsample'])
+                if str(t['miaplpy.unwrap.whirlwind.connectGaps']).lower() in ('yes', 'true'):
+                    ww_args += ' --connect-gaps'
+                if str(t['miaplpy.unwrap.whirlwind.interpolate']).lower() in ('yes', 'true'):
+                    ww_args += ' --interpolate'
+                cmd = '{} {} {}'.format(self.text_cmd.strip("'"), whirlwind_script, ww_args)
             cmd = cmd.lstrip()
 
             if not self.write_job:

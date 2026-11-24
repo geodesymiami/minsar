@@ -77,8 +77,10 @@ ln -sf $MINSAR_HOME/additions/mintpy/utils/isce_utils.py $MINSAR_HOME/tools/Mint
 ### Adding not-committed MiaplPy fixes
 ln -sf $MINSAR_HOME/additions/miaplpy/prep_slc_isce.py $MINSAR_HOME/tools/MiaplPy/src/miaplpy/prep_slc_isce.py
 ln -sf $MINSAR_HOME/additions/miaplpy/unwrap_ifgram.py $MINSAR_HOME/tools/MiaplPy/src/miaplpy/unwrap_ifgram.py
+ln -sf $MINSAR_HOME/additions/miaplpy/unwrap_ifgram_whirlwind.py $MINSAR_HOME/tools/MiaplPy/src/miaplpy/unwrap_ifgram_whirlwind.py
 ln -sf $MINSAR_HOME/additions/miaplpy/utils.py $MINSAR_HOME/tools/MiaplPy/src/miaplpy/objects/utils.py
 ln -sf $MINSAR_HOME/additions/miaplpy/miaplpyApp_auto.cfg $MINSAR_HOME/tools/MiaplPy/src/miaplpy/defaults/miaplpyApp_auto.cfg
+ln -sf $MINSAR_HOME/additions/miaplpy/miaplpyApp.cfg $MINSAR_HOME/tools/MiaplPy/src/miaplpy/defaults/miaplpyApp.cfg
 ln -sf $MINSAR_HOME/additions/miaplpy/miaplpyApp.py $MINSAR_HOME/tools/MiaplPy/src/miaplpy/miaplpyApp.py
 
 ### Adding ISCE fixes ###

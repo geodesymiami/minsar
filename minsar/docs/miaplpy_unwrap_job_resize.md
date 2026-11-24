@@ -28,6 +28,8 @@ nodes_needed     = ceil(n_tasks / LAUNCHER_PPN)
 
 If `nodes_needed > MAX_NODES_PJ` (16 on `skx-dev`), create multiple `run_05_miaplpy_unwrap_ifgram_*.job` files, each with at most `MAX_NODES_PJ` nodes.
 
+With `miaplpy.unwrap.method = whirlwind` (installed by `setup/install_minsar_env.bash`) the run file holds `unwrap_ifgram_whirlwind.py` commands instead; they are resized as untiled tasks with the same 420 B/pixel estimate until whirlwind memory is measured.
+
 The `- 2` safety margin avoids snaphu `malloc` failures when many unwraps start on the same node at once (launcher first wave). Margin 1 was still too thin for Etna `miaplpy_Big1` (PPN=25 → 1/64 OOM).
 
 Queue limits and memory come from `minsar/defaults/queues.cfg`.

@@ -49,6 +49,10 @@ SETUPTOOLS_SCM_PRETEND_VERSION=0.25.8 pip install tools/opera-utils --no-deps --
 pip install s3fs pooch
 python -c "import opera_utils; print('Verified opera_utils in minsar env')"
 
+# whirlwind-insar: Rust-backed 2D phase unwrapper used by MiaplPy with miaplpy.unwrap.method = whirlwind
+pip install --upgrade whirlwind-insar
+python -c "import whirlwind; print('Verified whirlwind', whirlwind.__version__, 'in minsar env')"
+
 rm -rf tools/miniforge3/pkgs
 
 echo "Running of install_minsar_env.bash DONE"

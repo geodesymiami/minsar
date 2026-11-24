@@ -166,6 +166,14 @@ def parse_job_template(job_path: Path) -> dict:
     }
 
 
+# snaphu (unwrap_ifgram.py) or whirlwind (/path/unwrap_ifgram_whirlwind.py) command, with its path
+UNWRAP_CMD_RE = re.compile(r'(\S*unwrap_ifgram(?:_whirlwind)?\.py\b.*)')
+
+
+def is_unwrap_line(line: str) -> bool:
+    return UNWRAP_CMD_RE.search(line) is not None
+
+
 def read_unwrap_tasks(run_files_dir: Path) -> list[str]:
     """Return bare unwrap_ifgram.py command lines (no time wrapper / redirects)."""
     master = run_files_dir / RUN05_BASE
@@ -175,7 +183,7 @@ def read_unwrap_tasks(run_files_dir: Path) -> list[str]:
             s = line.strip()
             if not s or s.startswith('wait') or s.startswith('#'):
                 continue
-            if 'unwrap_ifgram.py' in s:
+            if is_unwrap_line(s):
                 # master may already be bare commands
                 cmd = s
                 if cmd.startswith('/usr/bin/time'):
@@ -191,7 +199,7 @@ def read_unwrap_tasks(run_files_dir: Path) -> list[str]:
         if re.fullmatch(rf'{RUN05_BASE}_\d+', launcher.name) is None:
             continue
         for line in launcher.read_text(errors='replace').splitlines():
-            if 'unwrap_ifgram.py' not in line:
+            if not is_unwrap_line(line):
                 continue
             cmd = extract_unwrap_command(line.strip())
             if cmd:
@@ -216,14 +224,14 @@ def parse_num_tiles_from_run_files(run_files_dir: Path, tasks: list[str]) -> int
         if path.name != RUN05_BASE and re.fullmatch(rf'{RUN05_BASE}_\d+', path.name) is None:
             continue
         for line in path.read_text(errors='replace').splitlines():
-            if 'unwrap_ifgram.py' not in line:
+            if not is_unwrap_line(line):
                 continue
             ntiles = max(ntiles, parse_num_tiles_from_command(line))
     return ntiles
 
 
 def extract_unwrap_command(line: str) -> str:
-    m = re.search(r'(unwrap_ifgram\.py\b.*)', line)
+    m = UNWRAP_CMD_RE.search(line)
     if not m:
         return ''
     cmd = m.group(1)
