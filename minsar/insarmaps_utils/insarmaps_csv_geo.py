@@ -69,3 +69,73 @@ def csv_lat_lon_spans(csv_path):
     """Latitude and longitude span (max - min) in degrees."""
     lats, lons = load_csv_lat_lon_arrays(csv_path)
     return max(lats) - min(lats), max(lons) - min(lons)
+
+
+def csv_lat_lon_bounds(csv_path):
+    """Bounding box (min_lat, max_lat, min_lon, max_lon) in degrees."""
+    lats, lons = load_csv_lat_lon_arrays(csv_path)
+    return min(lats), max(lats), min(lons), max(lons)
+
+
+# Typical browser window, from `open_insarmaps.py --print-bounds` -> --bounds 304 55 1452 947
+# (left top right bottom), i.e. 1148 x 892 px. The tab/address bars take ~90 px of the height.
+TYPICAL_WINDOW_BOUNDS = (304, 55, 1452, 947)
+BROWSER_CHROME_HEIGHT = 90
+VIEWPORT_WIDTH = TYPICAL_WINDOW_BOUNDS[2] - TYPICAL_WINDOW_BOUNDS[0]
+VIEWPORT_HEIGHT = TYPICAL_WINDOW_BOUNDS[3] - TYPICAL_WINDOW_BOUNDS[1] - BROWSER_CHROME_HEIGHT
+VIEWPORT_FILL = 0.75      # fraction of the map view the data should cover (limiting dimension)
+WORLD_SIZE_ZOOM0 = 512.0  # Mapbox GL: the world is 512 * 2**zoom CSS pixels wide
+MIN_ZOOM = 3.0
+MAX_ZOOM = 18.0
+DEFAULT_ZOOM = 11.0
+
+
+def _mercator_y(lat):
+    """Web Mercator y as a fraction of the world size (0 at the equator, grows northward)."""
+    lat = max(-85.0, min(85.0, lat))
+    return math.log(math.tan(math.pi / 4 + math.radians(lat) / 2)) / (2 * math.pi)
+
+
+def zoom_for_bounds(
+    min_lat, max_lat, min_lon, max_lon,
+    viewport_fill=VIEWPORT_FILL, width=VIEWPORT_WIDTH, height=VIEWPORT_HEIGHT,
+    min_zoom=MIN_ZOOM, max_zoom=MAX_ZOOM,
+):
+    """
+    Insarmaps (Mapbox GL) zoom at which the bounding box covers `viewport_fill` of a
+    width x height px map view, along whichever of width/height is limiting.
+
+    Returns the mid zoom if the box is degenerate; otherwise clamped to [min_zoom, max_zoom].
+    """
+    x_frac = abs(max_lon - min_lon) / 360.0
+    y_frac = abs(_mercator_y(max_lat) - _mercator_y(min_lat))
+    if viewport_fill <= 0 or (x_frac <= 0 and y_frac <= 0):
+        return (min_zoom + max_zoom) / 2.0
+    zooms = []
+    if x_frac > 0:
+        zooms.append(math.log2(viewport_fill * width / (WORLD_SIZE_ZOOM0 * x_frac)))
+    if y_frac > 0:
+        zooms.append(math.log2(viewport_fill * height / (WORLD_SIZE_ZOOM0 * y_frac)))
+    return max(min_zoom, min(min(zooms), max_zoom))
+
+
+def wkt_polygon_bounds(wkt):
+    """(min_lat, max_lat, min_lon, max_lon) of a 'POLYGON((lon lat,lon lat,...))' string, or None."""
+    if not isinstance(wkt, str):
+        return None
+    start, end = wkt.find("(("), wkt.find("))")
+    if not wkt.strip().upper().startswith("POLYGON") or start < 0 or end < 0:
+        return None
+    lats, lons = [], []
+    for pair in wkt[start + 2:end].replace("(", "").replace(")", "").split(","):
+        parts = pair.split()
+        if len(parts) >= 2:
+            try:
+                lon, lat = float(parts[0]), float(parts[1])
+            except ValueError:
+                return None
+            lons.append(lon)
+            lats.append(lat)
+    if not lats:
+        return None
+    return min(lats), max(lats), min(lons), max(lons)

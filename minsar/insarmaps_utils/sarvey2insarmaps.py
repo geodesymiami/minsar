@@ -19,6 +19,7 @@ import shutil
 
 # step 2 is shared with the other uploaders; this file's folder goes on the path also when a jobfile loads it by path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from insarmaps_csv_geo import DEFAULT_ZOOM, wkt_polygon_bounds, zoom_for_bounds  # noqa: E402
 from insarmaps_step2 import (  # noqa: E402
     _append_command_log,
     _append_ingest_command_log,
@@ -487,11 +488,14 @@ def get_data_footprint_center(metadata):
 def generate_insarmaps_url(host, dataset_name, metadata, geocorr=False):
     """
     Generate an Insarmaps viewer URL using center of data footprint if available.
+    The zoom is such that the data cover about three quarters of a typical browser window.
     """
     lat, lon = get_data_footprint_center(metadata)
+    bounds = wkt_polygon_bounds(metadata.get("data_footprint", ""))
+    zoom = zoom_for_bounds(*bounds) if bounds else DEFAULT_ZOOM
     protocol = "https" if host.startswith("insarmaps.miami.edu") else "http"
     suffix = "_geocorr" if geocorr else ""
-    return f"{protocol}://{host}/start/{lat:.4f}/{lon:.4f}/11.0?flyToDatasetCenter=true&startDataset={dataset_name}{suffix}"
+    return f"{protocol}://{host}/start/{lat:.4f}/{lon:.4f}/{zoom:.1f}?flyToDatasetCenter=true&startDataset={dataset_name}{suffix}"
 
 def run_command(command, shell=False, conda_env=None, cwd=None):
     """

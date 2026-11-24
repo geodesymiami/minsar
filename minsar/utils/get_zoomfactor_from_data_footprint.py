@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 Calculate appropriate zoom factor from data_footprint attribute in HDFEOS5 files.
-Uses the bounding box extent to determine zoom level that fits the data nicely.
+Uses the bounding box extent to determine the zoom level at which the data cover
+about three quarters of a typical browser window.
 
 For .csv inputs, extent is taken from min/max of latitude and longitude columns
 (same column detection as insarmaps_ingester.py).
@@ -9,28 +10,38 @@ For .csv inputs, extent is taken from min/max of latitude and longitude columns
 import argparse
 import h5py
 import os
-import re
 import sys
-import math
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _INSARMAPS_UTILS = os.path.normpath(os.path.join(_SCRIPT_DIR, "..", "insarmaps_utils"))
 if _INSARMAPS_UTILS not in sys.path:
     sys.path.insert(0, _INSARMAPS_UTILS)
-from insarmaps_csv_geo import csv_lat_lon_spans
+from insarmaps_csv_geo import (
+    DEFAULT_ZOOM,
+    MAX_ZOOM,
+    MIN_ZOOM,
+    VIEWPORT_FILL,
+    VIEWPORT_HEIGHT,
+    VIEWPORT_WIDTH,
+    csv_lat_lon_bounds,
+    wkt_polygon_bounds,
+    zoom_for_bounds,
+)
 
 EXAMPLE = """Examples:
   get_zoomfactor_from_data_footprint.py file.he5
   get_zoomfactor_from_data_footprint.py file.he5 --min-zoom 8 --max-zoom 15
-  get_zoomfactor_from_data_footprint.py file.he5 --viewport-fill 1.0
+  get_zoomfactor_from_data_footprint.py file.he5 --viewport-fill 0.9
+  get_zoomfactor_from_data_footprint.py file.he5 --viewport-size 1148 802
   get_zoomfactor_from_data_footprint.py file.he5 --default 11.0
   get_zoomfactor_from_data_footprint.py timeseries.csv
 """
 
 DESCRIPTION = (
-    "Calculates zoom from data_footprint in HDFEOS5 files, or from lat/lon extent in CSV.\n"
-    "Uses InsarMaps delta = 301.2 * exp(-0.7075 * zoom). --viewport-fill scales the footprint\n"
-    "span before inversion (default 0.6: data uses ~60%% of view width on the long axis).\n"
+    "Calculates the insarmaps zoom from data_footprint in HDFEOS5 files, or from the lat/lon extent in CSV.\n"
+    "The zoom is chosen such that the data bounding box covers --viewport-fill (default 0.75) of the map\n"
+    "view of a typical browser window (open_insarmaps.py --bounds 304 55 1452 947), along the limiting\n"
+    "dimension, using the Web Mercator / Mapbox GL scale (world = 512 * 2^zoom px).\n"
     "Outputs a single zoom factor value."
 )
 
@@ -49,168 +60,67 @@ def create_parser():
     parser.add_argument(
         '--min-zoom',
         type=float,
-        default=8.0,
-        help='Minimum zoom level to allow (default: 8.0)'
+        default=MIN_ZOOM,
+        help=f'Minimum zoom level to allow (default: {MIN_ZOOM})'
     )
     parser.add_argument(
         '--max-zoom',
         type=float,
-        default=15.0,
-        help='Maximum zoom level to allow (default: 15.0)'
+        default=MAX_ZOOM,
+        help=f'Maximum zoom level to allow (default: {MAX_ZOOM})'
     )
     parser.add_argument(
         '--default',
         type=float,
-        default=11.0,
-        help='Default zoom level to use if data_footprint is not available (default: 11.0)'
+        default=DEFAULT_ZOOM,
+        help=f'Default zoom level to use if data_footprint is not available (default: {DEFAULT_ZOOM})'
     )
     parser.add_argument(
         '--viewport-fill',
         type=float,
-        default=0.6,
+        default=VIEWPORT_FILL,
         metavar='FRACTION',
-        help='Scale max(lat_span, lon_span) before zoom fit; <1 zooms in (default: 0.6). Use 1.0 for full-footprint fit.'
+        help=f'Fraction of the map view the data should cover; larger zooms in (default: {VIEWPORT_FILL}).'
+    )
+    parser.add_argument(
+        '--viewport-size',
+        type=float,
+        nargs=2,
+        default=[VIEWPORT_WIDTH, VIEWPORT_HEIGHT],
+        metavar=('WIDTH', 'HEIGHT'),
+        help=f'Map view size in pixels (default: {VIEWPORT_WIDTH} {VIEWPORT_HEIGHT}).'
     )
     return parser
 
 
-def calculate_zoom_from_extent(
-    lat_span, lon_span, min_zoom=8.0, max_zoom=15.0, viewport_fill=0.6,
-):
-    """
-    Calculate zoom factor from bounding box extent.
-    
-    Uses the relationship: delta = 301.2 * exp(-0.7075 * zoom_factor)
-    Rearranged to: zoom = -ln(span / (2 * 301.2)) / 0.7075
-    
-    Where span is the maximum of lat_span and lon_span (in degrees).
-    
-    Parameters:
-    -----------
-    lat_span : float
-        Latitude span in degrees (max_lat - min_lat)
-    lon_span : float
-        Longitude span in degrees (max_lon - min_lon)
-    min_zoom : float
-        Minimum allowed zoom level (default: 8.0)
-    max_zoom : float
-        Maximum allowed zoom level (default: 15.0)
-    viewport_fill : float
-        Multiply max_span by this before zoom fit; <1 zooms in (default: 0.6)
-    
-    Returns:
-    --------
-    zoom_factor : float
-        Calculated zoom factor, clamped to [min_zoom, max_zoom]
-    """
-    # Use the larger span to ensure the entire bounding box fits
-    max_span = max(lat_span, lon_span)
-    if viewport_fill <= 0:
-        return (min_zoom + max_zoom) / 2.0
-    max_span *= viewport_fill
-
-    # Avoid division by zero or negative values
-    if max_span <= 0:
-        return (min_zoom + max_zoom) / 2.0  # Return middle zoom if span is invalid
-    
-    # Calculate zoom using inverted formula from url2plot.py
-    # delta = 301.2 * exp(-0.7075 * zoom)
-    # For a span, we want delta ≈ span/2 (half span on each side from center)
-    # So: span/2 = 301.2 * exp(-0.7075 * zoom)
-    # Rearranging: zoom = -ln(span / (2 * 301.2)) / 0.7075
-    try:
-        zoom_factor = -math.log(max_span / (2.0 * 301.2)) / 0.7075
-    except (ValueError, ZeroDivisionError):
-        # If calculation fails, return default
-        return (min_zoom + max_zoom) / 2.0
-    
-    # Clamp to min/max bounds
-    zoom_factor = max(min_zoom, min(zoom_factor, max_zoom))
-    
-    return zoom_factor
-
-
 def get_zoom_factor(
-    he5_file, min_zoom=8.0, max_zoom=15.0, default_zoom=11.0, viewport_fill=0.6,
+    he5_file, min_zoom=MIN_ZOOM, max_zoom=MAX_ZOOM, default_zoom=DEFAULT_ZOOM,
+    viewport_fill=VIEWPORT_FILL, viewport_size=(VIEWPORT_WIDTH, VIEWPORT_HEIGHT),
 ):
     """
-    Extract zoom factor from data_footprint (.he5) or lat/lon extent (.csv).
-    
-    Parameters:
-    -----------
-    he5_file : str
-        Path to HDFEOS5 file or CSV
-    min_zoom : float
-        Minimum allowed zoom level (default: 8.0)
-    max_zoom : float
-        Maximum allowed zoom level (default: 15.0)
-    default_zoom : float
-        Default zoom to use if data_footprint is not available (default: 11.0)
-    viewport_fill : float
-        Footprint span scale for zoom fit (default: 0.6)
-    
-    Returns:
-    --------
-    zoom_factor : float
-        Calculated zoom factor
+    Zoom factor from data_footprint (.he5) or lat/lon extent (.csv).
+
+    Returns default_zoom if the extent is not available.
     """
     path_str = str(he5_file)
-    if path_str.lower().endswith(".csv"):
-        try:
-            lat_span, lon_span = csv_lat_lon_spans(path_str)
-            if lat_span <= 0 and lon_span <= 0:
-                return default_zoom
-            return calculate_zoom_from_extent(
-                lat_span, lon_span, min_zoom, max_zoom, viewport_fill,
-            )
-        except Exception:
-            return default_zoom
-
     try:
-        with h5py.File(he5_file, 'r') as f:
-            data_footprint = f.attrs.get('data_footprint', '')
-            
-            if not data_footprint:
-                # Fallback to default if data_footprint not available
-                return default_zoom
-            
-            # Parse POLYGON string: POLYGON((lon lat,lon lat,lon lat,...))
-            # Extract coordinates between the inner parentheses
-            match = re.search(r'POLYGON\(\((.*?)\)\)', data_footprint)
-            if match:
-                coords_str = match.group(1)
-                # Split by comma to get coordinate pairs
-                pairs = coords_str.split(',')
-                lats = []
-                lons = []
-                for pair in pairs:
-                    parts = pair.strip().split()
-                    if len(parts) >= 2:
-                        lon = float(parts[0])
-                        lat = float(parts[1])
-                        lons.append(lon)
-                        lats.append(lat)
-                
-                if lats and lons:
-                    # Calculate bounding box extent
-                    lat_span = max(lats) - min(lats)
-                    lon_span = max(lons) - min(lons)
-                    
-                    # Calculate zoom from extent
-                    zoom_factor = calculate_zoom_from_extent(
-                        lat_span, lon_span, min_zoom, max_zoom, viewport_fill,
-                    )
-                    return zoom_factor
-                else:
-                    # Fallback if parsing failed
-                    return default_zoom
-            else:
-                # Fallback if regex didn't match
-                return default_zoom
-            
-    except Exception as e:
-        # Fallback on any error
+        if path_str.lower().endswith(".csv"):
+            bounds = csv_lat_lon_bounds(path_str)
+        else:
+            with h5py.File(he5_file, 'r') as f:
+                data_footprint = f.attrs.get('data_footprint', '')
+            if isinstance(data_footprint, bytes):
+                data_footprint = data_footprint.decode()
+            bounds = wkt_polygon_bounds(data_footprint)
+    except Exception:
         return default_zoom
+
+    if bounds is None or (bounds[0] == bounds[1] and bounds[2] == bounds[3]):
+        return default_zoom
+    return zoom_for_bounds(
+        *bounds, viewport_fill=viewport_fill, width=viewport_size[0], height=viewport_size[1],
+        min_zoom=min_zoom, max_zoom=max_zoom,
+    )
 
 
 def main(iargs=None):
@@ -220,6 +130,8 @@ def main(iargs=None):
     
     if inps.viewport_fill <= 0:
         parser.error('--viewport-fill must be positive')
+    if min(inps.viewport_size) <= 0:
+        parser.error('--viewport-size must be positive')
 
     zoom_factor = get_zoom_factor(
         inps.he5_file,
@@ -227,6 +139,7 @@ def main(iargs=None):
         max_zoom=inps.max_zoom,
         default_zoom=inps.default,
         viewport_fill=inps.viewport_fill,
+        viewport_size=inps.viewport_size,
     )
     
     # Format to 1 decimal place
