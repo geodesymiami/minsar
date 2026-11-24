@@ -31,15 +31,15 @@ class TestViewportFill(unittest.TestCase):
         z_large = self.m.zoom_for_bounds(37.0, 37.8, 15.0, 15.5, viewport_fill=1.0)
         self.assertAlmostEqual(z_large - z_small, 1.0)
 
-    def test_wide_box_covers_three_quarters_of_width(self):
+    def test_wide_box_covers_default_fill_of_width(self):
         zoom = self.m.zoom_for_bounds(37.0, 37.1, 15.0, 16.0, width=1148, height=802)
         box_px = (1.0 / 360.0) * 512 * 2 ** zoom
-        self.assertAlmostEqual(box_px / 1148, 0.75)
+        self.assertAlmostEqual(box_px / 1148, self.m.VIEWPORT_FILL)
 
-    def test_tall_box_covers_three_quarters_of_height(self):
+    def test_tall_box_covers_default_fill_of_height(self):
         zoom = self.m.zoom_for_bounds(37.0, 38.0, 15.0, 15.1, width=1148, height=802)
         box_px = (_mercator_y(38.0) - _mercator_y(37.0)) * 512 * 2 ** zoom
-        self.assertAlmostEqual(box_px / 802, 0.75)
+        self.assertAlmostEqual(box_px / 802, self.m.VIEWPORT_FILL)
 
     def test_zoom_is_clamped(self):
         self.assertEqual(self.m.zoom_for_bounds(-60, 60, -170, 170, min_zoom=3, max_zoom=18), 3)

@@ -892,7 +892,7 @@ for ingest_file in "${ingest_files[@]}"; do
 
         wait   # Wait for all ingests to complete (parallel using & is not implemented)
 
-        # Get center coordinates and zoom factor (data cover ~3/4 of a typical browser window) from data_footprint
+        # Get center coordinates and zoom factor (data cover ~94% of a typical browser window) from data_footprint
         read CENTER_LAT CENTER_LON < <(get_data_footprint_centroid.py "$ingest_file" 2>/dev/null || echo "0.0000 0.0000")
         ZOOM_FACTOR=$(get_zoomfactor_from_data_footprint.py "$ingest_file" 2>/dev/null || echo "11.0")
 
