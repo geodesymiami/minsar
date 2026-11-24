@@ -26,6 +26,7 @@ MINTPY_OVERLAY_PINS: list[tuple[str, str]] = [
     ("additions/mintpy/save_hdfeos5_orig.py", "src/mintpy/save_hdfeos5.py"),
     ("additions/mintpy/cli/save_hdfeos5_orig.py", "src/mintpy/cli/save_hdfeos5.py"),
     ("additions/mintpy/plot_network_orig.py", "src/mintpy/plot_network.py"),
+    ("additions/mintpy/prep_isce_orig.py", "src/mintpy/prep_isce.py"),
 ]
 
 
