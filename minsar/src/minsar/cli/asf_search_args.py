@@ -34,8 +34,9 @@ Usage Examples:
         asf_search_args.py --processingLevel=BURST --start-date=2014-10-04 --end-date=2015-12-31 --burst-id=349025 --download
     Stripmap (SM):
         asf_search_args.py --processingLevel=SLC --relativeOrbit 75 --intersectsWith='POLYGON((-24.5 14.8,-24.3 14.8,-24.3 15.1,-24.5 15.1,-24.5 14.8))' --start-date=2018-05-01 --end-date=2018-10-31 --beamMode=S6 --print
-    ALOS-2 (ScanSAR L1.1):
+    ALOS-2 (ScanSAR L1.1; second line: unpack each granule as soon as it is downloaded, restartable):
         asf_search_args.py --processingLevel=1.1 --relativeOrbit 89 --intersectsWith='POLYGON((9.16 4.20,9.18 4.20,9.18 4.22,9.16 4.22,9.16 4.20))' --start-date=2014-10-04 --end-date=2015-12-31 --print
+        asf_search_args.py --processingLevel=1.1 --relativeOrbit 89 --intersectsWith='POLYGON((9.16 4.20,9.18 4.20,9.18 4.22,9.16 4.22,9.16 4.20))' --start-date=2014-10-04 --end-date=2015-12-31 --dir=SLC_ORIG --download --post-download-cmd 'uncompress_and_rename_data.py {} --output-dir SLC --alos-stack'
     NISAR GUNW (interferograms; use --platform NISAR):
         asf_search_args.py --processingLevel=GUNW --platform NISAR --intersectsWith='POLYGON((...))' --flightDirection DESCENDING --print
 
@@ -66,6 +67,10 @@ def create_parser(iargs=None, namespace=None):
     parser.add_argument('--print', dest='print', action='store_true', help='Print the whole search results')
     parser.add_argument('--download', action='store_true', help='Download the data')
     parser.add_argument('--dir', metavar='FOLDER', help='Specify path to download the data, if not specified, the data will be downloaded in SCRATCHDIR directory')
+    parser.add_argument('--post-download-cmd', metavar='CMD', default=None,
+                        help='Command run on each file as soon as its download is complete ({} = file path).\n'
+                             'Restartable: finished files are skipped, interrupted downloads are resumed;\n'
+                             'timing goes to <dir>/download_timing.csv')
     parser.add_argument('--exclude-season', metavar='MMDD-MMDD', default=None, help='Exclude scenes in a recurring inclusive seasonal window (supports year wrap), e.g. 1005-0320')
 
     if isinstance(iargs, argparse.Namespace):
@@ -320,6 +325,13 @@ def main(iargs=None, namespace=None):
         print(f"Parallel: {inps.parallel}")
         print(f"Download directory: {inps.dir}")
         if not result_list:
+            print("Done")
+            return result_list
+        if inps.post_download_cmd:
+            from minsar.utils.granule_pipeline import run_pipeline
+            unfinished = run_pipeline(result_list, inps.dir, inps.post_download_cmd, inps.parallel, asf.ASFSession)
+            if unfinished:
+                raise SystemExit(1)
             print("Done")
             return result_list
         download_obj = results

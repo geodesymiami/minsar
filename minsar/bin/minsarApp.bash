@@ -39,7 +39,9 @@ helptext="                                                                      
    --start STEP          start processing at the named step [default: download]. \n\
    --end STEP, --stop STEP                                                       \n\
    --dostep STEP         run processing at the named step only                   \n\
-   --download-method {slc | SLC, burst | BURST, burst2safe, burst2stack, ssara-slc, ssara-bash, ssara-python} (default: burst2stack; burst downloads into BURST, full SLCs into SLC) \n\
+   --download-method {slc | SLC, slc-unpack, slc-unpack-login, burst | BURST, burst2safe, burst2stack, ssara-slc, ssara-bash, ssara-python} (default: burst2stack; burst downloads into BURST, full SLCs into SLC) \n\
+                                 slc-unpack (ALOS-2): job that unpacks each granule as soon as it is downloaded; restartable, timing in SLC_ORIG/download_timing.csv \n\
+                                 slc-unpack-login (ALOS-2): same, but run on the login node instead of as a job (no queue wait, no walltime; for small stacks) \n\
    --delta-lat [DEG]     download larger error (default 0; bare --delta-lat: 0.2) \n\
    --minsar.excludeDates | --exclude-dates DATES  exclude YYYYMMDD scenes (comma-separated; merges with template) \n\
    --start-date DATE | --end-date DATE   YYYYMMDD or YYYY-MM-DD. Writes ssaraopt and miaplpy.load dates; the omitted side becomes auto \n\
@@ -187,6 +189,7 @@ opposite_orbit_flag=0
 horzvert_flag=0
 
 download_method="burst2stack"
+slc_unpack_login_flag=0
 delta_lat=0
 ingest_suffix_tag=""
 ingest_suffix_opt=""
@@ -430,6 +433,13 @@ set -- "${POSITIONAL[@]}" # restore positional parameters
 case "$(printf '%s' "$download_method" | tr '[:upper:]' '[:lower:]')" in
     slc)
         download_method="slc"
+        ;;
+    slc-unpack|slc_unpack)
+        download_method="slc-unpack"
+        ;;
+    slc-unpack-login|slc_unpack_login)
+        download_method="slc-unpack"
+        slc_unpack_login_flag=1
         ;;
     burst)
         download_method="burst2stack"
@@ -717,7 +727,7 @@ fi
 
 if platform_is_alos2 "$platform_str"; then
     download_dir="$WORK_DIR/SLC_ORIG"
-    download_method="slc"
+    [[ $download_method != "slc-unpack" ]] && download_method="slc"
 elif [[ $platform_str =~ COSMO-SKYMED|TERRASAR-X|ENVISAT ]]; then
     download_dir="$WORK_DIR/SLC_ORIG"
     [[ $download_method == *burst2safe* ]] && download_method="ssara-bash"   # FA July 2026   Not sure why this was there. 
@@ -801,6 +811,18 @@ if [[ $download_flag == "1" ]]; then
         run_command "cmd2jobfile.py ./download_burst2stack.sh --submit"
     elif [[ "$download_method" == "slc" ]]; then
         run_command "./download_slc.sh 2>out_download_slc.e 1>out_download_slc.o"
+    elif [[ "$download_method" == "slc-unpack" ]]; then
+        if ! platform_is_alos2 "$platform_str"; then
+            echo "ERROR: --download-method slc-unpack is only available for ALOS-2, Exiting"
+            exit 1
+        fi
+        # one job: every granule is unpacked into SLC/YYMMDD as soon as it is downloaded.
+        # Restartable: a rerun skips finished granules and resumes interrupted downloads.
+        if [[ $slc_unpack_login_flag == "1" ]]; then
+            run_command "./download_slc_unpack.sh 2>out_download_slc_unpack.e 1>out_download_slc_unpack.o"
+        else
+            run_command "cmd2jobfile.py ./download_slc_unpack.sh --submit"
+        fi
     elif [[ $download_method == "ssara-python" ]]; then
         cd $download_dir
         cmd=$(cat ../download_ssara_python.cmd)
@@ -852,7 +874,11 @@ if [[ $preprocess_flag == "1" ]]; then
         fi
     else
         if platform_is_alos2 "$platform_str"; then
-            run_command "unpack_SLCs.py $download_dir --alos-stack --queue $QUEUENAME"
+            if [[ $download_method == "slc-unpack" ]] && ! compgen -G "$download_dir/*.zip" > /dev/null; then
+                echo "All ALOS-2 granules were unpacked by the download job; skipping unpack_SLCs.py"
+            else
+                run_command "unpack_SLCs.py $download_dir --alos-stack --queue $QUEUENAME"
+            fi
         else
             run_command "unpack_SLCs.py $download_dir --queue $QUEUENAME"
         fi

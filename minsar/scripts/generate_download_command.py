@@ -193,6 +193,16 @@ def generate_download_command(template,inps):
         f.write(download_line + '\n')
         f.write(f"check_download.py $PWD/{asf_download_dir} --delete\n")
         f.write(download_line + '\n')
+
+    # create download_slc_unpack.sh (slc-unpack method, ALOS-2: each granule is unpacked as soon as it is
+    # downloaded; restartable, see minsar/utils/granule_pipeline.py)
+    if is_alos2:
+        unpack_cmd = f'uncompress_and_rename_data.py {{}} --output-dir {slc_dir} --alos-stack'
+        with open('download_slc_unpack.sh', 'w') as f:
+            f.write("#!/usr/bin/env bash\n")
+            f.write("set -e\n")
+            f.write(download_line + f" --post-download-cmd '{unpack_cmd}'\n")
+        os.chmod('download_slc_unpack.sh', 0o755)
     #with open('download_slc.cmd', 'w') as f:
     #    f.write(' '.join(asf_slc_download_cmd) + '\n')
 
