@@ -122,3 +122,7 @@ Step 14 runs once, after `180102-180213` has been mosaicked. Step 15 is one line
 | `run_16_geocode` | 21, three commands `&&` | each pair | — |
 
 Wall clock is from the measured run. For a loop, it is the slowest date or pair. `run_12_diff_look_filt` is the sum of the three loop times, which is longer than one pair. `run_14_geocode_los` and `run_16_geocode` wrote nothing.
+
+## Unwrapping with whirlwind
+
+`alos2Stack.unwMethod = whirlwind` (default `snaphu`) makes `run_15_unwrap` call `unwrap_whirlwind.py` (MinSAR addition, `additions/isce2/contrib/stack/alosStack/`) in place of `unwrap_snaphu.py`. It takes the same arguments and writes the same files (`filt_PAIR_*.unw`, `filt_PAIR_*_msk.unw`, `.conncomp`), so geocode and MintPy are unchanged. It uses [whirlwind-insar](https://github.com/scottstanie/whirlwind-insar) with the `.phsig` file as coherence. For Sentinel-1 the matching option is `topsStack.unwMethod = whirlwind`. Both call `minsar/utils/unwrap_whirlwind.py`.

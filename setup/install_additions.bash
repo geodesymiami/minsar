@@ -104,6 +104,10 @@ ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/stripmapStack/unpackFrame_ENV_
 ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/stripmapStack/unpackFrame_ENV.py $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/stripmapStack
 ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/stripmapStack/referenceStackCopy.py $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/stripmapStack
 ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/alosStack/create_cmds.py $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/alosStack/create_cmds.py
+# whirlwind as unwrap method (alos2Stack.unwMethod, topsStack.unwMethod)
+ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/alosStack/unwrap_whirlwind.py $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/alosStack/unwrap_whirlwind.py
+ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/topsStack/unwrap.py $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/topsStack/unwrap.py
+ln -sf $MINSAR_HOME/additions/isce2/contrib/stack/topsStack/stackSentinel.py $MINSAR_HOME/tools/miniforge3/envs/minsar/share/isce2/topsStack/stackSentinel.py
 fi
 
 echo "Running of install_additions.bash DONE"

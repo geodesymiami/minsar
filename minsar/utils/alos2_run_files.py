@@ -39,9 +39,9 @@ class Step:
     used: bool = field(default=False)
 
 
-def write_alos2_run_files(alos2_cmds, run_dir, work_dir):
+def write_alos2_run_files(alos2_cmds, run_dir, work_dir, unwrap_method="snaphu"):
     """Write run_01..run_16 and, where a task cds more than once, a bash file per task."""
-    planned = plan_alos2_run_files(alos2_cmds)
+    planned = plan_alos2_run_files(alos2_cmds, unwrap_method)
     run_dir = Path(run_dir)
     work_dir = Path(work_dir)
     tasks_dir = run_dir / "tasks"
@@ -68,8 +68,12 @@ def write_alos2_run_files(alos2_cmds, run_dir, work_dir):
     return written
 
 
-def plan_alos2_run_files(alos2_cmds):
-    """Return (run-file stem, [(key or None, shell lines), ...]) in plan order."""
+def plan_alos2_run_files(alos2_cmds, unwrap_method="snaphu"):
+    """Return (run-file stem, [(key or None, shell lines), ...]) in plan order.
+
+    unwrap_method whirlwind calls unwrap_whirlwind.py (MinSAR addition) in place of unwrap_snaphu.py.
+    """
+    unwrap_method = _unwrap_method(unwrap_method)
     alos2_cmds = Path(alos2_cmds)
     _reject_ionosphere(alos2_cmds / "cmd_3.sh")
     steps = []
@@ -81,11 +85,24 @@ def plan_alos2_run_files(alos2_cmds):
     planned = []
     for name, spec in RUN_FILES:
         chosen = [_take(steps, program, loop) for program, loop in spec]
-        planned.append((name, _combine(name, chosen)))
+        tasks = _combine(name, chosen)
+        if unwrap_method == "whirlwind" and name == "run_15_unwrap":
+            tasks = [(key, [line.replace("unwrap_snaphu.py", "unwrap_whirlwind.py") for line in body]) for key, body in tasks]
+        planned.append((name, tasks))
     unused = [step.program for step in steps if not step.used]
     if unused:
         raise RuntimeError(f"alosStack commands not in the run-file plan: {', '.join(unused)}")
     return planned
+
+
+def _unwrap_method(value):
+    """Return snaphu or whirlwind. None and auto mean snaphu."""
+    method = "auto" if value is None else str(value).strip().lower()
+    if method in ("auto", "none", "snaphu"):
+        return "snaphu"
+    if method == "whirlwind":
+        return "whirlwind"
+    raise RuntimeError(f"alos2Stack.unwMethod must be snaphu or whirlwind, not {value}")
 
 
 def _reject_ionosphere(cmd_3):

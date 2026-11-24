@@ -12,6 +12,7 @@ EXAMPLE = """
 Examples:
     make_alos2_run_files.py alos2_cmds
     make_alos2_run_files.py --dry-run /path/project/alos2_cmds
+    make_alos2_run_files.py --unw-method whirlwind alos2_cmds
 """
 
 
@@ -20,6 +21,7 @@ def create_parser():
     parser.add_argument("alos2_cmds", metavar="ALOS2_CMDS", help="directory that contains cmd_1.sh, cmd_2.sh, and cmd_4.sh")
     parser.add_argument("--work-dir", type=Path, help="project directory (default: parent of ALOS2_CMDS)")
     parser.add_argument("--out-dir", type=Path, help="run_files directory (default: WORK/run_files)")
+    parser.add_argument("--unw-method", default="snaphu", choices=["snaphu", "whirlwind"], help="unwrapper for run_15_unwrap (default: %(default)s)")
     parser.add_argument("--dry-run", action="store_true", help="print run-file names and line counts and do not write")
     return parser
 
@@ -33,12 +35,12 @@ def main(argv=None):
     work_dir = args.work_dir if args.work_dir is not None else alos2_cmds.parent
     run_dir = args.out_dir if args.out_dir is not None else work_dir / "run_files"
     try:
-        planned = plan_alos2_run_files(alos2_cmds)
+        planned = plan_alos2_run_files(alos2_cmds, args.unw_method)
         if args.dry_run:
             for name, tasks in planned:
                 print(f"{name} {len(tasks)}")
             return 0
-        written = write_alos2_run_files(alos2_cmds, run_dir, work_dir)
+        written = write_alos2_run_files(alos2_cmds, run_dir, work_dir, args.unw_method)
     except RuntimeError as error:
         print(f"ERROR: {error}", file=sys.stderr)
         return 1

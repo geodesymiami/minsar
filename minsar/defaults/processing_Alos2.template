@@ -23,6 +23,7 @@ alos2Stack.applyIonosphere           = False  #[True / False], auto for False, a
 alos2Stack.startingSwath             = auto  # auto for the swaths that cover the AOI
 alos2Stack.endingSwath               = auto  # auto for the swaths that cover the AOI; set both or neither
 alos2Stack.azimuthLooks              = auto  # ~4 m spotlight, ~5 m SM1, ~12 m SM2, ~13 m SM3, ~40 m ScanSAR
+alos2Stack.unwMethod                 = auto  #[snaphu / whirlwind], auto for snaphu, unwrapper of run_15_unwrap
 alos2Stack.rangeLooks                = auto  # ~3 m spotlight/SM1, ~6 m SM2, ~9 m SM3/ScanSAR nominal, ~17 m ScanSAR wide
 ######################################################
 mintpy.subset.lalo                   = 0:0,0:0    #[S:N,W:E / no], auto for no

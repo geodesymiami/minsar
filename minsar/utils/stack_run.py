@@ -197,5 +197,6 @@ class CreateRun:
             destination = os.path.join(command_dir, os.path.basename(source))
             shutil.move(source, destination)
         run_dir = os.path.join(self.work_dir, 'run_files')
-        write_alos2_run_files(command_dir, run_dir, self.work_dir)
+        write_alos2_run_files(command_dir, run_dir, self.work_dir,
+                              unwrap_method=self.inps.template.get('alos2Stack.unwMethod', 'snaphu'))
 
