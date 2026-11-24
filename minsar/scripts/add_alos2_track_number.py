@@ -21,7 +21,7 @@ def add_alos2_track_number(template_file, work_dir):
 
     options = Template(str(template_file)).get_options()
     track_number = _required_int(options, "ssaraopt.relativeOrbit")
-    reference_date = _reference_yymmdd(options)
+    reference_date = _reference_yymmdd(options, work_dir)
     track_xml = Path(work_dir) / "dates_resampled" / reference_date / f"{reference_date}.track.xml"
     if not track_xml.is_file():
         raise SystemExit(f"reference track XML not found: {track_xml}")
@@ -53,10 +53,23 @@ def _required_int(options, key):
     return int(value)
 
 
-def _reference_yymmdd(options):
+def _first_date_dir(work_dir):
+    """First YYMMDD folder under SLC/ (the stack's reference when none is set), else dates_resampled/."""
+    for sub in ("SLC", "dates_resampled"):
+        names = sorted(p.name for p in (Path(work_dir) / sub).glob("[0-9]" * 6) if p.is_dir())
+        if names:
+            return names[0]
+    return None
+
+
+def _reference_yymmdd(options, work_dir="."):
     value = str(options.get("alos2Stack.referenceDate", "")).strip()
     if value.lower() in ("", "auto", "none"):
-        raise SystemExit("template is missing alos2Stack.referenceDate")
+        value = str(options.get("stripmapStack.referenceDate", "")).strip()
+    if value.lower() in ("", "auto", "none"):
+        value = _first_date_dir(work_dir)
+        if not value:
+            raise SystemExit(f"alos2Stack.referenceDate is auto and no YYMMDD folder found in {work_dir}/SLC")
     if len(value) == 8 and value.isdigit():
         value = value[2:]
     if not re.fullmatch(r"\d{6}", value):

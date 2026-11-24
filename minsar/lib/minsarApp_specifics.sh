@@ -542,6 +542,7 @@ function run_command() {
 ###########################################
 function list_merged_slc_yyyymmdd_dates() {
 # Print sorted YYYYMMDD acquisition directory names under merged/SLC (or $1), one per line.
+# 6-digit YYMMDD names (ALOS-2 SLC/) are printed as 20YYMMDD.
 # Skips non-date dirs (e.g. ex0101-0630 quarantine folders from exclude_season_slc.py).
     local slc_dir="${1:-merged/SLC}"
     local name d
@@ -551,8 +552,11 @@ function list_merged_slc_yyyymmdd_dates() {
     for d in "$slc_dir"/*; do
         [[ -d "$d" ]] || continue
         name=$(basename "$d")
-        [[ "$name" =~ ^[0-9]{8}$ ]] || continue
-        echo "$name"
+        if [[ "$name" =~ ^[0-9]{8}$ ]]; then
+            echo "$name"
+        elif [[ "$name" =~ ^[0-9]{6}$ ]]; then
+            echo "20$name"    # ALOS-2 stacks name SLC dirs YYMMDD
+        fi
     done | sort
 }
 
@@ -611,6 +615,7 @@ function list_slcstack_load_dates() {
 #   date >= miaplpy.load.startDate (when set and not auto)
 #   date <= miaplpy.load.endDate   (when set and not auto)
     local slc_dir="${1:-merged/SLC}"
+    [[ -z "${1:-}" && ! -d "$slc_dir" && -d SLC ]] && slc_dir="SLC"    # ALOS-2 stacks have SLC/ only
     local start_bound="${template[miaplpy.load.startDate]:-}"
     local end_bound="${template[miaplpy.load.endDate]:-}"
     local d
