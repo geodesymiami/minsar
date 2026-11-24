@@ -46,6 +46,8 @@ helptext="                                                                      
    --minsar.excludeDates | --exclude-dates DATES  exclude YYYYMMDD scenes (comma-separated; merges with template) \n\
    --start-date DATE | --end-date DATE   YYYYMMDD or YYYY-MM-DD. Writes ssaraopt and miaplpy.load dates; the omitted side becomes auto \n\
    --miaplpy.load.startDate | endDate DATE  YYYYMMDD; sets only the MiaplPy load window; the other load date becomes auto \n\
+   --range-looks N | --azimuth-looks N   write the number of looks into the template (topsStack or alos2Stack by platform) \n\
+                         also --rangeLooks, --topsStack.rangeLooks, --alos2Stack.rangeLooks (same for azimuth) \n\
    --suffix [TAG | auto]   pass --suffix to ingest_insarmaps (bare --suffix: auto from minTempCoh) \n\
                                                                                  \n\
    --mintpy              use smallbaselineApp.py for time series [default]       \n\
@@ -177,6 +179,7 @@ cli_miaplpy_load_start=""
 cli_miaplpy_load_end=""
 cli_start_date=""
 cli_end_date=""
+cli_looks_args=()
 
 # set defaults steps (insarmaps_flag and upload_flag are set to 0 if not given on command line or in template file )
 download_flag=1
@@ -391,6 +394,12 @@ do
             cli_miaplpy_load_end="$2"
             shift 2
             ;;
+        --rangeLooks|--range-looks|--topsStack.rangeLooks|--alos2Stack.rangeLooks|\
+        --azimuthLooks|--azimuth-looks|--topsStack.azimuthLooks|--alos2Stack.azimuthLooks)
+            [[ $# -ge 2 && "$2" != -* ]] || { echo "Error: $1 requires a number of looks." >&2; exit 1; }
+            cli_looks_args+=("$1" "$2")
+            shift 2
+            ;;
         --start-date)
             if [[ $# -lt 2 || "$2" == -* ]]; then
                 echo "Error: --start-date requires YYYYMMDD or YYYY-MM-DD." >&2
@@ -516,6 +525,7 @@ if [[ -n "$cli_start_date" || -n "$cli_end_date" ]]; then
     run_command "set_template_assignment \"${template_file}\" ssaraopt.startDate ${ssara_start}"
     run_command "set_template_assignment \"${template_file}\" ssaraopt.endDate ${ssara_end}"
 fi
+[[ ${#cli_looks_args[@]} -gt 0 ]] && run_command "set_template_looks.py \"${template_file}\" ${cli_looks_args[*]}"
 create_template_array "$template_file"
 
 ingest_suffix_opt=""

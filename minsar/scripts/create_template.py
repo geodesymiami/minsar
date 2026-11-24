@@ -54,6 +54,7 @@ from minsar.utils.exclude_season import parse_exclude_season
 from minsar.utils.template_exclude_dates import patch_template_text, normalize_exclude_dates_arg
 from minsar.utils.ssaraopt_to_mintpy_plot import apply_mintpy_plot_line, resolve_mintpy_plot_value
 from minsar.utils.sar_platform import SAR_PLATFORM_KNOWN, normalize_sar_platform_token
+from minsar.utils.template_looks import add_looks_arguments, check_option_spellings, set_looks_in_template_text, stack_prefix
 
 
 def _get_minsar_home() -> Path:
@@ -672,6 +673,7 @@ Examples:
     plot_grp.add_argument("--mintpy-no-plot", dest="mintpy_plot_cli", action="store_const", const="no", help="Force mintpy.plot = no (overrides date-span rule)")
     parser.add_argument("--tropo", "--mintpy.troposphericDelay.method", dest="mintpy_tropospheric_delay_method", metavar="METHOD", default=None, help="mintpy.troposphericDelay.method: no, auto, pyaps, height_correlation, base_trop_cor")
     parser.add_argument("--insarmaps-dataset", "--insarmaps_dataset", "--minsar.insarmaps_dataset", dest="minsar_insarmaps_dataset", metavar="DATASET", default=None, help="minsar.insarmaps_dataset (e.g. DS, filt*DS, geo, PS, PSDS, all)")
+    add_looks_arguments(parser)
     return parser
 
 
@@ -901,6 +903,13 @@ def main(
         minsar_insarmaps_dataset=minsar_insarmaps_dataset,
         bounding_box=_subset_lalo_to_bounding_box(subset_lalo) if is_alos2 else None,
     )
+    if inps.range_looks is not None or inps.azimuth_looks is not None:
+        try:
+            check_option_spellings(sys.argv[1:] if iargs is None else iargs, stack_prefix(content))
+            content, _ = set_looks_in_template_text(content, inps.range_looks, inps.azimuth_looks)
+        except ValueError as exc:
+            print(f"Error: {exc}", file=sys.stderr)
+            return 1, None, None, ""
 
     if inps.minsar_exclude_dates is not None:
         try:

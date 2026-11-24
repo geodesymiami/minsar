@@ -116,6 +116,8 @@ Persistent Scatterer (PS) and Distributed Scatterer (DS) analysis.
 
 `get_miaplpy_dir_name()` / `get_mintpy_dir_name()` in `minsar/lib/minsarApp_specifics.sh` build product directory names from `minsar.miaplpyDir.addition` / `minsar.mintpyDir.addition` (`auto`, `date`, `lalo`, or a custom token).
 
+Except for `auto`, the MintPy name starts with the ISCE looks, azimuth first: `mintpy_<azimuthLooks>_<rangeLooks>_...` (e.g. `mintpy_5_20_201410_202606`; `auto` looks resolve to the default, 3_9 for topsStack and 28_5 for ALOS-2 ScanSAR). The looks can be set on the command line: `minsarApp.bash X.template --range-looks 20 --azimuth-looks 5` (also `--rangeLooks`, `--topsStack.rangeLooks`, `--alos2Stack.rangeLooks`), which writes them into the template via `set_template_looks.py`.
+
 When `ssaraopt.excludeSeason = MMDD-MMDD` is set in the template, the same `_exMMDD-MMDD` suffix is appended (e.g. `miaplpy_201410_202606_ex0101-0630`). The suffix comes from the template only — not from scanning `merged/SLC`.
 
 Seasonal SLC quarantine (after download / topsStack) uses the same token: `exclude_season_slc.py` moves matching `YYYYMMDD` dirs into `merged/SLC/exMMDD-MMDD/`.

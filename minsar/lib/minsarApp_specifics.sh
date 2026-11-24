@@ -683,15 +683,39 @@ unset IFS
 echo "${miaplpy_dir_name}$(get_exclude_season_suffix)$(get_product_suffix)"
 }
 ###########################################
+function get_looks_str() {
+# <azimuthLooks>_<rangeLooks> of the ISCE stack, for the MintPy directory name.
+# auto or unset gives the default: alos2Stack 28_5 (ISCE ScanSAR), topsStack and stripmapStack from minsar_template_defaults.cfg.
+local prefix="topsStack" azimuth range name value
+if platform_is_alos2 "${template[ssaraopt.platform]:-}"; then
+    prefix="alos2Stack"
+elif [[ -z "${template[topsStack.azimuthLooks]:-}${template[topsStack.rangeLooks]:-}" && -n "${template[stripmapStack.azimuthLooks]:-}${template[stripmapStack.rangeLooks]:-}" ]]; then
+    prefix="stripmapStack"
+fi
+for name in azimuthLooks rangeLooks; do
+    value="${template[${prefix}.${name}]:-auto}"
+    if [[ "$value" == "auto" || "$value" == "None" ]]; then
+        if [[ "$prefix" == "alos2Stack" ]]; then
+            [[ "$name" == "azimuthLooks" ]] && value=28 || value=5
+        else
+            value=$(awk -F= -v key="${prefix}.${name}" '{k=$1; gsub(/[ \t]/,"",k)} k==key {v=$2; gsub(/[ \t]/,"",v); print v}' "${MINSAR_HOME}/minsar/defaults/minsar_template_defaults.cfg" | tail -1)
+        fi
+    fi
+    [[ "$name" == "azimuthLooks" ]] && azimuth="$value" || range="$value"
+done
+echo "${azimuth}_${range}"
+}
+###########################################
 function get_mintpy_dir_name() {
 # assign mintpyDir.addition  lalo, date, name, or 'mintpy' for 'auto'
+# date, lalo and name carry the looks: mintpy_<azimuthLooks>_<rangeLooks>_... (get_looks_str)
 # Appends _exMMDD-MMDD when ssaraopt.excludeSeason is set (template only; not from disk).
 # Appends get_product_suffix (minsar.product.suffix) after that.
 date_str=$(get_date_str)
 if [ -z ${template[minsar.mintpyDir.addition]} ] || [ ${template[minsar.mintpyDir.addition]} == "auto" ]; then
    mintpy_dir_name="mintpy"
 elif [ ${template[minsar.mintpyDir.addition]} == "date" ]; then
-   mintpy_dir_name=mintpy_${date_str}
+   mintpy_dir_name=mintpy_$(get_looks_str)_${date_str}
 elif [ ${template[minsar.mintpyDir.addition]} == "lalo" ]; then
    if [ ! -z ${template[mintpy.subset.lalo]} ]; then
        subset_lalo="${template[mintpy.subset.lalo]}"
@@ -708,9 +732,9 @@ elif [ ${template[minsar.mintpyDir.addition]} == "lalo" ]; then
    lon_min=${lon_array[0]}
    lon_max=${lon_array[1]}
    lalo_str=$(printf "%.2f_%.2f_%.2f_%.2f\n" "$lat_min" "$lat_max" "$lon_min" "$lon_max")
-   mintpy_dir_name="mintpy_${lalo_str}_$date_str"
+   mintpy_dir_name="mintpy_$(get_looks_str)_${lalo_str}_$date_str"
 else
-   mintpy_dir_name=mintpy_"${template[minsar.mintpyDir.addition]}"_${date_str}
+   mintpy_dir_name=mintpy_$(get_looks_str)_"${template[minsar.mintpyDir.addition]}"_${date_str}
 fi
 unset IFS
 echo "${mintpy_dir_name}$(get_exclude_season_suffix)$(get_product_suffix)"

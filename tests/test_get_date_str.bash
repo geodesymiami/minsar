@@ -137,7 +137,51 @@ test_mintpy_dir_name_date_with_season() {
     template[ssaraopt.excludeSeason]="0101-0630"
     local out
     out=$(get_mintpy_dir_name)
-    assert_equals "mintpy_201411_202606_ex0101-0630" "$out" "mintpy date + season"
+    assert_equals "mintpy_3_9_201411_202606_ex0101-0630" "$out" "mintpy date + default tops looks + season"
+}
+
+test_mintpy_dir_name_looks() {
+    setup_test_workspace
+    cd "$TEST_WORKSPACE" || return 1
+    mkdir -p merged/SLC/20141123 merged/SLC/20260630
+    declare -gA template=()
+    template[miaplpy.load.startDate]="auto"
+    template[miaplpy.load.endDate]="auto"
+    template[topsStack.azimuthLooks]="5"
+    template[topsStack.rangeLooks]="20"
+    local out
+    template[minsar.mintpyDir.addition]="date"
+    out=$(get_mintpy_dir_name)
+    assert_equals "mintpy_5_20_201411_202606" "$out" "date: azimuth_range looks from template"
+    template[minsar.mintpyDir.addition]="SN"
+    out=$(get_mintpy_dir_name)
+    assert_equals "mintpy_5_20_SN_201411_202606" "$out" "name: looks before the name"
+    template[minsar.mintpyDir.addition]="auto"
+    out=$(get_mintpy_dir_name)
+    assert_equals "mintpy" "$out" "auto: no looks"
+    template[minsar.miaplpyDir.addition]="date"
+    out=$(get_miaplpy_dir_name)
+    assert_equals "miaplpy_201411_202606" "$out" "miaplpy dir has no looks"
+}
+
+test_mintpy_dir_name_looks_alos2() {
+    setup_test_workspace
+    cd "$TEST_WORKSPACE" || return 1
+    mkdir -p merged/SLC/20141123 merged/SLC/20260630
+    declare -gA template=()
+    template[miaplpy.load.startDate]="auto"
+    template[miaplpy.load.endDate]="auto"
+    template[minsar.mintpyDir.addition]="date"
+    template[ssaraopt.platform]="ALOS2"
+    template[alos2Stack.azimuthLooks]="auto"
+    template[alos2Stack.rangeLooks]="auto"
+    local out
+    out=$(get_mintpy_dir_name)
+    assert_equals "mintpy_28_5_201411_202606" "$out" "ALOS-2 auto: ISCE ScanSAR default 28 azimuth, 5 range"
+    template[alos2Stack.azimuthLooks]="14"
+    template[alos2Stack.rangeLooks]="2"
+    out=$(get_mintpy_dir_name)
+    assert_equals "mintpy_14_2_201411_202606" "$out" "ALOS-2 explicit looks"
 }
 
 test_product_suffix_auto_empty() {
@@ -200,7 +244,7 @@ test_mintpy_dir_name_date_with_product_suffix() {
     template[miaplpy.load.endDate]="auto"
     local out
     out=$(get_mintpy_dir_name)
-    assert_equals "mintpy_201411_202606_075" "$out" "mintpy date + coherenceThreshold"
+    assert_equals "mintpy_3_9_201411_202606_075" "$out" "mintpy date + default tops looks + coherenceThreshold"
 }
 
 test_get_slcstack_load_dates_script() {
@@ -229,6 +273,8 @@ test_miaplpy_dir_name_auto_with_season
 test_miaplpy_dir_name_date_with_season
 test_miaplpy_dir_name_custom_without_season
 test_mintpy_dir_name_date_with_season
+test_mintpy_dir_name_looks
+test_mintpy_dir_name_looks_alos2
 test_product_suffix_auto_empty
 test_product_suffix_no_empty
 test_product_suffix_coherence_threshold

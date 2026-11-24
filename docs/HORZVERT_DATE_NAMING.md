@@ -28,9 +28,12 @@ or network date limits do not change either directory's `date_str`.
 | Template addition            | MiaplPy directory            | MintPy directory            | Date behavior                                                     |
 | ---------------------------- | ---------------------------- | --------------------------- | ----------------------------------------------------------------- |
 | Empty or `auto`              | `miaplpy`                    | `mintpy`                    | No date text, although `date_str` is still calculated internally. |
-| `date`                       | `miaplpy_202005_202610`      | `mintpy_202005_202610`      | Appends the first/last eligible SLC months.                       |
-| Custom value, such as `Big1` | `miaplpy_Big1_202005_202610` | `mintpy_Big1_202005_202610` | The date portion remains the first/last eligible SLC months.      |
+| `date`                       | `miaplpy_202005_202610`      | `mintpy_3_9_202005_202610`      | Appends the first/last eligible SLC months.                       |
+| Custom value, such as `Big1` | `miaplpy_Big1_202005_202610` | `mintpy_3_9_Big1_202005_202610` | The date portion remains the first/last eligible SLC months.      |
 
+
+The MintPy directory also carries the ISCE looks as `<azimuthLooks>_<rangeLooks>` right after `mintpy_`
+(`3_9` above; `get_looks_str()`), because MintPy results depend on them. MiaplPy directories do not.
 
 The controlling keys are `minsar.miaplpyDir.addition` and
 `minsar.mintpyDir.addition`. This document omits unrelated directory-name
