@@ -974,6 +974,24 @@ def remove_processing_line_from_error_files(run_file):
 
 ##########################################################################
 
+
+def remove_filter_progress_lines_from_error_files(run_file):
+    """Drop psfilt header, progress and blank lines from *.e files (alos2Stack filt.py)."""
+
+    noise = re.compile(r"^\s*$|^\*\*\* Weighted power spectrum interferogram filter|^#lines in the interferogram file:|^\s*progress:\s*\d+%\s*$")
+    error_files = natsorted(glob.glob(run_file + '*.e*'))
+    for item in error_files:
+        with open(item, 'r') as f:
+            lines = f.readlines()
+        kept = [line for line in lines if not noise.match(line)]
+        with open(item, 'w') as f:
+            f.write(''.join(kept))
+
+    return None
+
+
+##########################################################################
+
 def remove_dask_error_lines_from_error_files(run_file):
 
     """ Remove 23 lines for dask distributed.worker - ERROR """

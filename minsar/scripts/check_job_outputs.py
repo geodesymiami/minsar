@@ -176,6 +176,8 @@ def main(iargs=None):
        # preprocess *.e files
        if 'filter_coherence' in job_name or 'run_09_igram' in job_name or 'miaplpy_generate_ifgram' in job_name:               # run_09_igram is for stripmap
            putils.remove_line_counter_lines_from_error_files(run_file=job_name)
+       if 'diff_look_filt' in job_name:
+           putils.remove_filter_progress_lines_from_error_files(run_file=job_name)
        if 'smallbaseline_wrapper' in job_name or 'miaplpy_invert_network' in job_name or 'mintpy_timeseries_correction' in job_name:   # dask errors
            putils.remove_dask_error_lines_from_error_files(run_file=job_name)
            putils.remove_dask_error_lines_from_stdout_files(run_file=job_name)
