@@ -22,6 +22,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
+from minsar.utils.bbox_cli_argv import argv_kw_from_parser, fix_argv_for_negative_bbox_sn_we
+
 SAFE_DATE_RE = re.compile(r'(\d{8})T\d{6}')
 IW_RE = re.compile(r'iw([123])', re.IGNORECASE)
 
@@ -209,6 +211,8 @@ def inspect_slc(slc_dir: Path, aoi, required: Set[int]) -> Tuple[List[dict], int
 
 def main(argv: Optional[List[str]] = None) -> int:
     parser = create_parser()
+    argv = sys.argv[1:] if argv is None else argv
+    argv = fix_argv_for_negative_bbox_sn_we(argv, **argv_kw_from_parser(parser), multiple_initial_positionals=True)
     inps = parser.parse_args(argv)
     slc_dir = Path(inps.slc_dir)
     if not slc_dir.is_dir():
