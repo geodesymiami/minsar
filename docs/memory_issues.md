@@ -4,11 +4,12 @@ Out-of-memory cases, kept to eventually compute per-task memory from data size a
 
 ## alos2Stack
 
-Stampede3 skx-dev: 48 cores and 191 GB per node. All steps have `c_memory = 4000` MB in `job_defaults.cfg`.
+Stampede3 skx-dev: 48 cores and 191 GB per node. All steps except `resample_common_grid` have `c_memory = 4000` MB in `job_defaults.cfg`.
 
 | Dataset | Dates | Swaths | SLC in per date | Step 4 `resample_common_grid`: tasks, nodes, tasks per node | Peak per task (step 4) | Memory needed per node | Result |
 |---|---|---|---|---|---|---|---|
 | CameroonAlos2D89 | 88 | 1 | 5.4 GB | 88, 2, 44 | 5.5 GB median, 5.7 max | 242 GB | 26 of 88 tasks exit 1 (`MemoryError`, numpy import, GDAL) |
+| CameroonAlos2D89 (rerun, `num_threads = 2`) | 88 | 1 | | 88, 4, 22 | 10.5 GB median, 13.8 max (6.3 min) | 230 GB or more | 24 of 88 tasks: GDAL `cannot allocate`, then `resamp_slc.f90` `Error allocating 7457257728 bytes`; caught by `check_job_outputs.py` (` Error`) |
 | q20TamboraAlos2D26 | 18 | 1 | 5.2 GB | 18, 1, 18 | 9.8 GB median, 10.3 max | 176 GB or more | all exit 0, but 16 tasks logged GDAL `cannot allocate`; output suspect |
 
 Peak memory of other steps (Cameroon / Tambora D26): step 2 `estimate_slc_offset` 3.1 / 2.6 GB, step 3 `estimate_swath_frame_offset` 0.07 / 0.1 GB, step 5 `mosaic_rdr2geo` not run / 0.4 GB, step 6 `geo2rdr` not run / 1.2 GB. Steps 7 to 16 not measured. Peaks from tasks that were short of memory are lower bounds.
@@ -16,6 +17,7 @@ Peak memory of other steps (Cameroon / Tambora D26): step 2 `estimate_slc_offset
 Findings:
 
 - Only step 4 runs out of memory.
+- The Cameroon peaks from the first run (5.5 GB median) were lower bounds: with 22 tasks per node the same dataset peaks at 10.5 GB median, 13.8 GB max.
 - Peak memory is not simply proportional to the input SLC: 1.0 x the input for Cameroon but 1.6 to 2.0 x for Tambora D26, with similar input size and the same looks (1 range, 14 azimuth). The cause is not yet known. More cases are needed.
 - Raw data size in `SLC/` is useless as a predictor (it holds all swaths and polarizations).
 - Tambora D26 ran with `num_threads = 2` (24 tasks per node), which does not help because 18 tasks are fewer than 24: all 18 run at once on one node. It needs at most 12 tasks per node (`num_threads = 4`).
@@ -29,7 +31,7 @@ No out-of-memory case yet. Memory already scales with the number of bursts (`num
 - `job_submission.py`: `task_memory = c_memory + num_memory_units * s_memory`. For alosStack `num_memory_units` is a fixed 8 and `s_memory = 0`.
 - **With** `launcher_multiTask_multiNode` **(default) this memory is ignored.** `split_multi_node_jobs` uses only `num_threads`: `LAUNCHER_PPN = cores_per_node // num_threads`, `nodes = ceil(tasks * num_threads / cores_per_node)`. The only lever in `job_defaults.cfg` is `num_threads`, which also sets `OMP_NUM_THREADS`.
 - The `multiTask_singleNode` schemes do use `max_memory_per_node / task_memory`.
-- Current `resample_common_grid` row: `c_memory = 6500`, `num_threads = 2`. This fixes Cameroon (24 tasks per node, 136 GB) but not Tambora D26.
+- Current `resample_common_grid` row: `c_memory = 14000`, `num_threads = 4`: 12 tasks per node, 166 GB at the 13.8 GB Cameroon peak. `num_threads = 2` (24 tasks per node) failed for Cameroon. `c_memory` documents the per-task need; only `num_threads` takes effect.
 
 ## Out-of-memory signatures
 
