@@ -13,6 +13,12 @@ from pathlib import Path
 from natsort import natsorted
 
 PAIRS_MISREG_JOB_MARKER = "_pairs_misreg_"
+# argparse usage errors: the command never ran (e.g. geocode.py -bbox with a negative latitude, FA 11/2026)
+ARGPARSE_ERROR_STRINGS = [
+    'error: argument',
+    'error: unrecognized arguments',
+    'error: the following arguments are required',
+]
 ESD_PAIRS_MISREG_PHRASE = "No points left for reliable ESD estimate"
 USER_ERROR_ESD_PAIRS_MISREG = (
     "USER ERROR. No points left for reliable ESD estimate.Process additional bursts using --delta-lat 0.2. For islands use --coreegistration geometry "
@@ -122,7 +128,7 @@ def main(iargs=None):
                     'IOErr',
                     'Traceback',
                     'stripmapWrapper.py: command not found'
-                    ]
+                    ] + ARGPARSE_ERROR_STRINGS
                     #'Exiting ...',                # remove if above works fine (5/21)
                     #'FileNotFoundError: [Errno 2] No such file or directory: '/tmp/secondarys/20190917/IW2.xml'
 # Explanation 11/2021 for 'ERROR' removal from error_strings

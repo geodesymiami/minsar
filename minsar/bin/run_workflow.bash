@@ -429,6 +429,16 @@ else
             fi
         done
 
+        # remove stale stderr files of steps to be (re)run so old errors don't stop the workflow
+        for (( i=startstep; i<=last_jobfile_number; i++ )); do
+            for jf in "$RUNFILES_DIR"/run_$(printf "%02d" $i)_*_0.job; do
+                [[ -f "$jf" ]] || continue
+                base=$(basename "${jf%_0.job}")              # e.g. run_16_unwrap
+                rm -f "$RUNFILES_DIR/${base}"_*.e "$RUNFILES_DIR/${base}"_*.e.* \
+                      "$RUNFILES_DIR/out_${base}.e" "$WORKDIR/out_${base}.e"
+            done
+        done
+
         echo "Full list of jobfiles to submit: ${globlist[@]}"
     fi
 fi

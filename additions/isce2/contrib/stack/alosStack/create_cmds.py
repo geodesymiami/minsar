@@ -1275,8 +1275,9 @@ done'''.format(extraCommands       = parallelCommands,
         if insar.geocodeInterpMethod is not None:
             extraArguments += ' -interp_method {}'.format(insar.geocodeInterpMethod)
         if insar.bbox: # is not None:
-            # '/'.format(bbox) has no placeholder and always writes "-bbox /" (FA 11/2026)
-            extraArguments += ' -bbox {}'.format('/'.join(str(x) for x in insar.bbox))
+            # '/'.format(bbox) has no placeholder and always writes "-bbox /"; '=' because a southern
+            # latitude starts with '-' and argparse takes it for an option (FA 11/2026)
+            extraArguments += ' -bbox={}'.format('/'.join(str(x) for x in insar.bbox))
 
         cmd += header('geocode')
         cmd += parallelSettings('insarpair')

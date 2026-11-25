@@ -5,6 +5,10 @@ Sentinel-1 (topsStack): rewrites range_looks / azimuth_looks / rlks / alks in co
   stackSentinel.py cannot be run again on a processed stack, and the run files do not change.
 ALOS-2 (alos2Stack): rewrites -nrlks2 / -nalks2, -nrlks R -nalks A and the _<R>rlks_<A>alks file names in run_files/ and run_files/tasks/.
 Job files are not touched; they do not contain looks.
+
+Both: removes the MintPy metadata cached with the old looks (data.rsc next to the reference metadata, and for
+Sentinel-1 the *.rsc of merged/). prep_isce.py keeps an existing data.rsc, and would load the geometry with the
+old size and looks.
 """
 
 import argparse
@@ -87,6 +91,18 @@ def alos2_looks_files(work_dir, first_step):
     return [path for path in paths if path.is_file() and int(path.name.split("_")[1]) >= first_step]
 
 
+def remove_stale_metadata(work_dir, prefix):
+    """Remove the *.rsc files that prep_isce.py wrote with the old looks. Returns the number removed."""
+    if prefix == "alos2Stack":
+        patterns = ["dates_resampled/*/data.rsc"]   # other .rsc names carry the looks, so new ones are written
+    else:
+        patterns = ["reference/data.rsc", "merged/geom_reference/*.rsc", "merged/interferograms/*/*.rsc"]
+    paths = [path for pattern in patterns for path in work_dir.glob(pattern)]
+    for path in paths:
+        path.unlink()
+    return len(paths)
+
+
 def first_looks_step(work_dir, prefix):
     """Number of the first run file that depends on looks, or None when it is not found."""
     for path in sorted((work_dir / "run_files").glob(f"run_[0-9][0-9]_{FIRST_LOOKS_STEP[prefix]}")):
@@ -134,6 +150,7 @@ def main(argv=None):
             path.write_text(new)
             changed += 1
     print(f"updated looks in {changed} {kind}")
+    print(f"removed {remove_stale_metadata(work_dir, prefix)} MintPy metadata files (*.rsc) made with the earlier looks")
     return 0
 
 

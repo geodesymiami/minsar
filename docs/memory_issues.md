@@ -14,6 +14,7 @@ Stampede3 skx-dev: 48 cores and 191 GB per node. All steps have `c_memory = 4000
 Peak memory of other steps (Cameroon / Tambora D26): step 2 `estimate_slc_offset` 3.1 / 2.6 GB, step 3 `estimate_swath_frame_offset` 0.07 / 0.1 GB, step 5 `mosaic_rdr2geo` not run / 0.4 GB, step 6 `geo2rdr` not run / 1.2 GB. Steps 7 to 16 not measured. Peaks from tasks that were short of memory are lower bounds.
 
 Findings:
+
 - Only step 4 runs out of memory.
 - Peak memory is not simply proportional to the input SLC: 1.0 x the input for Cameroon but 1.6 to 2.0 x for Tambora D26, with similar input size and the same looks (1 range, 14 azimuth). The cause is not yet known. More cases are needed.
 - Raw data size in `SLC/` is useless as a predictor (it holds all swaths and polarizations).
@@ -26,7 +27,7 @@ No out-of-memory case yet. Memory already scales with the number of bursts (`num
 ## How memory is set today
 
 - `job_submission.py`: `task_memory = c_memory + num_memory_units * s_memory`. For alosStack `num_memory_units` is a fixed 8 and `s_memory = 0`.
-- **With `launcher_multiTask_multiNode` (default) this memory is ignored.** `split_multi_node_jobs` uses only `num_threads`: `LAUNCHER_PPN = cores_per_node // num_threads`, `nodes = ceil(tasks * num_threads / cores_per_node)`. The only lever in `job_defaults.cfg` is `num_threads`, which also sets `OMP_NUM_THREADS`.
+- **With** `launcher_multiTask_multiNode` **(default) this memory is ignored.** `split_multi_node_jobs` uses only `num_threads`: `LAUNCHER_PPN = cores_per_node // num_threads`, `nodes = ceil(tasks * num_threads / cores_per_node)`. The only lever in `job_defaults.cfg` is `num_threads`, which also sets `OMP_NUM_THREADS`.
 - The `multiTask_singleNode` schemes do use `max_memory_per_node / task_memory`.
 - Current `resample_common_grid` row: `c_memory = 6500`, `num_threads = 2`. This fixes Cameroon (24 tasks per node, 136 GB) but not Tambora D26.
 
