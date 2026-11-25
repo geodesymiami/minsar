@@ -12,6 +12,7 @@ import glob
 import math
 from minsar.utils.alos2_run_files import write_alos2_run_files
 from minsar.utils.process_utilities import is_alos2_template, make_run_list, stack_option
+from minsar.utils.template_exclude_dates import normalize_exclude_dates_arg
 from minsar.objects.auto_defaults import PathFind
 import contextlib
 from minsar.objects import message_rsmas
@@ -33,6 +34,12 @@ def _alos2_swath_property(template, key):
         return str(int(value))
     except ValueError as exc:
         raise RuntimeError(f'{key} must be an integer, got {value!r}') from exc
+
+
+def _alos2_excluded_dates(template):
+    """Return minsar.excludeDates as alosStack YYMMDD dates."""
+    value = str(template.get('minsar.excludeDates', 'auto'))
+    return [date[2:] for date in normalize_exclude_dates_arg(value).split(',') if date]
 
 
 SCANSAR_LOOKS1 = (1, 14)   # ISCE looks 1 (range, azimuth) for ALOS-2 ScanSAR
@@ -173,13 +180,18 @@ class CreateRun:
         water_body = os.path.abspath(water_body)
         subprocess.run(['fixImageXml.py', '-i', water_body, '-f'], check=True)
 
+        excluded_dates = _alos2_excluded_dates(self.inps.template)
         reference_date = stack_option(self.inps.template, 'referenceDate')
         if reference_date in (None, 'None', 'auto'):
-            reference_date = date_dirs[0]
+            reference_date = next((date for date in date_dirs if date not in excluded_dates), None)
+            if reference_date is None:
+                raise RuntimeError(f'minsar.excludeDates excludes every date in {slc_dir}')
         if len(reference_date) == 8:
             reference_date = reference_date[2:]
         if reference_date not in date_dirs:
             raise RuntimeError(f'ALOS-2 reference date {reference_date} is not present in {slc_dir}')
+        if reference_date in excluded_dates:
+            raise RuntimeError(f'ALOS-2 reference date {reference_date} is in minsar.excludeDates')
 
         root = ET.Element('stack')
         component = ET.SubElement(root, 'component', {'name': 'stackinsar'})
@@ -207,6 +219,9 @@ class CreateRun:
             properties['starting swath'] = starting_swath
             properties['ending swath'] = ending_swath
         properties.update(_alos2_look_properties(self.inps.template))
+        if excluded_dates:
+            # create_cmds.py takes the dates to process from the pairs, so this drops the dates from every step
+            properties['dates to be excluded'] = str(excluded_dates)
         for name, value in properties.items():
             node = ET.SubElement(component, 'property', {'name': name})
             node.text = str(value)
