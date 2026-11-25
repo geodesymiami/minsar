@@ -40,9 +40,9 @@ helptext="                                                                      
    --start STEP          start processing at the named step [default: download]. \n\
    --end STEP, --stop STEP                                                       \n\
    --dostep STEP         run processing at the named step only                   \n\
-   --download-method {slc | SLC, slc-unpack, slc-unpack-login, burst | BURST, burst2safe, burst2stack, ssara-slc, ssara-bash, ssara-python} (default: burst2stack; burst downloads into BURST, full SLCs into SLC) \n\
-                                 slc-unpack (ALOS-2): job that unpacks each granule as soon as it is downloaded; restartable, timing in SLC_ORIG/download_timing.txt \n\
-                                 slc-unpack-login (ALOS-2): same, but run on the login node instead of as a job (no queue wait, no walltime; for small stacks) \n\
+   --download-method {slc | SLC, slc-unpack, slc-unpack-login, burst | BURST, burst2safe, burst2stack, ssara-slc, ssara-bash, ssara-python} (default: burst2stack, for ALOS-2 slc-unpack-login; burst downloads into BURST, full SLCs into SLC) \n\
+                                 slc-unpack-login (ALOS-2 default): unpacks each granule as soon as it is downloaded, on the login node (about 3x faster than a job, no queue wait, no walltime); restartable, timing in SLC_ORIG/download_timing.txt \n\
+                                 slc-unpack (ALOS-2): same, but run as a job (compute nodes download at about 110 MiB/s in total; see docs/download_alos2.md) \n\
    --delta-lat [DEG]     download larger error (default 0; bare --delta-lat: 0.2) \n\
    --minsar.excludeDates | --exclude-dates DATES  exclude YYYYMMDD scenes (comma-separated; merges with template) \n\
    --start-date DATE | --end-date DATE   YYYYMMDD or YYYY-MM-DD. Writes ssaraopt and miaplpy.load dates; the omitted side becomes auto \n\
@@ -195,6 +195,7 @@ opposite_orbit_flag=0
 horzvert_flag=0
 
 download_method="burst2stack"
+download_method_cli_flag=0
 slc_unpack_login_flag=0
 delta_lat=0
 ingest_suffix_tag=""
@@ -361,6 +362,7 @@ do
             ;;
         --download-method)
             download_method=$2
+            download_method_cli_flag=1
             shift 2
             ;;
         --delta-lat)
@@ -740,7 +742,13 @@ fi
 
 if platform_is_alos2 "$platform_str"; then
     download_dir="$WORK_DIR/SLC_ORIG"
-    [[ $download_method != "slc-unpack" ]] && download_method="slc"
+    if [[ $download_method_cli_flag == "0" && $download_method == "burst2stack" ]]; then
+        # default for ALOS-2: download and unpack on the login node (docs/download_alos2.md)
+        download_method="slc-unpack"
+        slc_unpack_login_flag=1
+    elif [[ $download_method != "slc-unpack" ]]; then
+        download_method="slc"
+    fi
 elif [[ $platform_str =~ COSMO-SKYMED|TERRASAR-X|ENVISAT ]]; then
     download_dir="$WORK_DIR/SLC_ORIG"
     [[ $download_method == *burst2safe* ]] && download_method="ssara-bash"   # FA July 2026   Not sure why this was there. 
