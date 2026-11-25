@@ -1495,7 +1495,7 @@ def compute_rerun_walltime_and_queue(job_file_path, config_file='job_defaults.cf
 ##########################################################################
 
 def log_removed_bursts_missing(slc_dir, line, reason=None):
-    """Append removed date + missing bursts to SLC/removed_bursts_missing.txt (dedup by date)."""
+    """Append removed date + missing bursts to removed_bursts_missing.txt in the download dir (dedup by date)."""
     line = (line or '').strip()
     if len(line) < 8 or not line[:8].isdigit():
         return

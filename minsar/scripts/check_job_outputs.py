@@ -30,14 +30,23 @@ def job_output_canonical_path(path):
     return os.path.normpath(os.path.abspath(path))
 
 
+def sentinel_download_dir(project_dir):
+    """BURST for burst downloads, SLC for full-SLC downloads."""
+    slc_dir = os.path.join(project_dir, 'SLC')
+    burst_dir = os.path.join(project_dir, 'BURST')
+    if os.path.isdir(burst_dir) and not os.path.isdir(slc_dir):
+        return burst_dir
+    return slc_dir
+
+
 def load_unfixable_partial_swath_dates(project_dir):
     """Dates listed by burst_download as missing a subswath after lon-extension repair."""
     return set(load_unfixable_partial_swath_entries(project_dir).keys())
 
 
 def load_unfixable_partial_swath_entries(project_dir):
-    """Map YYYYMMDD -> full line from SLC/dates_unfixable_partial_swath.txt."""
-    unfixable_file = os.path.join(project_dir, 'SLC', 'dates_unfixable_partial_swath.txt')
+    """Map YYYYMMDD -> full line from dates_unfixable_partial_swath.txt in the download dir."""
+    unfixable_file = os.path.join(sentinel_download_dir(project_dir), 'dates_unfixable_partial_swath.txt')
     entries = {}
     if not os.path.isfile(unfixable_file):
         return entries
@@ -219,9 +228,9 @@ def main(iargs=None):
           for file in list(error_files):
               date = date_from_job_output_basename(file)
               if date in unfixable_swath_dates:
-                  print('WARNING: partial-subswath date {} listed in SLC/dates_unfixable_partial_swath.txt: removing from run_files'.format(date))
+                  print('WARNING: partial-subswath date {} listed in dates_unfixable_partial_swath.txt: removing from run_files'.format(date))
                   putils.log_removed_bursts_missing(
-                      os.path.join(project_dir, 'SLC'),
+                      sentinel_download_dir(project_dir),
                       unfixable_swath_entries.get(date, date),
                       reason='removed at run_04 (partial subswath)',
                   )
@@ -249,7 +258,7 @@ def main(iargs=None):
                       missing_iw = putils.infer_missing_iw_from_error_file(file)
                       log_line = '{} missing={}'.format(date, missing_iw) if missing_iw else date
                       putils.log_removed_bursts_missing(
-                          os.path.join(project_dir, 'SLC'),
+                          sentinel_download_dir(project_dir),
                           log_line,
                           reason='removed at run_04 (FileNotFoundError)',
                       )
