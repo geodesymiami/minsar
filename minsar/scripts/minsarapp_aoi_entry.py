@@ -400,8 +400,8 @@ def run() -> None:
         os.environ["MINSAR_OPPOSITE_ORBIT_TEMPLATE"] = str(Path(_opposite).resolve())
     else:
         os.environ.pop("MINSAR_OPPOSITE_ORBIT_TEMPLATE", None)
-    # Template-only re-exec; minsarApp reads this for footer (empty when user started with a *.template).
-    os.environ["MINSAR_CLI_COMMAND_AOI"] = shlex.join([Path(mapp).name] + fixed)
+    # As typed (raw, not reordered); minsarApp.bash logs it and prints it in the footer.
+    os.environ["MINSAR_CLI_COMMAND_AOI"] = shlex.join([Path(mapp).name] + raw)
     os.execv("/bin/bash", ["/bin/bash", mapp, *margs])
 
 
