@@ -8,6 +8,10 @@
 !.cursor/
 !.cursor/rules/
 !.cursor/rules/**
+# Un-ignore Claude Code rules
+!.claude/
+!.claude/rules/
+!.claude/rules/**
 log
 q
 qq
