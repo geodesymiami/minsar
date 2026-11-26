@@ -329,12 +329,24 @@ MINSAR_APP_ARGV_KW: dict[str, tuple[str, ...]] = {
 }
 
 # One occurrence is copied onto both the create_template argv and the minsarApp re-exec.
+# minsarApp writes after the custom options file is applied, so its value is the one that stays.
 SHARED_AOI_BRIDGE_OPTIONS = frozenset(
     {
         "--exclude-dates",
         "--minsar.excludeDates",
+        "--rangeLooks",
+        "--range-looks",
+        "--topsStack.rangeLooks",
+        "--alos2Stack.rangeLooks",
+        "--azimuthLooks",
+        "--azimuth-looks",
+        "--topsStack.azimuthLooks",
+        "--alos2Stack.azimuthLooks",
     }
 )
+
+# --<family>.key VALUE: any template option, written into the template by minsarApp.bash (set_template_options.py).
+TEMPLATE_OPTION_PREFIXES = ("--mintpy.", "--miaplpy.", "--minsar.", "--topsStack.", "--stripmapStack.", "--alos2Stack.")
 
 GET_SAR_COVERAGE_ARGV_KW = {
     "consume_one": (

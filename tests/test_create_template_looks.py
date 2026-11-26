@@ -32,7 +32,7 @@ class TestCreateTemplateLooks(unittest.TestCase):
         ct_list, rest = entry.partition_aoi_bridge_argv(argv)[:2]
         for token in ("--range-looks", "20", "--topsStack.azimuthLooks", "5"):
             self.assertIn(token, ct_list)
-            self.assertNotIn(token, rest)
+            self.assertIn(token, rest)   # minsarApp writes them again after the custom options file
         self.assertIn("--start", rest)
 
 

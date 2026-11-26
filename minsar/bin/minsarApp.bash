@@ -45,7 +45,9 @@ helptext="                                                                      
                                  slc-unpack (ALOS-2): same, but run as a job (compute nodes download at about 110 MiB/s in total; see docs/download_alos2.md) \n\
    --delta-lat [DEG]     download larger error (default 0; bare --delta-lat: 0.2) \n\
    --minsar.excludeDates | --exclude-dates DATES  exclude YYYYMMDD scenes (comma-separated; merges with template) \n\
-   --start-date DATE | --end-date DATE   YYYYMMDD or YYYY-MM-DD. Writes asf (TSX, CSK: ssaraopt) and miaplpy.load dates; the omitted side becomes auto \n\
+   --start-date DATE | --end-date DATE   YYYYMMDD or YYYY-MM-DD. Dates of the stage where processing starts; the omitted side becomes auto \n\
+                         download to ifgram: asf.startDate/endDate (TSX, CSK: ssaraopt); --start miaplpy: miaplpy.load.*; --start mintpy: mintpy.network.* \n\
+   --<key> VALUE         write any mintpy.*, miaplpy.*, minsar.*, topsStack.*, stripmapStack.* or alos2Stack.* option into the template (key names are checked) \n\
    --miaplpy.load.startDate | endDate DATE  YYYYMMDD; sets only the MiaplPy load window; the other load date becomes auto \n\
    --range-looks N | --azimuth-looks N   write the number of looks into the template (topsStack or alos2Stack by platform) \n\
                          also --rangeLooks, --topsStack.rangeLooks, --alos2Stack.rangeLooks (same for azimuth) \n\
@@ -86,6 +88,7 @@ Per-dataset keys from MINSAR_CUSTOM_OPTIONS are applied only when AUTO_TEMPLATE 
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --period 20210101:20221231 --exclude-season 1101-0430 --exclude-dates 20260619 --coregistration geometry --tropo no --insarmaps-dataset DS  \n\
       minsarApp.bash \$TE/GalapagosSenDT128.template --exclude-dates 20260619 --miaplpy.load.startDate 20211201 --start jobfiles --miaplpy  \n\
       minsarApp.bash \$TE/TamboraSenD134.template --start-date 20240101 --start miaplpy  \n\
+      minsarApp.bash \$TE/TamboraSenD134.template --mintpy.troposphericDelay.method no --topsStack.coregistration geometry  \n\
       minsarApp.bash -0.86:-0.81,-91.19:-91.13 qtestGalapagos --flight-dir asc,desc --start-date 20181001 --end-date 20181231 --no-mintpy --miaplpy  \n\
       minsarApp.bash -8.326:-8.194,117.942:118.069 Tambora --flight-dir desc --template-dir \$ATE  \n
      "
@@ -189,6 +192,7 @@ cli_miaplpy_load_end=""
 cli_start_date=""
 cli_end_date=""
 cli_looks_args=()
+cli_template_options=()
 
 # set defaults steps (insarmaps_flag and upload_flag are set to 0 if not given on command line or in template file )
 download_flag=1
@@ -411,6 +415,11 @@ do
             cli_looks_args+=("$1" "$2")
             shift 2
             ;;
+        --mintpy.*|--minsar.*|--miaplpy.*|--topsStack.*|--stripmapStack.*|--alos2Stack.*)
+            [[ $# -ge 2 ]] || { echo "Error: $1 requires a value." >&2; exit 1; }
+            cli_template_options+=("${1#--}" "$2")
+            shift 2
+            ;;
         --start-date)
             if [[ $# -lt 2 || "$2" == -* ]]; then
                 echo "Error: --start-date requires YYYYMMDD or YYYY-MM-DD." >&2
@@ -512,16 +521,26 @@ if [[ -n "$cli_miaplpy_load_end" && ! "$cli_miaplpy_load_end" =~ ^[0-9]{8}$ ]]; 
     echo "Error: --miaplpy.load.endDate requires YYYYMMDD, got ${cli_miaplpy_load_end}" >&2
     exit 1
 fi
-if [[ -n "$cli_start_date" && -n "$cli_miaplpy_load_start" && "$cli_start_date" != "$cli_miaplpy_load_start" ]]; then
-    echo "Error: --start-date ${cli_start_date} and --miaplpy.load.startDate ${cli_miaplpy_load_start} differ." >&2
-    exit 1
+# --start-date/--end-date set the dates of the stage where processing starts:
+# download period (default), miaplpy.load.* for --start miaplpy, mintpy.network.* for --start mintpy.
+date_stage="download"
+if [[ "${startstep:-}" == "mintpy" ]]; then
+    date_stage="mintpy"
+elif [[ "${startstep:-}" == "miaplpy" || ( "$miaplpy_start_cli_flag" == "1" && "$startstep_cli_flag" == "0" ) ]]; then
+    date_stage="miaplpy"
 fi
-if [[ -n "$cli_end_date" && -n "$cli_miaplpy_load_end" && "$cli_end_date" != "$cli_miaplpy_load_end" ]]; then
-    echo "Error: --end-date ${cli_end_date} and --miaplpy.load.endDate ${cli_miaplpy_load_end} differ." >&2
-    exit 1
+if [[ "$date_stage" == "miaplpy" ]]; then
+    if [[ -n "$cli_start_date" && -n "$cli_miaplpy_load_start" && "$cli_start_date" != "$cli_miaplpy_load_start" ]]; then
+        echo "Error: --start-date ${cli_start_date} and --miaplpy.load.startDate ${cli_miaplpy_load_start} differ." >&2
+        exit 1
+    fi
+    if [[ -n "$cli_end_date" && -n "$cli_miaplpy_load_end" && "$cli_end_date" != "$cli_miaplpy_load_end" ]]; then
+        echo "Error: --end-date ${cli_end_date} and --miaplpy.load.endDate ${cli_miaplpy_load_end} differ." >&2
+        exit 1
+    fi
+    [[ -n "$cli_start_date" && -z "$cli_miaplpy_load_start" ]] && cli_miaplpy_load_start="$cli_start_date"
+    [[ -n "$cli_end_date" && -z "$cli_miaplpy_load_end" ]] && cli_miaplpy_load_end="$cli_end_date"
 fi
-[[ -n "$cli_start_date" && -z "$cli_miaplpy_load_start" ]] && cli_miaplpy_load_start="$cli_start_date"
-[[ -n "$cli_end_date" && -z "$cli_miaplpy_load_end" ]] && cli_miaplpy_load_end="$cli_end_date"
 # One side only: the other load bound is auto (no clip). Both sides: keep both dates.
 if [[ -n "$cli_miaplpy_load_start" || -n "$cli_miaplpy_load_end" ]]; then
     [[ -z "$cli_miaplpy_load_start" ]] && cli_miaplpy_load_start="auto"
@@ -529,13 +548,20 @@ if [[ -n "$cli_miaplpy_load_start" || -n "$cli_miaplpy_load_end" ]]; then
     run_command "set_template_assignment \"${template_file}\" miaplpy.load.startDate ${cli_miaplpy_load_start}"
     run_command "set_template_assignment \"${template_file}\" miaplpy.load.endDate ${cli_miaplpy_load_end}"
 fi
-# --start-date/--end-date also set the download window. --miaplpy.load.* does not.
-if [[ -n "$cli_start_date" || -n "$cli_end_date" ]]; then
-    create_template_array "$template_file"   # sets search_prefix (asf or ssaraopt)
-    run_command "set_template_assignment \"${template_file}\" ${search_prefix}.startDate ${cli_start_date:-auto}"
-    run_command "set_template_assignment \"${template_file}\" ${search_prefix}.endDate ${cli_end_date:-auto}"
+if [[ ( -n "$cli_start_date" || -n "$cli_end_date" ) && "$date_stage" != "miaplpy" ]]; then
+    date_prefix="mintpy.network"
+    if [[ "$date_stage" == "download" ]]; then
+        create_template_array "$template_file"   # sets search_prefix (asf or ssaraopt)
+        date_prefix="$search_prefix"
+    fi
+    run_command "set_template_assignment \"${template_file}\" ${date_prefix}.startDate ${cli_start_date:-auto}"
+    run_command "set_template_assignment \"${template_file}\" ${date_prefix}.endDate ${cli_end_date:-auto}"
 fi
 [[ ${#cli_looks_args[@]} -gt 0 ]] && run_command "set_template_looks.py \"${template_file}\" ${cli_looks_args[*]}"
+# Explicit --<family>.key value options are written last, so they win over the custom options file and the shortcuts.
+if [[ ${#cli_template_options[@]} -gt 0 ]]; then
+    run_command "set_template_options.py $(printf '%q ' "$template_file" "${cli_template_options[@]}")"
+fi
 create_template_array "$template_file"
 
 ingest_suffix_opt=""

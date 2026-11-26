@@ -19,6 +19,7 @@ def _ensure_repo_on_path() -> None:
 
 _ensure_repo_on_path()
 
+from minsar.utils.set_template_options import FAMILIES, check_keys, family_of
 from minsar.utils.template_exclude_dates import apply_exclude_dates_to_template
 
 BEGIN = "# BEGIN custom_template_options"
@@ -211,6 +212,7 @@ def _template_lines(section: dict[str, str]) -> list[str]:
         if not key.startswith(ALLOWED_PREFIXES):
             raise ValueError(f"unsupported custom key {key}")
         lines.append(f"{key} = {val}")
+    check_keys([line.split(" = ", 1)[0] for line in lines if family_of(line) in FAMILIES])
     return lines
 
 

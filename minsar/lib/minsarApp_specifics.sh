@@ -690,6 +690,24 @@ function get_date_str() {
 }
 
 ###########################################
+function get_mintpy_date_str() {
+# Like get_date_str, also clipped by mintpy.network.startDate/endDate (YYYYMMDD; auto or no: no clip).
+    local net_start="${template[mintpy.network.startDate]:-}" net_end="${template[mintpy.network.endDate]:-}" d
+    local -a dates=() kept=()
+    mapfile -t dates < <(list_slcstack_load_dates)
+    for d in "${dates[@]}"; do
+        [[ "$net_start" =~ ^[0-9]{8}$ && "$d" < "$net_start" ]] && continue
+        [[ "$net_end" =~ ^[0-9]{8}$ && "$d" > "$net_end" ]] && continue
+        kept+=("$d")
+    done
+    if [[ ${#kept[@]} -eq 0 ]]; then
+        echo "ERROR: no merged/SLC dates in the miaplpy.load and mintpy.network date windows" >&2
+        return 1
+    fi
+    echo "${kept[0]:0:6}_${kept[-1]:0:6}"
+}
+
+###########################################
 function get_miaplpy_dir_name() {
 # assign miaplpyDir.Addition  lalo,dirname or 'miaplpy' for 'auto'
 # Appends _exMMDD-MMDD when excludeSeason is set (template only; not from disk).
@@ -751,7 +769,7 @@ function get_mintpy_dir_name() {
 # date, lalo and name carry the looks: mintpy_<azimuthLooks>_<rangeLooks>_... (get_looks_str)
 # Appends _exMMDD-MMDD when excludeSeason is set (template only; not from disk).
 # Appends get_product_suffix (minsar.product.suffix) after that.
-date_str=$(get_date_str)
+date_str=$(get_mintpy_date_str)
 if [ -z ${template[minsar.mintpyDir.addition]} ] || [ ${template[minsar.mintpyDir.addition]} == "auto" ]; then
    mintpy_dir_name="mintpy"
 elif [ ${template[minsar.mintpyDir.addition]} == "date" ]; then

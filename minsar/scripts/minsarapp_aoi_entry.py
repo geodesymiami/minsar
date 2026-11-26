@@ -235,6 +235,7 @@ def partition_aoi_bridge_argv(
     from minsar.utils.bbox_cli_argv import (
         MINSAR_APP_ARGV_KW,
         SHARED_AOI_BRIDGE_OPTIONS,
+        TEMPLATE_OPTION_PREFIXES,
         fix_argv_for_negative_bbox_sn_we,
         get_create_template_argv_kw,
     )
@@ -276,6 +277,10 @@ def partition_aoi_bridge_argv(
         ct_kind = _option_kind(name, ct_kw)
         ma_kind = _option_kind(name, MINSAR_APP_ARGV_KW)
         shared = name in SHARED_AOI_BRIDGE_OPTIONS
+        if shared:
+            ma_kind = ma_kind or ct_kind
+        elif name.startswith(TEMPLATE_OPTION_PREFIXES):
+            ct_kind, ma_kind = None, "one"
         if ct_kind and ma_kind and not shared:
             print(
                 f"minsarapp_aoi_entry: {name} is both a create_template and minsarApp option",
