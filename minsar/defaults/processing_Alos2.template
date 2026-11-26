@@ -1,7 +1,7 @@
 ######################################################
 ssaraopt.platform                    = ALOS2  #[ALOS2 / ALOS-2], download and stack sensor
 ssaraopt.relativeOrbit               = 0  #[int], filled from coverage for the AOI
-ssaraopt.startDate                   = auto  #[YYYYMMDD], auto for no start limit
+ssaraopt.startDate                   = 20150208  #[YYYYMMDD], auto for no start limit; earlier ScanSAR has no burst overlap with later dates
 ssaraopt.endDate                     = auto  #[YYYYMMDD], auto for today
 ssaraopt.parallel                    = 6  #[int], auto for 6, parallel download queries
 #ssaraopt.excludeSeason               = 1015-0615  # MMDD-MMDD, exclude data between Oct 15 and June 15
@@ -39,6 +39,9 @@ mintpy.save.hdfEos5                  = yes   #[yes / update / no], auto for no, 
 mintpy.save.hdfEos5.update           = yes   #[yes / no], auto for no, XXXXXXXX end date if last date is within 31 days of today
 mintpy.save.hdfEos5.subset           = yes   #[yes / no], auto for no, put subset range info in output filename
 mintpy.save.kmz                      = yes   #[yes / no], auto for yes, save geocoded velocity to Google Earth KMZ file
+mintpy.network.coherenceBased        = yes   #[yes / no], auto for no, exclude interferograms with coherence < minCoherence
+mintpy.network.minCoherence          = 0.25  #[0.0-1.0], auto for 0.7
+mintpy.network.keepMinSpanTree       = yes   #[yes / no], auto for yes, keep interferograms in Min Span Tree network
 mintpy.reference.minCoherence        = 0.45     #[0.0-1.0], auto for 0.85, minimum coherence for auto method
 mintpy.troposphericDelay.method      = auto   # pyaps  #[pyaps / height_correlation / base_trop_cor / no], auto for pyaps
 mintpy.networkInversion.minTempCoh   = 0.6 #[0.0-1.0], auto for 0.7, min temporal coherence for mask
