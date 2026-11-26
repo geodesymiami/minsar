@@ -9,6 +9,8 @@ The main Developers are Sara Mirzaee and Falk Amelung with contributions of many
 
 ## 1. [Installation](./installation.md) ###
 
+New to MinSAR? Read [Getting started](./getting_started.md): first run, templates in `$TE` versus AOI runs in `$ATE`, and how to set and keep processing options.
+
 ## 2. Running MinSAR ###
 
 MinSAR downloads a stack of SLC images, downloads a DEM, processes the interferograms and creates displacement timeseries products using MintPy and/or MiaplPy. Optional steps are the ingestion into our [dataportal] (https//:insarmaps.miami.edu) and the upload of the data products to our jetstream server.
