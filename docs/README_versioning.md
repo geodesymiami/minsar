@@ -1,5 +1,7 @@
 # MinSAR versioning
 
+Version numbering was introduced on 2026-11-25 with tag `v0.5.0`. Earlier commits have no version number.
+
 ## Commands
 
 ```bash
