@@ -43,7 +43,7 @@ bbox = (
     or options.get('topsStack.boundingBox')
 )
 
-track = options.get('ssaraopt.relativeOrbit')
+track = options.get('asf.relativeOrbit')
 
 if options.get('dataset', None):
     if options.get('dataset') in os.getcwd():

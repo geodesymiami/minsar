@@ -1,10 +1,10 @@
 ####################
 processor                           = isce
 cleanopt                            = 0
-ssaraopt.platform                   = SENTINEL-1A,SENTINEL-1B
-ssaraopt.relativeOrbit              = 18
-ssaraopt.startDate                  = 20190101
-ssaraopt.endDate                    = 20190630
+asf.platform                        = SENTINEL-1A,SENTINEL-1B
+asf.relativeOrbit                   = 18
+asf.startDate                       = 20190101
+asf.endDate                         = 20190630
 insarmaps_flag                      = no
 image_products_flag                 = True 
 #####################

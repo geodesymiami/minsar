@@ -23,16 +23,16 @@ from minsar.utils.template_exclude_dates import apply_exclude_dates_to_template
 
 BEGIN = "# BEGIN custom_template_options"
 END = "# END custom_template_options"
-ALLOWED_PREFIXES = ("mintpy.", "miaplpy.", "minsar.", "topsStack.", "alos2Stack.", "ssaraopt.")
+ALLOWED_PREFIXES = ("mintpy.", "miaplpy.", "minsar.", "topsStack.", "stripmapStack.", "alos2Stack.", "asf.", "ssaraopt.")
 LAUNCHER_KEYS = frozenset({"aoi", "options", "defaults"})
 FREEFORM_KEYS = frozenset({"aoi", "options"})
 EXCLUDE_KEYS = frozenset({"minsar.excludeDates", "topsStack.excludeDates"})
 # create_template rewrites these on every AOI run. aoi is also stored from subset.lalo.
 SKIP_SAVE_KEYS = frozenset(
     {
-        "ssaraopt.relativeOrbit",
-        "ssaraopt.startDate",
-        "ssaraopt.endDate",
+        "asf.relativeOrbit",
+        "asf.startDate",
+        "asf.endDate",
         "topsStack.coregistration",
         "alos2Stack.boundingBox",
         "mintpy.plot",

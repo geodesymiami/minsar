@@ -36,7 +36,7 @@ def effective_template_for_job(custom_template_file, processing_dir):
 
     If the custom template already sets mintpy.plot to yes/no, use it as-is.
     Otherwise write ``{processing_dir}/.minsar_mintpy_template.template`` with
-    ``mintpy.plot`` from the ssaraopt span rule (does not rewrite $TE).
+    ``mintpy.plot`` from the download date span (does not rewrite $TE).
     """
     from minsar.utils.ssaraopt_to_mintpy_plot import (
         apply_mintpy_plot_line,
@@ -50,8 +50,8 @@ def effective_template_for_job(custom_template_file, processing_dir):
     if template_has_explicit_mintpy_plot(content):
         return str(custom_path)
 
-    start = read_template_option(content, "ssaraopt.startDate")
-    end = read_template_option(content, "ssaraopt.endDate")
+    start = read_template_option(content, "asf.startDate") or read_template_option(content, "ssaraopt.startDate")
+    end = read_template_option(content, "asf.endDate") or read_template_option(content, "ssaraopt.endDate")
     plot_val = mintpy_plot_from_ssaraopt_span(start, end)
     proc = Path(processing_dir)
     proc.mkdir(parents=True, exist_ok=True)
@@ -59,7 +59,7 @@ def effective_template_for_job(custom_template_file, processing_dir):
     out.write_text(apply_mintpy_plot_line(content, plot_val))
     print(
         f"WARNING: {custom_path} omits mintpy.plot; "
-        f"using mintpy.plot = {plot_val} from ssaraopt span in {out}",
+        f"using mintpy.plot = {plot_val} from the download date span in {out}",
         file=sys.stderr,
     )
     return str(out)

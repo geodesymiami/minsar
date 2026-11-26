@@ -12,6 +12,7 @@ from minsar.objects import message_rsmas
 from minsar.utils import process_utilities as putils
 from minsar.utils import get_boundingBox_from_kml
 from minsar.objects.dataset_template import Template
+from minsar.utils.sar_platform import search_key
 from minsar.utils import process_utilities as putils
 
 EXAMPLE = """
@@ -168,7 +169,7 @@ def get_SouthNorthWestEast_from_ssara_kml():
 def get_SouthNorthWestEast_from_template(dataset_template):
 
     ssaraopt_string, ssaraopt_dict = dataset_template.generate_ssaraopt_string()
-    if any(option.startswith('ssaraopt.intersectsWith') for option in dataset_template.get_options()):
+    if any(option.startswith(search_key(dataset_template.options, 'intersectsWith')) for option in dataset_template.get_options()):
        intersects_string = f"--intersectsWith={ssaraopt_dict['intersectsWith']}"
     else:
        intersects_string = putils.generate_intersects_string(dataset_template, delta_lat=0.1)

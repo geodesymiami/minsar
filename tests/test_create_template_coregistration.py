@@ -44,7 +44,7 @@ class TestResolveCoregistration(unittest.TestCase):
 class TestSubstituteTemplateCoregistration(unittest.TestCase):
     def test_replaces_geometry(self) -> None:
         content = (
-            "ssaraopt.relativeOrbit             = 1\n"
+            "asf.relativeOrbit             = 1\n"
             "topsStack.coregistration           = NESD  # comment\n"
         )
         out = _substitute_template(

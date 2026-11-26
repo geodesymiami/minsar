@@ -1,6 +1,6 @@
 """Set the number of looks in a MinSAR template (command-line options of minsarApp.bash and create_template.py).
 
-The stack prefix follows ssaraopt.platform: alos2Stack for ALOS-2, else topsStack
+The stack prefix follows asf.platform: alos2Stack for ALOS-2, else topsStack
 (stripmapStack when the template has stripmapStack keys and no topsStack keys).
 """
 
@@ -30,7 +30,7 @@ def _active_value(text, key):
 
 def stack_prefix(text):
     """Return alos2Stack, topsStack or stripmapStack for this template text."""
-    platform = _active_value(text, "ssaraopt.platform")
+    platform = _active_value(text, "asf.platform")
     if platform and normalize_sar_platform_token(platform) == "ALOS2":
         return "alos2Stack"
     if re.search(r"(?m)^\s*stripmapStack\.", text) and not re.search(r"(?m)^\s*topsStack\.", text):

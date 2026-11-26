@@ -137,7 +137,7 @@ def _resolve_n_bursts(project_dir: Path, sweets: dict) -> int:
                 if subset and str(subset).lower() != "no":
                     from minsar.utils.generate_sweets_config import count_bursts_covering_aoi
 
-                    track_raw = opts.get("ssaraopt.relativeOrbit")
+                    track_raw = opts.get("asf.relativeOrbit")
                     track = int(track_raw) if track_raw else None
                     return count_bursts_covering_aoi(str(subset), track=track)
             except Exception:

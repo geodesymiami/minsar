@@ -1,9 +1,9 @@
 ####################
 processor                           = isce                                                                                                
 cleanopt                            = 0                                                                                                   
-ssaraopt.platform                   = SENTINEL-1A,SENTINEL-1B                                                                             
-ssaraopt.relativeOrbit              = 19                                                                                                 
-ssaraopt.endDate                    = 20160831
+asf.platform                        = SENTINEL-1A,SENTINEL-1B                                                                             
+asf.relativeOrbit                   = 19                                                                                                 
+asf.endDate                         = 20160831
 ####################
 topsStack.boundingBox               = 30.8 34.2 83.0 101.0      # '-1 0.15 -91.6 -90.9'                           
 topsStack.boundingBox               = 31.8 35.2 84.0 89.0      # '-1 0.15 -91.6 -90.9'                           

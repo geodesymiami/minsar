@@ -13,6 +13,7 @@ from minsar.objects import message_rsmas
 from minsar.objects.auto_defaults import PathFind
 from minsar.utils.stack_run import CreateRun
 import minsar.utils.process_utilities as putils
+from minsar.utils.sar_platform import search_key
 from minsar.job_submission import JOB_SUBMIT
 from minsar.objects.unpack_sensors import Sensors
 
@@ -101,8 +102,9 @@ def get_bbox_from_template(inps, delta_lat, delta_lon):
         print(f"Creating topsStack.boundingBox using miaplpy.subset.lalo={inps.template['miaplpy.subset.lalo']} (with delta_lat, delta_lon: {delta_lat}, {delta_lon})")
         boundingBox_string = convert_subset_lalo_to_boundingBox_string(inps.template['miaplpy.subset.lalo'], delta_lat, delta_lon)
     else:
-        print("Creating topsStack.boundingBox using ssaraopt.intersectsWith={inps.template['ssaraopt.intersectsWith']} (with delta_lat, delta_lon: {delta_lat}, {delta_lon})")
-        boundingBox_string = convert_intersectsWith_string_to_boundingBox_string(inps.template['ssaraopt.intersectsWith'], delta_lat, delta_lon)
+        intersects_key = search_key(inps.template, 'intersectsWith')
+        print(f"Creating topsStack.boundingBox using {intersects_key}={inps.template[intersects_key]} (with delta_lat, delta_lon: {delta_lat}, {delta_lon})")
+        boundingBox_string = convert_intersectsWith_string_to_boundingBox_string(inps.template[intersects_key], delta_lat, delta_lon)
 
     return boundingBox_string
 

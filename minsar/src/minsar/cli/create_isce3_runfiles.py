@@ -684,8 +684,8 @@ def _make_job_submit(project_dir: Path, run_dir: Path, queue: str, profile: Reso
 
 
 def _track_from_template_options(options: dict) -> str:
-    """Return relative orbit as string from ssaraopt.relativeOrbit, or '' if missing."""
-    raw = options.get("ssaraopt.relativeOrbit")
+    """Return relative orbit as string from asf.relativeOrbit, or '' if missing."""
+    raw = options.get("asf.relativeOrbit")
     if raw is None or str(raw).strip() == "":
         return ""
     return str(int(str(raw).strip()))
@@ -701,7 +701,7 @@ def _track_source_for_context(args: argparse.Namespace, options: dict | None = N
 
 
 def _resolve_track_for_context(args: argparse.Namespace, options: dict) -> str:
-    """CLI --track / --relativeOrbit overrides template ssaraopt.relativeOrbit."""
+    """CLI --track / --relativeOrbit overrides template asf.relativeOrbit."""
     if args.track is not None:
         return str(args.track)
     return _track_from_template_options(options)
@@ -755,7 +755,7 @@ def _resolve_n_bursts_for_dolphin(
     if burst_count_method == "opera-utils":
         if track is None:
             raise ValueError(
-                "--burst-count-method opera-utils requires --track (or template ssaraopt.relativeOrbit)"
+                "--burst-count-method opera-utils requires --track (or template asf.relativeOrbit)"
             )
         from minsar.utils.generate_sweets_config import count_bursts_covering_aoi
 
@@ -1311,9 +1311,9 @@ def create_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--platform", default="S1", help="platform: S1 or NISAR/NI")
     parser.add_argument("--flight-dir", choices=("asc", "desc"), help="flight direction for AOI input")
-    parser.add_argument("--start-date", dest="start_date", help="first date YYYYMMDD (default: ssaraopt.startDate from template)")
-    parser.add_argument("--end-date", dest="end_date", help="last date YYYYMMDD (default: ssaraopt.endDate from template)")
-    parser.add_argument("--track", "--relativeOrbit", type=int, dest="track", help="relative orbit (overrides template ssaraopt.relativeOrbit)")
+    parser.add_argument("--start-date", dest="start_date", help="first date YYYYMMDD (default: asf.startDate from template)")
+    parser.add_argument("--end-date", dest="end_date", help="last date YYYYMMDD (default: asf.endDate from template)")
+    parser.add_argument("--track", "--relativeOrbit", type=int, dest="track", help="relative orbit (overrides template asf.relativeOrbit)")
     parser.add_argument("--frame-id", type=int, help="OPERA DISP-S1 frame ID (required for --disp-S1 / --data-type disp-s1)")
     parser.add_argument(
         "--queue",
@@ -1606,8 +1606,8 @@ def _template_context(template_file: Path, args: argparse.Namespace) -> dict[str
     subset = options.get("miaplpy.subset.lalo", "")
     if not subset:
         raise ValueError(f"template requires miaplpy.subset.lalo: {template_file}")
-    start_date = args.start_date or _ssaraopt_date_yyyymmdd(options, "ssaraopt.startDate")
-    end_date = args.end_date or _ssaraopt_date_yyyymmdd(options, "ssaraopt.endDate")
+    start_date = args.start_date or _ssaraopt_date_yyyymmdd(options, "asf.startDate")
+    end_date = args.end_date or _ssaraopt_date_yyyymmdd(options, "asf.endDate")
     flight_dir = args.flight_dir or flight_direction_from_template(str(template_file)) or ""
     return {
         "project": project,

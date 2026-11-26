@@ -25,9 +25,9 @@ def _load_create_template():
 
 ct = _load_create_template()
 
-_MINI_DUMMY = """ssaraopt.relativeOrbit             = 109
-ssaraopt.startDate                 = 20141001
-ssaraopt.endDate                   = auto
+_MINI_DUMMY = """asf.relativeOrbit             = 109
+asf.startDate                 = 20141001
+asf.endDate                   = auto
 miaplpy.subset.lalo                  = 0:1,2:3
 """
 

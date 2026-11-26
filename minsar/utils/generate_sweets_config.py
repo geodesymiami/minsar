@@ -123,10 +123,10 @@ def subset_lalo_from_options(options: dict) -> str:
 
 
 def parse_track(options: dict) -> int:
-    """Relative orbit from ssaraopt.relativeOrbit."""
-    raw = options.get("ssaraopt.relativeOrbit")
+    """Relative orbit from asf.relativeOrbit."""
+    raw = options.get("asf.relativeOrbit")
     if raw is None or str(raw).strip() == "":
-        raise ValueError("Template has no ssaraopt.relativeOrbit")
+        raise ValueError("Template has no asf.relativeOrbit")
     return int(str(raw).strip())
 
 
@@ -135,7 +135,7 @@ def flight_direction_from_template(template_file: str) -> str | None:
     dataset_template = Template(template_file)
     options = dataset_template.get_options()
     options.update(pathObj.correct_for_ssara_date_format(dict(options)))
-    for key in ("ssaraopt.flightDirection", "flightDirection", "orbitDirection"):
+    for key in ("asf.flightDirection", "flightDirection", "orbitDirection"):
         val = options.get(key)
         if val:
             text = str(val).strip().lower()

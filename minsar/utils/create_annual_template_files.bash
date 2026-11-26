@@ -90,16 +90,16 @@ if [[ ! "$BASE_NAME" =~ [0-9] ]]; then
     exit 1
 fi
 
-# Parse ssaraopt.startDate and ssaraopt.endDate (YYYYMMDD)
-start_date=$(grep -E '^[^#%]*ssaraopt\.startDate' "$TEMPLATE_FILE" | grep -oE '[0-9]{8}' | head -1)
-end_date=$(grep -E '^[^#%]*ssaraopt\.endDate' "$TEMPLATE_FILE" | grep -oE '[0-9]{8}' | head -1)
+# Parse startDate and endDate (YYYYMMDD)
+start_date=$(grep -E '^[^#%]*(asf|ssaraopt)\.startDate' "$TEMPLATE_FILE" | grep -oE '[0-9]{8}' | head -1)
+end_date=$(grep -E '^[^#%]*(asf|ssaraopt)\.endDate' "$TEMPLATE_FILE" | grep -oE '[0-9]{8}' | head -1)
 
 if [[ -z "$start_date" ]] || [[ ${#start_date} -ne 8 ]]; then
-    echo "$SCRIPT_NAME: could not parse ssaraopt.startDate (YYYYMMDD) from: $TEMPLATE_FILE" >&2
+    echo "$SCRIPT_NAME: could not parse asf.startDate or ssaraopt.startDate (YYYYMMDD) from: $TEMPLATE_FILE" >&2
     exit 1
 fi
 if [[ -z "$end_date" ]] || [[ ${#end_date} -ne 8 ]]; then
-    echo "$SCRIPT_NAME: could not parse ssaraopt.endDate (YYYYMMDD) from: $TEMPLATE_FILE" >&2
+    echo "$SCRIPT_NAME: could not parse asf.endDate or ssaraopt.endDate (YYYYMMDD) from: $TEMPLATE_FILE" >&2
     exit 1
 fi
 
@@ -151,9 +151,9 @@ write_template_with_dates() {
     local new_start=$3
     local new_end=$4
     while IFS= read -r line; do
-        if [[ "$line" =~ ^[^#%]*ssaraopt\.startDate[[:space:]]*= ]]; then
+        if [[ "$line" =~ ^[^#%]*(asf|ssaraopt)\.startDate[[:space:]]*= ]]; then
             echo "$line" | sed -E "s/([^0-9])[0-9]{8}(.*)/\1${new_start}\2/"
-        elif [[ "$line" =~ ^[^#%]*ssaraopt\.endDate[[:space:]]*= ]]; then
+        elif [[ "$line" =~ ^[^#%]*(asf|ssaraopt)\.endDate[[:space:]]*= ]]; then
             echo "$line" | sed -E "s/([^0-9])[0-9]{8}(.*)/\1${new_end}\2/"
         else
             echo "$line"

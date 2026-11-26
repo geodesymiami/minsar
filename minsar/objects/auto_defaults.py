@@ -80,26 +80,29 @@ class PathFind:
 
         inps_dict = template_options
 
-        if 'ssaraopt.startDate' in inps_dict:
-            if inps_dict['ssaraopt.startDate'] == "auto":
-                inps_dict['ssaraopt.startDate'] = '20010101'
-            # try to parse as YYYYMMDD
-            try:
-                dt = datetime.datetime.strptime(inps_dict['ssaraopt.startDate'], "%Y%m%d")
-                inps_dict['ssaraopt.startDate'] = dt.strftime("%Y-%m-%d")
-            except ValueError:
-                 raise ValueError( f"Invalid ssaraopt.startDate '{inps_dict['ssaraopt.startDate']}': must be 'YYYYMMDD' or 'auto'")
+        from minsar.utils.sar_platform import search_prefix
+        prefix = search_prefix(inps_dict, inps_dict.get('dataset', 'template'))
+        start_key = f'{prefix}.startDate'
+        end_key = f'{prefix}.endDate'
 
-        if 'ssaraopt.endDate' in inps_dict:
-            if inps_dict['ssaraopt.endDate'] == "auto":
-                today = datetime.date.today()
-                inps_dict['ssaraopt.endDate' ]= today.strftime("%Y%m%d")
-            # try to parse as YYYYMMDD
+        if start_key in inps_dict:
+            if inps_dict[start_key] == "auto":
+                inps_dict[start_key] = '20010101'
             try:
-                dt = datetime.datetime.strptime(inps_dict['ssaraopt.endDate'], "%Y%m%d")
-                inps_dict['ssaraopt.endDate'] = dt.strftime("%Y-%m-%d")
+                dt = datetime.datetime.strptime(inps_dict[start_key], "%Y%m%d")
+                inps_dict[start_key] = dt.strftime("%Y-%m-%d")
             except ValueError:
-                 raise ValueError( f"Invalid ssaraopt.startDate '{inps_dict['ssaraopt.endDate']}': must be 'YYYYMMDD' or 'auto'")
+                raise ValueError(f"Invalid {start_key} '{inps_dict[start_key]}': must be 'YYYYMMDD' or 'auto'")
+
+        if end_key in inps_dict:
+            if inps_dict[end_key] == "auto":
+                today = datetime.date.today()
+                inps_dict[end_key] = today.strftime("%Y%m%d")
+            try:
+                dt = datetime.datetime.strptime(inps_dict[end_key], "%Y%m%d")
+                inps_dict[end_key] = dt.strftime("%Y-%m-%d")
+            except ValueError:
+                raise ValueError(f"Invalid {end_key} '{inps_dict[end_key]}': must be 'YYYYMMDD' or 'auto'")
 
         return inps_dict
 

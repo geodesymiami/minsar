@@ -73,17 +73,17 @@ The  processing steps are recorded in the `./log` file in your project directory
 ## 4. Detailed processing steps
 
 ### 4.1 Download data: --step download
-The `generate_download_command.py` script generates the download command data based on the `ssaraopt` parameters in the template file. It will create an `--intersectsWith={Polygon ..)` string based on `topsStack.boundingBox`.
+The `generate_download_command.py` script generates the download command data based on the `asf.*` parameters (`ssaraopt.*` for TerraSAR-X and COSMO-SkyMed) in the template file. It will create an `--intersectsWith={Polygon ..)` string based on `topsStack.boundingBox`.
 
 ```################################# ssara option Parameters #################################
-ssaraopt.platform                     = None         # platform name [SENTINEL-1A, ...]
-ssaraopt.relativeOrbit                = None         # relative orbit number
-ssaraopt.startDate                    = None         # starting acquisition date [YYYYMMDD]
-ssaraopt.endDate                      = None         # ending acquisition date [YYYYMMDD]
+asf.platform                          = None         # platform name [SENTINEL-1A, ...]
+asf.relativeOrbit                     = None         # relative orbit number
+asf.startDate                         = None         # starting acquisition date [YYYYMMDD]
+asf.endDate                           = None         # ending acquisition date [YYYYMMDD]
 
 topsStack.boundingBox                 = None         # [ -1 0.15 -91.7 -90.9] lat_south lat_north lon_west lon_east
 ```
-It also accepts the `ssaraopt.frame` option but this did not work very well for us.
+It also accepts the `asf.frame` option but this did not work very well for us.
 
 ```
 ### 4.2. Download DEM: --dostep dem

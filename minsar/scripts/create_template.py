@@ -4,14 +4,14 @@ Create a MinSAR template file for an AOI and project name.
 
 Runs get_sar_coverage.py --select to determine ascending/descending orbit labels,
 reads minsar/defaults/processing_Sentinel1.template (or processing_Alos2.template for
---platform ALOS2), fills in ssaraopt.relativeOrbit, miaplpy.subset.lalo or
+--platform ALOS2), fills in asf.relativeOrbit, miaplpy.subset.lalo or
 mintpy.subset.lalo plus alos2Stack.boundingBox,
 and date range (optional: --quick-run, --period, --start-date/--end-date, or
 --last-year for the full previous calendar year), writes the template to CWD.
-A resolved window is written to ssaraopt.startDate/endDate and
+A resolved window is written to asf.startDate/endDate and
 miaplpy.load.startDate/endDate. --start-date or --end-date alone writes auto
 for the omitted side. Concrete dates are passed to get_sar_coverage.py --select.
-Sets ``mintpy.plot`` to yes when the ssaraopt span is ``<= 365`` days (else no);
+Sets ``mintpy.plot`` to yes when the asf date span is ``<= 365`` days (else no);
 ``--mintpy-plot`` / ``--mintpy-no-plot`` override that rule.
 With dual-pass ``--flight-dir`` values (``asc,desc`` default; also ``desc,asc`` or
 legacy ``both``), it also runs create_opposite_orbit_template to write the
@@ -205,7 +205,7 @@ def _run_get_sar_coverage(
 
     flight_dir is required (asc, desc, both, asc,desc, or desc,asc). start_date and
     end_date are YYYYMMDD. Each date that is set is passed through so orbit selection
-    uses the same window as ssaraopt.startDate / endDate.
+    uses the same window as asf.startDate / endDate.
 
     Returns a dict that may include only ascending, only descending, or both, plus
     optional processing_subset. At least one full direction (relorbit + label) is
@@ -286,7 +286,7 @@ def _last_calendar_year_full_range(ref: date | None = None) -> tuple[str, str]:
 
 
 def _parse_cli_date_to_yyyymmdd(s: str) -> str:
-    """Normalize a user date to YYYYMMDD for ssaraopt (startDate / endDate).
+    """Normalize a user date to YYYYMMDD for asf (startDate / endDate).
 
     Detects format and validates the calendar day:
 
@@ -495,9 +495,9 @@ def _substitute_template(
     bounding_box: str | None = None,
     write_mintpy_plot: bool = True,
 ) -> str:
-    """Replace orbit/AOI/date options, optionally adding ssaraopt.excludeSeason.
+    """Replace orbit/AOI/date options, optionally adding asf.excludeSeason.
 
-    start_date and end_date, when set, are written to both ssaraopt and
+    start_date and end_date, when set, are written to both asf and
     miaplpy.load. A value of auto leaves that side open.
     """
     lines = content.splitlines()
@@ -507,7 +507,7 @@ def _substitute_template(
     tropo_matched = False
     insarmaps_matched = False
     for line in lines:
-        if re.match(r"^\s*ssaraopt\.relativeOrbit\s*=", line):
+        if re.match(r"^\s*asf\.relativeOrbit\s*=", line):
             line = re.sub(r"=\s*[0-9]+", f"= {relative_orbit}", line)
         elif re.match(r"^\s*topsStack\.coregistration\s*=", line):
             line = re.sub(
@@ -521,20 +521,20 @@ def _substitute_template(
             line = _replace_assignment_value(line, subset_lalo)
         elif bounding_box is not None and re.match(r"^\s*alos2Stack\.boundingBox\s*=", line):
             line = _replace_assignment_value(line, bounding_box)
-        elif start_date is not None and re.match(r"^\s*ssaraopt\.startDate\s*=", line):
+        elif start_date is not None and re.match(r"^\s*asf\.startDate\s*=", line):
             line = re.sub(r"=\s*[^\s#]+", f"= {start_date}", line)
-        elif end_date is not None and re.match(r"^\s*ssaraopt\.endDate\s*=", line):
+        elif end_date is not None and re.match(r"^\s*asf\.endDate\s*=", line):
             line = re.sub(r"=\s*[^\s#]+", f"= {end_date}", line)
             if exclude_season is not None:
                 out.append(line)
-                out.append(f"ssaraopt.excludeSeason             = {exclude_season}")
+                out.append(f"asf.excludeSeason             = {exclude_season}")
                 exclude_added = True
                 continue
         elif start_date is not None and re.match(r"^\s*miaplpy\.load\.startDate\s*=", line):
             line = re.sub(r"=\s*[^\s#]+", f"= {start_date}", line)
         elif end_date is not None and re.match(r"^\s*miaplpy\.load\.endDate\s*=", line):
             line = re.sub(r"=\s*[^\s#]+", f"= {end_date}", line)
-        elif re.match(r"^\s*ssaraopt\.excludeSeason\s*=", line):
+        elif re.match(r"^\s*asf\.excludeSeason\s*=", line):
             exclude_matched = True
             if exclude_season is not None:
                 line = re.sub(r"=\s*[^\s#]+", f"= {exclude_season}", line)
@@ -556,7 +556,7 @@ def _substitute_template(
             line = re.sub(r"=\s*[^\s#]+", f"= {minsar_insarmaps_dataset}", line)
         out.append(line)
     if exclude_season is not None and not exclude_added and not exclude_matched:
-        out.append(f"ssaraopt.excludeSeason             = {exclude_season}")
+        out.append(f"asf.excludeSeason             = {exclude_season}")
     if mintpy_tropospheric_delay_method is not None and not tropo_matched:
         out.append(f"mintpy.troposphericDelay.method      = {mintpy_tropospheric_delay_method}")
     if minsar_insarmaps_dataset is not None and not insarmaps_matched:
@@ -646,12 +646,12 @@ Examples:
     parser.add_argument("aoi", metavar="AOI", help="AOI: S:N,W:E; WKT POLYGON; Minus-first lat: quote AOI or argv normalization.")
     parser.add_argument("name", help="Project name; output is NAME<orbit_label>.template (e.g. Santorini)")
     parser.add_argument("--type", default="miaplpy", choices=["miaplpy"], help="Template type (default: miaplpy)")
-    parser.add_argument("--start-date", metavar="DATE", help="ssaraopt and miaplpy.load start; YYYY-MM-DD or YYYYMMDD; omitted end is auto")
-    parser.add_argument("--end-date", metavar="DATE", help="ssaraopt and miaplpy.load end; YYYY-MM-DD or YYYYMMDD; omitted start is auto")
-    parser.add_argument("--period", metavar="SPEC", help="ssaraopt: YYYY full year; or START:END as YYYYMMDD:YYYYMMDD or YYYY-MM-DD:YYYY-MM-DD")
+    parser.add_argument("--start-date", metavar="DATE", help="asf and miaplpy.load start; YYYY-MM-DD or YYYYMMDD; omitted end is auto")
+    parser.add_argument("--end-date", metavar="DATE", help="asf and miaplpy.load end; YYYY-MM-DD or YYYYMMDD; omitted start is auto")
+    parser.add_argument("--period", metavar="SPEC", help="asf dates: YYYY full year; or START:END as YYYYMMDD:YYYYMMDD or YYYY-MM-DD:YYYY-MM-DD")
     parser.add_argument("--quick-run", type=int, metavar="YEAR", nargs="?", const=2026, default=None, help="Jan 1 to Feb 28 for YEAR (default: 2026)")
     parser.add_argument("--last-year", action="store_true", help="full previous year")
-    parser.add_argument("--exclude-season", metavar="MMDD-MMDD", help="ssaraopt.excludeSeason (e.g. 1101-0430 excludes Nov 1-Apr 30)")
+    parser.add_argument("--exclude-season", metavar="MMDD-MMDD", help="asf.excludeSeason (e.g. 1101-0430 excludes Nov 1-Apr 30)")
     parser.add_argument(
         "--minsar.excludeDates",
         "--exclude-dates",
@@ -877,7 +877,7 @@ def main(
     )
     print(
         f"mintpy.plot = {mintpy_plot} "
-        f"(CLI override={inps.mintpy_plot_cli!r}; span from ssaraopt dates)",
+        f"(CLI override={inps.mintpy_plot_cli!r}; span from asf dates)",
         file=sys.stderr,
         flush=True,
     )

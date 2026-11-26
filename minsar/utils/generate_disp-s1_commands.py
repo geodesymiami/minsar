@@ -83,8 +83,8 @@ def create_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument("template", help="MinSAR template file")
-    parser.add_argument("--start-date", metavar="DATE", help="ssaraopt.startDate: YYYY-MM-DD or YYYYMMDD (e.g. 20230101)")
-    parser.add_argument("--end-date", metavar="DATE", help="ssaraopt.endDate: YYYY-MM-DD or YYYYMMDD (e.g. 20241231)")
+    parser.add_argument("--start-date", metavar="DATE", help="asf.startDate: YYYY-MM-DD or YYYYMMDD (e.g. 20230101)")
+    parser.add_argument("--end-date", metavar="DATE", help="asf.endDate: YYYY-MM-DD or YYYYMMDD (e.g. 20241231)")
     parser.add_argument("--frame-id", type=int, metavar="ID", help="DISP-S1 frame ID (default: largest-overlap frame for AOI, track, and pass)")
     parser.add_argument("--url-type", choices=("HTTPS", "S3"), default="HTTPS", help="opera-utils download URL type (default: HTTPS)")
     parser.add_argument("--reference-method", type=normalize_reference_method, default=DEFAULT_REFERENCE_METHOD, metavar="METHOD", help="opera-utils disp-s1-reformat reference (default: HIGH_COHERENCE)")
@@ -383,8 +383,8 @@ def _params_from_template(
 
     subset_lalo = subset_lalo_from_options(options)
     bbox = bbox_wsene(subset_lalo)
-    start = iso_date(options.get("ssaraopt.startDate"), default=S1_START_DEFAULT)
-    end = iso_date(options.get("ssaraopt.endDate"), default=date.today().strftime("%Y-%m-%d"))
+    start = iso_date(options.get("asf.startDate"), default=S1_START_DEFAULT)
+    end = iso_date(options.get("asf.endDate"), default=date.today().strftime("%Y-%m-%d"))
     if start_date:
         start = cli_date_to_iso(start_date)
     if end_date:

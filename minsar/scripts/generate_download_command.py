@@ -9,6 +9,7 @@ from minsar.objects.dataset_template import Template
 from minsar.objects import message_rsmas
 from minsar.objects.auto_defaults import PathFind
 from minsar.utils import process_utilities as putils
+from minsar.utils.sar_platform import search_key, search_option
 
 pathObj = PathFind()
 inps = None
@@ -96,7 +97,7 @@ def generate_download_command(template,inps):
 
     dataset_template = Template(template)
     dataset_template.options.update(pathObj.correct_for_ssara_date_format(dataset_template.options))
-    template_exclude_season = dataset_template.options.get('ssaraopt.excludeSeason')
+    template_exclude_season = search_option(dataset_template.options, 'excludeSeason')
     if template_exclude_season:
         template_exclude_season = template_exclude_season.strip().strip("'\"")
     effective_exclude_season = inps.exclude_season if inps.exclude_season else template_exclude_season
@@ -106,7 +107,7 @@ def generate_download_command(template,inps):
     if 'end' not in ssaraopt_dict:
         ssaraopt_dict['end'] = '2099-12-31'
 
-    if any(option.startswith('ssaraopt.intersectsWith') for option in dataset_template.get_options()):
+    if any(option.startswith(search_key(dataset_template.options, 'intersectsWith')) for option in dataset_template.get_options()):
        intersects_string = f"--intersectsWith={ssaraopt_dict['intersectsWith']}"
     else:
        intersects_string = putils.generate_intersects_string(dataset_template, delta_lat=inps.delta_lat, delta_lon=inps.delta_lon)
@@ -126,7 +127,7 @@ def generate_download_command(template,inps):
     is_alos2 = putils.is_alos2_template(dataset_template.get_options())
 
     # create download_ssara_bash.cmd (one line per collection when multiple collections)
-    raw_collections = dataset_template.options.get('ssaraopt.collectionName', '').strip("'\"")
+    raw_collections = search_option(dataset_template.options, 'collectionName', '').strip("'\"")
     collection_names = [c.strip() for c in raw_collections.split(',') if c.strip()]
 
     if is_alos2:
@@ -210,9 +211,9 @@ def generate_download_command(template,inps):
     asf_burst_download_opts = ['--processingLevel=BURST'] + asf_ssaraopt + [f'--dir={burst_dir}']
     if effective_exclude_season:
         asf_burst_download_opts.append(f"--exclude-season={effective_exclude_season}")
-    rel_orbit = dataset_template.options.get('ssaraopt.relativeOrbit', '')
-    start_date = _to_iso_date(dataset_template.options.get('ssaraopt.startDate', '2000-01-01'))
-    end_date = _to_iso_date(dataset_template.options.get('ssaraopt.endDate', '2099-12-31'))
+    rel_orbit = search_option(dataset_template.options, 'relativeOrbit', '')
+    start_date = _to_iso_date(search_option(dataset_template.options, 'startDate', '2000-01-01'))
+    end_date = _to_iso_date(search_option(dataset_template.options, 'endDate', '2099-12-31'))
     extent_args = ' '.join(str(x) for x in extent_list)  # W S E N (lon lat lon lat)
     with open('download_burst2safe.sh', 'w') as f:
         f.write(f"#!/usr/bin/env bash\n")

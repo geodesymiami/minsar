@@ -2,12 +2,11 @@
 processor               = isce
 cleanopt                = 0
 #ssaraopt            = --platform=ALOS-2 --beamMode=SM3 --r 89 --collection="WInSAR JAXA mpoland_1223"
-ssaraopt.platform       = ALOS-2
-ssaraopt.beamMode       = SM3
-ssaraopt.relativeOrbit  = 89
-ssaraopt.collectionName = "WInSAR JAXA mpoland_1223"
-ssaraopt.startDate      = 20141201
-ssaraopt.endDate        = 20150401
+asf.platform            = ALOS-2
+asf.beamMode            = SM3
+asf.relativeOrbit       = 89
+asf.startDate           = 20141201
+asf.endDate             = 20150401
 ##################### ISCE OPTIONS ####################
 
 ####### ISCE OPTIONS ##############################

@@ -23,7 +23,7 @@ def _load_create_template():
 ct = _load_create_template()
 
 _DUMMY = (
-    "ssaraopt.relativeOrbit = 1\n"
+    "asf.relativeOrbit = 1\n"
     "mintpy.troposphericDelay.method    = auto\n"
     "minsar.insarmaps_dataset             = filt*DS\n"
 )

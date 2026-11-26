@@ -30,8 +30,8 @@ _EXAMPLES = """Examples:
 
 
 def _is_alos2(options: dict[str, str]) -> bool:
-    """True when ssaraopt.platform (or stripmapStack.sensor) is ALOS2."""
-    raw = options.get("ssaraopt.platform", "")
+    """True when asf.platform (or stripmapStack.sensor) is ALOS2."""
+    raw = options.get("asf.platform", "")
     token = raw.split()[0].upper().replace("-", "") if raw else ""
     if token and token != "NONE":
         return token == "ALOS2"
@@ -48,7 +48,7 @@ def _defaults_path(template_text: str) -> Path:
 
 
 # Prefix order follows the blocks in the processing skeletons. aoi is first; minsarApp flags are last.
-_GROUP_ORDER = ("ssaraopt", "alos2Stack", "topsStack", "mintpy", "miaplpy", "minsar")
+_GROUP_ORDER = ("asf", "ssaraopt", "alos2Stack", "topsStack", "mintpy", "miaplpy", "minsar")
 _LAUNCHER_FIRST = ("aoi",)
 _LAUNCHER_LAST = ("options", "defaults")
 

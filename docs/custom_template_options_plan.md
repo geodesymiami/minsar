@@ -64,7 +64,7 @@ minsarApp.bash -8.326:-8.194,117.942:118.069 Tambora --flight-dir desc --templat
 minsarApp.bash -8.326:-8.194,117.942:118.069 Tambora --flight-dir desc
 ```
 
-[`minsar/scripts/create_template.py`](../minsar/scripts/create_template.py) copies [`minsar/defaults/processing.template`](../minsar/defaults/processing.template) and replaces `ssaraopt.relativeOrbit`, `miaplpy.subset.lalo`, dates, and `topsStack.coregistration` from the AOI and coverage. Looks, network, coherence defaults, upload flags, and the other lines in the defaults file are kept. Orbit and subset values that are only examples in that file are not left on Tambora.
+[`minsar/scripts/create_template.py`](../minsar/scripts/create_template.py) copies [`minsar/defaults/processing.template`](../minsar/defaults/processing.template) and replaces `asf.relativeOrbit`, `miaplpy.subset.lalo`, dates, and `topsStack.coregistration` from the AOI and coverage. Looks, network, coherence defaults, upload flags, and the other lines in the defaults file are kept. Orbit and subset values that are only examples in that file are not left on Tambora.
 
 A change in `processing.template` applies to the next run that copies that file. An AOI command that writes a template, and every `run_minsar.bash` run, copy the file as it is now, then the custom section overrides any key it lists. `minsarApp.bash $TE/GalapagosSenA106.template` does not read the defaults file, so an existing `$TE` template keeps its own lines. A value already saved in the custom file keeps winning after the defaults file changes, including when that saved value was the old default.
 
@@ -101,7 +101,7 @@ mintpy.unwrapError.method = bridging+phase_closure
 # mintpy.networkInversion.minTempCoh = 0.7
 ```
 
-Allowed template prefixes: `mintpy.`, `miaplpy.`, `minsar.`, `topsStack.`, `ssaraopt.`. A duplicate section name is an error. In the user's file the Galapagos unwrap line is active. Date and coherence lines stay commented until real values are filled in. The committed example has every line commented.
+Allowed template prefixes: `mintpy.`, `miaplpy.`, `minsar.`, `topsStack.`, `stripmapStack.`, `alos2Stack.`, `asf.`, `ssaraopt.`. A duplicate section name is an error. In the user's file the Galapagos unwrap line is active. Date and coherence lines stay commented until real values are filled in. The committed example has every line commented.
 
 [`minsar/bin/minsarApp.bash`](../minsar/bin/minsarApp.bash) calls [`minsar/utils/custom_template_options.py`](../minsar/utils/custom_template_options.py) after argument parsing and before the existing CLI patches (`--exclude-dates`, `--miaplpy.load.startDate`, `--miaplpy.load.endDate`). The loader uses the lookup order above. CLI flags still win for that run. The loader is executable and has `--help`.
 
@@ -180,7 +180,7 @@ minsarApp.bash -1.6:1.7,-92.0:-89.0 Galapagos --flight-dir asc --template-dir $A
 
 Those flags match `minsarApp.bash CerroAzulSenA106.template --no-mintpy --miaplpy` and `minsarApp.bash $TE/GalapagosSenA106.template`. `TamboraSenD134` parses as project `Tambora` and `--flight-dir desc`. `qqGalapagosSenA106` parses as project `qqGalapagos` and `--flight-dir asc`, and takes `aoi` and `options` from section `GalapagosSenA106` when that header is the longest one contained in the name. A name without `SenA` or `SenD`, or a match with no `aoi`, is an error.
 
-Flags between one dataset name and the next name apply only to that dataset. They are appended after that section's `options` and passed through to `minsarApp.bash`, which already sends `--start-date` to `create_template` (`ssaraopt.startDate`, `YYYYMMDD` or `YYYY-MM-DD`).
+Flags between one dataset name and the next name apply only to that dataset. They are appended after that section's `options` and passed through to `minsarApp.bash`, which already sends `--start-date` to `create_template` (`asf.startDate`, `YYYYMMDD` or `YYYY-MM-DD`).
 
 ```bash
 run_minsar.bash GalapagosSenA106 --start-date 20260101

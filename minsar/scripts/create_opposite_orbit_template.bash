@@ -13,7 +13,7 @@ usage() {
 Usage: create_opposite_orbit_template.bash [options] TEMPLATE_PATH
 
 Copy TEMPLATE_PATH into the output directory and rename the basename so the orbit label
-matches the complementary pass (asc vs desc) for the same AOI. Updates ssaraopt.relativeOrbit
+matches the complementary pass (asc vs desc) for the same AOI. Updates asf.relativeOrbit
 to the opposite pass relative orbit number.
 
 Options:
@@ -180,11 +180,11 @@ mkdir -p "$outdir"
 out_file="${outdir}/${out_base}.template"
 cp -f "$template_path" "$out_file"
 
-# Update ssaraopt.relativeOrbit on non-comment lines (first number after =).
+# Update relativeOrbit on non-comment lines (first number after =).
 tmp="${out_file}.$$"
 awk -v rorb="$opposite_relorbit" '
     /^[[:space:]]*#/ { print; next }
-    /^[[:space:]]*ssaraopt\.relativeOrbit[[:space:]]*=/ {
+    /^[[:space:]]*(asf|ssaraopt)\.relativeOrbit[[:space:]]*=/ {
         sub(/=[[:space:]]*[0-9]+/, "= " rorb)
     }
     { print }

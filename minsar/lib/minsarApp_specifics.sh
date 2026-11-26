@@ -1,7 +1,7 @@
 #set -eo pipefail
 ###################################################################################
 function create_template_array() {
-mapfile -t array < <(grep -e ^ssaraopt -e ^minsar -e ^mintpy -e ^miaplpy -e ^topsStack -e ^stripmapStack -e ^alos2Stack -e ^acquisition_mode -e ^raw_image_dir "$1")
+mapfile -t array < <(grep -e '^asf\.' -e ^ssaraopt -e ^minsar -e ^mintpy -e ^miaplpy -e ^topsStack -e ^stripmapStack -e ^alos2Stack -e ^acquisition_mode -e ^raw_image_dir "$1")
 declare -gA template
 for item in "${array[@]}"; do
   #echo "item: <$item>"
@@ -21,6 +21,46 @@ for item in "${array[@]}"; do
   fi
 unset IFS
 done
+set_search_prefix "$1"
+}
+
+###########################################
+# True for a platform served by ASF (Sentinel-1, ALOS, NISAR).
+function platform_is_asf() {
+    local raw="${1:-}"
+    raw="${raw%%#*}"
+    raw="${raw//,/ }"
+    local token
+    read -r token _ <<< "$raw"
+    token=$(printf '%s' "$token" | tr '[:lower:]' '[:upper:]' | tr -d '_-')
+    [[ "$token" == SENTINEL1* || "$token" == S1* || "$token" == ALOS* || "$token" == NISAR* ]]
+}
+
+###########################################
+# Sets search_prefix: asf for ASF platforms, ssaraopt for the ones downloaded with ssara.
+function set_search_prefix() {
+    local file="$1" key has_asf=0 has_ssaraopt=0 platform
+    for key in "${!template[@]}"; do
+        [[ "$key" == asf.* ]] && has_asf=1
+        [[ "$key" == ssaraopt.* ]] && has_ssaraopt=1
+    done
+    if [[ $has_asf == 1 && $has_ssaraopt == 1 ]]; then
+        echo "Error: both asf.* and ssaraopt.* options in $file" >&2
+        exit 1
+    fi
+    search_prefix="asf"
+    [[ $has_ssaraopt == 1 ]] && search_prefix="ssaraopt"
+    platform="${template[${search_prefix}.platform]:-}"
+    [[ -z "$platform" ]] && return 0
+    if [[ $search_prefix == "ssaraopt" ]] && platform_is_asf "$platform"; then
+        echo "Error: ssaraopt.* is not valid for ASF platform $platform (asf.* expected): $file" >&2
+        exit 1
+    fi
+    if [[ $search_prefix == "asf" ]] && ! platform_is_asf "$platform"; then
+        echo "Error: asf.* is not valid for platform $platform (ssaraopt.* expected): $file" >&2
+        exit 1
+    fi
+    return 0
 }
 
 ###########################################
@@ -562,9 +602,9 @@ function list_merged_slc_yyyymmdd_dates() {
 
 ###########################################
 function get_exclude_season_suffix() {
-# If template[ssaraopt.excludeSeason] is set as MMDD-MMDD, echo "_exMMDD-MMDD"; else echo "".
+# If template[${search_prefix:-asf}.excludeSeason] is set as MMDD-MMDD, echo "_exMMDD-MMDD"; else echo "".
 # Used by get_miaplpy_dir_name / get_mintpy_dir_name. Does not scan merged/SLC.
-    local season="${template[ssaraopt.excludeSeason]:-}"
+    local season="${template[${search_prefix:-asf}.excludeSeason]:-}"
     season="${season#"${season%%[![:space:]]*}"}"
     season="${season%"${season##*[![:space:]]}"}"
     if [[ -z "$season" || "$season" == "auto" ]]; then
@@ -652,7 +692,7 @@ function get_date_str() {
 ###########################################
 function get_miaplpy_dir_name() {
 # assign miaplpyDir.Addition  lalo,dirname or 'miaplpy' for 'auto'
-# Appends _exMMDD-MMDD when ssaraopt.excludeSeason is set (template only; not from disk).
+# Appends _exMMDD-MMDD when excludeSeason is set (template only; not from disk).
 # Appends get_product_suffix (minsar.product.suffix) after that.
 date_str=$(get_date_str)
 if [ -z ${template[minsar.miaplpyDir.addition]} ] || [ ${template[minsar.miaplpyDir.addition]} == "auto" ]; then
@@ -687,7 +727,7 @@ function get_looks_str() {
 # <azimuthLooks>_<rangeLooks> of the ISCE stack, for the MintPy directory name.
 # auto or unset gives the default: alos2Stack 28_5 (ISCE ScanSAR), topsStack and stripmapStack from minsar_template_defaults.cfg.
 local prefix="topsStack" azimuth range name value
-if platform_is_alos2 "${template[ssaraopt.platform]:-}"; then
+if platform_is_alos2 "${template[asf.platform]:-}"; then
     prefix="alos2Stack"
 elif [[ -z "${template[topsStack.azimuthLooks]:-}${template[topsStack.rangeLooks]:-}" && -n "${template[stripmapStack.azimuthLooks]:-}${template[stripmapStack.rangeLooks]:-}" ]]; then
     prefix="stripmapStack"
@@ -709,7 +749,7 @@ echo "${azimuth}_${range}"
 function get_mintpy_dir_name() {
 # assign mintpyDir.addition  lalo, date, name, or 'mintpy' for 'auto'
 # date, lalo and name carry the looks: mintpy_<azimuthLooks>_<rangeLooks>_... (get_looks_str)
-# Appends _exMMDD-MMDD when ssaraopt.excludeSeason is set (template only; not from disk).
+# Appends _exMMDD-MMDD when excludeSeason is set (template only; not from disk).
 # Appends get_product_suffix (minsar.product.suffix) after that.
 date_str=$(get_date_str)
 if [ -z ${template[minsar.mintpyDir.addition]} ] || [ ${template[minsar.mintpyDir.addition]} == "auto" ]; then

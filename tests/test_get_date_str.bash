@@ -71,7 +71,7 @@ test_exclude_season_suffix_empty() {
 
 test_exclude_season_suffix_set() {
     declare -gA template=()
-    template[ssaraopt.excludeSeason]="0101-0630"
+    template[asf.excludeSeason]="0101-0630"
     local out
     out=$(get_exclude_season_suffix)
     assert_equals "_ex0101-0630" "$out" "Valid excludeSeason -> _exMMDD-MMDD"
@@ -79,7 +79,7 @@ test_exclude_season_suffix_set() {
 
 test_exclude_season_suffix_invalid() {
     declare -gA template=()
-    template[ssaraopt.excludeSeason]="bad"
+    template[asf.excludeSeason]="bad"
     local out
     out=$(get_exclude_season_suffix)
     assert_equals "" "$out" "Invalid excludeSeason -> empty suffix"
@@ -93,7 +93,7 @@ test_miaplpy_dir_name_auto_with_season() {
     template[minsar.miaplpyDir.addition]="auto"
     template[miaplpy.load.startDate]="auto"
     template[miaplpy.load.endDate]="auto"
-    template[ssaraopt.excludeSeason]="0101-0630"
+    template[asf.excludeSeason]="0101-0630"
     local out
     out=$(get_miaplpy_dir_name)
     assert_equals "miaplpy_ex0101-0630" "$out" "auto + season"
@@ -107,7 +107,7 @@ test_miaplpy_dir_name_date_with_season() {
     template[minsar.miaplpyDir.addition]="date"
     template[miaplpy.load.startDate]="auto"
     template[miaplpy.load.endDate]="auto"
-    template[ssaraopt.excludeSeason]="0101-0630"
+    template[asf.excludeSeason]="0101-0630"
     local out
     out=$(get_miaplpy_dir_name)
     assert_equals "miaplpy_201411_202606_ex0101-0630" "$out" "date + season"
@@ -134,7 +134,7 @@ test_mintpy_dir_name_date_with_season() {
     template[minsar.mintpyDir.addition]="date"
     template[miaplpy.load.startDate]="auto"
     template[miaplpy.load.endDate]="auto"
-    template[ssaraopt.excludeSeason]="0101-0630"
+    template[asf.excludeSeason]="0101-0630"
     local out
     out=$(get_mintpy_dir_name)
     assert_equals "mintpy_3_9_201411_202606_ex0101-0630" "$out" "mintpy date + default tops looks + season"
@@ -172,7 +172,7 @@ test_mintpy_dir_name_looks_alos2() {
     template[miaplpy.load.startDate]="auto"
     template[miaplpy.load.endDate]="auto"
     template[minsar.mintpyDir.addition]="date"
-    template[ssaraopt.platform]="ALOS2"
+    template[asf.platform]="ALOS2"
     template[alos2Stack.azimuthLooks]="auto"
     template[alos2Stack.rangeLooks]="auto"
     local out

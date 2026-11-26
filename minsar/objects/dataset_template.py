@@ -1,6 +1,8 @@
 import os
 import sys
 
+from minsar.utils.sar_platform import search_prefix
+
 
 class Template:
     """ Template object encapsulates a dictionary of template options.
@@ -108,8 +110,9 @@ class Template:
         # utilizes the general ssaraopt option or throws an exception
         # (likely an invalid template file in that case).
 
-        #ssaraopt_keys = ['ssaraopt.platform', 'ssaraopt.relativeOrbit']
-        ssaraopt_keys = ['ssaraopt.relativeOrbit']                          # FA 12/2022  removed because ssaraopt.platform="TERRASAR-X 1" or similar did not work
+        # asf.* or ssaraopt.*, depending on the platform
+        prefix = search_prefix(self.options, self.options.get('dataset', 'template'))
+        ssaraopt_keys = [f'{prefix}.relativeOrbit']
 
         bad_key = False
         for key in ssaraopt_keys:
@@ -118,53 +121,48 @@ class Template:
                 if 'ssaraopt' in self.options:
                     ssaraopt = self.options['ssaraopt']
                 else:
-                    raise Exception('no ssaraopt, relativeOrbit found')
+                    raise Exception(f'no {prefix}.relativeOrbit found')
 
         # If all of the keys are present go ahead and generate the ssaraopt string as normal.
         if not bad_key:
-            relativeOrbit = self.options['ssaraopt.relativeOrbit']
+            relativeOrbit = self.options[f'{prefix}.relativeOrbit']
             ssaraopt = ' --relativeOrbit={}'.format(relativeOrbit)
-            #platform = self.options['ssaraopt.platform']
-            #ssaraopt = '--platform={} --relativeOrbit={}'.format(platform, relativeOrbit)
-            if 'ssaraopt.platform' in self.options.keys():
-                platform = self.options['ssaraopt.platform']
+            if f'{prefix}.platform' in self.options.keys():
+                platform = self.options[f'{prefix}.platform']
                 ssaraopt += ' --platform={}'.format(platform)
-            if 'ssaraopt.collectionName' in self.options.keys():
-                collectionName = self.options['ssaraopt.collectionName']
-                # ssaraopt += ' --collectionName={}'.format(collectionName)
+            if f'{prefix}.collectionName' in self.options.keys():
+                collectionName = self.options[f'{prefix}.collectionName']
                 ssaraopt += f" --collectionName='{collectionName}'"
-            if 'ssaraopt.beamMode' in self.options.keys():
-                beamMode = self.options['ssaraopt.beamMode']
+            if f'{prefix}.beamMode' in self.options.keys():
+                beamMode = self.options[f'{prefix}.beamMode']
                 ssaraopt += ' --beamMode={}'.format(beamMode)
-            if 'ssaraopt.flightDirection' in self.options.keys():
-                flightDirection = self.options['ssaraopt.flightDirection']
+            if f'{prefix}.flightDirection' in self.options.keys():
+                flightDirection = self.options[f'{prefix}.flightDirection']
                 ssaraopt += ' --flightDirection={}'.format(flightDirection)
-            if 'ssaraopt.beamSwath' in self.options.keys():
-                beamSwath = self.options['ssaraopt.beamSwath']
+            if f'{prefix}.beamSwath' in self.options.keys():
+                beamSwath = self.options[f'{prefix}.beamSwath']
                 ssaraopt += ' --beamSwath={}'.format(beamSwath)
-            if 'ssaraopt.frame' in self.options.keys():
-                frame = self.options['ssaraopt.frame']
+            if f'{prefix}.frame' in self.options.keys():
+                frame = self.options[f'{prefix}.frame']
                 ssaraopt += ' --frame={}'.format(frame)
-            if 'ssaraopt.startDate' in self.options:
-                startDate = self.options['ssaraopt.startDate']
+            if f'{prefix}.startDate' in self.options:
+                startDate = self.options[f'{prefix}.startDate']
                 ssaraopt += ' --start={}'.format(startDate)
-            if 'ssaraopt.endDate' in self.options:
-                endDate = self.options['ssaraopt.endDate']
+            if f'{prefix}.endDate' in self.options:
+                endDate = self.options[f'{prefix}.endDate']
                 ssaraopt += ' --end={}'.format(endDate)
-            if 'ssaraopt.intersectsWith' in self.options:
-                intersectsWith = self.options['ssaraopt.intersectsWith']
+            if f'{prefix}.intersectsWith' in self.options:
+                intersectsWith = self.options[f'{prefix}.intersectsWith']
                 ssaraopt += f" --intersectsWith='{intersectsWith}'"
-            if 'ssaraopt.intersectsWithPoint' in self.options:
-                intersectsWithPoint = self.options['ssaraopt.intersectsWithPoint']
+            if f'{prefix}.intersectsWithPoint' in self.options:
+                intersectsWithPoint = self.options[f'{prefix}.intersectsWithPoint']
                 ssaraopt += """ --intersectsWith='POINT({})'""".format(intersectsWithPoint)
-            if 'ssaraopt.parallel' in self.options:
-                parallel = self.options['ssaraopt.parallel']
+            if f'{prefix}.parallel' in self.options:
+                parallel = self.options[f'{prefix}.parallel']
             else:
                  parallel = 6
             ssaraopt += ' --parallel={}'.format(parallel)
 
-            #this was in Josh's code (above the ssaraopt assignment) but unclear  what it does
-            #parallel_download = self.options.get("ssaraopt.parallelDownload", '30')
             ssaraopt_dict = {}
             for item in ssaraopt.split('--'):
                 item = item.strip()

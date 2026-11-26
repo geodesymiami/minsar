@@ -5,10 +5,10 @@ email_mintpy                        = famelung@rsmas.miami.edu
 email_insarmaps                     = famelung@rsmas.miami.edu
 ####################
 every_day_flag                      = yes                                                                                                 
-ssaraopt.platform                   = SENTINEL-1A,SENTINEL-1B
-ssaraopt.relativeOrbit              = 47 
-ssaraopt.startDate                  = 20180101 
-ssaraopt.endDate                    = 20180331 
+asf.platform                        = SENTINEL-1A,SENTINEL-1B
+asf.relativeOrbit                   = 47 
+asf.startDate                       = 20180101 
+asf.endDate                         = 20180331 
 insarmaps_flag                      = False
 image_products_flag                 = True
 cleanopt                            = 0

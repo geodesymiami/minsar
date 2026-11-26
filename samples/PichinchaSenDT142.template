@@ -1,10 +1,10 @@
 #######################################################
 processor                             = isce
 cleanopt                              = 0
-ssaraopt.platform                     = SENTINEL-1A,SENTINEL-1B
-ssaraopt.startDate                    = 20160417
-ssaraopt.endDate                      = 20180101
-ssaraopt.relativeOrbit                = 142
+asf.platform                          = SENTINEL-1A,SENTINEL-1B
+asf.startDate                         = 20160417
+asf.endDate                           = 20180101
+asf.relativeOrbit                     = 142
 topsStack.boundingBox                 = -0.3 0.1 -78.7 -78.4
 topsStack.subswath                    = 3
 topsStack.numConnections              = 3

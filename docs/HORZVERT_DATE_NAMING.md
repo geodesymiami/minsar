@@ -17,7 +17,7 @@ The source is the sorted `merged/SLC/YYYYMMDD` directory list after applying
 `miaplpy.load.startDate` and `miaplpy.load.endDate`. Non-date directories are
 ignored. The calculation does not inspect the final MintPy or MiaplPy time
 series, interferogram network, HE5, or dates rejected later in processing.
-`ssaraopt.startDate` and `ssaraopt.endDate` affect the label only indirectly by
+`asf.startDate` and `asf.endDate` affect the label only indirectly by
 controlling which SLC directories are available.
 
 An important current detail is that both `get_miaplpy_dir_name()` and

@@ -1,9 +1,9 @@
 ######################################################
-ssaraopt.platform                    = SENTINEL-1  # [Sentinel-1 / ALOS2 / RADARSAT2 / TerraSAR-X / COSMO-Skymed]
-ssaraopt.relativeOrbit               = 109
-ssaraopt.startDate                   = 20141001  # YYYYMMDD
-ssaraopt.endDate                     = auto  # YYYYMMDD
-#ssaraopt.excludeSeason              = 1015-0615    # exclude data between Oct 15 and June 15
+asf.platform                         = SENTINEL-1  # [Sentinel-1 / ALOS2 / RADARSAT2 / TerraSAR-X / COSMO-Skymed]
+asf.relativeOrbit                    = 109
+asf.startDate                        = 20141001  # YYYYMMDD
+asf.endDate                          = auto  # YYYYMMDD
+#asf.excludeSeason                   = 1015-0615    # exclude data between Oct 15 and June 15
 ######################################################
 topsStack.subswath                   = 1 2 3 # '1 2'
 topsStack.numConnections             = 4    # comment
@@ -18,7 +18,7 @@ minsar.mintpyDir.addition            = date  #[name / lalo / no] auto for no (mi
 mintpy.compute.cluster               = local #[local / slurm / pbs / lsf / none], auto for none, cluster type
 mintpy.compute.numWorker             = 48 #[int > 1 / all], auto for 4 (local) or 40 (non-local), num of workers
 mintpy.plot.maxMemory                = 0.2  #[float], auto for 4, max memory used by one call of view.py for plotting.
-mintpy.plot                          = no  #[yes / no], auto for yes; create_template may set yes if ssaraopt span <= 365 days
+mintpy.plot                          = no  #[yes / no], auto for yes; create_template may set yes if the download date span <= 365 days
 mintpy.networkInversion.parallel     = yes  #[yes / no], auto for no, parallel processing using dask
 mintpy.save.hdfEos5                  = yes   #[yes / update / no], auto for no, save timeseries to UNAVCO InSAR Archive format
 mintpy.save.hdfEos5.update           = yes   #[yes / no], auto for no, XXXXXXXX end date if last date is within 31 days of today

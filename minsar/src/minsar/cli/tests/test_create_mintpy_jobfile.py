@@ -38,8 +38,8 @@ class TestEffectiveTemplate(unittest.TestCase):
             td = Path(td)
             custom = td / "proj.template"
             custom.write_text(
-                "ssaraopt.startDate = 20230101\n"
-                "ssaraopt.endDate = 20241231\n"
+                "asf.startDate = 20230101\n"
+                "asf.endDate = 20241231\n"
                 "mintpy.plot = yes\n"
             )
             proc = td / "mintpy"
@@ -52,8 +52,8 @@ class TestEffectiveTemplate(unittest.TestCase):
             td = Path(td)
             custom = td / "proj.template"
             custom.write_text(
-                "ssaraopt.startDate = 20230101\n"
-                "ssaraopt.endDate = 20241231\n"
+                "asf.startDate = 20230101\n"
+                "asf.endDate = 20241231\n"
                 "mintpy.plot.maxMemory = auto\n"
             )
             proc = td / "mintpy"

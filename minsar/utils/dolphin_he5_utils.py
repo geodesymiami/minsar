@@ -411,10 +411,10 @@ def _orbit_from_project_config(dataset_dir: Path) -> dict:
     for tmpl in sorted(dataset_dir.glob("*.template")):
         text = tmpl.read_text(errors="replace")
         if "relative_orbit" not in out:
-            match = re.search(r"^\s*ssaraopt\.relativeOrbit\s*=\s*(\d+)", text, re.MULTILINE)
+            match = re.search(r"^\s*asf\.relativeOrbit\s*=\s*(\d+)", text, re.MULTILINE)
             if match:
                 out["relative_orbit"] = int(match.group(1))
-        for key in ("ssaraopt.flightDirection", "flightDirection", "orbitDirection"):
+        for key in ("asf.flightDirection", "flightDirection", "orbitDirection"):
             match = re.search(rf"^\s*{re.escape(key)}\s*=\s*(\S+)", text, re.MULTILINE | re.IGNORECASE)
             if not match:
                 continue

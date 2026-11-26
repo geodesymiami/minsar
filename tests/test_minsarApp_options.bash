@@ -89,7 +89,7 @@ write_template() {
     local coreg="$2"
     local workflow="${3:-interferogram}"
     cat > "$path" << EOF
-ssaraopt.platform               = SENTINEL-1A,SENTINEL-1B
+asf.platform               = SENTINEL-1A,SENTINEL-1B
 topsStack.coregistration        = $coreg
 topsStack.workflow              = $workflow
 minsar.upload_flag              = False

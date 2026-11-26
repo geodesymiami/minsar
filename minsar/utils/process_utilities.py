@@ -23,6 +23,7 @@ import xml.etree.ElementTree as ET
 import shutil
 from shapely import wkt as _wkt
 from minsar.objects.dataset_template import Template
+from minsar.utils.sar_platform import move_search_defaults, search_prefix
 from minsar.objects.auto_defaults import PathFind, queue_config_file
 from mintpy.utils import readfile
 import time, datetime
@@ -39,7 +40,7 @@ def _platform_token(value):
 
 def is_alos2_template(template):
     """True when the template selects ALOS-2 processing."""
-    platform = _platform_token(template.get('ssaraopt.platform', ''))
+    platform = _platform_token(template.get('asf.platform', ''))
     if platform not in ('', 'NONE'):
         return platform == 'ALOS2'
     return _platform_token(template.get('stripmapStack.sensor', '')) == 'ALOS2'
@@ -391,6 +392,7 @@ def create_default_template(temp_inps):
             else:
                 default_tempObj.options.update({each_key: os.path.expandvars(each_val.strip("'"))})
 
+    move_search_defaults(default_tempObj.options, search_prefix(custom_tempObj.options, inps.custom_template_file))
     inps.template = default_tempObj.options
     pathObj.set_isce_defaults(inps)
     # update default_temObj with custom_tempObj
@@ -486,8 +488,7 @@ def beautify_template_file(TEMP_FILE):
     f = open(TEMP_FILE, 'r')
     lines = f.readlines()
 
-    delimiter_list = ['ssaraopt' , 'topsStack', 'mintpy']
-    delimiter_list = ['ssaraopt' , 'topsStack', 'stripmapStack', 'mintpy']
+    delimiter_list = ['asf.', 'ssaraopt', 'topsStack', 'stripmapStack', 'mintpy']
 
     i = 0
     i_last_insert = 0

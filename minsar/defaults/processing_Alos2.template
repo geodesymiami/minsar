@@ -1,12 +1,11 @@
 ######################################################
-ssaraopt.platform                    = ALOS2  #[ALOS2 / ALOS-2], download and stack sensor
-ssaraopt.relativeOrbit               = 0  #[int], filled from coverage for the AOI
-ssaraopt.startDate                   = 20150208  #[YYYYMMDD], auto for no start limit; earlier ScanSAR has no burst overlap with later dates
-ssaraopt.endDate                     = auto  #[YYYYMMDD], auto for today
-ssaraopt.parallel                    = 6  #[int], auto for 6, parallel download queries
-#ssaraopt.excludeSeason               = 1015-0615  # MMDD-MMDD, exclude data between Oct 15 and June 15
-#ssaraopt.beamMode                    = SM3  #[SM1 / SM2 / SM3 / WD1 / ...], omit to search all beam modes
-#ssaraopt.collectionName              = ""  # ssara collection; omit to search ASF
+asf.platform                         = ALOS2  #[ALOS2 / ALOS-2], download and stack sensor
+asf.relativeOrbit                    = 0  #[int], filled from coverage for the AOI
+asf.startDate                        = 20150208  #[YYYYMMDD], auto for no start limit; earlier ScanSAR has no burst overlap with later dates
+asf.endDate                          = auto  #[YYYYMMDD], auto for today
+asf.parallel                         = 6  #[int], auto for 6, parallel download queries
+#asf.excludeSeason                    = 1015-0615  # MMDD-MMDD, exclude data between Oct 15 and June 15
+#asf.beamMode                         = SM3  #[SM1 / SM2 / SM3 / WD1 / ...], omit to search all beam modes
 ######################################################
 acquisition_mode                     = stripmap  #[stripmap], ALOS-2 stack prefix
 ######################################################
@@ -33,7 +32,7 @@ mintpy.compute.cluster               = local #[local / slurm / pbs / lsf / none]
 mintpy.compute.numWorker             = 48 #[int > 1 / all], auto for 4 (local) or 40 (non-local), num of workers
 mintpy.compute.maxMemory             = auto  #[float > 0.0], auto for 4, max memory to allocate in GB
 mintpy.plot.maxMemory                = 0.2  #[float], auto for 4, max memory used by one call of view.py for plotting.
-mintpy.plot                          = no  #[yes / no], auto for yes; create_template may set yes if ssaraopt span <= 365 days
+mintpy.plot                          = no  #[yes / no], auto for yes; create_template may set yes if the download date span <= 365 days
 mintpy.networkInversion.parallel     = yes  #[yes / no], auto for no, parallel processing using dask
 mintpy.save.hdfEos5                  = yes   #[yes / update / no], auto for no, save timeseries to UNAVCO InSAR Archive format
 mintpy.save.hdfEos5.update           = yes   #[yes / no], auto for no, XXXXXXXX end date if last date is within 31 days of today

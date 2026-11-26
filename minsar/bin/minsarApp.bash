@@ -45,7 +45,7 @@ helptext="                                                                      
                                  slc-unpack (ALOS-2): same, but run as a job (compute nodes download at about 110 MiB/s in total; see docs/download_alos2.md) \n\
    --delta-lat [DEG]     download larger error (default 0; bare --delta-lat: 0.2) \n\
    --minsar.excludeDates | --exclude-dates DATES  exclude YYYYMMDD scenes (comma-separated; merges with template) \n\
-   --start-date DATE | --end-date DATE   YYYYMMDD or YYYY-MM-DD. Writes ssaraopt and miaplpy.load dates; the omitted side becomes auto \n\
+   --start-date DATE | --end-date DATE   YYYYMMDD or YYYY-MM-DD. Writes asf (TSX, CSK: ssaraopt) and miaplpy.load dates; the omitted side becomes auto \n\
    --miaplpy.load.startDate | endDate DATE  YYYYMMDD; sets only the MiaplPy load window; the other load date becomes auto \n\
    --range-looks N | --azimuth-looks N   write the number of looks into the template (topsStack or alos2Stack by platform) \n\
                          also --rangeLooks, --topsStack.rangeLooks, --alos2Stack.rangeLooks (same for azimuth) \n\
@@ -531,10 +531,9 @@ if [[ -n "$cli_miaplpy_load_start" || -n "$cli_miaplpy_load_end" ]]; then
 fi
 # --start-date/--end-date also set the download window. --miaplpy.load.* does not.
 if [[ -n "$cli_start_date" || -n "$cli_end_date" ]]; then
-    ssara_start="${cli_start_date:-auto}"
-    ssara_end="${cli_end_date:-auto}"
-    run_command "set_template_assignment \"${template_file}\" ssaraopt.startDate ${ssara_start}"
-    run_command "set_template_assignment \"${template_file}\" ssaraopt.endDate ${ssara_end}"
+    create_template_array "$template_file"   # sets search_prefix (asf or ssaraopt)
+    run_command "set_template_assignment \"${template_file}\" ${search_prefix}.startDate ${cli_start_date:-auto}"
+    run_command "set_template_assignment \"${template_file}\" ${search_prefix}.endDate ${cli_end_date:-auto}"
 fi
 [[ ${#cli_looks_args[@]} -gt 0 ]] && run_command "set_template_looks.py \"${template_file}\" ${cli_looks_args[*]}"
 create_template_array "$template_file"
@@ -735,7 +734,7 @@ fi
 
 #############################################################
 # Value only. The usual Sentinel-1 line comments ALOS2, TerraSAR-X, and COSMO-Skymed.
-platform_str="${template[ssaraopt.platform]:-}"
+platform_str="${template[${search_prefix}.platform]:-}"
 platform_str="${platform_str%%#*}"
 platform_str="${platform_str#"${platform_str%%[![:space:]]*}"}"
 platform_str="${platform_str%"${platform_str##*[![:space:]]}"}"
@@ -757,8 +756,8 @@ if platform_is_alos2 "$platform_str"; then
     fi
 elif [[ $platform_str =~ COSMO-SKYMED|TERRASAR-X|ENVISAT ]]; then
     download_dir="$WORK_DIR/SLC_ORIG"
-    [[ $download_method == *burst2safe* ]] && download_method="ssara-bash"   # FA July 2026   Not sure why this was there. 
-    download_method="ssara-bash"
+    # minsar.remoteDataDir (rsync) takes precedence over ssara
+    [[ $download_method != "remote_data_dir" ]] && download_method="ssara-bash"
 else
     # Sentinel-1: bursts in BURST, full SLCs (slc, ssara, remote) in SLC
     case "$download_method" in
@@ -806,8 +805,8 @@ if [[ "$startstep" == "ifgram" || "$startstep" == "mintpy" || "$startstep" == "m
     orbit_download_flag=0
 fi
 
-# If ssaraopt.endDate is explicitly set to a non-auto value, skip orbit download.
-if [[ -v template[ssaraopt.endDate] && "${template[ssaraopt.endDate]}" != "auto" ]]; then
+# If endDate is explicitly set to a non-auto value, skip orbit download.
+if [[ -v template[${search_prefix}.endDate] && "${template[${search_prefix}.endDate]}" != "auto" ]]; then
     orbit_download_flag=0
 fi
 

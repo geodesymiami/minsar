@@ -11,7 +11,7 @@ if str(_REPO) not in sys.path:
 
 from minsar.scripts import update_looks_in_runfiles as ul  # noqa: E402
 
-TEMPLATE = "ssaraopt.platform = SENTINEL-1A\ntopsStack.azimuthLooks = 10\ntopsStack.rangeLooks = 40\n"
+TEMPLATE = "asf.platform = SENTINEL-1A\ntopsStack.azimuthLooks = 10\ntopsStack.rangeLooks = 40\n"
 MERGE = "mergeBursts : \nmultilook : True\nrange_looks : 15\nazimuth_looks : 5\n"
 UNW = "unwrap : \ndefomax : 2\nrlks : 15\nalks : 5\nmethod : whirlwind\n"
 ALOS2_RECT = "rect_range_offset.py -ref_date 200107 -nrlks1 1 -nalks1 14\n"
@@ -57,8 +57,8 @@ class TestUpdateLooksInRunfiles(unittest.TestCase):
             self.assertEqual(ul.main([str(work / "t.template"), "--work-dir", str(work), "--isce-start", "8"]), 1)
 
     def test_auto_looks_resolve_to_defaults(self):
-        self.assertEqual(ul.template_looks("ssaraopt.platform = SENTINEL-1A\n", "topsStack"), {"rangeLooks": 9, "azimuthLooks": 3})
-        self.assertEqual(ul.template_looks("ssaraopt.platform = ALOS2\nalos2Stack.rangeLooks = auto\n", "alos2Stack"),
+        self.assertEqual(ul.template_looks("asf.platform = SENTINEL-1A\n", "topsStack"), {"rangeLooks": 9, "azimuthLooks": 3})
+        self.assertEqual(ul.template_looks("asf.platform = ALOS2\nalos2Stack.rangeLooks = auto\n", "alos2Stack"),
                          {"rangeLooks": 5, "azimuthLooks": 28})
 
     def test_print_step(self):
@@ -77,7 +77,7 @@ class TestUpdateLooksInRunfiles(unittest.TestCase):
         work = Path(tmp)
         (work / "run_files" / "tasks").mkdir(parents=True)
         (work / "t.template").write_text(
-            f"ssaraopt.platform = ALOS2\nalos2Stack.rangeLooks = {range_looks}\nalos2Stack.azimuthLooks = {azimuth_looks}\n")
+            f"asf.platform = ALOS2\nalos2Stack.rangeLooks = {range_looks}\nalos2Stack.azimuthLooks = {azimuth_looks}\n")
         run = work / "run_files"
         (run / "run_11_rect_range_offset").write_text("bash tasks/run_11_rect_range_offset_200107-200204.bash\n")
         (run / "run_12_diff_look_filt").write_text("bash tasks/run_12_diff_look_filt_200107-200204.bash\n")

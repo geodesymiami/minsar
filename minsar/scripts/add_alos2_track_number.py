@@ -20,7 +20,7 @@ def add_alos2_track_number(template_file, work_dir):
     from minsar.objects.dataset_template import Template
 
     options = Template(str(template_file)).get_options()
-    track_number = _required_int(options, "ssaraopt.relativeOrbit")
+    track_number = _required_int(options, "asf.relativeOrbit")
     reference_date = _reference_yymmdd(options, work_dir)
     track_xml = Path(work_dir) / "dates_resampled" / reference_date / f"{reference_date}.track.xml"
     if not track_xml.is_file():
@@ -79,7 +79,7 @@ def _reference_yymmdd(options, work_dir="."):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        description="Write trackNumber into the reference ALOS-2 track XML from ssaraopt.relativeOrbit.",
+        description="Write trackNumber into the reference ALOS-2 track XML from asf.relativeOrbit.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
@@ -87,7 +87,7 @@ def main(argv=None):
             "  add_alos2_track_number.py --work-dir \"$PWD\" parCameroonAlos2D89.template"
         ),
     )
-    parser.add_argument("template", metavar="TEMPLATE", help="template with ssaraopt.relativeOrbit and alos2Stack.referenceDate")
+    parser.add_argument("template", metavar="TEMPLATE", help="template with asf.relativeOrbit and alos2Stack.referenceDate")
     parser.add_argument("--work-dir", default=".", metavar="DIR", help="directory that contains dates_resampled (default: .)")
     args = parser.parse_args(argv)
     template = Path(args.template)

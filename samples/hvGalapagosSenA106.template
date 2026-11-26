@@ -3,10 +3,10 @@
 # minsarApp.bash /work2/05861/tg851601/stampede2/code/rsmas_insar/samples/unittestGalapagosSenDT128.template --miaplpy --start dem
 ######################################################
 cleanopt                        = 0   # [ 0 / 1 / 2 / 3 / 4]   0,1: none 2: keep merged,geom_master,SLC 3: keep MINTPY 4: everything
-ssaraopt.platform               = SENTINEL-1A,SENTINEL-1B
-ssaraopt.relativeOrbit          = 106
-ssaraopt.startDate              = 20180301
-ssaraopt.endDate                = 20180615
+asf.platform                    = SENTINEL-1A,SENTINEL-1B
+asf.relativeOrbit               = 106
+asf.startDate                   = 20180301
+asf.endDate                     = 20180615
 minsar.upload_flag              = False      # [True / False / auto ], upload to jetstream (Default: True)
 minsar.insarmaps_flag           = False     # [True / False / auto ], ingest into insarmaps (Default: False)
 minsar.insarmaps_dataset        = DS       # [PS,DS,PSDS,geo,all], miaplpy dataset to ingest (Default: geo) (MintPy is always geo)

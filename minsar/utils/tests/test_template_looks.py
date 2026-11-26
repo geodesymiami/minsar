@@ -7,12 +7,12 @@ import unittest
 from minsar.utils import template_looks as tl
 
 S1 = (
-    "ssaraopt.platform = SENTINEL-1A,SENTINEL-1B\n"
+    "asf.platform = SENTINEL-1A,SENTINEL-1B\n"
     "topsStack.azimuthLooks          = 5    # comment\n"
     "topsStack.rangeLooks            = 15   # comment\n"
 )
 ALOS2 = (
-    "ssaraopt.platform                    = ALOS2  #[ALOS2 / ALOS-2]\n"
+    "asf.platform                    = ALOS2  #[ALOS2 / ALOS-2]\n"
     "alos2Stack.rangeLooks                = auto  #[int], final range looks\n"
     "alos2Stack.azimuthLooks              = auto  #[multiple of 14]\n"
 )
@@ -34,7 +34,7 @@ class TestTemplateLooks(unittest.TestCase):
         self.assertIn("topsStack.azimuthLooks          = 5    # comment\n", out)
 
     def test_missing_key_is_appended(self):
-        out, _ = tl.set_looks_in_template_text("ssaraopt.platform = SENTINEL-1A\n", range_looks=20, azimuth_looks=5)
+        out, _ = tl.set_looks_in_template_text("asf.platform = SENTINEL-1A\n", range_looks=20, azimuth_looks=5)
         self.assertIn("topsStack.rangeLooks = 20\n", out)
         self.assertIn("topsStack.azimuthLooks = 5\n", out)
 

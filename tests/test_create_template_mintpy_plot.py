@@ -26,9 +26,9 @@ ct = _load_create_template()
 class TestSubstituteMintpyPlot(unittest.TestCase):
     def test_span_short_writes_yes(self):
         dummy = (
-            "ssaraopt.relativeOrbit = 1\n"
-            "ssaraopt.startDate = 20141001\n"
-            "ssaraopt.endDate = auto\n"
+            "asf.relativeOrbit = 1\n"
+            "asf.startDate = 20141001\n"
+            "asf.endDate = auto\n"
             "topsStack.coregistration = NESD\n"
             "miaplpy.subset.lalo = 0:1,0:1\n"
             "mintpy.plot = no\n"
