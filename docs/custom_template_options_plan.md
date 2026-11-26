@@ -159,12 +159,9 @@ mintpy.unwrapError.method = bridging+phase_closure
 run_minsar.bash GalapagosSenD128 GalapagosSenA106 TamboraSenD134 CerroAzulSenA106
 ```
 
-Each section may also set `options`, the extra `minsarApp.bash` arguments for that dataset only. A missing or commented `options` line adds no extra flags.
-
 ```text
 [CerroAzulSenA106]
 aoi = S:N,W:E
-options = --no-mintpy --miaplpy
 
 [GalapagosSenA106]
 aoi = -1.6:1.7,-92.0:-89.0
@@ -180,7 +177,7 @@ minsarApp.bash -1.6:1.7,-92.0:-89.0 Galapagos --flight-dir asc --template-dir $A
 
 Those flags match `minsarApp.bash CerroAzulSenA106.template --no-mintpy --miaplpy` and `minsarApp.bash $TE/GalapagosSenA106.template`. `TamboraSenD134` parses as project `Tambora` and `--flight-dir desc`. `qqGalapagosSenA106` parses as project `qqGalapagos` and `--flight-dir asc`, and takes `aoi` and `options` from section `GalapagosSenA106` when that header is the longest one contained in the name. A name without `SenA` or `SenD`, or a match with no `aoi`, is an error.
 
-Flags between one dataset name and the next name apply only to that dataset. They are appended after that section's `options` and passed through to `minsarApp.bash`, which already sends `--start-date` to `create_template` (`asf.startDate`, `YYYYMMDD` or `YYYY-MM-DD`).
+Flags between one dataset name and the next name apply only to that dataset. They are passed through to `minsarApp.bash`, which already sends `--start-date` to `create_template` (`asf.startDate`, `YYYYMMDD` or `YYYY-MM-DD`).
 
 ```bash
 run_minsar.bash GalapagosSenA106 --start-date 20260101
@@ -210,12 +207,6 @@ save_custom_options.py $TE/TamboraSenD134.template
 Both files are read as assignments. A `#` line is ignored. Text after `#` on an assignment is ignored. Extra spaces around `=` do not matter. The last uncommented assignment for a key wins. Key order in `$TE` does not have to match `processing.template`.
 
 The section name is the template stem. The script replaces that section if it is already present. It writes `aoi` from `miaplpy.subset.lalo` and every template key whose value differs from [`minsar/defaults/processing.template`](../minsar/defaults/processing.template). Orbit, dates, and subset lines that `create_template` fills on every AOI run are not copied when they match that generated result. The custom-file path is `MINSAR_CUSTOM_OPTIONS` (the sample file unless `~/.minsar/user_env.bash` sets another path).
-
-`minsarApp` flags such as `--no-mintpy` are not stored in the template. Pass them to the save script to set the `options` line:
-
-```bash
-save_custom_options.py $TE/CerroAzulSenA106.template -- --no-mintpy --miaplpy
-```
 
 After that, `run_minsar.bash TamboraSenD134` uses `$ATE` and the saved section. `$TE/TamboraSenD134.template` stays where it is.
 

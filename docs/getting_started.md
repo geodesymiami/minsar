@@ -154,12 +154,11 @@ topsStack.azimuthLooks = 5
 topsStack.rangeLooks = 20
 mintpy.reference.lalo = -0.7,-90.95
 minsar.insarmaps_dataset = DS
-options = --no-mintpy --miaplpy
 ```
 
 - The section name is matched against the template name. `[GalapagosSenD128]` applies to that track only. `[Galapagos]` applies to every Galapagos track. If several sections match, the longest name wins.
 - Template keys are written into the `$ATE` template each time it is created, replacing the defaults.
-- `aoi` is the area, and `options` holds `minsarApp.bash` flags. With these two lines the dataset can be rerun by name alone: `run_minsar.bash GalapagosSenD128`
+- `aoi` is the area. With it the dataset can be rerun by name alone, with `minsarApp.bash` flags added on the command line when needed: `run_minsar.bash GalapagosSenD128`
 - Each key takes a single value without spaces. Key names are checked.
 
 ## 6. Keeping options you are happy with
@@ -170,11 +169,7 @@ A typical sequence for a new area:
 2. Look at the result and try other values on the command line, restarting from the step they affect: `minsarApp.bash $ATE/GalapagosSenD128.template --start mintpy --mintpy.reference.lalo -0.7,-90.95`
 3. When the options are right, save them: `save_custom_options.py $ATE/GalapagosSenD128.template`
 
-`save_custom_options.py` compares the template to the default template and writes every key that differs into the `[GalapagosSenD128]` section of your custom options file, together with the `aoi`. A section of that name that is already there is replaced. Track number and dates are not saved, because they are set anew on each AOI run. To also store `minsarApp.bash` flags, add them after `--`:
-
-```bash
-save_custom_options.py $ATE/GalapagosSenD128.template -- --no-mintpy --miaplpy
-```
+`save_custom_options.py` compares the template to the default template and writes every key that differs into the `[GalapagosSenD128]` section of your custom options file, together with the `aoi`. A section of that name that is already there is replaced. Track number and dates are not saved, because they are set anew on each AOI run.
 
 You can also edit the custom options file directly; a new section is just a `[Name]` line followed by `key = value` lines.
 

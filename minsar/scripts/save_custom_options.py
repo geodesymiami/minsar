@@ -24,8 +24,8 @@ from minsar.utils.custom_template_options import (
 )
 
 _EXAMPLES = """Examples:
-  save_custom_options.py $TE/TamboraSenD134.template
-  save_custom_options.py $TE/CerroAzulSenA106.template -- --no-mintpy --miaplpy
+  save_custom_options.py $ATE/TamboraSenD134.template
+  save_custom_options.py $TE/CerroAzulSenA106.template
 """
 
 
@@ -47,10 +47,10 @@ def _defaults_path(template_text: str) -> Path:
     return Path(__file__).resolve().parents[1] / "defaults" / name
 
 
-# Prefix order follows the blocks in the processing skeletons. aoi is first; minsarApp flags are last.
+# Prefix order follows the blocks in the processing skeletons. aoi is first.
 _GROUP_ORDER = ("asf", "ssaraopt", "alos2Stack", "topsStack", "mintpy", "miaplpy", "minsar")
 _LAUNCHER_FIRST = ("aoi",)
-_LAUNCHER_LAST = ("options", "defaults")
+_LAUNCHER_LAST = ("defaults",)
 
 
 def _prefix(key: str) -> str:
@@ -140,7 +140,7 @@ def _upsert_section(text: str, stem: str, block: str) -> str:
     return before + block + after
 
 
-def save(template: Path, options: str) -> Path:
+def save(template: Path) -> Path:
     custom = resolve_custom_path()
     if custom is None:
         raise FileNotFoundError(
@@ -159,8 +159,6 @@ def save(template: Path, options: str) -> Path:
         if defaults.get(key) == val and key not in SUBSET_LALO_KEYS:
             continue
         fields.append((key, val))
-    if options.strip():
-        fields.append(("options", options.strip()))
     key_order = {key: index for index, key in enumerate(defaults)}
     block = _section_text(template.stem, fields, key_order)
     previous = custom.read_text(encoding="utf-8") if custom.is_file() else ""
@@ -174,7 +172,7 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="save_custom_options.py",
         description=(
-            "Replace one dataset section from a finished template. A second run replaces that section, including its options line. "
+            "Replace one dataset section from a finished template. A second run replaces that section. "
             "Keys are compared to processing_Sentinel1.template or processing_Alos2.template. Order, extra spaces, and comments do not matter. "
             "aoi comes from miaplpy.subset.lalo, or mintpy.subset.lalo when that line is absent. "
             "Those subset lines are saved too. Orbit, dates, coregistration, alos2Stack.boundingBox, and mintpy.plot stay with create_template."
@@ -182,18 +180,14 @@ def _parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=_EXAMPLES,
     )
-    parser.add_argument("template", type=Path, help="finished template, usually under $TE")
-    parser.add_argument("options", nargs=argparse.REMAINDER, help="after --, minsarApp flags stored as the options line")
+    parser.add_argument("template", type=Path, help="finished template, under $ATE or $TE")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(sys.argv[1:] if argv is None else argv)
-    options = list(args.options)
-    if options[:1] == ["--"]:
-        options = options[1:]
     try:
-        save(args.template, " ".join(options))
+        save(args.template)
     except (OSError, ValueError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1

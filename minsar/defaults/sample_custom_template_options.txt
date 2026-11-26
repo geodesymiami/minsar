@@ -6,7 +6,6 @@
 
 # [CerroAzulSenA106]
 # aoi = S:N,W:E
-# options = --no-mintpy --miaplpy
 
 [GalapagosSenA106]
 aoi = -1.03:0.15,-91.65:-90.9

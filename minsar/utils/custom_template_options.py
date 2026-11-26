@@ -25,8 +25,8 @@ from minsar.utils.template_exclude_dates import apply_exclude_dates_to_template
 BEGIN = "# BEGIN custom_template_options"
 END = "# END custom_template_options"
 ALLOWED_PREFIXES = ("mintpy.", "miaplpy.", "minsar.", "topsStack.", "stripmapStack.", "alos2Stack.", "asf.", "ssaraopt.")
-LAUNCHER_KEYS = frozenset({"aoi", "options", "defaults"})
-FREEFORM_KEYS = frozenset({"aoi", "options"})
+LAUNCHER_KEYS = frozenset({"aoi", "defaults"})
+FREEFORM_KEYS = frozenset({"aoi"})
 EXCLUDE_KEYS = frozenset({"minsar.excludeDates", "topsStack.excludeDates"})
 # create_template rewrites these on every AOI run. aoi is also stored from subset.lalo.
 SKIP_SAVE_KEYS = frozenset(
@@ -313,9 +313,6 @@ def plan_commands(argv: list[str], template_dir: Path) -> list[str]:
             "--template-dir",
             str(template_dir),
         ]
-        options = section.get("options", "").strip()
-        if options:
-            cmd.extend(shlex.split(options))
         cmd.extend(flags)
         cmd.extend(global_flags)
         commands.append(shlex.join(cmd))
