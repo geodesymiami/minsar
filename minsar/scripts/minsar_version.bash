@@ -9,24 +9,19 @@ CONDA_ENV_DIR="${TOOLS_DIR}/miniforge3/envs/minsar"
 TESTED_VERSIONS_FILE="${REPO_ROOT}/setup/tested_versions.cfg"
 
 # name:kind:arg  (git: directory under tools/, conda: package, pip: distribution, dir: tools/ glob prefix)
-COMPONENTS=(
-    "isce2:conda:isce2"
-    "MintPy:git:MintPy"
-    "MiaplPy:git:MiaplPy"
-    "sardem:git:sardem"
-    "sarvey:git:sarvey"
-    "insarmaps_scripts:git:insarmaps_scripts"
-    "dolphin:git:dolphin"
-    "sweets:git:sweets"
-    "disp-s1:git:disp-s1"
-    "opera-utils:git:opera-utils"
+# Every git clone in tools/ is listed, so a newly installed tool needs no change here.
+COMPONENTS=("isce2-conda:conda:isce2")
+while IFS= read -r tool_name; do
+    COMPONENTS+=("${tool_name}:git:${tool_name}")
+done < <(for git_entry in "${TOOLS_DIR}"/*/.git; do [[ -e "$git_entry" ]] && basename "$(dirname "$git_entry")"; done | LC_ALL=C sort -f)
+COMPONENTS+=(
     "burst2safe:pip:burst2safe"
     "asf_search:pip:asf_search"
     "snaphu:dir:snaphu-v"
     "gdal:conda:gdal"
     "python:conda:python"
 )
-ONE_LINE_COMPONENTS=(isce2 MintPy MiaplPy)
+ONE_LINE_COMPONENTS=(isce2-conda MintPy MiaplPy)
 
 show_help() {
     cat <<EOF
@@ -38,7 +33,7 @@ A dependency that differs from setup/tested_versions.cfg is marked with *.
 options:
   -h, --help     show this help
   --short        MinSAR version only
-  --one-line     MinSAR, isce2, MintPy and MiaplPy on one line
+  --one-line     MinSAR, isce2 (conda), MintPy and MiaplPy on one line
   --components   dependencies as name=version lines
 
 Examples:
@@ -119,15 +114,15 @@ print_one_line() {
 
 print_report() {
     local entry name kind arg version tested
-    printf '%-18s %s\n' "minsar" "$(get_minsar_version)"
+    printf '%-24s %s\n' "minsar" "$(get_minsar_version)"
     for entry in "${COMPONENTS[@]}"; do
         IFS=: read -r name kind arg <<< "$entry"
         version=$(get_component_version "$kind" "$arg")
         tested=$(get_tested_version "$name")
         if [[ -n "$tested" && "$tested" != "$version" ]]; then
-            printf '%-18s %-28s * tested with %s\n' "$name" "$version" "$tested"
+            printf '%-24s %-28s * tested with %s\n' "$name" "$version" "$tested"
         else
-            printf '%-18s %s\n' "$name" "$version"
+            printf '%-24s %s\n' "$name" "$version"
         fi
     done
 }

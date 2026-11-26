@@ -77,8 +77,8 @@ Dependency versions are not part of the MinSAR number. They are reported next to
 
 | Component | Source |
 |---|---|
-| MintPy, MiaplPy, sardem, sarvey, insarmaps_scripts, dolphin, sweets, disp-s1, opera-utils | `git describe --tags --always` in `tools/<name>` |
-| isce2, gdal, python | version and build string from `conda-meta` of the `minsar` env |
+| every git clone in `tools/` (MintPy, MiaplPy, isce2, sardem, dolphin, ssara_client, ...) | `git describe --tags --always` in `tools/<name>`; a newly cloned tool is listed automatically |
+| isce2-conda, gdal, python | version and build string from `conda-meta` of the `minsar` env. `isce2-conda` is the ISCE2 that processing runs; `isce2` is the source clone in `tools/` |
 | burst2safe, asf_search | `dist-info` in site-packages |
 | snaphu | `tools/snaphu-v*` directory name |
 
@@ -87,10 +87,11 @@ Dependency versions are not part of the MinSAR number. They are reported next to
 `setup/tested_versions.cfg` holds the versions the last tag was tested with. It is written only by `tag_version.bash`. `minsarApp.bash --version` marks every component that differs from it:
 
 ```text
-minsar             0.5.0+14.g3b9984c7
-isce2              2.6.5-py312hb5ba3d1_0
-MintPy             v1.6.4-9-gabc1234            * tested with v1.6.4-5-gcc441486
-MiaplPy            V0.2.1-22-g0d5f4b0
+minsar                   0.5.0+14.g3b9984c7
+isce2-conda              2.6.5-py312hb5ba3d1_0
+isce2                    v2.6.5
+MiaplPy                  V0.2.1-22-g0d5f4b0
+MintPy                   v1.6.4-9-gabc1234            * tested with v1.6.4-5-gcc441486
 ```
 
 After updating a dependency, the `*` stays until a test run passes and a new tag records the new versions.
@@ -100,4 +101,4 @@ After updating a dependency, the `*` stays until a test run passes and a new tag
 ## 6. Where the version is recorded
 
 - `minsarApp.bash --version` (must be the first argument): full report.
-- `$WORK_DIR/log`: one line at each `minsarApp.bash` start, e.g. `# minsar 0.5.0+14.g3b9984c7 (isce2 2.6.5-py312hb5ba3d1_0, MintPy v1.6.4-5-gcc441486, MiaplPy V0.2.1-22-g0d5f4b0)`.
+- `$WORK_DIR/log`: one line at each `minsarApp.bash` start, e.g. `# minsar 0.5.0+14.g3b9984c7 (isce2-conda 2.6.5-py312hb5ba3d1_0, MintPy v1.6.4-5-gcc441486, MiaplPy V0.2.1-22-g0d5f4b0)`.
