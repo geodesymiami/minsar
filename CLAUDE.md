@@ -45,6 +45,7 @@ Commit after each code change, in the same turn, without being asked. Skip for q
 - `git add` explicit paths. No `git add -A` unless every change belongs in the commit.
 - Pass the message with a heredoc. Do not skip hooks. Do not push unless asked.
 - Never change git config. No force-push. No amend unless asked.
+- **Version tags** (rules in `docs/README_versioning.md`): after a commit that meets a tag trigger, suggest the tag in one line with the command, e.g. `Suggest tag (MINOR): tag_version.bash minor "support of X"`. Triggers: a new capability is complete; a CLI option, template key, script on `PATH` or output name was renamed or removed; a fix for wrong results; `conda-lock.yml` changed; MintPy/MiaplPy/ISCE2 updated or `additions/` rebased on a new upstream; just before a large refactor. Do not suggest one for internal renames, refactors, removed unused scripts, default or template tweaks. Also suggest one when `minsar_version.bash --short` shows more than about 50 commits since the last tag. Never create or push a tag unless asked.
 
 ## Chat output
 
