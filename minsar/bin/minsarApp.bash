@@ -64,6 +64,7 @@ helptext="                                                                      
    --sleep SECS           sleep seconds before running                           \n\
    --clean-start          rm -rf \$SCRATCHDIR/<project> then recreate work dir   \n\
    --queue NAME           SLURM queue (sets QUEUENAME. Default:  QUEUENAME from env)\n\
+   --version              print MinSAR and dependency versions (as first argument) \n\
                                                                                  \n\
 For sarvey:                                                                      \n\
    --miaplpy-stop 1      to only run step 1 (load_slc_geometry.py) of miaplpy    \n\
@@ -90,6 +91,10 @@ Per-dataset keys from MINSAR_CUSTOM_OPTIONS are applied only when AUTO_TEMPLATE 
      "
     printf "$helptext"
     exit 0
+fi
+
+if [[ "$1" == "--version" ]]; then
+    exec "${MINSAR_HOME}/minsar/scripts/minsar_version.bash"
 fi
 
 # AOI + project name: first create templates under AUTO_TEMPLATES, then continue as template mode.
@@ -150,6 +155,7 @@ else
     template_print_name="$template_file"
 fi
 echo "#############################################################################################" | tee -a "${WORK_DIR}"/log
+echo "# $("${MINSAR_HOME}/minsar/scripts/minsar_version.bash" --one-line 2>/dev/null || echo "minsar unknown")" | tee -a "${WORK_DIR}"/log
 # AOI runs re-exec with the template path. Log the command the user typed.
 if [[ -n "${cli_command_aoi:-}" ]]; then
     log_invocation="$cli_command_aoi"
