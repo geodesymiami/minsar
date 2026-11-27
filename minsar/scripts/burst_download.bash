@@ -308,7 +308,7 @@ done
 echo "Wrote $run_file with $(wc -l < "$run_file" | tr -d ' \n') burst2stack commands."
 
 # 4a. Remove incomplete SAFEs (SLURM restart: timeout mid-write)
-# check_SAFE_completeness.py removes SAFEs missing manifest, annotation XML, or a measurement TIFF
+# check_SAFE_completeness.py removes SAFEs missing manifest, a manifest-listed file (scratch purge), annotation XML, or a measurement TIFF
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR/check_SAFE_completeness.py" ]]; then
     python3 "$SCRIPT_DIR/check_SAFE_completeness.py" "$slc_dir" || true
@@ -316,6 +316,15 @@ elif command -v check_SAFE_completeness.py &>/dev/null; then
     check_SAFE_completeness.py "$slc_dir" || true
 else
     echo "Warning: check_SAFE_completeness.py not found; skipping incomplete-SAFE removal." >&2
+fi
+
+# 4a2. Remove truncated burst *.tiff/*.xml (SLURM timeout mid-download); burst2safe reuses any existing file
+if [[ -f "$SCRIPT_DIR/check_burst_files.py" ]]; then
+    python3 "$SCRIPT_DIR/check_burst_files.py" "$slc_dir" || true
+elif command -v check_burst_files.py &>/dev/null; then
+    check_burst_files.py "$slc_dir" || true
+else
+    echo "Warning: check_burst_files.py not found; skipping burst file check." >&2
 fi
 
 # 4b. Filter run_burst2stack: remove lines for dates that already have a complete SAFE

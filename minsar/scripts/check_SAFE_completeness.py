@@ -2,6 +2,7 @@
 """
 Check that each .SAFE directory in the given directory is complete.
 A SAFE is complete when it has manifest.safe, preview/map-overlay.kml,
+every file listed in manifest.safe (non-empty; catches partial scratch purges),
 at least one annotation XML, and at least one measurement TIFF.
 Incomplete SAFEs are removed and the date is logged to dates_removed.txt.
 The file is kept sorted by date (first column).
@@ -13,6 +14,7 @@ import os
 import re
 import shutil
 import sys
+import xml.etree.ElementTree as ET
 
 from minsar.objects import message_rsmas
 
@@ -48,12 +50,32 @@ def _nonempty_files(directory, suffixes):
     return found
 
 
+def _manifest_file_hrefs(manifest_path):
+    """Return relative paths of all fileLocation hrefs in manifest.safe."""
+    tree = ET.parse(manifest_path)
+    hrefs = []
+    for elem in tree.iter():
+        if isinstance(elem.tag, str) and elem.tag.rsplit("}", 1)[-1] == "fileLocation":
+            href = elem.get("href")
+            if href:
+                hrefs.append(os.path.normpath(href))
+    return hrefs
+
+
 def incomplete_reason(safe_path):
     """Return why safe_path is incomplete, or None if it is usable by ISCE."""
     for req in REQUIRED_SAFE_PATHS:
         full_path = os.path.join(safe_path, req)
         if not os.path.isfile(full_path) or os.path.getsize(full_path) == 0:
             return f"SAFE incomplete: {req} missing"
+    try:
+        hrefs = _manifest_file_hrefs(os.path.join(safe_path, "manifest.safe"))
+    except ET.ParseError:
+        return "SAFE incomplete: manifest.safe unreadable"
+    for rel_path in hrefs:
+        full_path = os.path.join(safe_path, rel_path)
+        if not os.path.isfile(full_path) or os.path.getsize(full_path) == 0:
+            return f"SAFE incomplete: {rel_path} missing"
     if not _nonempty_files(os.path.join(safe_path, "annotation"), (".xml",)):
         return "SAFE incomplete: no annotation XML"
     if not _nonempty_files(os.path.join(safe_path, "measurement"), (".tif", ".tiff")):
@@ -63,7 +85,7 @@ def incomplete_reason(safe_path):
 
 def main(iargs=None):
     parser = argparse.ArgumentParser(
-        description="Remove .SAFE dirs missing manifest, annotation XML, or a measurement TIFF. Log dates to dates_removed.txt.",
+        description="Remove .SAFE dirs missing manifest, a manifest-listed file, annotation XML, or a measurement TIFF. Log dates to dates_removed.txt.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="Examples:\n  check_SAFE_completeness.py SLC\n  check_SAFE_completeness.py --dry-run SLC",
     )

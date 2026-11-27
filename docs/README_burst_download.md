@@ -50,7 +50,8 @@ Skip with **`--no-check-subswath-coverage`**. Lon repair requires re-fetching th
 | File | Source | Meaning |
 |------|--------|--------|
 | `SLC/removed_bursts_missing.txt` | `burst_download.bash`, `minsarApp.bash`, `check_job_outputs.py` | Dates removed from the stack because required IW subswath(s) were missing (`YYYYMMDD missing=IWn`). |
-| `SLC/dates_removed.txt` | `check_SAFE_completeness.py` | Incomplete `.SAFE` directories (missing manifest, annotation XML, measurement TIFF, or `preview/map-overlay.kml`). Those dates are downloaded again. Not geometric AOI coverage. |
+| `SLC/dates_removed.txt` | `check_SAFE_completeness.py` | Incomplete `.SAFE` directories (missing or empty manifest, any file listed in `manifest.safe` (e.g. after a scratch purge), annotation XML, measurement TIFF, or `preview/map-overlay.kml`). Those dates are downloaded again. Not geometric AOI coverage. |
+| `SLC/burst_files_removed.txt` | `check_burst_files.py` | Unreadable burst `*.tiff`/`*.xml` (e.g. truncated by a SLURM timeout) for dates without a `.SAFE`, as `YYYYMMDD  filename  reason`. Deleted before `burst2stack` runs, so only those files are downloaded again. |
 | `removed_dates_*.txt` | `check_burst2safe_job_outputs.py` | Dates inferred from burst2safe stderr problem strings; deletes matching paths under the job directory. |
 
 ## SWEETS / isce3 SAFE download (`sweets_download.py`)
