@@ -148,8 +148,8 @@ def parse_dataset_name(stem: str) -> tuple[str, str]:
 
 
 _ASSIGN_KEY_RE = re.compile(r"^\s*([A-Za-z][\w.]*)\s*=")
-BEGIN = "# Begin custom options"
-END = "# End custom options"
+BEGIN = "##### Begin custom options"
+END = "##### End custom options"
 
 
 def _custom_on_top(text: str, assignments: list[str]) -> str:

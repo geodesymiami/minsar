@@ -55,14 +55,14 @@ minsarApp.bash -8.326:-8.194,117.942:118.069 Tambora --flight-dir desc
 ## Building a template in $ATE
 
 1. [`create_template.py`](../minsar/scripts/create_template.py) copies `processing_Sentinel1.template` (or `processing_Alos2.template`) and fills `asf.relativeOrbit`, `miaplpy.subset.lalo`, the dates and `topsStack.coregistration` from the AOI and coverage. The file is named `{project}{orbit label}` (`TamboraSenD134`). `SenA`/`SenD` (also `SenAT`/`SenDT`) give the flight direction.
-2. [`minsarApp.bash`](../minsar/bin/minsarApp.bash) calls [`custom_template_options.py`](../minsar/utils/custom_template_options.py) `apply` when `AUTO_TEMPLATE` is in the template path. The custom keys are written at the top of the template between `# Begin custom options` and `# End custom options`. Every active line of those keys in the part copied from the defaults file is deleted, so each key appears once. Commented lines are left alone. `minsar.excludeDates` or `topsStack.excludeDates` writes both keys at the top with the same normalized date list. Applied keys are printed to the project log.
+2. [`minsarApp.bash`](../minsar/bin/minsarApp.bash) calls [`custom_template_options.py`](../minsar/utils/custom_template_options.py) `apply` when `AUTO_TEMPLATE` is in the template path. The custom keys are written at the top of the template between `##### Begin custom options` and `##### End custom options`. Every active line of those keys in the part copied from the defaults file is deleted, so each key appears once. Commented lines are left alone. `minsar.excludeDates` or `topsStack.excludeDates` writes both keys at the top with the same normalized date list. Applied keys are printed to the project log.
 
 ```text
-# Begin custom options
+##### Begin custom options
 minsar.excludeDates = 20141213,20260401
 topsStack.excludeDates = 20141213,20260401
 mintpy.unwrapError.method = bridging+phase_closure
-# End custom options
+##### End custom options
 ##### copied from processing_Sentinel1.template, without those keys
 ```
 3. The CLI patches (`--exclude-dates`, `--start-date`, `--miaplpy.load.startDate`, `--<key> value`, ...) run after this, so CLI flags win for that run.
