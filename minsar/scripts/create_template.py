@@ -19,6 +19,8 @@ complementary pass when both directions have coverage. If only one direction
 exists for the AOI, a note is printed and a single template is written for that
 pass (equivalent to ``--flight-dir asc`` or ``desc``). With explicit single-pass
 ``--flight-dir asc`` or ``desc``, only that pass is written.
+``--asf.relativeOrbit N`` uses orbit N instead of the selected one and writes
+one template; the direction comes from the coverage of that orbit.
 
 AOI may be lat_min:lat_max,lon_min:lon_max (S:N,W:E), WKT POLYGON((lon lat,...)),
 or other formats accepted by convert_bbox.py (e.g. GoogleEarth points).
@@ -200,6 +202,7 @@ def _run_get_sar_coverage(
     flight_dir: str,
     start_date: str | None = None,
     end_date: str | None = None,
+    relative_orbit: int | None = None,
 ) -> dict[str, str | int]:
     """Run get_sar_coverage.py --platform <platform> --flight-dir <dir> --select and parse stdout.
 
@@ -220,6 +223,8 @@ def _run_get_sar_coverage(
         args.extend(["--start-date", start_date])
     if end_date:
         args.extend(["--end-date", end_date])
+    if relative_orbit is not None:
+        args.extend(["--relative-orbit", str(relative_orbit)])
     print(f"Running.... get_sar_coverage.py {' '.join(args)}", file=sys.stderr)
     proc = subprocess.run(
         [sys.executable, str(get_sar), *args],
@@ -634,6 +639,7 @@ Examples:
   create_template.py 36.331:36.486,25.318:25.492 Santorini --flight-dir asc
   create_template.py 36.331:36.486,25.318:25.492 Santorini --platform S1
   create_template.py 4.19:4.25,9.158:9.221 par7Cameroon --platform ALOS2
+  create_template.py 39.123:41.736,-124.514:-120.956 Eureka --platform ALOS2 --asf.relativeOrbit 170
   create_template.py 36.331:36.486,25.318:25.492 Santorini --geometry
   create_template.py 36.331:36.486,25.318:25.492 Santorini --coregistration NESD
   create_template.py 36.331:36.486,25.318:25.492 Santorini --topsstack.coregistration geometry
@@ -661,6 +667,7 @@ Examples:
         help="Comma-separated YYYYMMDD to exclude (sets minsar.excludeDates and topsStack.excludeDates)",
     )
     parser.add_argument("--flight-dir", dest="flight_dir", default="asc,desc", type=normalize_flight_dir, metavar="DIR", help="asc, desc, asc,desc, desc,asc, both (Default: asc,desc)")
+    parser.add_argument("--asf.relativeOrbit", "--relative-orbit", dest="relative_orbit", type=int, metavar="N", help="use this relative orbit (one template; direction from coverage)")
     parser.add_argument("--platform", default="S1", metavar="NAME", help="get_sar_coverage sensor (default S1). S1 or ALOS2 (NISAR is unsupported)")
     parser.add_argument(
         "--coregistration", "--topsstack.coregistration", "--topsStack.coregistration",
@@ -822,12 +829,20 @@ def main(
             flight_dir=inps.flight_dir,
             start_date=start_date,
             end_date=end_date,
+            relative_orbit=inps.relative_orbit,
         )
     except RuntimeError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1, None, None, ""
 
-    flight_dir_eff = _effective_flight_dir_for_coverage(inps.flight_dir, coverage, sensor_name)
+    if inps.relative_orbit is not None:
+        orbit_dir = "asc" if _coverage_has_asc(coverage) else "desc"
+        if inps.flight_dir in ("asc", "desc") and inps.flight_dir != orbit_dir:
+            print(f"Error: relative orbit {inps.relative_orbit} is {orbit_dir}, not {inps.flight_dir}", file=sys.stderr)
+            return 1, None, None, ""
+        flight_dir_eff = orbit_dir
+    else:
+        flight_dir_eff = _effective_flight_dir_for_coverage(inps.flight_dir, coverage, sensor_name)
     msg = _validate_coverage_for_flight_dir(coverage, flight_dir_eff)
     if msg:
         print(f"Error: {msg}", file=sys.stderr)

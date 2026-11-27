@@ -357,6 +357,7 @@ GET_SAR_COVERAGE_ARGV_KW = {
         "--endDate",
         "--max-discovery",
         "--flight-dir",
+        "--relative-orbit",
     ),
     "consume_two": (),
     "flags": ("--all", "--verbose", "--show-removed", "--select", "-v"),

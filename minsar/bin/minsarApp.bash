@@ -84,6 +84,7 @@ create_template.py --help lists the template options.\n\
 Per-dataset keys from MINSAR_CUSTOM_OPTIONS are applied only when AUTO_TEMPLATE is in the template path.\n\
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --platform S1 --flight-dir asc --quick-run 2026 --no-mintpy --miaplpy  \n\
       minsarApp.bash 4.19:4.25,9.158:9.221 par7Cameroon --platform ALOS2  \n\
+      minsarApp.bash 39.123:41.736,-124.514:-120.956 Eureka --platform ALOS2 --asf.relativeOrbit 170  \n\
       minsarApp.bash \$TE/par7CameroonAlos2D89.template  \n\
       minsarApp.bash 36.331:36.486,25.318:25.492 Santorini --period 20210101:20221231 --exclude-season 1101-0430 --exclude-dates 20260619 --coregistration geometry --tropo no --insarmaps-dataset DS  \n\
       minsarApp.bash \$TE/GalapagosSenDT128.template --exclude-dates 20260619 --miaplpy.load.startDate 20211201 --start jobfiles --miaplpy  \n\

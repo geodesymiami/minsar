@@ -62,6 +62,7 @@ Examples:
   get_sar_coverage.py 19.30:19.6,-155.8:-154.8 --platform S1,ALOS2 --all
   get_sar_coverage.py 36.322:36.502,25.306:25.502 --platform S1 --flight-dir asc --select
   get_sar_coverage.py 36.322:36.502,25.306:25.502 --platform S1 --flight-dir both --select
+  get_sar_coverage.py 39.123:41.736,-124.514:-120.956 --platform ALOS2 --flight-dir both --select --relative-orbit 170
   get_sar_coverage.py AOI --platform S1 --show-removed   # list SLC granules dropped (partial footprint vs AOI)
   get_sar_coverage.py -23.393:-23.097,-68.356:-68.175 --platform S1   # negative lat (or use -- before AOI)
   get_sar_coverage.py 36.322:36.502,25.306:25.502 --platform S1 --flight-dir asc --start-date 20230101 --end-date 20241231
@@ -1230,17 +1231,24 @@ def _best_orbit_for_direction(
 def _best_orbits_by_direction(
     all_rows: List[Tuple[str, List[Dict]]],
     s1_metrics: Optional[Dict[Tuple[int, str], Dict[str, Any]]] = None,
+    relative_orbit: Optional[int] = None,
 ) -> Tuple[str, Dict[str, Dict]]:
-    """Return (platform display name, direction -> best orbit dict)."""
+    """Return (platform display name, direction -> best orbit dict).
+
+    With *relative_orbit*, only that orbit is considered, so only its direction is returned.
+    """
     if not all_rows:
         return '', {}
     platform_display_name, rows = all_rows[0]
     best_by_dir: Dict[str, Dict] = {}
     for row in rows:
-        if not row['orbits']:
+        orbit_records = row['orbits']
+        if relative_orbit is not None:
+            orbit_records = [r for r in orbit_records if r['orbit'] == relative_orbit]
+        if not orbit_records:
             continue
         direction = row['direction']
-        best = _best_orbit_for_direction(row['orbits'], direction, platform_display_name, s1_metrics)
+        best = _best_orbit_for_direction(orbit_records, direction, platform_display_name, s1_metrics)
         if best is not None:
             best_by_dir[direction] = best
     return platform_display_name, best_by_dir
@@ -1277,6 +1285,7 @@ def print_best_only(
     all_rows: List[Tuple[str, List[Dict]]],
     stream,
     s1_metrics: Optional[Dict[Tuple[int, str], Dict[str, Any]]] = None,
+    relative_orbit: Optional[int] = None,
 ) -> None:
     """Print parseable key=value lines for best Asc/Desc orbit.
 
@@ -1291,7 +1300,7 @@ def print_best_only(
     """
     if not all_rows:
         return
-    _platform_display_name, best_by_dir = _best_orbits_by_direction(all_rows, s1_metrics)
+    _platform_display_name, best_by_dir = _best_orbits_by_direction(all_rows, s1_metrics, relative_orbit)
     # Print relorbits first, then labels (expected by shell callers).
     for direction, key_prefix in [('Ascending', 'asc'), ('Descending', 'desc')]:
         if direction in best_by_dir:
@@ -1550,6 +1559,7 @@ def create_parser() -> argparse.ArgumentParser:
                         help='Acquisition-count end when --start-date/--end-date are omitted, YYYY-MM-DD or YYYYMMDD (default: today)')
     parser.add_argument('--flight-dir', default=None, dest='flight_dir', metavar='DIR', type=_normalize_flight_dir,
                         help='asc, desc, asc,desc, desc,asc, or both (default: both)')
+    parser.add_argument('--relative-orbit', type=int, default=None, metavar='N', help='With --select: use this relative orbit instead of the best one')
     parser.add_argument('--max-discovery', type=int, default=_DISCOVERY_MAX_RESULTS_S1_DEFAULT,
                         metavar='N',
                         help='Max S1 SLC granules fetched for orbit discovery (default: %(default)s). Increase if orbits are missing.')
@@ -1842,8 +1852,11 @@ def main(iargs=None):
     select_best_by_dir: Dict[str, Dict] = {}
     if inps.select and all_rows:
         platform_name, select_best_by_dir = _best_orbits_by_direction(
-            all_rows, s1_select_metrics if s1_select_metrics else None
+            all_rows, s1_select_metrics if s1_select_metrics else None, inps.relative_orbit
         )
+        if inps.relative_orbit is not None and not select_best_by_dir:
+            print(f"Error: relative orbit {inps.relative_orbit} not found for this AOI", file=sys.stderr)
+            sys.exit(1)
         for direction, prefix in (('Ascending', 'asc'), ('Descending', 'desc')):
             count = select_best_by_dir.get(direction, {}).get('count')
             if isinstance(count, int) and count >= 0:
@@ -1861,7 +1874,7 @@ def main(iargs=None):
         if hasattr(inps, '_select_stdout'):
             sys.stdout = inps._select_stdout
         print(f"processing_subset=\"{_subset_str_from_wkt(wkt)}\"", file=sys.stdout)
-        print_best_only(all_rows, sys.stdout, s1_select_metrics if s1_select_metrics else None)
+        print_best_only(all_rows, sys.stdout, s1_select_metrics if s1_select_metrics else None, inps.relative_orbit)
         for prefix in ('asc', 'desc'):
             if prefix in select_nimages:
                 print(f"{prefix}_nimages={select_nimages[prefix]}", file=sys.stdout)
