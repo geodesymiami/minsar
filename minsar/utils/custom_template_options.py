@@ -148,19 +148,21 @@ def parse_dataset_name(stem: str) -> tuple[str, str]:
 
 
 _ASSIGN_KEY_RE = re.compile(r"^\s*([A-Za-z][\w.]*)\s*=")
+BEGIN = "# Begin custom options"
+END = "# End custom options"
 
 
 def _custom_on_top(text: str, assignments: list[str]) -> str:
-    """Put *assignments* at the top and delete every active line of those keys below."""
+    """Put *assignments* between markers at the top and delete every active line of those keys below."""
     keys = {line.split(" = ", 1)[0] for line in assignments}
     rest: list[str] = []
     for line in text.splitlines(keepends=True):
         match = None if line.lstrip().startswith("#") else _ASSIGN_KEY_RE.match(line)
-        if match and match.group(1) in keys:
+        if (match and match.group(1) in keys) or line.strip() in (BEGIN, END):
             continue
         rest.append(line)
     body = "".join(rest).lstrip("\n")
-    return "\n".join(assignments) + "\n\n" + body
+    return "\n".join([BEGIN, *assignments, END]) + "\n" + body
 
 
 def _template_lines(section: dict[str, str]) -> list[str]:
