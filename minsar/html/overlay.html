@@ -1328,7 +1328,7 @@
         const refAutoRetryCountByIndex = new Map();  // index -> retry count this switch
         // User-selected narrowed period; not overwritten by background iframe url-updates.
         let userNarrowedDateRange = null;  // { startDate, endDate } or null
-        // The dataset iframe whose movie (insarmaps' Movie / Quick Movie, insarmaps-movie) is playing, or -1
+        // The dataset iframe whose movie (insarmaps' Movie, insarmaps-movie) is playing, or -1
         let moviePlayingIdx = -1;
         // How the user last set the narrowed period: 'slider' | 'chart-dot' | 'iframe-sync' | null
         let periodSelectionSource = null;
@@ -5078,9 +5078,10 @@
                         }
                         return;
                     }
-                    // A movie (insarmaps' Movie / Quick Movie buttons): each window of the active map's movie
-                    // becomes the overlay's period, as a move of its time slider would, and goes to the other
-                    // maps at once instead of after the usual debounce, so that they play along. A movie in a
+                    // A movie (insarmaps' Movie button): each window of the active map's movie, the one its
+                    // time slider is dragged to while it plays included, becomes the overlay's period, as a
+                    // move of its time slider would, and goes to the other maps at once instead of after the
+                    // usual debounce, so that they play along. A movie in a
                     // map that is not the active one (still playing after a dataset switch) is stopped. When a
                     // movie stops, its map posts its address (insarmaps-url-update) as after a slider move.
                     if (event.data.type === 'insarmaps-movie') {
