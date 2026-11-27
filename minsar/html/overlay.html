@@ -4348,11 +4348,12 @@
                     }
                 }
                 
-                // Initialize current map params from overlay URL or first insarmaps.log line (file order)
+                // Initialize current map params from overlay URL or first insarmaps.log line (file order).
+                // minScale and maxScale fix the scale unless autoColorScale=true is given too (absent is not auto).
                 const initialScaleState = resolveAutoColorScaleState(
                     initialParams.minScale ?? firstLogDefaults?.minScale ?? null,
                     initialParams.maxScale ?? firstLogDefaults?.maxScale ?? null,
-                    initialParams.autoColorScale ?? firstLogDefaults?.autoColorScale ?? 'true'
+                    initialParams.autoColorScale ?? firstLogDefaults?.autoColorScale ?? null
                 );
                 currentMapParams = {
                     lat: initialParams.lat || firstLogDefaults?.lat || null,
