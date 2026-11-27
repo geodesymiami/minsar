@@ -1,7 +1,7 @@
 """Pure helpers for overlay display-param transfer across dataset switches.
 
 Mirrors the contract implemented in minsar/html/overlay.html (contours, pixelSize,
-background, autoColorScale). Used by unit tests; keep in sync when overlay URL logic changes.
+background, autoColorScale, colormap). Used by unit tests; keep in sync when overlay URL logic changes.
 """
 
 from __future__ import annotations
@@ -14,6 +14,8 @@ INSARMAP_URL_DEFAULTS = {
     "background": "hillshade",
     "opacity": "80",
     "autoColorScale": "true",
+    "colormap": "jet",
+    "reverseColormap": "false",
 }
 
 
@@ -31,6 +33,15 @@ def normalize_contour(value) -> str | None:
 def effective_contour(params: dict) -> str:
     raw = params.get("contour") or params.get("contours") or INSARMAP_URL_DEFAULTS["contours"]
     return normalize_contour(raw) or INSARMAP_URL_DEFAULTS["contours"]
+
+
+def effective_colormap(params: dict) -> tuple:
+    """(colormap, reverseColormap): insarmaps' addresses leave out Jet and not reversed, so absent is the default
+    (overlay effectiveColormap / effectiveReverseColormap)."""
+    return (
+        params.get("colormap") or INSARMAP_URL_DEFAULTS["colormap"],
+        "true" if params.get("reverseColormap") == "true" else "false",
+    )
 
 
 def format_url_number(value) -> str:
@@ -71,6 +82,8 @@ def url_display_params_from_src(src: str) -> dict:
             "refPointLon": first("refPointLon"),
             "minScale": first("minScale"),
             "maxScale": first("maxScale"),
+            "colormap": first("colormap"),
+            "reverseColormap": first("reverseColormap"),
         }
     except Exception:
         return {}
@@ -87,6 +100,10 @@ def map_params_with_overlay_user_display(map_params: dict, overlay_user_display:
         p["background"] = overlay_user_display["background"]
     if overlay_user_display.get("opacity") is not None:
         p["opacity"] = overlay_user_display["opacity"]
+    if overlay_user_display.get("colormap") is not None:
+        p["colormap"] = overlay_user_display["colormap"]
+    if overlay_user_display.get("reverseColormap") is not None:
+        p["reverseColormap"] = overlay_user_display["reverseColormap"]
     return p
 
 
@@ -114,6 +131,11 @@ def embed_display_params_for_warm_url(map_params: dict) -> dict:
         out["maxScale"] = str(map_params["maxScale"])
     elif ac is not None and str(ac) != INSARMAP_URL_DEFAULTS["autoColorScale"]:
         out["autoColorScale"] = str(ac)
+    colormap, reverse_colormap = effective_colormap(map_params)
+    if colormap != INSARMAP_URL_DEFAULTS["colormap"]:
+        out["colormap"] = colormap
+    if reverse_colormap == "true":
+        out["reverseColormap"] = "true"
     return out
 
 
@@ -151,7 +173,8 @@ def display_params_mismatch(
         and received_merged.get("background") not in (None, "")
         and received_merged["background"] != expected["background"]
     )
-    return ps_mismatch or contour_mismatch or bg_mismatch
+    colormap_mismatch = effective_colormap(received_merged) != effective_colormap(expected)
+    return ps_mismatch or contour_mismatch or bg_mismatch or colormap_mismatch
 
 
 def iframe_point_match_expected(src: str, map_params: dict) -> bool:
@@ -292,10 +315,13 @@ def expected_charts_for_switch(from_state_charts_visible, has_point_selection: b
 
 
 def post_message_display_payload(overlay_user_display: dict, current_map_params: dict) -> dict:
-    """Payload fields sent via insarmaps-set-contour / insarmaps-set-pixelSize on switch."""
+    """Payload fields sent via insarmaps-set-contour / insarmaps-set-pixelSize / insarmaps-set-colormap on switch."""
     params = map_params_with_overlay_user_display(current_map_params, overlay_user_display)
+    colormap, reverse_colormap = effective_colormap(params)
     payload = {
         "contour": effective_contour(params) == "true",
         "pixelSize": float(params["pixelSize"]) if params.get("pixelSize") not in (None, "") else None,
+        "colormap": colormap,
+        "reverseColormap": reverse_colormap,
     }
     return payload

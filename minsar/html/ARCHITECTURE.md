@@ -1,10 +1,10 @@
 # overlay.html Architecture Documentation
 
-**Last updated:** 2026-11-23 (Auto Pixel Resize: Horizontal/Vertical draw their points larger where the Pixel Size leaves white space; see §20)
+**Last updated:** 2026-11-27 (Colormap: insarmaps' Colormap menu and Reverse Colormap box carry from one dataset to the others by the display channel, and are in the overlay URL; see §6, §8)
 
 ## Overview
 
-`overlay.html` is a multi-dataset InSAR map viewer. It embeds one **insarmaps** iframe per dataset (Descending, Ascending, Horizontal, Vertical) and keeps their **view state** in sync: map position, color scale, time period, pixel size, contours, time-series point, and custom reference point. With **Auto Pixel Resize** on (§20), the Horizontal and Vertical maps draw their points larger than the Pixel Size where it would leave white space between them.
+`overlay.html` is a multi-dataset InSAR map viewer. It embeds one **insarmaps** iframe per dataset (Descending, Ascending, Horizontal, Vertical) and keeps their **view state** in sync: map position, color scale, colormap, time period, pixel size, contours, time-series point, and custom reference point. With **Auto Pixel Resize** on (§20), the Horizontal and Vertical maps draw their points larger than the Pixel Size where it would leave white space between them.
 
 The overlay page is served from the **data server** (e.g. `http://149.165.154.65/data/HDF5EOS/.../overlay.html`). Each iframe loads **insarmaps** from a separate origin (e.g. `http://149.165.153.50`). That cross-origin split is central to the design.
 
@@ -39,7 +39,7 @@ The overlay page is served from the **data server** (e.g. `http://149.165.154.65
 
 | Mechanism | When used | What it can set |
 |-----------|-----------|-----------------|
-| **URL reload** (`iframe.src = buildInsarmapsUrl(...)`) | Background first load, dataset switch to a stale target, fallback when insarmaps does not answer a postMessage (older server) | Everything insarmaps reads from URL: view, scales, dates, point, ref, pixelSize, contour, colorscale |
+| **URL reload** (`iframe.src = buildInsarmapsUrl(...)`) | Background first load, dataset switch to a stale target, fallback when insarmaps does not answer a postMessage (older server) | Everything insarmaps reads from URL: view, scales, dates, point, ref, pixelSize, contour, colorscale, colormap |
 | **postMessage** | Background sync of view (pan/zoom), colorscale, scale, display, dates, point and ref (§8); acks; chart dot clicks | Only what insarmaps explicitly handles in `mainPage.js` listeners |
 
 **Critical rule:** The overlay **cannot** call `iframe.contentWindow.myMap...` (cross-origin `SecurityError`). All in-iframe control after load must go through **postMessage** or a **new URL reload**.
@@ -88,6 +88,8 @@ overlay.html#/start/0.7480/-77.9687/9.8000?startDataset=S1_desc_...&minScale=-3&
 ```
 
 `autoPixelResize=true` is there while Auto Pixel Resize is on (§20); a page loaded with it starts with the button on.
+`colormap` and `reverseColormap=true` are there when the maps' colormap is not Jet, or is reversed (insarmaps' names, §6),
+and every map loads with them.
 
 ---
 
@@ -133,7 +135,7 @@ Latest debug-table example (from this debugging session):
 
 | Variable | Purpose |
 |----------|---------|
-| `currentMapParams` | Authoritative overlay state: view, scales, dates, point, ref, pixelSize, contour, colorscale, background, opacity, `autoColorScale` |
+| `currentMapParams` | Authoritative overlay state: view, scales, dates, point, ref, pixelSize, contour, colorscale, background, opacity, `autoColorScale`, colormap, `reverseColormap` |
 | `userNarrowedDateRange` | User's intentionally narrowed period; survives iframe "widen" noise during refSwitch |
 | `periodSelectionSource` | How period was set: `'slider'`, `'chart-dot'`, `'iframe-sync'`, or null |
 | `baselineMissionDateRange` | Mission-wide first/last date (union of all datasets); used to detect "full period" vs narrowed |
@@ -142,7 +144,7 @@ Latest debug-table example (from this debugging session):
 | `iframeLiveUrl` | index → last URL the iframe posted via `insarmaps-url-update` (absolute). `iframe.src` freezes at load time while the user interacts inside the iframe; staleness checks use `iframeEffectiveUrl()` = live URL ?? src. Cleared on reload; bare early-life URLs (no `startDataset`) are never recorded. `canonicalInsarmapsUrl()` normalizes insarmaps URL conventions (`autoColorScale=true` explicit, `minScale`/`maxScale` omitted at defaults, number formatting) so live URLs compare equal to overlay-built URLs |
 | `bgAppliedDates` | index → `{ startDate, endDate }` last applied to that iframe via `insarmaps-set-dates` (cleared on any reload of that iframe) |
 | `bgAppliedScale` | index → `{ autoColorScale, minScale, maxScale }` last sent via `insarmaps-set-auto-color-scale` (cleared on reload). Scale params are ignored in URL staleness compares; changes propagate as a repaint postMessage, never a reload |
-| `bgAppliedDisplay` | index → `{ pixelSize, opacity, contour, background }` last sent via `insarmaps-set-pixelSize`/`-opacity`/`-contour`/`-background` (cleared on reload). Same rule as scale: ignored in URL compares, synced by in-page postMessages |
+| `bgAppliedDisplay` | index → `{ pixelSize, opacity, contour, background, colormap, reverseColormap }` last sent via `insarmaps-set-pixelSize`/`-opacity`/`-contour`/`-background`/`-colormap` (cleared on reload). Same rule as scale: ignored in URL compares, synced by in-page postMessages |
 | `autoPixelResize` (2026-11) | The Auto Pixel Resize button (§20); in the overlay URL as `autoPixelResize=true` |
 | `bgAppliedAutoPixelSize` (2026-11) | index → `autoPixelSize` last sent via `insarmaps-set-auto-pixel-size` (cleared on reload: the load URL's `autoPixelSize=true` says it then, `autoPixelSizeOnIframe`). Wanted: on for a Horizontal or Vertical map while the button is on (`wantAutoPixelSize`) |
 | `bgAppliedView` | index → `{ lat, lon, zoom, acked }` last view sent via `insarmaps-set-view` (cleared on reload, and for the active iframe on each of its own posts: the user moves it). The view is ignored in URL compares and compared numerically (`viewsClose`, one unit of insarmaps' 4th decimal). The switch path counts a sent view only once acked (`viewOnIframe`): a target with a set-view still unanswered is reloaded, not revealed |
@@ -270,6 +272,7 @@ Done: Asc has custom ref + narrowed period
 | `insarmaps-set-auto-color-scale` | `{ mode: 'true'\|'false', minScale?, maxScale? }` — URL `autoColorScale=true` when auto on; manual mode uses only `minScale`/`maxScale` (no `autoColorScale=false`) | `mainMap.setAutoColorScaleMode()` / `disableAutoColorScaleWithLimits()` |
 | `insarmaps-set-opacity` (2026-07) | `{ value }` 0-100 (URL/slider scale) — paint-property opacity update on all insar layers, no reload; no-op when unchanged | `mainPage.js` → `opacitySlideFunction(null, { value })` |
 | `insarmaps-set-background` (2026-07) | `{ value: 'streets'\|'satellite'\|'hillshade' }` — in-page basemap swap, insar layers carried over; no-op when unchanged | `mainPage.js` → `switchLayer({ target: { id } })` |
+| `insarmaps-set-colormap` (2026-11) | `{ colormap, reverseColormap: 'true'\|'false' }` — the Colormap menu's value and the Reverse Colormap box, as insarmaps' URL has them (`colormap` absent at Jet): in-page recolor; no-op when unchanged; no ack (the iframe's next `insarmaps-url-update` carries them, except at their defaults). Rides the display channel. An insarmaps without the handler ignores it: its map keeps its own colormap | `mainPage.js` → `chooseInsarColormap(colormap, reversed)` |
 | `insarmaps-set-point` (2026-07) | `{ pointLat, pointLon }` — apply time-series point on the loaded map, no reload. Ack: `insarmaps-set-point-applied` `{ ok, reason }` (`not-ready` → overlay retries; no ack → overlay marks server unsupported and falls back to URL reloads) | `mainPage.js` → `mainMap.applyOverlayPointSelection(lat, lon, false)` |
 | `insarmaps-set-ref` (2026-07) | `{ refPointLat, refPointLon }` — apply custom ref on the loaded map (warm tiles, so more reliable than load-time URL ref). Receipt: `insarmaps-set-ref-received`; outcome via existing `insarmaps-ref-applied` / `insarmaps-ref-failed`. No receipt within 20s → overlay falls back to a URL reload | `mainPage.js` → `mainMap.applyOverlayPointSelection(lat, lon, true)` |
 | `insarmaps-set-view` (2026-11) | `{ lat, lon, zoom }` — the `/start/` path's values: move the loaded map there (camera jump, no reload). Ack: `insarmaps-set-view-applied` `{ lat, lon, zoom, ok, reason }` (`not-ready` while the dataset load has not started → overlay retries every second; no ack within 8 s → overlay marks the server unsupported, or that iframe unresponsive, and reloads at the new view) | `mainPage.js` → `mainMap.applyOverlayView(lat, lon, zoom)` (ends in `afterDoneMoving` like a user's pan: address + `insarmaps-url-update`; zoom-out limit set as a load at that zoom would) |
@@ -361,10 +364,11 @@ reconcileBackgroundIframes(reason)      // idempotent
                   tracked in bgAppliedScale; scaleStatesClose (2% relative) absorbs
                   per-dataset flavors (permissible rounding, displacement yearsDiff)
         display — set-pixelSize + set-opacity + set-contour + set-background
-                  (fire-and-forget in-page updates; child no-ops when unchanged);
-                  tracked in bgAppliedDisplay; absent URL params compare as
-                  INSARMAP defaults; background swaps the basemap style in-page
-                  (setBaseMapLayer carries insar layers over). set-auto-pixel-size
+                  + set-colormap (fire-and-forget in-page updates; child no-ops
+                  when unchanged); tracked in bgAppliedDisplay; absent URL params
+                  compare as INSARMAP defaults; background swaps the basemap style
+                  in-page (setBaseMapLayer carries insar layers over), the colormap
+                  recolors in place. set-auto-pixel-size
                   rides along (per map: on for Horizontal/Vertical with Auto Pixel
                   Resize on), and is sent alone when only it differs
                   (bgAppliedAutoPixelSize, §20)
@@ -511,6 +515,7 @@ When switching Desc ↔ Asc ↔ Horz ↔ Vert, these should persist:
 | **Narrowed period (default ref)** | Pre-warm backgrounds + set-dates on switch | Drift if acquisition snap overwrites slider intent; flash if full URL reload used when only dates differ |
 | pixelSize | In reload URL (refSwitch keeps it) | Lost if stripped in `dateAfterRef` |
 | contours | display channel (`insarmaps-set-contour` via reconciler + switch re-broadcast) | Timing: hidden iframe may miss contour message (self-heals at switch) |
+| colormap (`colormap`, `reverseColormap`) | display channel (`insarmaps-set-colormap` via reconciler + switch re-broadcast); in every load URL, custom ref or not | Only the active iframe's posts change it; an absent `colormap` there is Jet (insarmaps leaves its defaults out), not "unchanged" |
 | colorscale | Stripped on cross-dataset when custom ref | Intentional — `colorscale=velocity` races ref recolor on mintpy |
 
 ---
@@ -599,6 +604,7 @@ Overlay alone is insufficient for custom ref + narrowed dates. Insarmaps must pr
 | `insarmaps-set-point` / `insarmaps-set-ref` handlers (2026-07) | `mainPage.js` | Point/ref sync without reload; acks `insarmaps-set-point-applied` / `insarmaps-set-ref-received`. |
 | `insarmaps-set-view` handler, `applyOverlayView(lat, lon, zoom)` (2026-11) | `mainPage.js`, `mainMap.js` | View sync without reload; acks `insarmaps-set-view-applied`. Older servers never ack: the overlay then reloads, as before. |
 | `insarmaps-set-auto-pixel-size` handler, `autoPixelSize=true` URL parameter, `setAutoPixelSize(on)` (2026-11) | `mainPage.js`, `mainMap.js`, `helperFunctions.js`, `RecolorStoreLayer.js` | Auto Pixel Resize (§20). Older servers ignore both: their maps draw the Pixel Size, as with the button off. |
+| `colormap`/`reverseColormap` in the URLs it reads and writes, `insarmaps-set-colormap` handler (2026-11) | `helperFunctions.js`, `mainPage.js` | The colormap carries from one dataset to the others. Older servers ignore both: every map shows Jet (or what the user picks in it, kept only there). |
 
 Deploy overlay to **data server**; deploy insarmaps JS to **insarmaps server** (different hosts).
 
@@ -729,7 +735,7 @@ Pure UI toggle for registering start/end dates from chart dot clicks. No reload 
 |-------------|------------------|-----------------|
 | Pan/zoom | reconciler (250ms) → `insarmaps-set-view` to **other** datasets | None (reload only as fallback: insarmaps without set-view) |
 | Velocity/displacement (default ref) | reconciler → `insarmaps-set-colorscale` to others | None |
-| Scales/background/opacity/contour/pixelSize | reconciler → `insarmaps-set-auto-color-scale` / display-channel postMessages | None |
+| Scales/background/opacity/contour/pixelSize/colormap | reconciler → `insarmaps-set-auto-color-scale` / display-channel postMessages | None |
 | Period slider / chart period change (default ref) | reconciler → `insarmaps-set-dates` postMessage to others | None |
 | Dataset switch, **no custom ref** | Show/hide; §8 table (`skip-synced` / `set-dates` / `await-preload` / reload) | Target only if stale |
 | Dataset switch, **custom ref**, target ref-warmed | `ref-warm-fast`: reveal + `set-dates` postMessage | None |
