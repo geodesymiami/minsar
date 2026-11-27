@@ -55,21 +55,17 @@ minsarApp.bash -8.326:-8.194,117.942:118.069 Tambora --flight-dir desc --templat
 
 [`create_template.py`](../minsar/scripts/create_template.py) copies `processing.template` and replaces `asf.relativeOrbit`, `miaplpy.subset.lalo`, dates and `topsStack.coregistration` from the AOI and coverage. The file is named `{project}{orbit label}` (`TamboraSenD134`). `SenA`/`SenD` (also `SenAT`/`SenDT`) give the flight direction.
 
-`minsarApp.bash $TE/X.template` does not re-read the defaults file; only the custom block (below) is refreshed. A saved custom value keeps winning after the defaults change.
+`minsarApp.bash $TE/X.template` uses the file as it is: neither the defaults file nor the custom file is applied. A saved custom value keeps winning after the defaults change because it is re-applied on each generation.
 
 ## Applying custom keys
 
-[`minsarApp.bash`](../minsar/bin/minsarApp.bash) calls [`custom_template_options.py`](../minsar/utils/custom_template_options.py) after argument parsing and before the CLI patches (`--exclude-dates`, `--miaplpy.load.startDate`, `--miaplpy.load.endDate`). CLI flags still win for that run.
-
-The loader rewrites a marked block at the top of the template on every run:
+When a template is generated (AOI mode, including every `run_minsar.bash` run), [`custom_template_options.py`](../minsar/utils/custom_template_options.py) builds it from `processing.template`, the AOI fields and the matching custom section. Each custom key replaces every existing line of that key in the copied defaults, so the key appears once, with the custom value. Keys not in the defaults are appended. No markers, no commented-out lines.
 
 ```text
-# BEGIN custom_template_options
 mintpy.unwrapError.method = bridging+phase_closure
-# END custom_template_options
 ```
 
-The same key later in the file is commented with a `# custom_template_options:` prefix, because the last active line wins. A key removed from the custom file is restored from that comment. `minsar.excludeDates` or `topsStack.excludeDates` is written with `apply_exclude_dates_to_template` (`merge=False`), so both keys get that list. Applied keys are printed to the project log.
+`minsar.excludeDates` or `topsStack.excludeDates` is written with `apply_exclude_dates_to_template` (`merge=False`), so both keys get that list. Applied keys are printed to the project log. The CLI patches (`--exclude-dates`, `--miaplpy.load.startDate`, `--miaplpy.load.endDate`) run after this, so CLI flags win for that run.
 
 ```mermaid
 flowchart TD
