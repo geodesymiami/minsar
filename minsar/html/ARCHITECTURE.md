@@ -87,6 +87,8 @@ Hash-based (preferred):
 overlay.html#/start/0.7480/-77.9687/9.8000?startDataset=S1_desc_...&minScale=-3&maxScale=3&startDate=...&endDate=...
 ```
 
+`minScale` and `maxScale` give every map that fixed color scale unless `autoColorScale=true` is there too, as in
+insarmaps; a link without them takes them from the first insarmaps.log line, if it has them.
 `autoPixelResize=true` is there while Auto Pixel Resize is on (§20); a page loaded with it starts with the button on.
 `colormap` and `reverseColormap=true` are there when the maps' colormap is not Jet, or is reversed (insarmaps' names, §6),
 and every map loads with them.
