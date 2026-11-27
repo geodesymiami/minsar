@@ -22,8 +22,6 @@ _ensure_repo_on_path()
 from minsar.utils.set_template_options import FAMILIES, check_keys, family_of
 from minsar.utils.template_exclude_dates import apply_exclude_dates_to_template
 
-BEGIN = "# BEGIN custom_template_options"
-END = "# END custom_template_options"
 ALLOWED_PREFIXES = ("mintpy.", "miaplpy.", "minsar.", "topsStack.", "stripmapStack.", "alos2Stack.", "asf.", "ssaraopt.")
 LAUNCHER_KEYS = frozenset({"aoi", "defaults"})
 FREEFORM_KEYS = frozenset({"aoi"})
@@ -42,10 +40,6 @@ SKIP_SAVE_KEYS = frozenset(
 SUBSET_LALO_KEYS = ("miaplpy.subset.lalo", "mintpy.subset.lalo")
 _STEM_RE = re.compile(r"^(?P<project>.+?)Sen(?P<letter>[AD])T?(?P<orbit>\d+)$")
 _TEMPLATE_SUFFIX = ".template"
-_BLOCK_RE = re.compile(
-    r"\n?# BEGIN custom_template_options\n.*?\n# END custom_template_options\n?",
-    re.S,
-)
 _ASSIGN_RE = re.compile(r"^(?P<key>[A-Za-z][\w.]*)\s*=\s*(?P<val>\S+)\s*$")
 _HEADER_RE = re.compile(r"^\[([^\]]+)\]$")
 
@@ -153,55 +147,32 @@ def parse_dataset_name(stem: str) -> tuple[str, str]:
     return match.group("project"), flight
 
 
-_HELD_PREFIX = "# custom_template_options: "
 _ASSIGN_KEY_RE = re.compile(r"^\s*([A-Za-z][\w.]*)\s*=")
+_VALUE_RE = re.compile(r"=\s*[^\s#]+")
 
 
-def _strip_block(text: str) -> str:
-    if not _BLOCK_RE.search(text):
-        return text
-    return _BLOCK_RE.sub("\n", text, count=1)
+def _replace_keys(text: str, assignments: list[str]) -> str:
+    """Set each key in place: the first active line takes the custom value, later lines of that key are deleted.
 
-
-def _restore_held(text: str) -> str:
-    """Put back lines commented on a previous apply so a dropped key uses the template again."""
+    Keys the template does not have are appended.
+    """
+    values = dict(line.split(" = ", 1) for line in assignments)
+    seen: set[str] = set()
     out: list[str] = []
     for line in text.splitlines(keepends=True):
-        if line.startswith(_HELD_PREFIX):
-            out.append(line[len(_HELD_PREFIX) :])
-        else:
-            out.append(line)
-    return "".join(out)
-
-
-def _hold_active_keys(text: str, keys: set[str]) -> str:
-    """Comment active assignments that the top block replaces. Later lines would otherwise win."""
-    out: list[str] = []
-    for line in text.splitlines(keepends=True):
-        content = line[:-1] if line.endswith("\n") else line
-        nl = "\n" if line.endswith("\n") else ""
-        if content.lstrip().startswith("#"):
+        match = None if line.lstrip().startswith("#") else _ASSIGN_KEY_RE.match(line)
+        key = match.group(1) if match else None
+        if key not in values:
             out.append(line)
             continue
-        match = _ASSIGN_KEY_RE.match(content)
-        if match and match.group(1) in keys:
-            out.append(f"{_HELD_PREFIX}{content}{nl}")
-        else:
-            out.append(line)
-    return "".join(out)
-
-
-def _replace_block(text: str, assignments: list[str]) -> str:
-    """Write the custom keys at the top. Comment the same keys in the rest of the file."""
-    text = _restore_held(_strip_block(text))
-    if text.startswith("\n"):
-        text = text[1:]
-    keys = {line.split("=", 1)[0].strip() for line in assignments}
-    text = _hold_active_keys(text, keys)
-    if not assignments:
-        return text
-    block = f"{BEGIN}\n" + "\n".join(assignments) + f"\n{END}\n"
-    return block + text
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(_VALUE_RE.sub(lambda _m: f"= {values[key]}", line, count=1))
+    missing = [f"{key} = {val}\n" for key, val in values.items() if key not in seen]
+    if missing and out and not out[-1].endswith("\n"):
+        out[-1] += "\n"
+    return "".join(out + missing)
 
 
 def _template_lines(section: dict[str, str]) -> list[str]:
@@ -245,7 +216,7 @@ def apply_to_template(template_path: Path, custom_path: Path | None = None) -> l
         applied.append(f"minsar.excludeDates = {exclude_csv}")
         applied.append(f"topsStack.excludeDates = {exclude_csv}")
     lines = _template_lines(section)
-    template_path.write_text(_replace_block(text, lines), encoding="utf-8")
+    template_path.write_text(_replace_keys(text, lines), encoding="utf-8")
     print(f"custom_template_options: [{name}]")
     for line in applied:
         print(f"custom_template_options: {line}")
