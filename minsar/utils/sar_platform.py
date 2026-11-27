@@ -4,6 +4,8 @@ Shared --platform token normalization for get_sar_coverage, create_template, and
 
 from __future__ import annotations
 
+import os
+
 # Short internal tokens accepted everywhere after normalization
 SAR_PLATFORM_KNOWN = frozenset({"S1", "NISAR", "ALOS2"})
 
@@ -40,6 +42,13 @@ def is_asf_platform(value) -> bool:
     return token.startswith(("SENTINEL1", "S1", "ALOS", "NISAR"))
 
 
+def _sed_fix(source: str, old: str, new: str) -> str:
+    """'Fix: sed ...' line that renames the prefix in *source*, or '' when *source* is not a file."""
+    if not os.path.isfile(str(source)):
+        return ""
+    return f"\nFix: sed -i.bak -E 's/^([[:space:]]*){old}\\./\\1{new}./' {source}"
+
+
 def search_prefix(options, source: str = "template") -> str:
     """Return the search prefix the template uses (asf or ssaraopt). Raise ValueError on a mixed or mismatched one."""
     present = [p for p in SEARCH_PREFIXES if any(str(key).startswith(p + ".") for key in options)]
@@ -51,9 +60,9 @@ def search_prefix(options, source: str = "template") -> str:
     platform = options.get(f"{prefix}.platform")
     if platform not in (None, "", "None"):
         if prefix == "ssaraopt" and is_asf_platform(platform):
-            raise ValueError(f"ssaraopt.* is not valid for ASF platform {platform} (asf.* expected): {source}")
+            raise ValueError(f"ssaraopt.* is not valid for ASF platform {platform} (asf.* expected): {source}" + _sed_fix(source, "ssaraopt", "asf"))
         if prefix == "asf" and not is_asf_platform(platform):
-            raise ValueError(f"asf.* is not valid for platform {platform} (ssaraopt.* expected): {source}")
+            raise ValueError(f"asf.* is not valid for platform {platform} (ssaraopt.* expected): {source}" + _sed_fix(source, "asf", "ssaraopt"))
     return prefix
 
 

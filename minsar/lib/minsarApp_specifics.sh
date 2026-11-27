@@ -54,10 +54,12 @@ function set_search_prefix() {
     [[ -z "$platform" ]] && return 0
     if [[ $search_prefix == "ssaraopt" ]] && platform_is_asf "$platform"; then
         echo "Error: ssaraopt.* is not valid for ASF platform $platform (asf.* expected): $file" >&2
+        echo "Fix: sed -i.bak -E 's/^([[:space:]]*)ssaraopt\./\1asf./' $file" >&2
         exit 1
     fi
     if [[ $search_prefix == "asf" ]] && ! platform_is_asf "$platform"; then
         echo "Error: asf.* is not valid for platform $platform (ssaraopt.* expected): $file" >&2
+        echo "Fix: sed -i.bak -E 's/^([[:space:]]*)asf\./\1ssaraopt./' $file" >&2
         exit 1
     fi
     return 0
