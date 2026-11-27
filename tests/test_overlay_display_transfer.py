@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Unit tests for overlay display-param transfer (contours, pixelSize, background, point)."""
+"""Unit tests for overlay display-param transfer (contours, pixelSize, background, colormap, point)."""
 
 import unittest
 
 from minsar.utils.overlay_display_transfer import (
     display_params_mismatch,
+    effective_colormap,
     effective_contour,
     embed_display_params_for_warm_url,
     expected_charts_for_switch,
@@ -32,6 +33,14 @@ class TestUrlDisplayParamsFromSrc(unittest.TestCase):
         self.assertEqual(p["pixelSize"], "3.8")
         self.assertEqual(p["background"], "streets")
         self.assertEqual(p["autoColorScale"], "false")
+
+    def test_parses_colormap_from_url(self):
+        p = url_display_params_from_src("/start/0/0/1?colormap=RdBu_r&reverseColormap=true")
+        self.assertEqual(p["colormap"], "RdBu_r")
+        self.assertEqual(p["reverseColormap"], "true")
+        p = url_display_params_from_src("/start/0/0/1?pixelSize=6")
+        self.assertIsNone(p["colormap"])
+        self.assertIsNone(p["reverseColormap"])
 
     def test_contour_alias(self):
         p = url_display_params_from_src("/start/0/0/1?contour=on&pixelSize=6")
@@ -62,6 +71,14 @@ class TestOverlayUserDisplayOverride(unittest.TestCase):
         self.assertEqual(merged["pixelSize"], "3.8")
         self.assertEqual(merged["background"], "streets")
 
+    def test_user_colormap_overrides_stale_parent_on_switch(self):
+        """The colormap chosen in one dataset's map goes to the next, whatever that map's URL said."""
+        parent = {"colormap": None, "reverseColormap": None}
+        overlay_user = {"colormap": "RdBu_r", "reverseColormap": "true"}
+        merged = map_params_with_overlay_user_display(parent, overlay_user)
+        self.assertEqual(effective_colormap(merged), ("RdBu_r", "true"))
+        self.assertEqual(effective_colormap(parent), ("jet", "false"))
+
 
 class TestWarmUrlEmbedding(unittest.TestCase):
     def test_warm_url_carries_display_params_to_next_dataset(self):
@@ -76,6 +93,14 @@ class TestWarmUrlEmbedding(unittest.TestCase):
         self.assertEqual(q["pixelSize"], "3.8")
         self.assertEqual(q["background"], "streets")
         self.assertNotIn("autoColorScale", q)
+
+    def test_warm_url_carries_colormap_and_leaves_out_its_defaults(self):
+        q = embed_display_params_for_warm_url({"colormap": "RdBu_r", "reverseColormap": "true"})
+        self.assertEqual(q["colormap"], "RdBu_r")
+        self.assertEqual(q["reverseColormap"], "true")
+        q = embed_display_params_for_warm_url({"colormap": "jet", "reverseColormap": "false"})
+        self.assertNotIn("colormap", q)
+        self.assertNotIn("reverseColormap", q)
 
     def test_manual_scale_mode_in_warm_url(self):
         map_params = {
@@ -117,6 +142,14 @@ class TestDisplayParamsMismatch(unittest.TestCase):
         received = {"contour": "false", "pixelSize": "6"}
         self.assertTrue(display_params_mismatch(overlay_user, parent, received))
 
+    def test_detects_colormap_back_at_jet(self):
+        """A map whose URL leaves the colormap out shows Jet: a mismatch while the overlay wants BuRd."""
+        overlay_user = {"colormap": "RdBu_r", "reverseColormap": "false"}
+        parent = {"colormap": "RdBu_r"}
+        self.assertTrue(display_params_mismatch(overlay_user, parent, {}))
+        self.assertFalse(display_params_mismatch(overlay_user, parent, {"colormap": "RdBu_r"}))
+        self.assertTrue(display_params_mismatch(overlay_user, parent, {"colormap": "RdBu_r", "reverseColormap": "true"}))
+
     def test_no_mismatch_when_child_matches(self):
         overlay_user = {"contour": "true", "pixelSize": "3.8"}
         parent = {"contour": "true", "pixelSize": "3.8"}
@@ -131,6 +164,11 @@ class TestPostMessagePayload(unittest.TestCase):
         payload = post_message_display_payload(overlay_user, parent)
         self.assertTrue(payload["contour"])
         self.assertAlmostEqual(payload["pixelSize"], 3.8)
+        self.assertEqual((payload["colormap"], payload["reverseColormap"]), ("jet", "false"))
+
+    def test_switch_broadcast_payload_has_the_colormap(self):
+        payload = post_message_display_payload({"colormap": "BlueWhiteYellowOrangeRed"}, {"reverseColormap": "true"})
+        self.assertEqual((payload["colormap"], payload["reverseColormap"]), ("BlueWhiteYellowOrangeRed", "true"))
 
 
 class TestPointTransfer(unittest.TestCase):
