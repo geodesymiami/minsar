@@ -55,7 +55,15 @@ minsarApp.bash -8.326:-8.194,117.942:118.069 Tambora --flight-dir desc
 ## Building a template in $ATE
 
 1. [`create_template.py`](../minsar/scripts/create_template.py) copies `processing_Sentinel1.template` (or `processing_Alos2.template`) and fills `asf.relativeOrbit`, `miaplpy.subset.lalo`, the dates and `topsStack.coregistration` from the AOI and coverage. The file is named `{project}{orbit label}` (`TamboraSenD134`). `SenA`/`SenD` (also `SenAT`/`SenDT`) give the flight direction.
-2. [`minsarApp.bash`](../minsar/bin/minsarApp.bash) calls [`custom_template_options.py`](../minsar/utils/custom_template_options.py) `apply` when `AUTO_TEMPLATE` is in the template path. Each custom key is set in place: the first active line of that key takes the custom value (an inline comment is kept), later active lines of that key are deleted, and keys the template lacks are appended. Commented lines are left alone. There are no markers and no commented-out copies. `minsar.excludeDates` / `topsStack.excludeDates` go through `apply_exclude_dates_to_template` (`merge=False`), so both keys get that list. Applied keys are printed to the project log.
+2. [`minsarApp.bash`](../minsar/bin/minsarApp.bash) calls [`custom_template_options.py`](../minsar/utils/custom_template_options.py) `apply` when `AUTO_TEMPLATE` is in the template path. The custom keys are written at the top of the template, followed by a blank line. Every active line of those keys in the part copied from the defaults file is deleted, so each key appears once. Commented lines are left alone. There are no markers. `minsar.excludeDates` or `topsStack.excludeDates` writes both keys at the top with the same normalized date list. Applied keys are printed to the project log.
+
+```text
+minsar.excludeDates = 20141213,20260401
+topsStack.excludeDates = 20141213,20260401
+mintpy.unwrapError.method = bridging+phase_closure
+
+##### copied from processing_Sentinel1.template, without those keys
+```
 3. The CLI patches (`--exclude-dates`, `--start-date`, `--miaplpy.load.startDate`, `--<key> value`, ...) run after this, so CLI flags win for that run.
 
 Default dates come from the defaults file: `asf.startDate = 20141001`, `asf.endDate = auto` (latest acquisition), `miaplpy.load.startDate/endDate = auto`. A custom key or a command-line flag replaces them.

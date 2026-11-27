@@ -20,7 +20,7 @@ def _ensure_repo_on_path() -> None:
 _ensure_repo_on_path()
 
 from minsar.utils.set_template_options import FAMILIES, check_keys, family_of
-from minsar.utils.template_exclude_dates import apply_exclude_dates_to_template
+from minsar.utils.template_exclude_dates import normalize_exclude_dates_arg
 
 ALLOWED_PREFIXES = ("mintpy.", "miaplpy.", "minsar.", "topsStack.", "stripmapStack.", "alos2Stack.", "asf.", "ssaraopt.")
 LAUNCHER_KEYS = frozenset({"aoi", "defaults"})
@@ -148,31 +148,19 @@ def parse_dataset_name(stem: str) -> tuple[str, str]:
 
 
 _ASSIGN_KEY_RE = re.compile(r"^\s*([A-Za-z][\w.]*)\s*=")
-_VALUE_RE = re.compile(r"=\s*[^\s#]+")
 
 
-def _replace_keys(text: str, assignments: list[str]) -> str:
-    """Set each key in place: the first active line takes the custom value, later lines of that key are deleted.
-
-    Keys the template does not have are appended.
-    """
-    values = dict(line.split(" = ", 1) for line in assignments)
-    seen: set[str] = set()
-    out: list[str] = []
+def _custom_on_top(text: str, assignments: list[str]) -> str:
+    """Put *assignments* at the top and delete every active line of those keys below."""
+    keys = {line.split(" = ", 1)[0] for line in assignments}
+    rest: list[str] = []
     for line in text.splitlines(keepends=True):
         match = None if line.lstrip().startswith("#") else _ASSIGN_KEY_RE.match(line)
-        key = match.group(1) if match else None
-        if key not in values:
-            out.append(line)
+        if match and match.group(1) in keys:
             continue
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(_VALUE_RE.sub(lambda _m: f"= {values[key]}", line, count=1))
-    missing = [f"{key} = {val}\n" for key, val in values.items() if key not in seen]
-    if missing and out and not out[-1].endswith("\n"):
-        out[-1] += "\n"
-    return "".join(out + missing)
+        rest.append(line)
+    body = "".join(rest).lstrip("\n")
+    return "\n".join(assignments) + "\n\n" + body
 
 
 def _template_lines(section: dict[str, str]) -> list[str]:
@@ -207,22 +195,17 @@ def apply_to_template(template_path: Path, custom_path: Path | None = None) -> l
     if name is None:
         return []
     section = sections[name]
+    exclude_csv = normalize_exclude_dates_arg(_exclude_csv(section))
+    lines = [f"{key} = {exclude_csv}" for key in sorted(EXCLUDE_KEYS)] if exclude_csv else []
+    lines += _template_lines(section)
+    if not lines:
+        return []
     text = template_path.read_text(encoding="utf-8")
-    applied: list[str] = []
-    exclude_csv = _exclude_csv(section)
-    if exclude_csv:
-        apply_exclude_dates_to_template(template_path, exclude_csv, merge=False)
-        text = template_path.read_text(encoding="utf-8")
-        applied.append(f"minsar.excludeDates = {exclude_csv}")
-        applied.append(f"topsStack.excludeDates = {exclude_csv}")
-    lines = _template_lines(section)
-    template_path.write_text(_replace_keys(text, lines), encoding="utf-8")
+    template_path.write_text(_custom_on_top(text, lines), encoding="utf-8")
     print(f"custom_template_options: [{name}]")
-    for line in applied:
-        print(f"custom_template_options: {line}")
     for line in lines:
         print(f"custom_template_options: {line}")
-    return applied + lines
+    return lines
 
 
 def _dataset_stem(tok: str) -> str | None:
